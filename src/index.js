@@ -9,6 +9,7 @@ const SPREAD_MULTIPLIER = Number(process.env.SPREAD_MULTIPLIER ?? 3);
 const COOLDOWN_MS = Number(process.env.SIGNAL_COOLDOWN_MS ?? process.env.COOLDOWN_MS ?? 120000);
 const BOOK_LEVELS = Number(process.env.ORDER_BOOK_LEVELS ?? process.env.BOOK_LEVELS ?? 10);
 const ALERT_ON_START = String(process.env.ALERT_ON_START ?? 'false').toLowerCase() === 'true';
+const PREDICTION_MARKET_WINDOW_MS = 5 * 60 * 1000;
 
 const client = createPublicClient();
 const states = new Map();
@@ -31,7 +32,7 @@ async function telegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) { console.log(text); return false; }
   const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true })
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
   });
   if (!response.ok) console.error('Telegram error:', await response.text());
   if (response.ok) diagnostics.alerts++;
@@ -52,12 +53,16 @@ function instrumentNameOf(event, id) {
 function assetSlugOf(event, id, fallbackName = '') {
   const p = event?.payload ?? event?.data ?? event;
   const raw = String(p?.symbol ?? p?.ticker ?? p?.asset ?? p?.underlying ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? fallbackName ?? '').trim();
-  const cleaned = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').replace(/_usd$/, '').replace(/-usd$/, '').replace(/usd$/, '');
-  return cleaned || `instrument-${id}`;
+  const upper = raw.toUpperCase();
+  const known = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+  const found = known.find(a => upper.includes(a));
+  return found ? found.toLowerCase() : (upper.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(usd|usdt)$/, '') || `instrument-${id}`);
 }
 
 function marketLink(state) {
-  return `https://polymarket.com/perps/asset/${encodeURIComponent(state.asset)}`;
+  const startMs = Math.floor(Date.now() / PREDICTION_MARKET_WINDOW_MS) * PREDICTION_MARKET_WINDOW_MS;
+  const startSec = Math.floor(startMs / 1000);
+  return `https://polymarket.com/event/${state.asset}-updown-5m-${startSec}`;
 }
 
 function sideOf(level) {
@@ -162,23 +167,23 @@ async function handleBook(id, event) {
 
   if (Math.abs(current.imbalance) >= IMBALANCE_THRESHOLD && canAlert(key(id, current.imbalance > 0 ? 'bid-imbalance' : 'ask-imbalance'))) {
     const side = current.imbalance > 0 ? '🟢 BID dominance' : '🔴 ASK dominance';
-    await telegram(`🚨 PERPS ORDER BOOK\n\n${state.name}\nBid liquidity: $${current.bidUsd.toFixed(0)}\nAsk liquidity: $${current.askUsd.toFixed(0)}\nImbalance: ${pct(current.imbalance)}\n\n${side}\n\n🔗 ${marketLink(state)}`);
+    await telegram(`🚨 PERPS ORDER BOOK\n\n${state.name}\nBid liquidity: $${current.bidUsd.toFixed(0)}\nAsk liquidity: $${current.askUsd.toFixed(0)}\nImbalance: ${pct(current.imbalance)}\n\n${side}\n\n🎯 5m UP/DOWN\n🔗 ${marketLink(state)}`);
   }
 
   const bidPull = previous.bidUsd > 0 ? (previous.bidUsd - current.bidUsd) / previous.bidUsd : 0;
   const askPull = previous.askUsd > 0 ? (previous.askUsd - current.askUsd) / previous.askUsd : 0;
   if (bidPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'bid-pull'))) {
-    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: BID\nLiquidity: $${previous.bidUsd.toFixed(0)} → $${current.bidUsd.toFixed(0)}\nRemoved: ${pct(bidPull)}\n\n🔗 ${marketLink(state)}`);
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: BID\nLiquidity: $${previous.bidUsd.toFixed(0)} → $${current.bidUsd.toFixed(0)}\nRemoved: ${pct(bidPull)}\n\n🎯 5m UP/DOWN\n🔗 ${marketLink(state)}`);
   }
   if (askPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'ask-pull'))) {
-    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: ASK\nLiquidity: $${previous.askUsd.toFixed(0)} → $${current.askUsd.toFixed(0)}\nRemoved: ${pct(askPull)}\n\n🔗 ${marketLink(state)}`);
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: ASK\nLiquidity: $${previous.askUsd.toFixed(0)} → $${current.askUsd.toFixed(0)}\nRemoved: ${pct(askPull)}\n\n🎯 5m UP/DOWN\n🔗 ${marketLink(state)}`);
   }
 
   for (const x of [...current.bids.map(x => ({ ...x, side: 'BID' })), ...current.asks.map(x => ({ ...x, side: 'ASK' }))]) {
     const notional = x.price * x.size;
     const levelKey = `${x.side}:${x.price}`;
     if (notional >= LARGE_ORDER_USD && !previousKeys.has(levelKey) && canAlert(key(id, `large-${levelKey}`))) {
-      await telegram(`🐋 LARGE ORDER\n\n${state.name}\nSide: ${x.side}\nPrice: ${x.price}\nSize: ${x.size}\nNotional: $${notional.toFixed(0)}\n\n🔗 ${marketLink(state)}`);
+      await telegram(`🐋 LARGE ORDER\n\n${state.name}\nSide: ${x.side}\nPrice: ${x.price}\nSize: ${x.size}\nNotional: $${notional.toFixed(0)}\n\n🎯 5m UP/DOWN\n🔗 ${marketLink(state)}`);
     }
   }
 }
