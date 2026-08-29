@@ -2,13 +2,13 @@ name: Polymarket Perps Composite Monitor
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 */6 * * *'
 
+# A new scheduled run does NOT cancel an older monitor.
 concurrency:
-  group: perps-monitor
-  cancel-in-progress: true
+  group: perps-monitor-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -22,14 +22,12 @@ jobs:
       ALERTS_ENABLED: 'true'
       REQUIRE_PREDICTION_MARKET: 'true'
       SIGNAL_COOLDOWN_MS: '120000'
-      PRICE_MOVE_5M: '0.0005'
-      OI_MOVE_5M: '0.005'
-      FUNDING_LONG: '0.00005'
-      FUNDING_SHORT: '-0.00005'
-      MIN_VOLUME_MULTIPLIER: '1.1'
-      HISTORY_BUCKETS: '12'
-      MIN_BASELINE_BUCKETS: '1'
-      SIGNAL_SCORE: '2'
+      IMBALANCE_THRESHOLD: '0.40'
+      LARGE_ORDER_USD: '100000'
+      LIQUIDITY_PULL_THRESHOLD: '0.40'
+      SPREAD_MULTIPLIER: '3'
+      ORDER_BOOK_LEVELS: '10'
+      ALERT_ON_START: 'false'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -37,7 +35,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: npm
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Run composite monitor
         run: node src/index.js
