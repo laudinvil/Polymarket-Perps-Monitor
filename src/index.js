@@ -1,46 +1,182 @@
 import { createPublicClient } from '@polymarket/client';
-import { findPredictionMarket, predictionDirectionPrice } from './prediction.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const ALERTS_ENABLED = process.env.ALERTS_ENABLED !== 'false';
-const REQUIRE_PREDICTION_MARKET = process.env.REQUIRE_PREDICTION_MARKET !== 'false';
-const SIGNAL_COOLDOWN_MS = Number(process.env.SIGNAL_COOLDOWN_MS ?? 120000);
-const PRICE_MOVE_5M = Number(process.env.PRICE_MOVE_5M ?? 0.0005);
-const OI_MOVE_5M = Number(process.env.OI_MOVE_5M ?? 0.005);
-const FUNDING_LONG = Number(process.env.FUNDING_LONG ?? 0.00005);
-const FUNDING_SHORT = Number(process.env.FUNDING_SHORT ?? -0.00005);
-const MIN_VOLUME_MULTIPLIER = Number(process.env.MIN_VOLUME_MULTIPLIER ?? 1.1);
-const VOLUME_BUCKET_MS = 5 * 60 * 1000;
-const HISTORY_BUCKETS = Number(process.env.HISTORY_BUCKETS ?? 12);
-const MIN_BASELINE_BUCKETS = Number(process.env.MIN_BASELINE_BUCKETS ?? 1);
-const SIGNAL_SCORE = Number(process.env.SIGNAL_SCORE ?? 2);
+const IMBALANCE_THRESHOLD = Number(process.env.IMBALANCE_THRESHOLD ?? 0.40);
+const LARGE_ORDER_USD = Number(process.env.LARGE_ORDER_USD ?? 100000);
+const LIQUIDITY_PULL_THRESHOLD = Number(process.env.LIQUIDITY_PULL_THRESHOLD ?? 0.40);
+const SPREAD_MULTIPLIER = Number(process.env.SPREAD_MULTIPLIER ?? 3);
+const COOLDOWN_MS = Number(process.env.SIGNAL_COOLDOWN_MS ?? process.env.COOLDOWN_MS ?? 120000);
+const BOOK_LEVELS = Number(process.env.ORDER_BOOK_LEVELS ?? process.env.BOOK_LEVELS ?? 10);
+const ALERT_ON_START = String(process.env.ALERT_ON_START ?? 'false').toLowerCase() === 'true';
 
 const client = createPublicClient();
-const instruments = new Map();
-const histories = new Map();
+const states = new Map();
 const cooldowns = new Map();
 const subscribed = new Set();
-const diag = { tickers: 0, trades: 0, candidates: 0, predictionMisses: 0, telegramSent: 0, lastTickerAt: 0 };
 
-const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-const firstNum = (...values) => { for (const value of values) { const n = num(value); if (n !== null) return n; } return null; };
-const text = (v) => v == null ? '' : String(v);
-const pct = (v) => `${(v * 100).toFixed(2)}%`;
-const price = (v) => v == null ? 'n/a' : `${(v * 100).toFixed(1)}¢`;
-function normalizeTimestamp(value) { const n = num(value); if (n === null) return Date.now(); return n < 1e12 ? n * 1000 : n; }
-function instrumentIdOf(event) { const p = event?.payload ?? event?.data ?? event; return firstNum(event?.instrumentId, event?.instrument_id, p?.instrumentId, p?.instrument_id); }
-function instrumentNameOf(event, id) { const p = event?.payload ?? event?.data ?? event; return text(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? p?.market ?? id); }
-function tickerValues(event) { const p = event?.payload ?? event?.data ?? event; return { symbol: text(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.market ?? ''), price: firstNum(p?.markPrice,p?.mark_price,p?.midPrice,p?.mid_price,p?.lastPrice,p?.last_price,p?.price,p?.mark,p?.last), openInterest: firstNum(p?.openInterest,p?.open_interest,p?.oi), funding: firstNum(p?.fundingRate,p?.funding_rate,p?.funding,p?.currentFundingRate,p?.current_funding_rate), timestamp: normalizeTimestamp(firstNum(p?.timestamp,p?.ts,p?.time,Date.now())) }; }
-function tradeValues(event) { const p=event?.payload ?? event?.data ?? event; const tradePrice=firstNum(p?.price,p?.tradePrice,p?.trade_price); const size=firstNum(p?.size,p?.quantity,p?.qty,p?.baseQuantity,p?.base_quantity); return { tradePrice,size,notional:tradePrice!==null&&size!==null?Math.abs(tradePrice*size):0 }; }
-function stateFor(id,name='') { if(!histories.has(id)) histories.set(id,{name,points:[],buckets:new Map()}); const s=histories.get(id); if(name)s.name=name; return s; }
-function recordTrade(id,event) { diag.trades++; const trade=tradeValues(event); if(!trade.notional)return; const s=stateFor(id,instrumentNameOf(event,id)); const bucket=Math.floor(Date.now()/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS; s.buckets.set(bucket,(s.buckets.get(bucket)??0)+trade.notional); const cutoff=bucket-HISTORY_BUCKETS*VOLUME_BUCKET_MS; for(const key of s.buckets.keys())if(key<cutoff)s.buckets.delete(key); }
-function addTickerPoint(id,event) { const t=tickerValues(event); if(t.price===null)return; const s=stateFor(id,t.symbol||instrumentNameOf(event,id)); s.points.push({ts:t.timestamp,price:t.price,oi:t.openInterest,funding:t.funding}); const cutoff=Date.now()-15*60*1000; s.points=s.points.filter(x=>x.ts>=cutoff); return t; }
-function pointFiveMinutesAgo(points,now) { const target=now-VOLUME_BUCKET_MS; let best=null,distance=Infinity; for(const p of points){const d=Math.abs(p.ts-target); if(d<distance&&p.ts<=now-60000){best=p;distance=d;}} return best; }
-function volumeStats(s,now) { const currentBucket=Math.floor(now/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS; const current=s.buckets.get(currentBucket)??0; const previous=[...s.buckets.entries()].filter(([bucket])=>bucket<currentBucket).sort((a,b)=>b[0]-a[0]).slice(0,Math.max(1,HISTORY_BUCKETS-1)).map(([,value])=>value).filter(v=>v>0); if(previous.length<MIN_BASELINE_BUCKETS)return{current,average:null,multiplier:null,ready:false}; const average=previous.reduce((a,b)=>a+b,0)/previous.length; return{current,average,multiplier:average>0?current/average:null,ready:average>0}; }
-function canAlert(key) { const now=Date.now(); if((cooldowns.get(key)??0)>now)return false; cooldowns.set(key,now+SIGNAL_COOLDOWN_MS); return true; }
-async function telegram(message) { if(!ALERTS_ENABLED)return false; if(!TELEGRAM_BOT_TOKEN||!TELEGRAM_CHAT_ID){console.log(message);return false;} const response=await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})}); if(!response.ok)console.error('Telegram error:',await response.text()); if(response.ok)diag.telegramSent++; return response.ok; }
-async function evaluateSignal(id,event) { diag.tickers++; diag.lastTickerAt=Date.now(); const t=addTickerPoint(id,event); if(!t)return; const s=stateFor(id,t.symbol||instrumentNameOf(event,id)); const now=Date.now(); const old=pointFiveMinutesAgo(s.points,now); if(!old||old.price<=0)return; const volume=volumeStats(s,now); const priceChange=(t.price-old.price)/old.price; const oiChange=t.openInterest!==null&&old.oi!==null&&old.oi>0?(t.openInterest-old.oi)/old.oi:null; const funding=t.funding; const volumeCheck=volume.ready&&volume.multiplier!==null&&volume.multiplier>=MIN_VOLUME_MULTIPLIER; const longChecks=[priceChange>=PRICE_MOVE_5M,oiChange!==null&&oiChange>=OI_MOVE_5M,volumeCheck,funding!==null&&funding>=FUNDING_LONG]; const shortChecks=[priceChange<=-PRICE_MOVE_5M,oiChange!==null&&oiChange<=-OI_MOVE_5M,volumeCheck,funding!==null&&funding<=FUNDING_SHORT]; const longScore=longChecks.filter(Boolean).length; const shortScore=shortChecks.filter(Boolean).length; const direction=longScore>=SIGNAL_SCORE?'LONGS ENTERING':shortScore>=SIGNAL_SCORE?'SHORTS ENTERING':null; if(!direction)return; diag.candidates++; const prediction=await findPredictionMarket(s.name,now); if(REQUIRE_PREDICTION_MARKET&&!prediction){diag.predictionMisses++; console.log(`SIGNAL BLOCKED: ${s.name} score=${Math.max(longScore,shortScore)}/4 next5m=NOT_FOUND`);return;} if(!canAlert(`${id}:${direction}`))return; const arrow=direction==='LONGS ENTERING'?'🟢':'🔴'; const predictionPrice=predictionDirectionPrice(prediction,direction); await telegram([`${arrow} COMPOSITE PERPS SIGNAL`,'',s.name||String(id),'',`Perps price move: ${pct(priceChange)} / 5m`,`Perps volume: ${volume.multiplier?.toFixed(1)??'n/a'}× baseline`,`Perps OI: ${oiChange===null?'n/a':pct(oiChange)}`,`Funding: ${funding===null?'n/a':pct(funding)}`,'',`Signal: ${direction}`,`Score: ${Math.max(longScore,shortScore)}/4`,'',`Prediction market: ${prediction?.question??'not found'}`,`${direction==='LONGS ENTERING'?'Up':'Down'} price: ${price(predictionPrice)}`,prediction?`➡️ ${prediction.url}`:''].filter(Boolean).join('\n')); }
-async function subscribeTrades(id) { if(subscribed.has(id))return; subscribed.add(id); try{const handle=await client.subscribe([{topic:'perps.trades',instrumentId:id}]); for await(const event of handle)recordTrade(id,event);}catch(error){console.error(`Perps trades ${id} stream stopped:`,error);subscribed.delete(id);} }
-async function main() { console.log('Starting Polymarket Perps Composite Signal Monitor...'); console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=±${pct(OI_MOVE_5M)}/5m, funding=+${pct(FUNDING_LONG)}/${pct(FUNDING_SHORT)}, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/4`); console.log(`Prediction market required: ${REQUIRE_PREDICTION_MARKET}`); setInterval(()=>{const age=diag.lastTickerAt?Math.round((Date.now()-diag.lastTickerAt)/1000):null; console.log(`DIAG tickers=${diag.tickers} trades=${diag.trades} instruments=${instruments.size} candidates=${diag.candidates} predictionMisses=${diag.predictionMisses} telegramSent=${diag.telegramSent} lastTickerAgeSec=${age??'none'}`);},60000).unref(); const tickerHandle=await client.subscribe([{topic:'perps.tickers'}]); for await(const event of tickerHandle){const id=instrumentIdOf(event); if(id===null)continue; const symbol=instrumentNameOf(event,id); if(!instruments.has(id)){instruments.set(id,symbol);console.log(`Instrument discovered: id=${id} name=${symbol}`);void subscribeTrades(id);} await evaluateSignal(id,event);}}
-main().catch(error=>{console.error(error);process.exit(1);});
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const pct = (v) => `${(v * 100).toFixed(1)}%`;
+const key = (id, type) => `${id}:${type}`;
+
+function canAlert(k) {
+  const now = Date.now();
+  if ((cooldowns.get(k) ?? 0) > now) return false;
+  cooldowns.set(k, now + COOLDOWN_MS);
+  return true;
+}
+
+async function telegram(text) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) { console.log(text); return false; }
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true })
+  });
+  if (!response.ok) console.error('Telegram error:', await response.text());
+  return response.ok;
+}
+
+function instrumentIdOf(event) {
+  const p = event?.payload ?? event?.data ?? event;
+  const id = Number(event?.instrumentId ?? event?.instrument_id ?? p?.instrumentId ?? p?.instrument_id);
+  return Number.isFinite(id) ? id : null;
+}
+
+function instrumentNameOf(event, id) {
+  const p = event?.payload ?? event?.data ?? event;
+  return String(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? p?.market ?? id);
+}
+
+function sideOf(level) {
+  const side = String(level?.side ?? '').toUpperCase();
+  if (side === 'BID' || side === 'BUY' || side === 'B') return 'BID';
+  if (side === 'ASK' || side === 'SELL' || side === 'A') return 'ASK';
+  return null;
+}
+
+function levelsFrom(value, forcedSide = null) {
+  if (!Array.isArray(value)) return [];
+  return value.map(x => ({
+    price: num(x?.price ?? x?.p), size: num(x?.size ?? x?.quantity ?? x?.q), side: forcedSide ?? sideOf(x)
+  })).filter(x => x.price > 0 && x.size >= 0 && x.side);
+}
+
+function normalizeBook(event) {
+  const source = event?.book ?? event?.payload?.book ?? event?.data?.book ?? event?.payload ?? event;
+  let bids = levelsFrom(source?.bids ?? source?.bid ?? event?.bids, 'BID');
+  let asks = levelsFrom(source?.asks ?? source?.ask ?? event?.asks, 'ASK');
+  const flat = levelsFrom(source?.levels ?? source?.entries ?? event?.levels);
+  if (flat.length && (!bids.length || !asks.length)) {
+    bids = flat.filter(x => x.side === 'BID'); asks = flat.filter(x => x.side === 'ASK');
+  }
+  return { bids, asks };
+}
+
+function stats(bids, asks) {
+  const b = bids.filter(x => x.size > 0).slice().sort((x, y) => y.price - x.price).slice(0, BOOK_LEVELS);
+  const a = asks.filter(x => x.size > 0).slice().sort((x, y) => x.price - y.price).slice(0, BOOK_LEVELS);
+  const bidUsd = b.reduce((sum, x) => sum + x.price * x.size, 0);
+  const askUsd = a.reduce((sum, x) => sum + x.price * x.size, 0);
+  const total = bidUsd + askUsd;
+  return { bids: b, asks: a, bidUsd, askUsd, imbalance: total ? (bidUsd - askUsd) / total : 0,
+    bestBid: b[0]?.price ?? 0, bestAsk: a[0]?.price ?? 0 };
+}
+
+function mergeLevels(previous, incoming) {
+  const map = new Map();
+  for (const x of previous.bids ?? []) map.set(`BID:${x.price}`, { ...x, side: 'BID' });
+  for (const x of previous.asks ?? []) map.set(`ASK:${x.price}`, { ...x, side: 'ASK' });
+  for (const x of [...incoming.bids, ...incoming.asks]) {
+    const k = `${x.side}:${x.price}`;
+    if (x.size > 0) map.set(k, x); else map.delete(k);
+  }
+  return {
+    bids: [...map.values()].filter(x => x.side === 'BID' && x.size > 0),
+    asks: [...map.values()].filter(x => x.side === 'ASK' && x.size > 0)
+  };
+}
+
+function stateFor(id, name = String(id)) {
+  let state = states.get(id);
+  if (!state) { state = { bids: [], asks: [], bestBid: 0, bestAsk: 0, name }; states.set(id, state); }
+  if (name && name !== String(id)) state.name = name;
+  return state;
+}
+
+async function subscribeInstrument(id) {
+  if (subscribed.has(id)) return;
+  subscribed.add(id);
+  try {
+    const handle = await client.subscribe([{ topic: 'perps.bbo', instrumentId: id }, { topic: 'perps.book', instrumentId: id }]);
+    for await (const event of handle) await handleEvent(event);
+  } catch (error) {
+    console.error(`Perps ${id} stream stopped:`, error); subscribed.delete(id);
+  }
+}
+
+async function handleBbo(id, event) {
+  const p = event?.payload ?? event?.data ?? event;
+  const bid = num(p?.bestBid ?? p?.best_bid ?? p?.bid);
+  const ask = num(p?.bestAsk ?? p?.best_ask ?? p?.ask);
+  if (!(bid > 0 && ask > 0)) return;
+  const state = stateFor(id, instrumentNameOf(event, id));
+  const previousSpread = state.bestBid > 0 && state.bestAsk > 0 ? state.bestAsk - state.bestBid : 0;
+  const spread = ask - bid;
+  state.bestBid = bid; state.bestAsk = ask;
+  if (previousSpread > 0 && spread >= previousSpread * SPREAD_MULTIPLIER && canAlert(key(id, 'spread'))) {
+    await telegram(`🚨 PERPS BBO\n\n${state.name}\nBid: ${bid}\nAsk: ${ask}\nSpread: ${spread.toFixed(6)}\nPrevious: ${previousSpread.toFixed(6)}\n\n⚠️ Spread expanded ×${(spread / previousSpread).toFixed(1)}`);
+  }
+}
+
+async function handleBook(id, event) {
+  const incoming = normalizeBook(event);
+  if (!incoming.bids.length && !incoming.asks.length) return;
+  const state = stateFor(id, instrumentNameOf(event, id));
+  const previous = stats(state.bids, state.asks);
+  const previousKeys = new Set([...state.bids.map(x => `BID:${x.price}`), ...state.asks.map(x => `ASK:${x.price}`)]);
+  const merged = mergeLevels(state, incoming);
+  const current = stats(merged.bids, merged.asks);
+  state.bids = merged.bids; state.asks = merged.asks;
+  if (!previous.bids.length && !previous.asks.length) return;
+
+  if (Math.abs(current.imbalance) >= IMBALANCE_THRESHOLD && canAlert(key(id, current.imbalance > 0 ? 'bid-imbalance' : 'ask-imbalance'))) {
+    const side = current.imbalance > 0 ? '🟢 BID dominance' : '🔴 ASK dominance';
+    await telegram(`🚨 PERPS ORDER BOOK\n\n${state.name}\nBid liquidity: $${current.bidUsd.toFixed(0)}\nAsk liquidity: $${current.askUsd.toFixed(0)}\nImbalance: ${pct(current.imbalance)}\n\n${side}`);
+  }
+
+  const bidPull = previous.bidUsd > 0 ? (previous.bidUsd - current.bidUsd) / previous.bidUsd : 0;
+  const askPull = previous.askUsd > 0 ? (previous.askUsd - current.askUsd) / previous.askUsd : 0;
+  if (bidPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'bid-pull'))) {
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: BID\nLiquidity: $${previous.bidUsd.toFixed(0)} → $${current.bidUsd.toFixed(0)}\nRemoved: ${pct(bidPull)}`);
+  }
+  if (askPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'ask-pull'))) {
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: ASK\nLiquidity: $${previous.askUsd.toFixed(0)} → $${current.askUsd.toFixed(0)}\nRemoved: ${pct(askPull)}`);
+  }
+
+  for (const x of [...current.bids.map(x => ({ ...x, side: 'BID' })), ...current.asks.map(x => ({ ...x, side: 'ASK' }))]) {
+    const notional = x.price * x.size;
+    const levelKey = `${x.side}:${x.price}`;
+    if (notional >= LARGE_ORDER_USD && !previousKeys.has(levelKey) && canAlert(key(id, `large-${levelKey}`))) {
+      await telegram(`🐋 LARGE ORDER\n\n${state.name}\nSide: ${x.side}\nPrice: ${x.price}\nSize: ${x.size}\nNotional: $${notional.toFixed(0)}`);
+    }
+  }
+}
+
+async function handleEvent(event) {
+  const topic = event?.topic ?? event?.type;
+  const id = instrumentIdOf(event);
+  if (topic === 'perps.tickers') { if (id !== null) await subscribeInstrument(id); return; }
+  if (id === null) return;
+  if (topic === 'perps.bbo') return handleBbo(id, event);
+  if (topic === 'perps.book') return handleBook(id, event);
+}
+
+async function main() {
+  console.log('Starting Polymarket Perps BBO + Order Book monitor...');
+  console.log(`Thresholds: imbalance=${pct(IMBALANCE_THRESHOLD)}, large=$${LARGE_ORDER_USD}, pull=${pct(LIQUIDITY_PULL_THRESHOLD)}, spread×=${SPREAD_MULTIPLIER}, levels=${BOOK_LEVELS}, cooldown=${COOLDOWN_MS}ms`);
+  if (ALERT_ON_START) await telegram('✅ Polymarket Perps Monitor started\nBBO + Order Book stream is online.');
+  const tickerHandle = await client.subscribe([{ topic: 'perps.tickers' }]);
+  for await (const event of tickerHandle) await handleEvent(event);
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
