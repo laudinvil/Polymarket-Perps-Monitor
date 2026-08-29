@@ -5,6 +5,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const POLYMARKET_EVENT_BY_SLUG = 'https://gamma-api.polymarket.com/events/slug/';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
+const MIN_LIQUIDATION = 40;
 const WINDOW_MS = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
@@ -41,11 +42,8 @@ function windowText(start, end) {
   return `${new Date(start).toISOString().slice(11, 16)}–${new Date(end).toISOString().slice(11, 16)} UTC`;
 }
 
-// The real Polymarket 5m crypto event slug is <asset>-updown-5m-<unix start>.
-// We query that exact event from Gamma and verify its interval before sending the URL.
 async function findNextFiveMinuteMarket(asset, windowEnd) {
   const nextStart = Math.floor(windowEnd / WINDOW_MS) * WINDOW_MS;
-  const nextEnd = nextStart + WINDOW_MS;
   const slug = `${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
 
   try {
@@ -53,14 +51,8 @@ async function findNextFiveMinuteMarket(asset, windowEnd) {
       headers: { accept: 'application/json' }
     });
     if (!response.ok) return null;
-
     const event = await response.json();
-    const start = Date.parse(event?.startDate ?? '') || 0;
-    const end = Date.parse(event?.endDate ?? '') || 0;
-    const intervalMatches = start && end && Math.abs(start - nextStart) <= 60_000 && Math.abs(end - nextEnd) <= 60_000;
-
-    if (!event?.slug || event?.closed || !event?.active || !intervalMatches) return null;
-    return `https://polymarket.com/event/${event.slug}`;
+    return event?.slug ? `https://polymarket.com/event/${event.slug}` : null;
   } catch (error) {
     console.error('Polymarket link lookup:', error?.message ?? error);
     return null;
@@ -70,12 +62,11 @@ async function findNextFiveMinuteMarket(asset, windowEnd) {
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
     });
-    if (!response.ok) console.error('Telegram:', await response.text());
   } catch (error) {
     console.error('Telegram:', error?.message ?? error);
   }
@@ -96,11 +87,8 @@ async function flushWindow(start, end, item) {
     ''
   ];
 
-  if (marketLink) {
-    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink);
-  } else {
-    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Link unavailable — Polymarket event was not verified');
-  }
+  if (marketLink) lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink);
+  else lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Link lookup failed');
 
   await sendTelegram(lines.join('\n'));
 }
@@ -139,7 +127,7 @@ async function handleForceOrder(payload) {
   const price = num(order.ap) || num(order.p);
   const quantity = num(order.q);
   const notional = Math.abs(price * quantity);
-  if (!(price > 0) || !(quantity > 0)) return;
+  if (!(price > 0) || !(quantity > 0) || notional < MIN_LIQUIDATION) return;
 
   const time = num(payload.E) || num(order.T) || Date.now();
   const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
@@ -180,7 +168,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
-console.log('LONG liquidations only; no minimum size');
+console.log(`LONG liquidations only; minimum ${MIN_LIQUIDATION} USDT/USDC`);
 console.log('One largest LONG liquidation per completed 5-minute UTC window');
 console.log('Link target: NEXT 5-minute Polymarket Up/Down market');
 
