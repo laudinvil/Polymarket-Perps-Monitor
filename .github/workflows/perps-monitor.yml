@@ -29,7 +29,7 @@ jobs:
       FUNDING_SHORT: '-0.0001'
       MIN_VOLUME_MULTIPLIER: '1.5'
       HISTORY_BUCKETS: '12'
-      MIN_BASELINE_BUCKETS: '3'
+      MIN_BASELINE_BUCKETS: '1'
       SIGNAL_SCORE: '2'
     steps:
       - name: Checkout
