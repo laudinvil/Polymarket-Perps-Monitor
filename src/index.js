@@ -26,11 +26,7 @@ const text = (v) => v == null ? '' : String(v);
 const pct = (v) => `${(v * 100).toFixed(2)}%`;
 const price = (v) => v == null ? 'n/a' : `${(v * 100).toFixed(1)}¢`;
 
-function normalizeTimestamp(value) {
-  const n = num(value);
-  if (n === null) return Date.now();
-  return n < 1e12 ? n * 1000 : n;
-}
+function normalizeTimestamp(value) { const n = num(value); if (n === null) return Date.now(); return n < 1e12 ? n * 1000 : n; }
 function instrumentIdOf(event) { const p = event?.payload ?? event?.data ?? event; return firstNum(event?.instrumentId, event?.instrument_id, p?.instrumentId, p?.instrument_id); }
 function instrumentNameOf(event, id) { const p = event?.payload ?? event?.data ?? event; return text(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? p?.market ?? id); }
 function tickerValues(event) { const p = event?.payload ?? event?.data ?? event; return { symbol:text(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.market ?? ''), price:firstNum(p?.markPrice,p?.mark_price,p?.midPrice,p?.mid_price,p?.lastPrice,p?.last_price,p?.price,p?.mark,p?.last), openInterest:firstNum(p?.openInterest,p?.open_interest,p?.oi), timestamp:normalizeTimestamp(firstNum(p?.timestamp,p?.ts,p?.time,Date.now())) }; }
@@ -47,12 +43,12 @@ async function evaluateSignal(id,event) {
   const t=addTickerPoint(id,event); if(!t)return; const s=stateFor(id,t.symbol||instrumentNameOf(event,id)); const now=Date.now(); const old=pointFiveMinutesAgo(s.points,now); const volume=volumeStats(s,now); if(!old||old.price<=0||!volume.ready)return;
   const priceChange=(t.price-old.price)/old.price; const oiChange=t.openInterest!==null&&old.oi!==null&&old.oi>0?(t.openInterest-old.oi)/old.oi:null; const volumeMultiple=volume.multiplier;
   const longChecks=[priceChange>=PRICE_MOVE_5M,oiChange!==null&&oiChange>=OI_MOVE_5M,volumeMultiple!==null&&volumeMultiple>=MIN_VOLUME_MULTIPLIER];
-  const shortChecks=[priceChange<=-PRICE_MOVE_5M,oiChange!==null&&oiChange>=OI_MOVE_5M,volumeMultiple!==null&&volumeMultiple>=MIN_VOLUME_MULTIPLIER];
+  const shortChecks=[priceChange<=-PRICE_MOVE_5M,oiChange!==null&&oiChange<=-OI_MOVE_5M,volumeMultiple!==null&&volumeMultiple>=MIN_VOLUME_MULTIPLIER];
   const longScore=longChecks.filter(Boolean).length,shortScore=shortChecks.filter(Boolean).length; const direction=longScore>=SIGNAL_SCORE?'LONGS ENTERING':shortScore>=SIGNAL_SCORE?'SHORTS ENTERING':null; if(!direction||!canAlert(`${id}:${direction}`))return;
   const prediction=await findPredictionMarket(s.name,now); if(REQUIRE_PREDICTION_MARKET&&!prediction){console.log(`Composite signal found for ${s.name}, but no live 5m prediction market was resolved.`);return;}
   const arrow=direction==='LONGS ENTERING'?'🟢':'🔴'; const predictionPrice=predictionDirectionPrice(prediction,direction);
   await telegram([`${arrow} COMPOSITE PERPS SIGNAL`,'',s.name||String(id),'',`Perps price move: ${pct(priceChange)} / 5m`,`Perps volume: ${volumeMultiple?.toFixed(1)}× baseline`,`Perps OI: ${oiChange===null?'n/a':pct(oiChange)}`,'',`Signal: ${direction}`,`Score: ${Math.max(longScore,shortScore)}/3`,'',`Prediction market: ${prediction?.question??'not found'}`,`${direction==='LONGS ENTERING'?'Up':'Down'} price: ${price(predictionPrice)}`,prediction?`➡️ ${prediction.url}`:''].filter(Boolean).join('\n'));
 }
 async function subscribeTrades(id) { if(subscribed.has(id))return; subscribed.add(id); try{const handle=await client.subscribe([{topic:'perps.trades',instrumentId:id}]); for await(const event of handle)recordTrade(id,event);}catch(error){console.error(`Perps trades ${id} stream stopped:`,error);subscribed.delete(id);} }
-async function main() { console.log('Starting Polymarket Perps Composite Signal Monitor...'); console.log('BBO / Order Book / Funding alerts are disabled.'); console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=${pct(OI_MOVE_5M)}/5m, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/3`); console.log(`Prediction market required: ${REQUIRE_PREDICTION_MARKET}`); const tickerHandle=await client.subscribe([{topic:'perps.tickers'}]); for await(const event of tickerHandle){const id=instrumentIdOf(event);if(id===null)continue;const symbol=instrumentNameOf(event,id);if(!instruments.has(id)){instruments.set(id,symbol);void subscribeTrades(id);}await evaluateSignal(id,event);} }
+async function main() { console.log('Starting Polymarket Perps Composite Signal Monitor...'); console.log('BBO / Order Book / Funding alerts are disabled.'); console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=±${pct(OI_MOVE_5M)}/5m, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/3`); console.log(`Prediction market required: ${REQUIRE_PREDICTION_MARKET}`); const tickerHandle=await client.subscribe([{topic:'perps.tickers'}]); for await(const event of tickerHandle){const id=instrumentIdOf(event);if(id===null)continue;const symbol=instrumentNameOf(event,id);if(!instruments.has(id)){instruments.set(id,symbol);void subscribeTrades(id);}await evaluateSignal(id,event);} }
 main().catch(error=>{console.error(error);process.exit(1);});
