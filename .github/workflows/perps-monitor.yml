@@ -1,13 +1,15 @@
 name: Polymarket Liquidation Monitor
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
 
 concurrency:
   group: polymarket-liquidation-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
