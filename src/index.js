@@ -2,7 +2,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const GAMMA_API = 'https://gamma-api.polymarket.com/markets';
+const POLYMARKET_EVENT_BY_SLUG = 'https://gamma-api.polymarket.com/events/slug/';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const WINDOW_MS = 5 * 60 * 1000;
@@ -41,55 +41,41 @@ function windowText(start, end) {
   return `${new Date(start).toISOString().slice(11, 16)}–${new Date(end).toISOString().slice(11, 16)} UTC`;
 }
 
-// Find the REAL next 5m Polymarket Up/Down event. Do not manufacture a slug.
+// The real Polymarket 5m crypto event slug is <asset>-updown-5m-<unix start>.
+// We query that exact event from Gamma and verify its interval before sending the URL.
 async function findNextFiveMinuteMarket(asset, windowEnd) {
   const nextStart = Math.floor(windowEnd / WINDOW_MS) * WINDOW_MS;
   const nextEnd = nextStart + WINDOW_MS;
-  const startSec = Math.floor(nextStart / 1000);
-  const endSec = Math.floor(nextEnd / 1000);
-
-  const params = new URLSearchParams({
-    active: 'true',
-    closed: 'false',
-    limit: '100',
-    order: 'startDate',
-    ascending: 'true'
-  });
+  const slug = `${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
 
   try {
-    const r = await fetch(`${GAMMA_API}?${params}`, { headers: { accept: 'application/json' } });
-    if (!r.ok) return null;
-    const markets = await r.json();
-    if (!Array.isArray(markets)) return null;
+    const response = await fetch(`${POLYMARKET_EVENT_BY_SLUG}${encodeURIComponent(slug)}`, {
+      headers: { accept: 'application/json' }
+    });
+    if (!response.ok) return null;
 
-    const assetUpper = asset.toUpperCase();
-    for (const market of markets) {
-      const text = `${market.slug ?? ''} ${market.question ?? ''} ${market.title ?? ''}`.toUpperCase();
-      if (!text.includes(assetUpper) || !text.includes('5M')) continue;
-      if (!text.includes('UP') || !text.includes('DOWN')) continue;
+    const event = await response.json();
+    const start = Date.parse(event?.startDate ?? '') || 0;
+    const end = Date.parse(event?.endDate ?? '') || 0;
+    const intervalMatches = start && end && Math.abs(start - nextStart) <= 60_000 && Math.abs(end - nextEnd) <= 60_000;
 
-      const start = Date.parse(market.startDate ?? market.start_date ?? '') / 1000;
-      const end = Date.parse(market.endDate ?? market.end_date ?? '') / 1000;
-      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-      if (Math.abs(start - startSec) > 30 || Math.abs(end - endSec) > 30) continue;
-      if (!market.slug) continue;
-
-      return `https://polymarket.com/event/${market.slug}`;
-    }
+    if (!event?.slug || event?.closed || !event?.active || !intervalMatches) return null;
+    return `https://polymarket.com/event/${event.slug}`;
   } catch (error) {
-    console.error('Polymarket market lookup:', error?.message ?? error);
+    console.error('Polymarket link lookup:', error?.message ?? error);
+    return null;
   }
-  return null;
 }
 
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
     });
+    if (!response.ok) console.error('Telegram:', await response.text());
   } catch (error) {
     console.error('Telegram:', error?.message ?? error);
   }
@@ -113,7 +99,7 @@ async function flushWindow(start, end, item) {
   if (marketLink) {
     lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink);
   } else {
-    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Market link not found — no guessed URL sent');
+    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Link unavailable — Polymarket event was not verified');
   }
 
   await sendTelegram(lines.join('\n'));
