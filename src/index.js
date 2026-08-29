@@ -14,6 +14,7 @@ const client = createPublicClient();
 const states = new Map();
 const cooldowns = new Map();
 const subscribed = new Set();
+const diagnostics = { tickers: 0, bbo: 0, books: 0, normalizedBooks: 0, instruments: 0, alerts: 0 };
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
@@ -33,6 +34,7 @@ async function telegram(text) {
     body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true })
   });
   if (!response.ok) console.error('Telegram error:', await response.text());
+  if (response.ok) diagnostics.alerts++;
   return response.ok;
 }
 
@@ -106,6 +108,7 @@ function stateFor(id, name = String(id)) {
 async function subscribeInstrument(id) {
   if (subscribed.has(id)) return;
   subscribed.add(id);
+  diagnostics.instruments++;
   try {
     const handle = await client.subscribe([{ topic: 'perps.bbo', instrumentId: id }, { topic: 'perps.book', instrumentId: id }]);
     for await (const event of handle) await handleEvent(event);
@@ -115,6 +118,7 @@ async function subscribeInstrument(id) {
 }
 
 async function handleBbo(id, event) {
+  diagnostics.bbo++;
   const p = event?.payload ?? event?.data ?? event;
   const bid = num(p?.bestBid ?? p?.best_bid ?? p?.bid);
   const ask = num(p?.bestAsk ?? p?.best_ask ?? p?.ask);
@@ -129,8 +133,10 @@ async function handleBbo(id, event) {
 }
 
 async function handleBook(id, event) {
+  diagnostics.books++;
   const incoming = normalizeBook(event);
   if (!incoming.bids.length && !incoming.asks.length) return;
+  diagnostics.normalizedBooks++;
   const state = stateFor(id, instrumentNameOf(event, id));
   const previous = stats(state.bids, state.asks);
   const previousKeys = new Set([...state.bids.map(x => `BID:${x.price}`), ...state.asks.map(x => `ASK:${x.price}`)]);
@@ -165,15 +171,27 @@ async function handleBook(id, event) {
 async function handleEvent(event) {
   const topic = event?.topic ?? event?.type;
   const id = instrumentIdOf(event);
-  if (topic === 'perps.tickers') { if (id !== null) await subscribeInstrument(id); return; }
+  if (topic === 'perps.tickers') { diagnostics.tickers++; if (id !== null) await subscribeInstrument(id); return; }
   if (id === null) return;
   if (topic === 'perps.bbo') return handleBbo(id, event);
   if (topic === 'perps.book') return handleBook(id, event);
 }
 
+function diagnosticsReport() {
+  console.log(`[ORDERBOOK DIAG] tickers=${diagnostics.tickers} instruments=${diagnostics.instruments} bbo=${diagnostics.bbo} books=${diagnostics.books} normalized=${diagnostics.normalizedBooks} alerts=${diagnostics.alerts} subscribed=${subscribed.size}`);
+  for (const [id, state] of states) {
+    const s = stats(state.bids, state.asks);
+    if (s.bids.length || s.asks.length) {
+      console.log(`[ORDERBOOK] ${state.name} id=${id} bid=$${s.bidUsd.toFixed(0)} ask=$${s.askUsd.toFixed(0)} imbalance=${pct(s.imbalance)} bestBid=${s.bestBid} bestAsk=${s.bestAsk}`);
+    }
+  }
+}
+
 async function main() {
   console.log('Starting Polymarket Perps BBO + Order Book monitor...');
   console.log(`Thresholds: imbalance=${pct(IMBALANCE_THRESHOLD)}, large=$${LARGE_ORDER_USD}, pull=${pct(LIQUIDITY_PULL_THRESHOLD)}, spread×=${SPREAD_MULTIPLIER}, levels=${BOOK_LEVELS}, cooldown=${COOLDOWN_MS}ms`);
+  console.log('[ORDERBOOK DIAG] diagnostics enabled; report every 60s');
+  setInterval(diagnosticsReport, 60000);
   if (ALERT_ON_START) await telegram('✅ Polymarket Perps Monitor started\nBBO + Order Book stream is online.');
   const tickerHandle = await client.subscribe([{ topic: 'perps.tickers' }]);
   for await (const event of tickerHandle) await handleEvent(event);
