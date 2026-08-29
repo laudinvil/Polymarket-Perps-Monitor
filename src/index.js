@@ -2,72 +2,78 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/ws/!forceOrder@arr';
-const GAMMA_URL = 'https://gamma-api.polymarket.com/events?';
+const GAMMA_MARKET_URL = 'https://gamma-api.polymarket.com/markets/slug/';
 
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
-const QUOTE_ASSETS = new Set(['USDT', 'USDC']);
+const QUOTES = new Set(['USDT', 'USDC']);
 const WINDOW_MS = 5 * 60 * 1000;
+const RECONNECT_MS = 3000;
 
-let currentWindowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
-let windowMax = null;
+let windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
+let largest = null;
 let flushTimer = null;
+let websocket = null;
+let reconnectTimer = null;
+let stopping = false;
 
-function number(value) {
+function num(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
 
-function formatUsd(value, quote) {
-  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`;
-}
-
-function formatPrice(value) {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 8 });
-}
-
 function parseSymbol(symbol) {
-  const match = String(symbol ?? '').toUpperCase().match(/^([A-Z]+)(USDT|USDC)$/);
-  if (!match || !ASSETS.has(match[1]) || !QUOTE_ASSETS.has(match[2])) return null;
-  return { asset: match[1], quote: match[2] };
+  const s = String(symbol ?? '').toUpperCase();
+  for (const quote of QUOTES) {
+    if (s.endsWith(quote)) {
+      const asset = s.slice(0, -quote.length);
+      if (ASSETS.has(asset)) return { asset, quote };
+    }
+  }
+  return null;
 }
 
-function liquidationNotional(order) {
-  const price = number(order?.ap) || number(order?.p);
-  const quantity = number(order?.q);
-  return Math.abs(price * quantity);
+function formatMoney(value, quote) {
+  return `${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`;
 }
 
-function sideText(side) {
+function formatNumber(value) {
+  return Number(value).toLocaleString('en-US', { maximumFractionDigits: 8 });
+}
+
+function sideLabel(side) {
   if (side === 'SELL') return 'LONG LIQUIDATION';
   if (side === 'BUY') return 'SHORT LIQUIDATION';
   return 'LIQUIDATION';
 }
 
-function nextFiveMinuteSlug(asset, windowEndMs) {
-  const nextStart = Math.floor(windowEndMs / WINDOW_MS) * 300;
-  return `${asset.toLowerCase()}-updown-5m-${nextStart}`;
+function windowText(start, end) {
+  const a = new Date(start).toISOString().slice(11, 16);
+  const b = new Date(end).toISOString().slice(11, 16);
+  return `${a}–${b} UTC`;
 }
 
-async function resolveMarketLink(asset, windowEndMs) {
-  const slug = nextFiveMinuteSlug(asset, windowEndMs);
+function nextMarketSlug(asset, windowEnd) {
+  const ts = Math.floor(windowEnd / 1000);
+  return `${asset.toLowerCase()}-updown-5m-${ts}`;
+}
+
+async function findNextMarket(asset, windowEnd) {
+  const slug = nextMarketSlug(asset, windowEnd);
   const fallback = `https://polymarket.com/event/${slug}`;
 
   try {
-    const url = `${GAMMA_URL}series_slug=${encodeURIComponent(`${asset.toLowerCase()}-up-or-down-5m`)}&closed=false&limit=100&order=endDate&ascending=true`;
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
-    if (!response.ok) return fallback;
-
-    const data = await response.json();
-    const events = Array.isArray(data) ? data : [];
-    const targetStart = windowEndMs;
-    const event = events.find(item => item?.slug === slug) || events.find(item => {
-      const start = Date.parse(item?.eventStartTime || item?.startTime || '');
-      return item?.slug?.startsWith(`${asset.toLowerCase()}-updown-5m-`) && start === targetStart;
+    const response = await fetch(`${GAMMA_MARKET_URL}${encodeURIComponent(slug)}`, {
+      headers: { accept: 'application/json' }
     });
 
-    if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
+    if (response.ok) {
+      const market = await response.json();
+      if (market?.slug && market?.active && !market?.closed) {
+        return `https://polymarket.com/event/${market.slug}`;
+      }
+    }
   } catch (error) {
-    console.error('Polymarket market lookup failed:', error?.message ?? error);
+    console.error('Polymarket lookup error:', error?.message ?? error);
   }
 
   return fallback;
@@ -75,147 +81,177 @@ async function resolveMarketLink(asset, windowEndMs) {
 
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.log('TELEGRAM NOT CONFIGURED');
     console.log(text);
-    return false;
-  }
-
-  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
-  });
-
-  if (!response.ok) {
-    console.error('Telegram error:', await response.text());
-    return false;
-  }
-  return true;
-}
-
-function windowLabel(startMs, endMs) {
-  const start = new Date(startMs).toISOString().slice(11, 16);
-  const end = new Date(endMs).toISOString().slice(11, 16);
-  return `${start}–${end} UTC`;
-}
-
-async function flushWindow(windowStart, windowEnd, maxLiquidation) {
-  if (!maxLiquidation) {
-    console.log(`5m window ${windowLabel(windowStart, windowEnd)}: no liquidations`);
     return;
   }
 
-  const marketLink = await resolveMarketLink(maxLiquidation.asset, windowEnd);
-  const liquidationTime = new Date(maxLiquidation.time).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text,
+        disable_web_page_preview: false
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Telegram error:', await response.text());
+    }
+  } catch (error) {
+    console.error('Telegram request error:', error?.message ?? error);
+  }
+}
+
+async function flushWindow(start, end) {
+  const item = largest;
+  largest = null;
+
+  if (!item) {
+    console.log(`5m window ${windowText(start, end)}: no liquidation observed`);
+    return;
+  }
+
+  const marketLink = await findNextMarket(item.asset, end);
+  const time = new Date(item.time).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
 
   const message = [
     '🚨 LARGEST LIQUIDATION — 5M',
     '',
-    `${maxLiquidation.asset} — ${sideText(maxLiquidation.side)}`,
-    `💥 Size: ${formatUsd(maxLiquidation.notional, maxLiquidation.quote)}`,
-    `Price: ${formatPrice(maxLiquidation.price)}`,
-    `Qty: ${maxLiquidation.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })}`,
+    `${item.asset} — ${sideLabel(item.side)}`,
+    `💥 Size: ${formatMoney(item.notional, item.quote)}`,
+    `Price: ${formatNumber(item.price)}`,
+    `Qty: ${formatNumber(item.quantity)}`,
     `Source: Binance USDⓈ-M Futures`,
-    `Liquidation time: ${liquidationTime}`,
-    `Window: ${windowLabel(windowStart, windowEnd)}`,
+    `Liquidation: ${time}`,
+    `Window: ${windowText(start, end)}`,
     '',
-    `▶️ Next 5m ${maxLiquidation.asset} Up/Down:`,
+    `▶️ NEXT 5M ${item.asset} UP/DOWN`,
     marketLink
   ].join('\n');
 
+  console.log(message);
   await sendTelegram(message);
 }
 
-async function flushCurrentWindow() {
-  const windowStart = currentWindowStart;
-  const windowEnd = windowStart + WINDOW_MS;
-  const max = windowMax;
-  currentWindowStart = windowEnd;
-  windowMax = null;
-  await flushWindow(windowStart, windowEnd, max);
+async function advanceWindows(now) {
+  const targetStart = Math.floor(now / WINDOW_MS) * WINDOW_MS;
+
+  while (windowStart < targetStart) {
+    const start = windowStart;
+    const end = start + WINDOW_MS;
+    windowStart = end;
+    await flushWindow(start, end);
+  }
 }
 
-function scheduleWindowFlush() {
+function scheduleFlush() {
   clearTimeout(flushTimer);
-  const delay = Math.max(100, currentWindowStart + WINDOW_MS - Date.now() + 100);
+  const delay = Math.max(100, windowStart + WINDOW_MS - Date.now() + 50);
+
   flushTimer = setTimeout(async () => {
     try {
-      await flushCurrentWindow();
+      await advanceWindows(Date.now());
     } catch (error) {
-      console.error('5m window flush error:', error?.message ?? error);
+      console.error('Window flush error:', error?.message ?? error);
     } finally {
-      scheduleWindowFlush();
+      scheduleFlush();
     }
   }, delay);
 }
 
-function handleLiquidation(event) {
-  const order = event?.o;
+function handleForceOrder(payload) {
+  const order = payload?.o;
   if (!order) return;
 
   const parsed = parseSymbol(order.s);
   if (!parsed) return;
 
-  const notional = liquidationNotional(order);
-  if (!(notional > 0)) return;
+  const price = num(order.ap) || num(order.p);
+  const quantity = num(order.q);
+  const notional = Math.abs(price * quantity);
+  if (!(price > 0) || !(quantity > 0) || !(notional > 0)) return;
 
-  const eventTime = number(event?.E) || Date.now();
-  const eventWindowStart = Math.floor(eventTime / WINDOW_MS) * WINDOW_MS;
-  if (eventWindowStart < currentWindowStart) return;
+  const time = num(payload.E) || Date.now();
+  const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
 
-  while (eventWindowStart > currentWindowStart) {
-    void flushCurrentWindow().catch(error => console.error('Late window flush error:', error?.message ?? error));
+  if (eventWindow < windowStart) return;
+  if (eventWindow > windowStart) {
+    void advanceWindows(time).catch(error => console.error('Late window advance error:', error?.message ?? error));
+    return;
   }
-
-  const price = number(order.ap) || number(order.p);
-  const quantity = number(order.q);
-  const side = String(order.S ?? '').toUpperCase();
 
   const candidate = {
     asset: parsed.asset,
     quote: parsed.quote,
     symbol: String(order.s).toUpperCase(),
-    notional,
+    side: String(order.S ?? '').toUpperCase(),
     price,
     quantity,
-    side,
-    time: eventTime
+    notional,
+    time
   };
 
-  if (!windowMax || candidate.notional > windowMax.notional) windowMax = candidate;
+  if (!largest || candidate.notional > largest.notional) {
+    largest = candidate;
+    console.log(`NEW 5M MAX: ${candidate.asset} ${formatMoney(candidate.notional, candidate.quote)} ${sideLabel(candidate.side)}`);
+  }
 }
 
 function connect() {
-  console.log('LIQUIDATION MONITOR STARTING');
-  console.log('Source: Binance USDⓈ-M Futures forceOrder stream');
-  console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
-  console.log('Quotes: USDT USDC');
-  console.log('Logic: ONE largest observed liquidation across all 7 assets per completed 5-minute UTC window');
-  console.log('Order Book / Price / OI / Funding / Volume alerts: DISABLED');
-  console.log('Telegram start alert: DISABLED');
+  if (stopping) return;
 
-  const ws = new WebSocket(BINANCE_WS_URL);
-  let reconnectTimer;
+  console.log('Connecting to Binance liquidation stream...');
+  websocket = new WebSocket(BINANCE_WS_URL);
 
-  ws.addEventListener('open', () => console.log('Binance liquidation WebSocket connected'));
+  websocket.addEventListener('open', () => {
+    console.log('Binance liquidation WebSocket connected');
+  });
 
-  ws.addEventListener('message', message => {
+  websocket.addEventListener('message', event => {
     try {
-      const payload = JSON.parse(String(message.data));
-      if (payload?.e === 'forceOrder' || payload?.e === '!forceOrder@arr') handleLiquidation(payload);
-      else if (payload?.data?.e === 'forceOrder') handleLiquidation(payload.data);
+      const payload = JSON.parse(String(event.data));
+      if (payload?.e === 'forceOrder') handleForceOrder(payload);
+      else if (payload?.data?.e === 'forceOrder') handleForceOrder(payload.data);
     } catch (error) {
-      console.error('Liquidation event parse error:', error?.message ?? error);
+      console.error('Liquidation message parse error:', error?.message ?? error);
     }
   });
 
-  ws.addEventListener('error', error => console.error('Binance WebSocket error:', error?.message ?? error));
+  websocket.addEventListener('error', error => {
+    console.error('Binance WebSocket error:', error?.message ?? error);
+  });
 
-  ws.addEventListener('close', () => {
-    console.error('Binance WebSocket closed; reconnecting in 3s');
+  websocket.addEventListener('close', () => {
+    if (stopping) return;
+    console.error('Binance liquidation WebSocket closed; reconnecting in 3s');
     clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connect, 3000);
+    reconnectTimer = setTimeout(connect, RECONNECT_MS);
   });
 }
 
-scheduleWindowFlush();
+function shutdown(signal) {
+  stopping = true;
+  clearTimeout(flushTimer);
+  clearTimeout(reconnectTimer);
+  try {
+    websocket?.close();
+  } catch {}
+  console.log(`Shutdown: ${signal}`);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
+console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
+console.log('Quotes: USDT + USDC');
+console.log('Source: Binance USDⓈ-M Futures !forceOrder@arr');
+console.log('Logic: largest observed liquidation across all 7 assets per completed 5-minute UTC window');
+console.log('Telegram: enabled when TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are present');
+console.log('Old Order Book / Price / OI / Funding / Volume logic: removed');
+
+scheduleFlush();
 connect();
