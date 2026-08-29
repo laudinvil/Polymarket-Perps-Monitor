@@ -9,8 +9,6 @@ const ASSET_ALIASES = {
   DOGE: ['doge', 'dogecoin'],
 };
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 function parseJson(value, fallback = []) {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return fallback;
@@ -25,10 +23,12 @@ function assetSymbol(name) {
   return null;
 }
 
-function marketForAsset(symbol, now = Date.now()) {
+// Always target the immediately NEXT 5m window, never the currently live one.
+function nextMarketSlugs(symbol, now = Date.now()) {
   const aliases = ASSET_ALIASES[symbol] ?? [symbol.toLowerCase()];
-  const bucket = Math.floor(now / 300000) * 300;
-  return aliases.map(alias => `${alias}-updown-5m-${bucket}`);
+  const currentBucket = Math.floor(now / 300000) * 300;
+  const nextBucket = currentBucket + 300;
+  return aliases.map(alias => `${alias}-updown-5m-${nextBucket}`);
 }
 
 async function getJson(url) {
@@ -40,28 +40,32 @@ async function getJson(url) {
 async function getOutcomePrice(tokenId) {
   const url = `${CLOB_BASE}/price?token_id=${encodeURIComponent(tokenId)}&side=BUY`;
   const data = await getJson(url);
-  const price = Number(data?.price);
-  return Number.isFinite(price) ? price : null;
+  const p = Number(data?.price);
+  return Number.isFinite(p) ? p : null;
 }
 
 export async function findPredictionMarket(perpsName, now = Date.now()) {
   const symbol = assetSymbol(perpsName);
   if (!symbol) return null;
 
-  for (const slug of marketForAsset(symbol, now)) {
+  for (const slug of nextMarketSlugs(symbol, now)) {
     const market = await getJson(`${GAMMA_BASE}/markets/slug/${encodeURIComponent(slug)}`);
     if (!market || market.active === false || market.closed === true) continue;
+
+    const startMs = Date.parse(market.startDate ?? '');
+    const endMs = Date.parse(market.endDate ?? '');
+    const expectedStartMs = (Math.floor(now / 300000) * 300 + 300) * 1000;
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+    if (startMs !== expectedStartMs || endMs !== expectedStartMs + 300000) continue;
 
     const outcomes = parseJson(market.outcomes);
     const tokenIds = parseJson(market.clobTokenIds);
     const prices = parseJson(market.outcomePrices);
     const outcomeMap = new Map(outcomes.map((x, i) => [String(x).toLowerCase(), { tokenId: tokenIds[i], price: Number(prices[i]) }]));
-
     const up = outcomeMap.get('up');
     const down = outcomeMap.get('down');
     if (!up || !down || !up.tokenId || !down.tokenId) continue;
 
-    // One CLOB request for the outcome that matches the Perps direction.
     const upAsk = await getOutcomePrice(up.tokenId);
     const downAsk = await getOutcomePrice(down.tokenId);
 
@@ -72,7 +76,8 @@ export async function findPredictionMarket(perpsName, now = Date.now()) {
       question: market.question ?? `Polymarket ${symbol} Up or Down 5m`,
       upPrice: upAsk ?? up.price,
       downPrice: downAsk ?? down.price,
-      endDate: market.endDate ?? null,
+      startDate: market.startDate,
+      endDate: market.endDate,
     };
   }
 
@@ -83,5 +88,3 @@ export function predictionDirectionPrice(market, direction) {
   if (!market) return null;
   return direction === 'LONGS ENTERING' ? market.upPrice : market.downPrice;
 }
-
-export { sleep };
