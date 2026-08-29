@@ -46,12 +46,6 @@ function sideLabel(side) {
   return 'LIQUIDATION';
 }
 
-function tradeSignal(side) {
-  if (side === 'SELL') return '🟢 BUY UP';
-  if (side === 'BUY') return '🔴 BUY DOWN';
-  return '';
-}
-
 function windowText(start, end) {
   const a = new Date(start).toISOString().slice(11, 16);
   const b = new Date(end).toISOString().slice(11, 16);
@@ -113,7 +107,6 @@ async function flushWindow(start, end, item) {
     '🚨 LARGEST LIQUIDATION — 5M',
     '',
     `${item.asset} — ${sideLabel(item.side)}`,
-    `${tradeSignal(item.side)}`,
     `💥 Size: ${formatMoney(item.notional, item.quote)}`,
     `Price: ${formatNumber(item.price)}`,
     `Qty: ${formatNumber(item.quantity)}`,
