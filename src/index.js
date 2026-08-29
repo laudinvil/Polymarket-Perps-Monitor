@@ -2,10 +2,9 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const GAMMA_API = 'https://gamma-api.polymarket.com/markets/slug/';
+const GAMMA_API = 'https://gamma-api.polymarket.com/markets';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
-const MIN_LIQUIDATION = 30;
 const WINDOW_MS = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
@@ -30,8 +29,8 @@ function parseSymbol(symbol) {
   return null;
 }
 
-function sideLabel(side) {
-  return side === 'SELL' ? 'LONG LIQUIDATION' : side === 'BUY' ? 'SHORT LIQUIDATION' : 'LIQUIDATION';
+function isLongLiquidation(side) {
+  return String(side ?? '').toUpperCase() === 'SELL';
 }
 
 function money(value, quote) {
@@ -42,26 +41,43 @@ function windowText(start, end) {
   return `${new Date(start).toISOString().slice(11, 16)}–${new Date(end).toISOString().slice(11, 16)} UTC`;
 }
 
-// Polymarket 5m Up/Down events use the timestamp of the 5m interval.
-// Try the exact asset/time slug first; never emit a guessed link if it was not verified.
-async function findFiveMinuteMarket(asset, windowEnd) {
-  const ts = Math.floor(windowEnd / 1000);
-  const candidates = [
-    `${asset.toLowerCase()}-updown-5m-${ts}`,
-    `${asset.toLowerCase()}-up-or-down-5m-${ts}`
-  ];
+// Find the REAL next 5m Polymarket Up/Down event. Do not manufacture a slug.
+async function findNextFiveMinuteMarket(asset, windowEnd) {
+  const nextStart = Math.floor(windowEnd / WINDOW_MS) * WINDOW_MS;
+  const nextEnd = nextStart + WINDOW_MS;
+  const startSec = Math.floor(nextStart / 1000);
+  const endSec = Math.floor(nextEnd / 1000);
 
-  for (const slug of candidates) {
-    try {
-      const r = await fetch(`${GAMMA_API}${encodeURIComponent(slug)}`, { headers: { accept: 'application/json' } });
-      if (!r.ok) continue;
-      const market = await r.json();
-      if (market?.slug && market?.active && !market?.closed) {
-        return `https://polymarket.com/event/${market.slug}`;
-      }
-    } catch (error) {
-      console.error('Market lookup:', error?.message ?? error);
+  const params = new URLSearchParams({
+    active: 'true',
+    closed: 'false',
+    limit: '100',
+    order: 'startDate',
+    ascending: 'true'
+  });
+
+  try {
+    const r = await fetch(`${GAMMA_API}?${params}`, { headers: { accept: 'application/json' } });
+    if (!r.ok) return null;
+    const markets = await r.json();
+    if (!Array.isArray(markets)) return null;
+
+    const assetUpper = asset.toUpperCase();
+    for (const market of markets) {
+      const text = `${market.slug ?? ''} ${market.question ?? ''} ${market.title ?? ''}`.toUpperCase();
+      if (!text.includes(assetUpper) || !text.includes('5M')) continue;
+      if (!text.includes('UP') || !text.includes('DOWN')) continue;
+
+      const start = Date.parse(market.startDate ?? market.start_date ?? '') / 1000;
+      const end = Date.parse(market.endDate ?? market.end_date ?? '') / 1000;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      if (Math.abs(start - startSec) > 30 || Math.abs(end - endSec) > 30) continue;
+      if (!market.slug) continue;
+
+      return `https://polymarket.com/event/${market.slug}`;
     }
+  } catch (error) {
+    console.error('Polymarket market lookup:', error?.message ?? error);
   }
   return null;
 }
@@ -82,20 +98,23 @@ async function sendTelegram(text) {
 async function flushWindow(start, end, item) {
   if (!item) return;
 
-  const marketLink = await findFiveMinuteMarket(item.asset, end);
+  const marketLink = await findNextFiveMinuteMarket(item.asset, end);
   const lines = [
-    '🚨 LARGEST LIQUIDATION — 5M',
+    '🚨 LARGEST LONG LIQUIDATION — 5M',
     '',
-    `${item.asset} — ${sideLabel(item.side)}`,
+    `${item.asset} — LONG LIQUIDATION`,
     `💥 Size: ${money(item.notional, item.quote)}`,
     `Price: ${item.price}`,
     `Qty: ${item.quantity}`,
-    `Window: ${windowText(start, end)}`
+    `Window: ${windowText(start, end)}`,
+    ''
   ];
 
-  // A link is added ONLY after Gamma confirms that the market exists and is active.
-  if (marketLink) lines.push('', `▶️ ${item.asset} 5M UP/DOWN`, marketLink);
-  else lines.push('', '🔗 5M UP/DOWN market: not found');
+  if (marketLink) {
+    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink);
+  } else {
+    lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Market link not found — no guessed URL sent');
+  }
 
   await sendTelegram(lines.join('\n'));
 }
@@ -129,19 +148,19 @@ async function handleForceOrder(payload) {
   const order = payload?.o;
   if (!order) return;
   const parsed = parseSymbol(order.s);
-  if (!parsed) return;
+  if (!parsed || !isLongLiquidation(order.S)) return;
 
   const price = num(order.ap) || num(order.p);
   const quantity = num(order.q);
   const notional = Math.abs(price * quantity);
-  if (!(price > 0) || !(quantity > 0) || notional < MIN_LIQUIDATION) return;
+  if (!(price > 0) || !(quantity > 0)) return;
 
   const time = num(payload.E) || num(order.T) || Date.now();
   const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
   if (eventWindow > windowStart) await requestAdvance(time);
   if (eventWindow < windowStart || eventWindow >= windowStart + WINDOW_MS) return;
 
-  const candidate = { asset: parsed.asset, quote: parsed.quote, side: String(order.S ?? '').toUpperCase(), price, quantity, notional };
+  const candidate = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional };
   if (!largest || candidate.notional > largest.notional) largest = candidate;
 }
 
@@ -175,8 +194,9 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
-console.log('Minimum liquidation: 30 USDT/USDC');
-console.log('One largest liquidation per completed 5-minute window');
+console.log('LONG liquidations only; no minimum size');
+console.log('One largest LONG liquidation per completed 5-minute UTC window');
+console.log('Link target: NEXT 5-minute Polymarket Up/Down market');
 
 scheduleFlush();
 connect();
