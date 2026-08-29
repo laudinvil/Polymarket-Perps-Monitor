@@ -1,6 +1,8 @@
 name: Polymarket Perps Composite Monitor
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
