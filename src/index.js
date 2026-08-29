@@ -5,7 +5,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const POLYMARKET_EVENT_BY_SLUG = 'https://gamma-api.polymarket.com/events/slug/';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
-const MIN_LIQUIDATION = 40;
+const MIN_LIQUIDATION = 600;
 const WINDOW_MS = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
