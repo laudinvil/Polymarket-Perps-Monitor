@@ -2,12 +2,12 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/ws/!forceOrder@arr';
-const GAMMA_URL = 'https://gamma-api.polymarket.com/events?slug=';
+const GAMMA_URL = 'https://gamma-api.polymarket.com/events?';
 
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
+const QUOTE_ASSETS = new Set(['USDT', 'USDC']);
 const WINDOW_MS = 5 * 60 * 1000;
 
-// One global maximum across all monitored assets for each completed 5-minute UTC window.
 let currentWindowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
 let windowMax = null;
 let flushTimer = null;
@@ -17,17 +17,18 @@ function number(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function formatUsd(value) {
-  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} USDT`;
+function formatUsd(value, quote) {
+  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`;
 }
 
 function formatPrice(value) {
   return value.toLocaleString('en-US', { maximumFractionDigits: 8 });
 }
 
-function assetFromSymbol(symbol) {
-  const match = String(symbol ?? '').match(/^([A-Z]+)USDT$/);
-  return match?.[1] ?? '';
+function parseSymbol(symbol) {
+  const match = String(symbol ?? '').toUpperCase().match(/^([A-Z]+)(USDT|USDC)$/);
+  if (!match || !ASSETS.has(match[1]) || !QUOTE_ASSETS.has(match[2])) return null;
+  return { asset: match[1], quote: match[2] };
 }
 
 function liquidationNotional(order) {
@@ -52,13 +53,18 @@ async function resolveMarketLink(asset, windowEndMs) {
   const fallback = `https://polymarket.com/event/${slug}`;
 
   try {
-    const response = await fetch(`${GAMMA_URL}${encodeURIComponent(slug)}`, {
-      headers: { accept: 'application/json' }
-    });
+    const url = `${GAMMA_URL}series_slug=${encodeURIComponent(`${asset.toLowerCase()}-up-or-down-5m`)}&closed=false&limit=100&order=endDate&ascending=true`;
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
     if (!response.ok) return fallback;
 
     const data = await response.json();
-    const event = Array.isArray(data) ? data[0] : data;
+    const events = Array.isArray(data) ? data : [];
+    const targetStart = windowEndMs;
+    const event = events.find(item => item?.slug === slug) || events.find(item => {
+      const start = Date.parse(item?.eventStartTime || item?.startTime || '');
+      return item?.slug?.startsWith(`${asset.toLowerCase()}-updown-5m-`) && start === targetStart;
+    });
+
     if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
   } catch (error) {
     console.error('Polymarket market lookup failed:', error?.message ?? error);
@@ -76,18 +82,13 @@ async function sendTelegram(text) {
   const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      disable_web_page_preview: false
-    })
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
   });
 
   if (!response.ok) {
     console.error('Telegram error:', await response.text());
     return false;
   }
-
   return true;
 }
 
@@ -110,7 +111,7 @@ async function flushWindow(windowStart, windowEnd, maxLiquidation) {
     '🚨 LARGEST LIQUIDATION — 5M',
     '',
     `${maxLiquidation.asset} — ${sideText(maxLiquidation.side)}`,
-    `💥 Size: ${formatUsd(maxLiquidation.notional)}`,
+    `💥 Size: ${formatUsd(maxLiquidation.notional, maxLiquidation.quote)}`,
     `Price: ${formatPrice(maxLiquidation.price)}`,
     `Qty: ${maxLiquidation.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })}`,
     `Source: Binance USDⓈ-M Futures`,
@@ -128,10 +129,8 @@ async function flushCurrentWindow() {
   const windowStart = currentWindowStart;
   const windowEnd = windowStart + WINDOW_MS;
   const max = windowMax;
-
   currentWindowStart = windowEnd;
   windowMax = null;
-
   await flushWindow(windowStart, windowEnd, max);
 }
 
@@ -153,21 +152,16 @@ function handleLiquidation(event) {
   const order = event?.o;
   if (!order) return;
 
-  const symbol = String(order.s ?? '').toUpperCase();
-  const asset = assetFromSymbol(symbol);
-  if (!ASSETS.has(asset)) return;
+  const parsed = parseSymbol(order.s);
+  if (!parsed) return;
 
   const notional = liquidationNotional(order);
   if (!(notional > 0)) return;
 
   const eventTime = number(event?.E) || Date.now();
   const eventWindowStart = Math.floor(eventTime / WINDOW_MS) * WINDOW_MS;
-
-  // Ignore an event that belongs to a previous window after that window was already flushed.
   if (eventWindowStart < currentWindowStart) return;
 
-  // If a reconnect/delay jumps over one or more windows, flush empty/current windows
-  // without inventing liquidation data for them.
   while (eventWindowStart > currentWindowStart) {
     void flushCurrentWindow().catch(error => console.error('Late window flush error:', error?.message ?? error));
   }
@@ -177,8 +171,9 @@ function handleLiquidation(event) {
   const side = String(order.S ?? '').toUpperCase();
 
   const candidate = {
-    asset,
-    symbol,
+    asset: parsed.asset,
+    quote: parsed.quote,
+    symbol: String(order.s).toUpperCase(),
     notional,
     price,
     quantity,
@@ -186,45 +181,34 @@ function handleLiquidation(event) {
     time: eventTime
   };
 
-  if (!windowMax || candidate.notional > windowMax.notional) {
-    windowMax = candidate;
-  }
+  if (!windowMax || candidate.notional > windowMax.notional) windowMax = candidate;
 }
 
 function connect() {
   console.log('LIQUIDATION MONITOR STARTING');
   console.log('Source: Binance USDⓈ-M Futures forceOrder stream');
   console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
+  console.log('Quotes: USDT USDC');
   console.log('Logic: ONE largest observed liquidation across all 7 assets per completed 5-minute UTC window');
-  console.log('Polymarket Order Book: DISABLED');
-  console.log('Price/OI/Funding/Volume alerts: DISABLED');
+  console.log('Order Book / Price / OI / Funding / Volume alerts: DISABLED');
   console.log('Telegram start alert: DISABLED');
 
   const ws = new WebSocket(BINANCE_WS_URL);
   let reconnectTimer;
 
-  ws.addEventListener('open', () => {
-    console.log('Binance liquidation WebSocket connected');
-  });
+  ws.addEventListener('open', () => console.log('Binance liquidation WebSocket connected'));
 
   ws.addEventListener('message', message => {
     try {
-      const event = JSON.parse(String(message.data));
-      if (event?.e === 'forceOrder' || event?.e === '!forceOrder@arr') {
-        handleLiquidation(event);
-        return;
-      }
-      if (event?.data?.e === 'forceOrder') {
-        handleLiquidation(event.data);
-      }
+      const payload = JSON.parse(String(message.data));
+      if (payload?.e === 'forceOrder' || payload?.e === '!forceOrder@arr') handleLiquidation(payload);
+      else if (payload?.data?.e === 'forceOrder') handleLiquidation(payload.data);
     } catch (error) {
       console.error('Liquidation event parse error:', error?.message ?? error);
     }
   });
 
-  ws.addEventListener('error', error => {
-    console.error('Binance WebSocket error:', error?.message ?? error);
-  });
+  ws.addEventListener('error', error => console.error('Binance WebSocket error:', error?.message ?? error));
 
   ws.addEventListener('close', () => {
     console.error('Binance WebSocket closed; reconnecting in 3s');
