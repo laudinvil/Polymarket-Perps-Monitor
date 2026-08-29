@@ -21,6 +21,7 @@ const instruments = new Map();
 const histories = new Map();
 const cooldowns = new Map();
 const subscribed = new Set();
+const diag = { tickers: 0, trades: 0, candidates: 0, predictionMisses: 0, telegramSent: 0, lastTickerAt: 0 };
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 const firstNum = (...values) => { for (const value of values) { const n = num(value); if (n !== null) return n; } return null; };
@@ -48,32 +49,80 @@ function tradeValues(event) {
   return { tradePrice,size,notional:tradePrice!==null&&size!==null?Math.abs(tradePrice*size):0 };
 }
 function stateFor(id,name='') { if(!histories.has(id)) histories.set(id,{name,points:[],buckets:new Map()}); const s=histories.get(id); if(name)s.name=name; return s; }
-function recordTrade(id,event) { const trade=tradeValues(event); if(!trade.notional)return; const s=stateFor(id,instrumentNameOf(event,id)); const bucket=Math.floor(Date.now()/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS; s.buckets.set(bucket,(s.buckets.get(bucket)??0)+trade.notional); const cutoff=bucket-HISTORY_BUCKETS*VOLUME_BUCKET_MS; for(const key of s.buckets.keys())if(key<cutoff)s.buckets.delete(key); }
-function addTickerPoint(id,event) { const t=tickerValues(event); if(t.price===null)return; const s=stateFor(id,t.symbol||instrumentNameOf(event,id)); s.points.push({ts:t.timestamp,price:t.price,oi:t.openInterest,funding:t.funding}); const cutoff=Date.now()-15*60*1000; s.points=s.points.filter(x=>x.ts>=cutoff); return t; }
-function pointFiveMinutesAgo(points,now) { const target=now-VOLUME_BUCKET_MS; let best=null,distance=Infinity; for(const p of points){const d=Math.abs(p.ts-target); if(d<distance&&p.ts<=now-60000){best=p;distance=d;}} return best; }
-function volumeStats(s,now) { const currentBucket=Math.floor(now/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS; const current=s.buckets.get(currentBucket)??0; const previous=[...s.buckets.entries()].filter(([bucket])=>bucket<currentBucket).sort((a,b)=>b[0]-a[0]).slice(0,Math.max(1,HISTORY_BUCKETS-1)).map(([,value])=>value).filter(v=>v>0); if(previous.length<MIN_BASELINE_BUCKETS)return{current,average:null,multiplier:null,ready:false}; const average=previous.reduce((a,b)=>a+b,0)/previous.length; return{current,average,multiplier:average>0?current/average:null,ready:average>0}; }
+function recordTrade(id,event) {
+  diag.trades++;
+  const trade=tradeValues(event); if(!trade.notional)return;
+  const s=stateFor(id,instrumentNameOf(event,id));
+  const bucket=Math.floor(Date.now()/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS;
+  s.buckets.set(bucket,(s.buckets.get(bucket)??0)+trade.notional);
+  const cutoff=bucket-HISTORY_BUCKETS*VOLUME_BUCKET_MS;
+  for(const key of s.buckets.keys())if(key<cutoff)s.buckets.delete(key);
+}
+function addTickerPoint(id,event) {
+  const t=tickerValues(event); if(t.price===null)return;
+  const s=stateFor(id,t.symbol||instrumentNameOf(event,id));
+  s.points.push({ts:t.timestamp,price:t.price,oi:t.openInterest,funding:t.funding});
+  const cutoff=Date.now()-15*60*1000;
+  s.points=s.points.filter(x=>x.ts>=cutoff);
+  return t;
+}
+function pointFiveMinutesAgo(points,now) {
+  const target=now-VOLUME_BUCKET_MS;
+  let best=null,distance=Infinity;
+  for(const p of points){const d=Math.abs(p.ts-target); if(d<distance&&p.ts<=now-60000){best=p;distance=d;}}
+  return best;
+}
+function volumeStats(s,now) {
+  const currentBucket=Math.floor(now/VOLUME_BUCKET_MS)*VOLUME_BUCKET_MS;
+  const current=s.buckets.get(currentBucket)??0;
+  const previous=[...s.buckets.entries()].filter(([bucket])=>bucket<currentBucket).sort((a,b)=>b[0]-a[0]).slice(0,Math.max(1,HISTORY_BUCKETS-1)).map(([,value])=>value).filter(v=>v>0);
+  if(previous.length<MIN_BASELINE_BUCKETS)return{current,average:null,multiplier:null,ready:false};
+  const average=previous.reduce((a,b)=>a+b,0)/previous.length;
+  return{current,average,multiplier:average>0?current/average:null,ready:average>0};
+}
 function canAlert(key) { const now=Date.now(); if((cooldowns.get(key)??0)>now)return false; cooldowns.set(key,now+SIGNAL_COOLDOWN_MS); return true; }
-async function telegram(message) { if(!ALERTS_ENABLED)return false; if(!TELEGRAM_BOT_TOKEN||!TELEGRAM_CHAT_ID){console.log(message);return false;} const response=await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})}); if(!response.ok)console.error('Telegram error:',await response.text()); return response.ok; }
+async function telegram(message) {
+  if(!ALERTS_ENABLED)return false;
+  if(!TELEGRAM_BOT_TOKEN||!TELEGRAM_CHAT_ID){console.log(message);return false;}
+  const response=await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:message,disable_web_page_preview:true})});
+  if(!response.ok)console.error('Telegram error:',await response.text());
+  if(response.ok)diag.telegramSent++;
+  return response.ok;
+}
 
 async function evaluateSignal(id,event) {
+  diag.tickers++;
+  diag.lastTickerAt=Date.now();
   const t=addTickerPoint(id,event); if(!t)return;
   const s=stateFor(id,t.symbol||instrumentNameOf(event,id));
   const now=Date.now();
   const old=pointFiveMinutesAgo(s.points,now);
+  if(!old||old.price<=0)return;
+
   const volume=volumeStats(s,now);
-  if(!old||old.price<=0||!volume.ready)return;
   const priceChange=(t.price-old.price)/old.price;
   const oiChange=t.openInterest!==null&&old.oi!==null&&old.oi>0?(t.openInterest-old.oi)/old.oi:null;
   const funding=t.funding;
-  const longChecks=[priceChange>=PRICE_MOVE_5M,oiChange!==null&&oiChange>=OI_MOVE_5M,volume.multiplier!==null&&volume.multiplier>=MIN_VOLUME_MULTIPLIER,funding!==null&&funding>=FUNDING_LONG];
-  const shortChecks=[priceChange<=-PRICE_MOVE_5M,oiChange!==null&&oiChange<=-OI_MOVE_5M,volume.multiplier!==null&&volume.multiplier>=MIN_VOLUME_MULTIPLIER,funding!==null&&funding<=FUNDING_SHORT];
+  const volumeCheck=volume.ready&&volume.multiplier!==null&&volume.multiplier>=MIN_VOLUME_MULTIPLIER;
+
+  // Volume is one factor, NOT a prerequisite. Previously !volume.ready returned early,
+  // which made a 2-of-4 signal impossible until a volume baseline existed.
+  const longChecks=[priceChange>=PRICE_MOVE_5M,oiChange!==null&&oiChange>=OI_MOVE_5M,volumeCheck,funding!==null&&funding>=FUNDING_LONG];
+  const shortChecks=[priceChange<=-PRICE_MOVE_5M,oiChange!==null&&oiChange<=-OI_MOVE_5M,volumeCheck,funding!==null&&funding<=FUNDING_SHORT];
   const longScore=longChecks.filter(Boolean).length;
   const shortScore=shortChecks.filter(Boolean).length;
   const direction=longScore>=SIGNAL_SCORE?'LONGS ENTERING':shortScore>=SIGNAL_SCORE?'SHORTS ENTERING':null;
   if(!direction)return;
+
+  diag.candidates++;
   const prediction=await findPredictionMarket(s.name,now);
-  if(REQUIRE_PREDICTION_MARKET&&!prediction){ console.log(`Signal candidate ${s.name}: score=${Math.max(longScore,shortScore)}/4, but next 5m prediction market was not resolved.`); return; }
+  if(REQUIRE_PREDICTION_MARKET&&!prediction){
+    diag.predictionMisses++;
+    console.log(`SIGNAL BLOCKED: instrument=${s.name} id=${id} score=${Math.max(longScore,shortScore)}/4 price=${pct(priceChange)} oi=${oiChange===null?'n/a':pct(oiChange)} funding=${funding===null?'n/a':pct(funding)} volume=${volume.multiplier?.toFixed(2)??'n/a'} next5m=NOT_FOUND`);
+    return;
+  }
   if(!canAlert(`${id}:${direction}`))return;
+
   const arrow=direction==='LONGS ENTERING'?'🟢':'🔴';
   const predictionPrice=predictionDirectionPrice(prediction,direction);
   await telegram([
@@ -90,19 +139,29 @@ async function evaluateSignal(id,event) {
   ].filter(Boolean).join('\n'));
 }
 
-async function subscribeTrades(id) { if(subscribed.has(id))return; subscribed.add(id); try{const handle=await client.subscribe([{topic:'perps.trades',instrumentId:id}]); for await(const event of handle)recordTrade(id,event);}catch(error){console.error(`Perps trades ${id} stream stopped:`,error);subscribed.delete(id);} }
+async function subscribeTrades(id) {
+  if(subscribed.has(id))return;
+  subscribed.add(id);
+  try{const handle=await client.subscribe([{topic:'perps.trades',instrumentId:id}]); for await(const event of handle)recordTrade(id,event);}
+  catch(error){console.error(`Perps trades ${id} stream stopped:`,error);subscribed.delete(id);}
+}
 
 async function main() {
   console.log('Starting Polymarket Perps Composite Signal Monitor...');
-  console.log('BBO / Order Book alerts are disabled.');
   console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=±${pct(OI_MOVE_5M)}/5m, funding=+${pct(FUNDING_LONG)}/${pct(FUNDING_SHORT)}, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/4`);
   console.log(`Prediction market required: ${REQUIRE_PREDICTION_MARKET}`);
+
+  setInterval(()=>{
+    const age=diag.lastTickerAt?Math.round((Date.now()-diag.lastTickerAt)/1000):null;
+    console.log(`DIAG tickers=${diag.tickers} trades=${diag.trades} instruments=${instruments.size} candidates=${diag.candidates} predictionMisses=${diag.predictionMisses} telegramSent=${diag.telegramSent} lastTickerAgeSec=${age??'none'}`);
+  },60000).unref();
+
   const tickerHandle=await client.subscribe([{topic:'perps.tickers'}]);
   for await(const event of tickerHandle){
     const id=instrumentIdOf(event);
     if(id===null)continue;
     const symbol=instrumentNameOf(event,id);
-    if(!instruments.has(id)){instruments.set(id,symbol);void subscribeTrades(id);}
+    if(!instruments.has(id)){instruments.set(id,symbol);console.log(`Instrument discovered: id=${id} name=${symbol}`);void subscribeTrades(id);}
     await evaluateSignal(id,event);
   }
 }
