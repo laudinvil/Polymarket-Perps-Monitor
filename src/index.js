@@ -3,19 +3,26 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/ws/!forceOrder@arr';
 const GAMMA_URL = 'https://gamma-api.polymarket.com/events?slug=';
-const ALERT_COOLDOWN_MS = Number(process.env.ALERT_COOLDOWN_MS ?? 0);
 
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
-const lastAlertAt = new Map();
+const WINDOW_MS = 5 * 60 * 1000;
+
+// One global maximum across all monitored assets for each completed 5-minute UTC window.
+let currentWindowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
+let windowMax = null;
+let flushTimer = null;
 
 function number(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
 
-function formatUsd(value, asset = '') {
-  const digits = value >= 100000 ? 0 : value >= 1000 ? 0 : 2;
-  return `$${value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}${asset ? ` ${asset}` : ''}`;
+function formatUsd(value) {
+  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} USDT`;
+}
+
+function formatPrice(value) {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 8 });
 }
 
 function assetFromSymbol(symbol) {
@@ -24,23 +31,29 @@ function assetFromSymbol(symbol) {
 }
 
 function liquidationNotional(order) {
-  const avgPrice = number(order?.ap) || number(order?.p);
+  const price = number(order?.ap) || number(order?.p);
   const quantity = number(order?.q);
-  return Math.abs(avgPrice * quantity);
+  return Math.abs(price * quantity);
 }
 
-function nextFiveMinuteSlug(asset, timestampMs) {
-  const nextStart = (Math.floor(timestampMs / 300000) + 1) * 300;
+function sideText(side) {
+  if (side === 'SELL') return 'LONG LIQUIDATION';
+  if (side === 'BUY') return 'SHORT LIQUIDATION';
+  return 'LIQUIDATION';
+}
+
+function nextFiveMinuteSlug(asset, windowEndMs) {
+  const nextStart = Math.floor(windowEndMs / WINDOW_MS) * 300;
   return `${asset.toLowerCase()}-updown-5m-${nextStart}`;
 }
 
-async function resolveMarketLink(asset, timestampMs) {
-  const slug = nextFiveMinuteSlug(asset, timestampMs);
+async function resolveMarketLink(asset, windowEndMs) {
+  const slug = nextFiveMinuteSlug(asset, windowEndMs);
   const fallback = `https://polymarket.com/event/${slug}`;
 
   try {
     const response = await fetch(`${GAMMA_URL}${encodeURIComponent(slug)}`, {
-      headers: { 'accept': 'application/json' }
+      headers: { accept: 'application/json' }
     });
     if (!response.ok) return fallback;
 
@@ -52,12 +65,6 @@ async function resolveMarketLink(asset, timestampMs) {
   }
 
   return fallback;
-}
-
-function sideText(side) {
-  if (side === 'SELL') return 'LONG LIQUIDATION';
-  if (side === 'BUY') return 'SHORT LIQUIDATION';
-  return 'LIQUIDATION';
 }
 
 async function sendTelegram(text) {
@@ -80,10 +87,69 @@ async function sendTelegram(text) {
     console.error('Telegram error:', await response.text());
     return false;
   }
+
   return true;
 }
 
-async function handleLiquidation(event) {
+function windowLabel(startMs, endMs) {
+  const start = new Date(startMs).toISOString().slice(11, 16);
+  const end = new Date(endMs).toISOString().slice(11, 16);
+  return `${start}–${end} UTC`;
+}
+
+async function flushWindow(windowStart, windowEnd, maxLiquidation) {
+  if (!maxLiquidation) {
+    console.log(`5m window ${windowLabel(windowStart, windowEnd)}: no liquidations`);
+    return;
+  }
+
+  const marketLink = await resolveMarketLink(maxLiquidation.asset, windowEnd);
+  const liquidationTime = new Date(maxLiquidation.time).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+
+  const message = [
+    '🚨 LARGEST LIQUIDATION — 5M',
+    '',
+    `${maxLiquidation.asset} — ${sideText(maxLiquidation.side)}`,
+    `💥 Size: ${formatUsd(maxLiquidation.notional)}`,
+    `Price: ${formatPrice(maxLiquidation.price)}`,
+    `Qty: ${maxLiquidation.quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })}`,
+    `Source: Binance USDⓈ-M Futures`,
+    `Liquidation time: ${liquidationTime}`,
+    `Window: ${windowLabel(windowStart, windowEnd)}`,
+    '',
+    `▶️ Next 5m ${maxLiquidation.asset} Up/Down:`,
+    marketLink
+  ].join('\n');
+
+  await sendTelegram(message);
+}
+
+async function flushCurrentWindow() {
+  const windowStart = currentWindowStart;
+  const windowEnd = windowStart + WINDOW_MS;
+  const max = windowMax;
+
+  currentWindowStart = windowEnd;
+  windowMax = null;
+
+  await flushWindow(windowStart, windowEnd, max);
+}
+
+function scheduleWindowFlush() {
+  clearTimeout(flushTimer);
+  const delay = Math.max(100, currentWindowStart + WINDOW_MS - Date.now() + 100);
+  flushTimer = setTimeout(async () => {
+    try {
+      await flushCurrentWindow();
+    } catch (error) {
+      console.error('5m window flush error:', error?.message ?? error);
+    } finally {
+      scheduleWindowFlush();
+    }
+  }, delay);
+}
+
+function handleLiquidation(event) {
   const order = event?.o;
   if (!order) return;
 
@@ -95,37 +161,33 @@ async function handleLiquidation(event) {
   if (!(notional > 0)) return;
 
   const eventTime = number(event?.E) || Date.now();
-  const cooldownKey = asset;
-  const now = Date.now();
-  if (ALERT_COOLDOWN_MS > 0 && (lastAlertAt.get(cooldownKey) ?? 0) + ALERT_COOLDOWN_MS > now) {
-    return;
+  const eventWindowStart = Math.floor(eventTime / WINDOW_MS) * WINDOW_MS;
+
+  // Ignore an event that belongs to a previous window after that window was already flushed.
+  if (eventWindowStart < currentWindowStart) return;
+
+  // If a reconnect/delay jumps over one or more windows, flush empty/current windows
+  // without inventing liquidation data for them.
+  while (eventWindowStart > currentWindowStart) {
+    void flushCurrentWindow().catch(error => console.error('Late window flush error:', error?.message ?? error));
   }
 
-  // Binance's public forceOrder stream reports the largest liquidation order
-  // seen for each symbol within a 1000 ms window. We forward that event as-is.
-  const marketLink = await resolveMarketLink(asset, eventTime);
-  const side = String(order.S ?? '').toUpperCase();
-  const liquidationTime = new Date(eventTime).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
   const price = number(order.ap) || number(order.p);
   const quantity = number(order.q);
+  const side = String(order.S ?? '').toUpperCase();
 
-  const message = [
-    '🚨 LIQUIDATION',
-    '',
-    `${asset} — ${sideText(side)}`,
-    `💥 Size: ${formatUsd(notional, 'USDT')}`,
-    `Price: ${price.toLocaleString('en-US', { maximumFractionDigits: 8 })}`,
-    `Qty: ${quantity.toLocaleString('en-US', { maximumFractionDigits: 8 })}`,
-    'Source: Binance Futures',
-    `Time: ${liquidationTime}`,
-    '',
-    `▶️ Next 5m ${asset} Up/Down:`,
-    marketLink
-  ].join('\n');
+  const candidate = {
+    asset,
+    symbol,
+    notional,
+    price,
+    quantity,
+    side,
+    time: eventTime
+  };
 
-  const sent = await sendTelegram(message);
-  if (sent || !TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    lastAlertAt.set(cooldownKey, now);
+  if (!windowMax || candidate.notional > windowMax.notional) {
+    windowMax = candidate;
   }
 }
 
@@ -133,8 +195,9 @@ function connect() {
   console.log('LIQUIDATION MONITOR STARTING');
   console.log('Source: Binance USDⓈ-M Futures forceOrder stream');
   console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
-  console.log('Old alerts: DISABLED');
+  console.log('Logic: ONE largest observed liquidation across all 7 assets per completed 5-minute UTC window');
   console.log('Polymarket Order Book: DISABLED');
+  console.log('Price/OI/Funding/Volume alerts: DISABLED');
   console.log('Telegram start alert: DISABLED');
 
   const ws = new WebSocket(BINANCE_WS_URL);
@@ -144,26 +207,22 @@ function connect() {
     console.log('Binance liquidation WebSocket connected');
   });
 
-  ws.addEventListener('message', async (message) => {
+  ws.addEventListener('message', message => {
     try {
       const event = JSON.parse(String(message.data));
-      if (event?.e === 'forceOrder') {
-        await handleLiquidation(event);
-        return;
-      }
-      if (event?.e === '!forceOrder@arr' && event?.o) {
-        await handleLiquidation(event);
+      if (event?.e === 'forceOrder' || event?.e === '!forceOrder@arr') {
+        handleLiquidation(event);
         return;
       }
       if (event?.data?.e === 'forceOrder') {
-        await handleLiquidation(event.data);
+        handleLiquidation(event.data);
       }
     } catch (error) {
-      console.error('Liquidation event parse/handle error:', error?.message ?? error);
+      console.error('Liquidation event parse error:', error?.message ?? error);
     }
   });
 
-  ws.addEventListener('error', (error) => {
+  ws.addEventListener('error', error => {
     console.error('Binance WebSocket error:', error?.message ?? error);
   });
 
@@ -174,4 +233,5 @@ function connect() {
   });
 }
 
+scheduleWindowFlush();
 connect();
