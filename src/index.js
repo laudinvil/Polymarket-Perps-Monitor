@@ -49,6 +49,17 @@ function instrumentNameOf(event, id) {
   return String(p?.symbol ?? p?.ticker ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? p?.market ?? id);
 }
 
+function assetSlugOf(event, id, fallbackName = '') {
+  const p = event?.payload ?? event?.data ?? event;
+  const raw = String(p?.symbol ?? p?.ticker ?? p?.asset ?? p?.underlying ?? p?.instrument ?? p?.instrumentName ?? p?.instrument_name ?? fallbackName ?? '').trim();
+  const cleaned = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').replace(/_usd$/, '').replace(/-usd$/, '').replace(/usd$/, '');
+  return cleaned || `instrument-${id}`;
+}
+
+function marketLink(state) {
+  return `https://polymarket.com/perps/asset/${encodeURIComponent(state.asset)}`;
+}
+
 function sideOf(level) {
   const side = String(level?.side ?? '').toUpperCase();
   if (side === 'BID' || side === 'BUY' || side === 'B') return 'BID';
@@ -98,10 +109,14 @@ function mergeLevels(previous, incoming) {
   };
 }
 
-function stateFor(id, name = String(id)) {
+function stateFor(id, name = String(id), event = null) {
   let state = states.get(id);
-  if (!state) { state = { bids: [], asks: [], bestBid: 0, bestAsk: 0, name }; states.set(id, state); }
+  if (!state) {
+    state = { bids: [], asks: [], bestBid: 0, bestAsk: 0, name, asset: assetSlugOf(event, id, name) };
+    states.set(id, state);
+  }
   if (name && name !== String(id)) state.name = name;
+  if (event) state.asset = assetSlugOf(event, id, state.name);
   return state;
 }
 
@@ -123,12 +138,12 @@ async function handleBbo(id, event) {
   const bid = num(p?.bestBid ?? p?.best_bid ?? p?.bid);
   const ask = num(p?.bestAsk ?? p?.best_ask ?? p?.ask);
   if (!(bid > 0 && ask > 0)) return;
-  const state = stateFor(id, instrumentNameOf(event, id));
+  const state = stateFor(id, instrumentNameOf(event, id), event);
   const previousSpread = state.bestBid > 0 && state.bestAsk > 0 ? state.bestAsk - state.bestBid : 0;
   const spread = ask - bid;
   state.bestBid = bid; state.bestAsk = ask;
   if (previousSpread > 0 && spread >= previousSpread * SPREAD_MULTIPLIER && canAlert(key(id, 'spread'))) {
-    await telegram(`🚨 PERPS BBO\n\n${state.name}\nBid: ${bid}\nAsk: ${ask}\nSpread: ${spread.toFixed(6)}\nPrevious: ${previousSpread.toFixed(6)}\n\n⚠️ Spread expanded ×${(spread / previousSpread).toFixed(1)}`);
+    await telegram(`🚨 PERPS BBO\n\n${state.name}\nBid: ${bid}\nAsk: ${ask}\nSpread: ${spread.toFixed(6)}\nPrevious: ${previousSpread.toFixed(6)}\n\n⚠️ Spread expanded ×${(spread / previousSpread).toFixed(1)}\n\n🔗 ${marketLink(state)}`);
   }
 }
 
@@ -137,7 +152,7 @@ async function handleBook(id, event) {
   const incoming = normalizeBook(event);
   if (!incoming.bids.length && !incoming.asks.length) return;
   diagnostics.normalizedBooks++;
-  const state = stateFor(id, instrumentNameOf(event, id));
+  const state = stateFor(id, instrumentNameOf(event, id), event);
   const previous = stats(state.bids, state.asks);
   const previousKeys = new Set([...state.bids.map(x => `BID:${x.price}`), ...state.asks.map(x => `ASK:${x.price}`)]);
   const merged = mergeLevels(state, incoming);
@@ -147,23 +162,23 @@ async function handleBook(id, event) {
 
   if (Math.abs(current.imbalance) >= IMBALANCE_THRESHOLD && canAlert(key(id, current.imbalance > 0 ? 'bid-imbalance' : 'ask-imbalance'))) {
     const side = current.imbalance > 0 ? '🟢 BID dominance' : '🔴 ASK dominance';
-    await telegram(`🚨 PERPS ORDER BOOK\n\n${state.name}\nBid liquidity: $${current.bidUsd.toFixed(0)}\nAsk liquidity: $${current.askUsd.toFixed(0)}\nImbalance: ${pct(current.imbalance)}\n\n${side}`);
+    await telegram(`🚨 PERPS ORDER BOOK\n\n${state.name}\nBid liquidity: $${current.bidUsd.toFixed(0)}\nAsk liquidity: $${current.askUsd.toFixed(0)}\nImbalance: ${pct(current.imbalance)}\n\n${side}\n\n🔗 ${marketLink(state)}`);
   }
 
   const bidPull = previous.bidUsd > 0 ? (previous.bidUsd - current.bidUsd) / previous.bidUsd : 0;
   const askPull = previous.askUsd > 0 ? (previous.askUsd - current.askUsd) / previous.askUsd : 0;
   if (bidPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'bid-pull'))) {
-    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: BID\nLiquidity: $${previous.bidUsd.toFixed(0)} → $${current.bidUsd.toFixed(0)}\nRemoved: ${pct(bidPull)}`);
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: BID\nLiquidity: $${previous.bidUsd.toFixed(0)} → $${current.bidUsd.toFixed(0)}\nRemoved: ${pct(bidPull)}\n\n🔗 ${marketLink(state)}`);
   }
   if (askPull >= LIQUIDITY_PULL_THRESHOLD && canAlert(key(id, 'ask-pull'))) {
-    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: ASK\nLiquidity: $${previous.askUsd.toFixed(0)} → $${current.askUsd.toFixed(0)}\nRemoved: ${pct(askPull)}`);
+    await telegram(`⚠️ LIQUIDITY PULL\n\n${state.name}\nSide: ASK\nLiquidity: $${previous.askUsd.toFixed(0)} → $${current.askUsd.toFixed(0)}\nRemoved: ${pct(askPull)}\n\n🔗 ${marketLink(state)}`);
   }
 
   for (const x of [...current.bids.map(x => ({ ...x, side: 'BID' })), ...current.asks.map(x => ({ ...x, side: 'ASK' }))]) {
     const notional = x.price * x.size;
     const levelKey = `${x.side}:${x.price}`;
     if (notional >= LARGE_ORDER_USD && !previousKeys.has(levelKey) && canAlert(key(id, `large-${levelKey}`))) {
-      await telegram(`🐋 LARGE ORDER\n\n${state.name}\nSide: ${x.side}\nPrice: ${x.price}\nSize: ${x.size}\nNotional: $${notional.toFixed(0)}`);
+      await telegram(`🐋 LARGE ORDER\n\n${state.name}\nSide: ${x.side}\nPrice: ${x.price}\nSize: ${x.size}\nNotional: $${notional.toFixed(0)}\n\n🔗 ${marketLink(state)}`);
     }
   }
 }
