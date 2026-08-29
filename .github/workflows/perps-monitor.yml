@@ -1,42 +1,10 @@
-name: Polymarket Perps Composite Monitor
+name: Polymarket Perps Monitor (DISABLED)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'
-
-concurrency:
-  group: perps-monitor-${{ github.run_id }}
-  cancel-in-progress: false
 
 jobs:
-  monitor:
+  disabled:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-    permissions:
-      contents: read
-    env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      ALERTS_ENABLED: 'true'
-      REQUIRE_PREDICTION_MARKET: 'true'
-      SIGNAL_COOLDOWN_MS: '60000'
-      IMBALANCE_THRESHOLD: '0.25'
-      LARGE_ORDER_USD: '25000'
-      LIQUIDITY_PULL_THRESHOLD: '0.25'
-      SPREAD_MULTIPLIER: '2'
-      ORDER_BOOK_LEVELS: '10'
-      ALERT_ON_START: 'false'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Run composite monitor
-        run: node src/index.js
+      - run: echo "Perps monitor disabled. No Telegram alerts are sent."
