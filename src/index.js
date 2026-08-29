@@ -35,7 +35,6 @@ const firstNum = (...values) => {
 
 const text = (v) => v == null ? '' : String(v);
 const pct = (v) => `${(v * 100).toFixed(2)}%`;
-const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 
 function instrumentIdOf(event) {
   const p = event?.payload ?? event?.data ?? event;
@@ -66,9 +65,7 @@ function tradeValues(event) {
 }
 
 function stateFor(id, name = '') {
-  if (!histories.has(id)) {
-    histories.set(id, { name, points: [], buckets: new Map(), lastSignal: 0 });
-  }
+  if (!histories.has(id)) histories.set(id, { name, points: [], buckets: new Map() });
   const s = histories.get(id);
   if (name) s.name = name;
   return s;
@@ -176,7 +173,7 @@ async function evaluateSignal(id, event) {
   if (!direction || !canAlert(`${id}:${direction}`)) return;
 
   const arrow = direction === 'LONGS ENTERING' ? '🟢' : '🔴';
-  const lines = [
+  await telegram([
     `${arrow} PERPS SIGNAL`,
     '',
     s.name || String(id),
@@ -188,44 +185,26 @@ async function evaluateSignal(id, event) {
     '',
     `Signal: ${direction}`,
     `Score: ${Math.max(longScore, shortScore)}/4`
-  ];
-  await telegram(lines.join('\n'));
+  ].join('\n'));
 }
 
-async function subscribeInstrument(id) {
+async function subscribeTrades(id) {
   if (subscribed.has(id)) return;
   subscribed.add(id);
   try {
-    const handle = await client.subscribe([
-      { topic: 'perps.tickers', instrumentId: id },
-      { topic: 'perps.trades', instrumentId: id }
-    ]);
-    for await (const event of handle) await handleEvent(event);
+    const handle = await client.subscribe([{ topic: 'perps.trades', instrumentId: id }]);
+    for await (const event of handle) recordTrade(id, event);
   } catch (error) {
-    console.error(`Perps ${id} stream stopped:`, error);
+    console.error(`Perps trades ${id} stream stopped:`, error);
     subscribed.delete(id);
-  }
-}
-
-async function handleEvent(event) {
-  const topic = event?.topic ?? event?.type;
-  const id = instrumentIdOf(event);
-  if (id === null) return;
-  if (topic === 'perps.trades') {
-    recordTrade(id, event);
-    return;
-  }
-  if (topic === 'perps.tickers') {
-    await evaluateSignal(id, event);
   }
 }
 
 async function main() {
   console.log('Starting Polymarket Perps Composite Signal Monitor...');
-  console.log('Old BBO / Order Book alerts are disabled.');
+  console.log('BBO / Order Book alerts are disabled.');
   console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=${pct(OI_MOVE_5M)}/5m, funding long>=${pct(FUNDING_LONG)}, short<=${pct(FUNDING_SHORT)}, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/4`);
 
-  // Discover instruments through the public ticker stream. No credentials required.
   const tickerHandle = await client.subscribe([{ topic: 'perps.tickers' }]);
   for await (const event of tickerHandle) {
     const id = instrumentIdOf(event);
@@ -233,10 +212,9 @@ async function main() {
     const symbol = instrumentNameOf(event, id);
     if (!instruments.has(id)) {
       instruments.set(id, symbol);
-      // The ticker stream is already sufficient for price/OI/funding; trades are subscribed once per instrument.
-      void subscribeInstrument(id);
+      void subscribeTrades(id);
     }
-    await handleEvent(event);
+    await evaluateSignal(id, event);
   }
 }
 
