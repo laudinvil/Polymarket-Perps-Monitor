@@ -20,14 +20,14 @@ jobs:
       ALERTS_ENABLED: 'true'
       REQUIRE_PREDICTION_MARKET: 'true'
       SIGNAL_COOLDOWN_MS: '300000'
-      PRICE_MOVE_5M: '0.003'
-      OI_MOVE_5M: '0.03'
-      FUNDING_LONG: '0.0002'
-      FUNDING_SHORT: '-0.0002'
-      MIN_VOLUME_MULTIPLIER: '2'
+      PRICE_MOVE_5M: '0.002'
+      OI_MOVE_5M: '0.015'
+      FUNDING_LONG: '0.0001'
+      FUNDING_SHORT: '-0.0001'
+      MIN_VOLUME_MULTIPLIER: '1.5'
       HISTORY_BUCKETS: '12'
       MIN_BASELINE_BUCKETS: '3'
-      SIGNAL_SCORE: '3'
+      SIGNAL_SCORE: '2'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
