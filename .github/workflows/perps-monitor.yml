@@ -2,6 +2,9 @@ name: Polymarket Perps Composite Monitor
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 # Starting the new composite monitor cancels any older monitor run in this group.
 concurrency:
