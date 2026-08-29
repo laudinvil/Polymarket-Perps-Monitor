@@ -37,6 +37,12 @@ const text = (v) => v == null ? '' : String(v);
 const pct = (v) => `${(v * 100).toFixed(2)}%`;
 const price = (v) => v == null ? 'n/a' : `${(v * 100).toFixed(1)}¢`;
 
+function normalizeTimestamp(value) {
+  const n = num(value);
+  if (n === null) return Date.now();
+  return n < 1e12 ? n * 1000 : n;
+}
+
 function instrumentIdOf(event) {
   const p = event?.payload ?? event?.data ?? event;
   return firstNum(event?.instrumentId, event?.instrument_id, p?.instrumentId, p?.instrument_id);
@@ -54,7 +60,7 @@ function tickerValues(event) {
     price: firstNum(p?.markPrice, p?.mark_price, p?.midPrice, p?.mid_price, p?.lastPrice, p?.last_price, p?.price, p?.mark, p?.last),
     openInterest: firstNum(p?.openInterest, p?.open_interest, p?.oi),
     funding: firstNum(p?.fundingRate, p?.funding_rate, p?.funding, p?.currentFundingRate),
-    timestamp: firstNum(p?.timestamp, p?.ts, p?.time, Date.now())
+    timestamp: normalizeTimestamp(firstNum(p?.timestamp, p?.ts, p?.time, Date.now()))
   };
 }
 
@@ -86,7 +92,7 @@ function addTickerPoint(id, event) {
   const t = tickerValues(event);
   if (t.price === null) return;
   const s = stateFor(id, t.symbol || instrumentNameOf(event, id));
-  s.points.push({ ts: t.timestamp ?? Date.now(), price: t.price, oi: t.openInterest, funding: t.funding });
+  s.points.push({ ts: t.timestamp, price: t.price, oi: t.openInterest, funding: t.funding });
   const cutoff = Date.now() - 15 * 60 * 1000;
   s.points = s.points.filter(x => x.ts >= cutoff);
   return t;
