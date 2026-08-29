@@ -1,10 +1,8 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Binance changed public market streams to /market in 2026.
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const GAMMA_MARKET_URL = 'https://gamma-api.polymarket.com/markets/slug/';
-
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const WINDOW_MS = 5 * 60 * 1000;
@@ -66,7 +64,6 @@ async function findNextMarket(asset, windowEnd) {
     const response = await fetch(`${GAMMA_MARKET_URL}${encodeURIComponent(slug)}`, {
       headers: { accept: 'application/json' }
     });
-
     if (response.ok) {
       const market = await response.json();
       if (market?.slug && market?.active && !market?.closed) {
@@ -91,13 +88,8 @@ async function sendTelegram(text) {
     const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        disable_web_page_preview: false
-      })
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
     });
-
     if (!response.ok) console.error('Telegram error:', await response.text());
   } catch (error) {
     console.error('Telegram request error:', error?.message ?? error);
@@ -111,8 +103,6 @@ async function flushWindow(start, end, item) {
   }
 
   const marketLink = await findNextMarket(item.asset, end);
-  const time = new Date(item.time).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
-
   const message = [
     '🚨 LARGEST LIQUIDATION — 5M',
     '',
@@ -120,8 +110,6 @@ async function flushWindow(start, end, item) {
     `💥 Size: ${formatMoney(item.notional, item.quote)}`,
     `Price: ${formatNumber(item.price)}`,
     `Qty: ${formatNumber(item.quantity)}`,
-    `Source: Binance USDⓈ-M Futures`,
-    `Liquidation: ${time}`,
     `Window: ${windowText(start, end)}`,
     '',
     `▶️ NEXT 5M ${item.asset} UP/DOWN`,
@@ -155,7 +143,6 @@ function requestAdvance(now) {
 function scheduleFlush() {
   clearTimeout(flushTimer);
   const delay = Math.max(100, windowStart + WINDOW_MS - Date.now() + 50);
-
   flushTimer = setTimeout(async () => {
     await requestAdvance(Date.now());
     if (!stopping) scheduleFlush();
@@ -177,14 +164,12 @@ async function handleForceOrder(payload) {
   const time = num(payload.E) || num(order.T) || Date.now();
   const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
 
-  // Close any completed windows first, then evaluate this event in its own window.
   if (eventWindow > windowStart) await requestAdvance(time);
   if (eventWindow < windowStart || eventWindow >= windowStart + WINDOW_MS) return;
 
   const candidate = {
     asset: parsed.asset,
     quote: parsed.quote,
-    symbol: String(order.s).toUpperCase(),
     side: String(order.S ?? '').toUpperCase(),
     price,
     quantity,
@@ -204,9 +189,7 @@ function connect() {
   console.log('Connecting to Binance liquidation stream...');
   websocket = new WebSocket(BINANCE_WS_URL);
 
-  websocket.addEventListener('open', () => {
-    console.log('Binance liquidation WebSocket connected');
-  });
+  websocket.addEventListener('open', () => console.log('Binance liquidation WebSocket connected'));
 
   websocket.addEventListener('message', event => {
     try {
@@ -218,9 +201,7 @@ function connect() {
     }
   });
 
-  websocket.addEventListener('error', error => {
-    console.error('Binance WebSocket error:', error?.message ?? error);
-  });
+  websocket.addEventListener('error', error => console.error('Binance WebSocket error:', error?.message ?? error));
 
   websocket.addEventListener('close', () => {
     if (stopping) return;
@@ -244,10 +225,8 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
 console.log('Quotes: USDT + USDC');
-console.log('Source: Binance USDⓈ-M Futures !forceOrder@arr');
 console.log('Logic: largest observed liquidation across all 7 assets per completed 5-minute UTC window');
 console.log('Telegram: enabled when TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are present');
-console.log('Old Order Book / Price / OI / Funding / Volume logic: removed');
 
 scheduleFlush();
 connect();
