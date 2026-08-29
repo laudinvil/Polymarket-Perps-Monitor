@@ -1,7 +1,8 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-const BINANCE_WS_URL = 'wss://fstream.binance.com/ws/!forceOrder@arr';
+// Binance changed public market streams to /market in 2026.
+const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const GAMMA_MARKET_URL = 'https://gamma-api.polymarket.com/markets/slug/';
 
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
@@ -15,6 +16,7 @@ let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
 let stopping = false;
+let advancing = Promise.resolve();
 
 function num(value) {
   const n = Number(value);
@@ -53,8 +55,7 @@ function windowText(start, end) {
 }
 
 function nextMarketSlug(asset, windowEnd) {
-  const ts = Math.floor(windowEnd / 1000);
-  return `${asset.toLowerCase()}-updown-5m-${ts}`;
+  return `${asset.toLowerCase()}-updown-5m-${Math.floor(windowEnd / 1000)}`;
 }
 
 async function findNextMarket(asset, windowEnd) {
@@ -97,18 +98,13 @@ async function sendTelegram(text) {
       })
     });
 
-    if (!response.ok) {
-      console.error('Telegram error:', await response.text());
-    }
+    if (!response.ok) console.error('Telegram error:', await response.text());
   } catch (error) {
     console.error('Telegram request error:', error?.message ?? error);
   }
 }
 
-async function flushWindow(start, end) {
-  const item = largest;
-  largest = null;
-
+async function flushWindow(start, end, item) {
   if (!item) {
     console.log(`5m window ${windowText(start, end)}: no liquidation observed`);
     return;
@@ -142,9 +138,18 @@ async function advanceWindows(now) {
   while (windowStart < targetStart) {
     const start = windowStart;
     const end = start + WINDOW_MS;
+    const item = largest;
+    largest = null;
     windowStart = end;
-    await flushWindow(start, end);
+    await flushWindow(start, end, item);
   }
+}
+
+function requestAdvance(now) {
+  advancing = advancing
+    .then(() => advanceWindows(now))
+    .catch(error => console.error('Window advance error:', error?.message ?? error));
+  return advancing;
 }
 
 function scheduleFlush() {
@@ -152,17 +157,12 @@ function scheduleFlush() {
   const delay = Math.max(100, windowStart + WINDOW_MS - Date.now() + 50);
 
   flushTimer = setTimeout(async () => {
-    try {
-      await advanceWindows(Date.now());
-    } catch (error) {
-      console.error('Window flush error:', error?.message ?? error);
-    } finally {
-      scheduleFlush();
-    }
+    await requestAdvance(Date.now());
+    if (!stopping) scheduleFlush();
   }, delay);
 }
 
-function handleForceOrder(payload) {
+async function handleForceOrder(payload) {
   const order = payload?.o;
   if (!order) return;
 
@@ -174,14 +174,12 @@ function handleForceOrder(payload) {
   const notional = Math.abs(price * quantity);
   if (!(price > 0) || !(quantity > 0) || !(notional > 0)) return;
 
-  const time = num(payload.E) || Date.now();
+  const time = num(payload.E) || num(order.T) || Date.now();
   const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
 
-  if (eventWindow < windowStart) return;
-  if (eventWindow > windowStart) {
-    void advanceWindows(time).catch(error => console.error('Late window advance error:', error?.message ?? error));
-    return;
-  }
+  // Close any completed windows first, then evaluate this event in its own window.
+  if (eventWindow > windowStart) await requestAdvance(time);
+  if (eventWindow < windowStart || eventWindow >= windowStart + WINDOW_MS) return;
 
   const candidate = {
     asset: parsed.asset,
@@ -213,8 +211,8 @@ function connect() {
   websocket.addEventListener('message', event => {
     try {
       const payload = JSON.parse(String(event.data));
-      if (payload?.e === 'forceOrder') handleForceOrder(payload);
-      else if (payload?.data?.e === 'forceOrder') handleForceOrder(payload.data);
+      if (payload?.e === 'forceOrder') void handleForceOrder(payload);
+      else if (payload?.data?.e === 'forceOrder') void handleForceOrder(payload.data);
     } catch (error) {
       console.error('Liquidation message parse error:', error?.message ?? error);
     }
@@ -236,9 +234,7 @@ function shutdown(signal) {
   stopping = true;
   clearTimeout(flushTimer);
   clearTimeout(reconnectTimer);
-  try {
-    websocket?.close();
-  } catch {}
+  try { websocket?.close(); } catch {}
   console.log(`Shutdown: ${signal}`);
 }
 
