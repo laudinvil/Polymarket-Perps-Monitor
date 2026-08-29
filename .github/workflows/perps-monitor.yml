@@ -1,4 +1,4 @@
-name: Perps Liquidation Monitor
+name: Polymarket Liquidation Monitor
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     - cron: '0 */6 * * *'
 
 concurrency:
-  group: perps-liquidations-${{ github.run_id }}
+  group: polymarket-liquidation-monitor
   cancel-in-progress: false
 
 jobs:
@@ -16,7 +16,6 @@ jobs:
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      ALERT_COOLDOWN_MS: '0'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -25,10 +24,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Run liquidation monitor
-        run: node src/index.js
+        run: npm start
