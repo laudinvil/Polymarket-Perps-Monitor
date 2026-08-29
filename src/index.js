@@ -1,8 +1,10 @@
 import { createPublicClient } from '@polymarket/client';
+import { findPredictionMarket, predictionDirectionPrice } from './prediction.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ALERTS_ENABLED = process.env.ALERTS_ENABLED !== 'false';
+const REQUIRE_PREDICTION_MARKET = process.env.REQUIRE_PREDICTION_MARKET !== 'false';
 const SIGNAL_COOLDOWN_MS = Number(process.env.SIGNAL_COOLDOWN_MS ?? 300000);
 const PRICE_MOVE_5M = Number(process.env.PRICE_MOVE_5M ?? 0.015);
 const OI_MOVE_5M = Number(process.env.OI_MOVE_5M ?? 0.05);
@@ -24,7 +26,6 @@ const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
-
 const firstNum = (...values) => {
   for (const value of values) {
     const n = num(value);
@@ -32,9 +33,9 @@ const firstNum = (...values) => {
   }
   return null;
 };
-
 const text = (v) => v == null ? '' : String(v);
 const pct = (v) => `${(v * 100).toFixed(2)}%`;
+const price = (v) => v == null ? 'n/a' : `${(v * 100).toFixed(1)}¢`;
 
 function instrumentIdOf(event) {
   const p = event?.payload ?? event?.data ?? event;
@@ -59,9 +60,9 @@ function tickerValues(event) {
 
 function tradeValues(event) {
   const p = event?.payload ?? event?.data ?? event;
-  const price = firstNum(p?.price, p?.tradePrice, p?.trade_price);
+  const tradePrice = firstNum(p?.price, p?.tradePrice, p?.trade_price);
   const size = firstNum(p?.size, p?.quantity, p?.qty, p?.baseQuantity, p?.base_quantity);
-  return { price, size, notional: price !== null && size !== null ? Math.abs(price * size) : 0 };
+  return { tradePrice, size, notional: tradePrice !== null && size !== null ? Math.abs(tradePrice * size) : 0 };
 }
 
 function stateFor(id, name = '') {
@@ -172,20 +173,32 @@ async function evaluateSignal(id, event) {
   const direction = longScore >= SIGNAL_SCORE ? 'LONGS ENTERING' : shortScore >= SIGNAL_SCORE ? 'SHORTS ENTERING' : null;
   if (!direction || !canAlert(`${id}:${direction}`)) return;
 
+  const prediction = await findPredictionMarket(s.name, now);
+  if (REQUIRE_PREDICTION_MARKET && !prediction) {
+    console.log(`Composite signal found for ${s.name}, but no live 5m prediction market was resolved.`);
+    return;
+  }
+
   const arrow = direction === 'LONGS ENTERING' ? '🟢' : '🔴';
-  await telegram([
-    `${arrow} PERPS SIGNAL`,
+  const predictionPrice = predictionDirectionPrice(prediction, direction);
+  const lines = [
+    `${arrow} COMPOSITE PERPS SIGNAL`,
     '',
     s.name || String(id),
     '',
-    `Price: ${pct(priceChange)} / 5m`,
-    `Volume: ${volumeMultiple?.toFixed(1)}× baseline`,
-    `OI: ${oiChange === null ? 'n/a' : pct(oiChange)}`,
-    `Funding: ${funding === null ? 'n/a' : pct(funding)}`,
+    `Perps price move: ${pct(priceChange)} / 5m`,
+    `Perps volume: ${volumeMultiple?.toFixed(1)}× baseline`,
+    `Perps OI: ${oiChange === null ? 'n/a' : pct(oiChange)}`,
+    `Perps funding: ${funding === null ? 'n/a' : pct(funding)}`,
     '',
     `Signal: ${direction}`,
-    `Score: ${Math.max(longScore, shortScore)}/4`
-  ].join('\n'));
+    `Score: ${Math.max(longScore, shortScore)}/4`,
+    '',
+    `Prediction market: ${prediction?.question ?? 'not found'}`,
+    `${direction === 'LONGS ENTERING' ? 'Up' : 'Down'} price: ${price(predictionPrice)}`,
+    prediction ? `➡️ ${prediction.url}` : ''
+  ].filter(Boolean);
+  await telegram(lines.join('\n'));
 }
 
 async function subscribeTrades(id) {
@@ -204,6 +217,7 @@ async function main() {
   console.log('Starting Polymarket Perps Composite Signal Monitor...');
   console.log('BBO / Order Book alerts are disabled.');
   console.log(`Signal: price=${pct(PRICE_MOVE_5M)}/5m, OI=${pct(OI_MOVE_5M)}/5m, funding long>=${pct(FUNDING_LONG)}, short<=${pct(FUNDING_SHORT)}, volume>=${MIN_VOLUME_MULTIPLIER}x, score>=${SIGNAL_SCORE}/4`);
+  console.log(`Prediction market required: ${REQUIRE_PREDICTION_MARKET}`);
 
   const tickerHandle = await client.subscribe([{ topic: 'perps.tickers' }]);
   for await (const event of tickerHandle) {
