@@ -4,7 +4,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const ENABLE_5M = false;
 const ENABLE_15M = true;
 const ASSETS_5M = new Set(['ETH', 'XRP', 'SOL', 'DOGE', 'BNB']);
-const ASSETS_15M = new Set(['ETH', 'XRP', 'SOL', 'DOGE', 'BNB']);
+const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 10;
 const WINDOW_5M = 5 * 60 * 1000, WINDOW_15M = 15 * 60 * 1000, RECONNECT_MS = 3000;
@@ -25,4 +25,4 @@ async function handleForceOrder(payload){const order=payload?.o;if(!order)return
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: DISABLED');console.log('15M: ENABLED | sequential duplicate suppression | minimum size: 10 USDT/USDC');console.log('Same asset is suppressed until a different asset sends an alert.');console.log('15M assets: ETH, XRP, SOL, DOGE, BNB');scheduleFlush();connect();
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: DISABLED');console.log('15M: ENABLED | sequential duplicate suppression | minimum size: 10 USDT/USDC');console.log('Same asset is suppressed until a different asset sends an alert.');console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');scheduleFlush();connect();
