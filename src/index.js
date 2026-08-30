@@ -1,7 +1,7 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const ASSETS_5M = new Set(['ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
+const ASSETS_5M = new Set(['ETH', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const ASSETS_15M = new Set(['ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
@@ -22,4 +22,4 @@ async function handleForceOrder(payload){const order=payload?.o;if(!order)return
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('BTC REMOVED');console.log('5M: LONG only | 15M: SHORT only | size threshold: 0');console.log('Assets: ETH, XRP, SOL, DOGE, HYPE, BNB');scheduleFlush();connect();
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('BTC REMOVED');console.log('5M: LONG only | XRP removed | 15M: SHORT only | size threshold: 0');console.log('5M: ETH, SOL, DOGE, HYPE, BNB | 15M: ETH, XRP, SOL, DOGE, HYPE, BNB');scheduleFlush();connect();
