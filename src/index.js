@@ -1,3 +1,5 @@
+import { startPinaxLiquidationDiagnostic, stopPinaxLiquidationDiagnostic } from './pinax-liquidation-diagnostic.js';
+
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
@@ -22,6 +24,8 @@ function requestAdvance(now){advancing=advancing.then(()=>advanceWindows(now)).c
 function scheduleFlush(){clearTimeout(flushTimer);const next=Math.min(ENABLE_5M?windowStart5m+WINDOW_5M:Infinity,ENABLE_15M?windowStart15m+WINDOW_15M:Infinity);flushTimer=setTimeout(async()=>{await requestAdvance(Date.now());if(!stopping)scheduleFlush();},Math.max(100,next-Date.now()+50));}
 async function handleForceOrder(payload){const order=payload?.o;if(!order)return;const side=String(order.S??'').toUpperCase();if(side!=='SELL'&&side!=='BUY')return;const parsed5=parseSymbol(order.s,ASSETS_5M),parsed15=parseSymbol(order.s,ASSETS_15M);if(!parsed5&&!parsed15)return;const price=num(order.ap)||num(order.p),quantity=num(order.q),notional=Math.abs(price*quantity);if(!(price>0)||!(quantity>0)||notional<MIN_SIZE)return;const time=num(payload.E)||num(order.T)||Date.now();await requestAdvance(time);const item={asset:(parsed5||parsed15).asset,quote:(parsed5||parsed15).quote,price,quantity,notional};if(ENABLE_5M&&side==='SELL'&&parsed5){const w=Math.floor(time/WINDOW_5M)*WINDOW_5M;if(w===windowStart5m&&(!largestLong5m||notional>largestLong5m.notional))largestLong5m=item;}if(ENABLE_15M&&side==='BUY'&&parsed15){const w=Math.floor(time/WINDOW_15M)*WINDOW_15M;if(w===windowStart15m&&(!largestShort15m||notional>largestShort15m.notional))largestShort15m=item;}}
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
-function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
+function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);stopPinaxLiquidationDiagnostic();try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDT/USDC');console.log('Sequential duplicate suppression is independent per timeframe.');console.log('Assets 5M/15M: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');scheduleFlush();connect();
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDT/USDC');console.log('Sequential duplicate suppression is independent per timeframe.');console.log('Assets 5M/15M: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+startPinaxLiquidationDiagnostic();
+scheduleFlush();connect();
