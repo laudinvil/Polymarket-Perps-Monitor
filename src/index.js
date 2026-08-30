@@ -1,11 +1,11 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const ASSETS_5M = new Set(['ETH', 'XRP', 'SOL', 'DOGE', 'BNB']);
+const ASSETS_5M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const ASSETS_15M = new Set();
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 10;
-const WINDOW_5M = 5 * 60 * 1000, WINDOW_15M = 15 * 60 * 1000, RECONNECT_MS = 3000;
+const WINDOW_5M = 5 * 60 * 1000, RECONNECT_MS = 3000;
 let windowStart5m=Math.floor(Date.now()/WINDOW_5M)*WINDOW_5M;
 let largestLong5m=null,flushTimer,websocket,reconnectTimer,stopping=false,advancing=Promise.resolve();
 const num=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -21,4 +21,4 @@ async function handleForceOrder(payload){const order=payload?.o;if(!order)return
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('15M TEMPORARILY DISABLED');console.log('5M: LONG only | XRP restored | HYPE removed | BTC removed | size threshold: 10 USDT/USDC');console.log('5M: ETH, XRP, SOL, DOGE, BNB');scheduleFlush();connect();
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('15M TEMPORARILY DISABLED');console.log('5M: LONG only | ALL MARKETS RESTORED | size threshold: 10 USDT/USDC');console.log('5M: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');scheduleFlush();connect();
