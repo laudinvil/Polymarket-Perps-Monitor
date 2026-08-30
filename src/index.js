@@ -13,8 +13,8 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const MIN_SIZE = 10;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
-// Never process a candle exactly at its boundary. Give Pinax time to finalize it.
-const WINDOW_CLOSE_GRACE_MS = 30 * 1000;
+// Minimal grace period so Pinax can finalize the just-closed candle.
+const WINDOW_CLOSE_GRACE_MS = 1000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
@@ -142,7 +142,7 @@ console.log('SOURCE: PINAX / HYPERLIQUID LIQUIDATION-ONLY OHLCV');
 console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDC');
 console.log('LONG = aggregate liquidation sell volume | SHORT = aggregate liquidation buy volume');
 console.log('One direction per coin per completed window: whichever aggregate is larger wins.');
-console.log('Closed-window grace: 30s (never process a still-finalizing candle).');
+console.log('Closed-window grace: 1s (minimal finalization delay).');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 console.log('Sequential duplicate suppression is independent per timeframe.');
 console.log('Binance liquidation source: DISABLED');
