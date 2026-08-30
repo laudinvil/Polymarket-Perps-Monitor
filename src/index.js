@@ -48,24 +48,27 @@ async function sendTelegram(text) {
   }
 }
 
-async function sendAlert(period, side, start, end, item) {
+async function sendAlert(period, item, start, end) {
   if (!item || item.notional < MIN_SIZE) return;
   const is15 = period === '15M';
   if (is15 ? !ENABLE_15M : !ENABLE_5M) return;
+
   const last = is15 ? lastAlertAsset15m : lastAlertAsset5m;
   if (last === item.asset) {
-    console.log(`[Pinax] duplicate suppressed: ${item.asset} ${period}; waiting for another asset`);
+    console.log(`[Pinax OHLCV] duplicate suppressed: ${item.asset} ${period}; waiting for another asset`);
     return;
   }
+
   const text = [
-    `🚨 ${side} LIQUIDATION — ${period}`,
+    `🚨 ${item.side} LIQUIDATION — ${period}`,
     '',
-    `${item.asset} — ${side} LIQUIDATION`,
+    `${item.asset} — ${item.side} LIQUIDATION`,
     `💥 Size: ${money(item.notional)}`,
     '',
     `▶️ NEXT ${item.asset} ${period} UP/DOWN`,
     nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)
   ].join('\n');
+
   if (await sendTelegram(text)) {
     if (is15) lastAlertAsset15m = item.asset;
     else lastAlertAsset5m = item.asset;
@@ -79,22 +82,19 @@ async function flushCompletedWindows(now) {
       const start = windowStart5m;
       const end = start + WINDOW_5M;
       windowStart5m = end;
-      for (const side of ['LONG', 'SHORT']) {
-        const item = consumePinaxWindow(WINDOW_5M, start, ASSETS, side);
-        await sendAlert('5M', side, start, end, item);
-      }
+      const items = consumePinaxWindow(WINDOW_5M, start, ASSETS);
+      for (const item of items) await sendAlert('5M', item, start, end);
     }
   }
+
   if (ENABLE_15M) {
     const target = Math.floor(now / WINDOW_15M) * WINDOW_15M;
     while (windowStart15m < target) {
       const start = windowStart15m;
       const end = start + WINDOW_15M;
       windowStart15m = end;
-      for (const side of ['LONG', 'SHORT']) {
-        const item = consumePinaxWindow(WINDOW_15M, start, ASSETS, side);
-        await sendAlert('15M', side, start, end, item);
-      }
+      const items = consumePinaxWindow(WINDOW_15M, start, ASSETS);
+      for (const item of items) await sendAlert('15M', item, start, end);
     }
   }
 }
@@ -133,9 +133,10 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
-console.log('SOURCE: PINAX / HYPERLIQUID REAL LIQUIDATIONS');
+console.log('SOURCE: PINAX / HYPERLIQUID LIQUIDATION-ONLY OHLCV');
 console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDC');
-console.log('Sides: LONG + SHORT on both timeframes');
+console.log('LONG = aggregate liquidation sell volume | SHORT = aggregate liquidation buy volume');
+console.log('One direction per coin per completed window: whichever aggregate is larger wins.');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 console.log('Sequential duplicate suppression is independent per timeframe.');
 console.log('Binance liquidation source: DISABLED');
