@@ -13,6 +13,8 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const MIN_SIZE = 10;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
+// Never process a candle exactly at its boundary. Give Pinax time to finalize it.
+const WINDOW_CLOSE_GRACE_MS = 30 * 1000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
@@ -76,8 +78,11 @@ async function sendAlert(period, item, start, end) {
 }
 
 async function flushCompletedWindows(now) {
+  // Only process windows that have been closed for at least the grace period.
+  const eligibleNow = now - WINDOW_CLOSE_GRACE_MS;
+
   if (ENABLE_5M) {
-    const target = Math.floor(now / WINDOW_5M) * WINDOW_5M;
+    const target = Math.floor(eligibleNow / WINDOW_5M) * WINDOW_5M;
     while (windowStart5m < target) {
       const start = windowStart5m;
       const end = start + WINDOW_5M;
@@ -88,7 +93,7 @@ async function flushCompletedWindows(now) {
   }
 
   if (ENABLE_15M) {
-    const target = Math.floor(now / WINDOW_15M) * WINDOW_15M;
+    const target = Math.floor(eligibleNow / WINDOW_15M) * WINDOW_15M;
     while (windowStart15m < target) {
       const start = windowStart15m;
       const end = start + WINDOW_15M;
@@ -109,13 +114,13 @@ function requestAdvance(now) {
 function scheduleFlush() {
   clearTimeout(flushTimer);
   const next = Math.min(
-    ENABLE_5M ? windowStart5m + WINDOW_5M : Infinity,
-    ENABLE_15M ? windowStart15m + WINDOW_15M : Infinity
+    ENABLE_5M ? windowStart5m + WINDOW_5M + WINDOW_CLOSE_GRACE_MS : Infinity,
+    ENABLE_15M ? windowStart15m + WINDOW_15M + WINDOW_CLOSE_GRACE_MS : Infinity
   );
   flushTimer = setTimeout(async () => {
     await requestAdvance(Date.now());
     if (!stopping) scheduleFlush();
-  }, Math.max(100, next - Date.now() + 100));
+  }, Math.max(100, next - Date.now()));
 }
 
 setPinaxWindowCloseHandler(async now => {
@@ -137,6 +142,7 @@ console.log('SOURCE: PINAX / HYPERLIQUID LIQUIDATION-ONLY OHLCV');
 console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDC');
 console.log('LONG = aggregate liquidation sell volume | SHORT = aggregate liquidation buy volume');
 console.log('One direction per coin per completed window: whichever aggregate is larger wins.');
+console.log('Closed-window grace: 30s (never process a still-finalizing candle).');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 console.log('Sequential duplicate suppression is independent per timeframe.');
 console.log('Binance liquidation source: DISABLED');
