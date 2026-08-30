@@ -2,14 +2,14 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const POLYMARKET_EVENT_BY_SLUG = 'https://gamma-api.polymarket.com/events/slug/';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_LIQUIDATION = 600;
-const WINDOW_MS = 5 * 60 * 1000;
+const WINDOW_5M = 5 * 60 * 1000;
+const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
-let windowStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
+let windowStart = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let largest = null;
 let flushTimer;
 let websocket;
@@ -42,21 +42,13 @@ function windowText(start, end) {
   return `${new Date(start).toISOString().slice(11, 16)}–${new Date(end).toISOString().slice(11, 16)} UTC`;
 }
 
-async function findNextFiveMinuteMarket(asset, windowEnd) {
-  const nextStart = Math.floor(windowEnd / WINDOW_MS) * WINDOW_MS;
-  const slug = `${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
-
-  try {
-    const response = await fetch(`${POLYMARKET_EVENT_BY_SLUG}${encodeURIComponent(slug)}`, {
-      headers: { accept: 'application/json' }
-    });
-    if (!response.ok) return null;
-    const event = await response.json();
-    return event?.slug ? `https://polymarket.com/event/${event.slug}` : null;
-  } catch (error) {
-    console.error('Polymarket link lookup:', error?.message ?? error);
-    return null;
-  }
+// Polymarket recurring crypto markets use deterministic UTC epoch slugs.
+// The link is derived from the NEXT market interval; it is not gated on an API lookup.
+function nextMarketLink(asset, windowEnd, durationMs) {
+  const nextStart = Math.ceil(windowEnd / durationMs) * durationMs;
+  const minutes = durationMs === WINDOW_15M ? '15m' : '5m';
+  const slug = `${asset.toLowerCase()}-updown-${minutes}-${Math.floor(nextStart / 1000)}`;
+  return `https://polymarket.com/event/${slug}`;
 }
 
 async function sendTelegram(text) {
@@ -75,7 +67,8 @@ async function sendTelegram(text) {
 async function flushWindow(start, end, item) {
   if (!item) return;
 
-  const marketLink = await findNextFiveMinuteMarket(item.asset, end);
+  const next5m = nextMarketLink(item.asset, end, WINDOW_5M);
+  const next15m = nextMarketLink(item.asset, end, WINDOW_15M);
   const lines = [
     '🚨 LARGEST LONG LIQUIDATION — 5M',
     '',
@@ -84,20 +77,22 @@ async function flushWindow(start, end, item) {
     `Price: ${item.price}`,
     `Qty: ${item.quantity}`,
     `Window: ${windowText(start, end)}`,
-    ''
+    '',
+    `▶️ NEXT ${item.asset} 5M UP/DOWN`,
+    next5m,
+    '',
+    `▶️ NEXT ${item.asset} 15M UP/DOWN`,
+    next15m
   ];
-
-  if (marketLink) lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink);
-  else lines.push(`▶️ NEXT ${item.asset} 5M UP/DOWN`, 'Link lookup failed');
 
   await sendTelegram(lines.join('\n'));
 }
 
 async function advanceWindows(now) {
-  const target = Math.floor(now / WINDOW_MS) * WINDOW_MS;
+  const target = Math.floor(now / WINDOW_5M) * WINDOW_5M;
   while (windowStart < target) {
     const start = windowStart;
-    const end = start + WINDOW_MS;
+    const end = start + WINDOW_5M;
     const item = largest;
     largest = null;
     windowStart = end;
@@ -115,7 +110,7 @@ function scheduleFlush() {
   flushTimer = setTimeout(async () => {
     await requestAdvance(Date.now());
     if (!stopping) scheduleFlush();
-  }, Math.max(100, windowStart + WINDOW_MS - Date.now() + 50));
+  }, Math.max(100, windowStart + WINDOW_5M - Date.now() + 50));
 }
 
 async function handleForceOrder(payload) {
@@ -130,9 +125,9 @@ async function handleForceOrder(payload) {
   if (!(price > 0) || !(quantity > 0) || notional < MIN_LIQUIDATION) return;
 
   const time = num(payload.E) || num(order.T) || Date.now();
-  const eventWindow = Math.floor(time / WINDOW_MS) * WINDOW_MS;
+  const eventWindow = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (eventWindow > windowStart) await requestAdvance(time);
-  if (eventWindow < windowStart || eventWindow >= windowStart + WINDOW_MS) return;
+  if (eventWindow < windowStart || eventWindow >= windowStart + WINDOW_5M) return;
 
   const candidate = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional };
   if (!largest || candidate.notional > largest.notional) largest = candidate;
@@ -170,7 +165,7 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('Assets: BTC ETH XRP SOL DOGE HYPE BNB');
 console.log(`LONG liquidations only; minimum ${MIN_LIQUIDATION} USDT/USDC`);
 console.log('One largest LONG liquidation per completed 5-minute UTC window');
-console.log('Link target: NEXT 5-minute Polymarket Up/Down market');
+console.log('Alert links: NEXT 5-minute + NEXT 15-minute Polymarket Up/Down markets');
 
 scheduleFlush();
 connect();
