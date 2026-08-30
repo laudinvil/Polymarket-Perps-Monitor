@@ -3,7 +3,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const ASSETS_5M = new Set(['BTC', 'ETH', 'HYPE', 'BNB']);
-const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'DOGE', 'HYPE', 'BNB']);
+const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'DOGE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_LONG_5M = 700;
 const MIN_SHORT_15M = 250;
@@ -74,5 +74,5 @@ async function handleForceOrder(payload) {
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC; SOL, DOGE and XRP excluded');console.log('15M: SHORT >= 250 USDT/USDC; SOL excluded');console.log('5M and 15M alerts are independent; one link per alert');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC; SOL, DOGE and XRP excluded');console.log('15M: SHORT >= 250 USDT/USDC; SOL and HYPE excluded');console.log('5M and 15M alerts are independent; one link per alert');
 scheduleFlush();connect();
