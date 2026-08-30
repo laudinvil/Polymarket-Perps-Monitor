@@ -2,7 +2,8 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
-const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'DOGE', 'HYPE', 'BNB']);
+const ASSETS_5M = new Set(['BTC', 'ETH', 'XRP', 'HYPE', 'BNB']);
+const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_LONG_5M = 700;
 const MIN_SHORT_15M = 100;
@@ -21,12 +22,12 @@ let stopping = false;
 let advancing = Promise.resolve();
 
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-function parseSymbol(symbol) {
+function parseSymbol(symbol, assets) {
   const s = String(symbol ?? '').toUpperCase();
   for (const quote of QUOTES) {
     if (s.endsWith(quote)) {
       const asset = s.slice(0, -quote.length);
-      if (ASSETS.has(asset)) return { asset, quote };
+      if (assets.has(asset)) return { asset, quote };
     }
   }
   return null;
@@ -60,14 +61,18 @@ async function advanceWindows(now) {
 function requestAdvance(now) { advancing=advancing.then(()=>advanceWindows(now)).catch(e=>console.error('Window:',e?.message??e)); return advancing; }
 function scheduleFlush() { clearTimeout(flushTimer); const next=Math.min(windowStart5m+WINDOW_5M,windowStart15m+WINDOW_15M); flushTimer=setTimeout(async()=>{await requestAdvance(Date.now());if(!stopping)scheduleFlush();},Math.max(100,next-Date.now()+50)); }
 async function handleForceOrder(payload) {
-  const order=payload?.o;if(!order)return; const parsed=parseSymbol(order.s);if(!parsed)return;
+  const order=payload?.o;if(!order)return;
+  const side=String(order.S??'').toUpperCase();
+  const assets=side==='SELL'?ASSETS_5M:side==='BUY'?ASSETS_15M:null;
+  if(!assets)return;
+  const parsed=parseSymbol(order.s,assets);if(!parsed)return;
   const price=num(order.ap)||num(order.p),quantity=num(order.q),notional=Math.abs(price*quantity);if(!(price>0)||!(quantity>0))return;
-  const time=num(payload.E)||num(order.T)||Date.now(); await requestAdvance(time); const side=String(order.S??'').toUpperCase();
+  const time=num(payload.E)||num(order.T)||Date.now(); await requestAdvance(time);
   if(side==='SELL'&&notional>=MIN_LONG_5M){const w=Math.floor(time/WINDOW_5M)*WINDOW_5M;if(w===windowStart5m){const c={asset:parsed.asset,quote:parsed.quote,price,quantity,notional};if(!largestLong5m||notional>largestLong5m.notional)largestLong5m=c;}}
   if(side==='BUY'&&notional>=MIN_SHORT_15M){const w=Math.floor(time/WINDOW_15M)*WINDOW_15M;if(w===windowStart15m){const c={asset:parsed.asset,quote:parsed.quote,price,quantity,notional};if(!largestShort15m||notional>largestShort15m.notional)largestShort15m=c;}}
 }
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC');console.log('15M: SHORT >= 100 USDT/USDC');console.log('SOL excluded from both 5M and 15M');console.log('5M and 15M alerts are independent; one link per alert');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC; SOL and DOGE excluded');console.log('15M: SHORT >= 100 USDT/USDC; SOL excluded');console.log('5M and 15M alerts are independent; one link per alert');
 scheduleFlush();connect();
