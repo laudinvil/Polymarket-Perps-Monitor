@@ -63,7 +63,7 @@ const results = await Promise.all(
     asset,
     period: period.label,
     error: error?.message ?? String(error)
-  })))
+  }))))
 );
 
 for (const result of results) {
