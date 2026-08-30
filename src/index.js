@@ -5,6 +5,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_LONG_5M = 700;
+const MIN_SHORT_15M = 100;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
@@ -63,10 +64,10 @@ async function handleForceOrder(payload) {
   const price=num(order.ap)||num(order.p),quantity=num(order.q),notional=Math.abs(price*quantity);if(!(price>0)||!(quantity>0))return;
   const time=num(payload.E)||num(order.T)||Date.now(); await requestAdvance(time); const side=String(order.S??'').toUpperCase();
   if(side==='SELL'&&notional>=MIN_LONG_5M){const w=Math.floor(time/WINDOW_5M)*WINDOW_5M;if(w===windowStart5m){const c={asset:parsed.asset,quote:parsed.quote,price,quantity,notional};if(!largestLong5m||notional>largestLong5m.notional)largestLong5m=c;}}
-  if(side==='BUY'){const w=Math.floor(time/WINDOW_15M)*WINDOW_15M;if(w===windowStart15m){const c={asset:parsed.asset,quote:parsed.quote,price,quantity,notional};if(!largestShort15m||notional>largestShort15m.notional)largestShort15m=c;}}
+  if(side==='BUY'&&notional>=MIN_SHORT_15M){const w=Math.floor(time/WINDOW_15M)*WINDOW_15M;if(w===windowStart15m){const c={asset:parsed.asset,quote:parsed.quote,price,quantity,notional};if(!largestShort15m||notional>largestShort15m.notional)largestShort15m=c;}}
 }
 function connect(){if(stopping)return;websocket=new WebSocket(BINANCE_WS_URL);websocket.addEventListener('open',()=>console.log('Binance liquidation stream connected'));websocket.addEventListener('message',e=>{try{const p=JSON.parse(String(e.data));if(p?.e==='forceOrder')void handleForceOrder(p);else if(p?.data?.e==='forceOrder')void handleForceOrder(p.data);}catch(e){console.error('Parse:',e?.message??e);}});websocket.addEventListener('error',e=>console.error('WebSocket:',e?.message??e));websocket.addEventListener('close',()=>{if(!stopping)reconnectTimer=setTimeout(connect,RECONNECT_MS);});}
 function shutdown(signal){stopping=true;clearTimeout(flushTimer);clearTimeout(reconnectTimer);try{websocket?.close();}catch{}console.log(`Shutdown: ${signal}`);}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC');console.log('15M: SHORT with no minimum');console.log('SOL excluded from both 5M and 15M');console.log('5M and 15M alerts are independent; one link per alert');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ===');console.log('5M: LONG >= 700 USDT/USDC');console.log('15M: SHORT >= 100 USDT/USDC');console.log('SOL excluded from both 5M and 15M');console.log('5M and 15M alerts are independent; one link per alert');
 scheduleFlush();connect();
