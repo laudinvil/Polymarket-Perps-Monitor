@@ -61,8 +61,7 @@ async function sendAlert(period, item, start, end) {
   if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return false;
   const lastAsset = is15 ? lastAlertAsset15m : lastAlertAsset5m;
   if (lastAsset === item.asset) { console.log(`Duplicate suppressed in ${period}: ${item.asset} — waiting for a different asset alert`); return false; }
-  const action = item.side === 'LONG' ? 'BUY UP' : 'BUY DOWN';
-  const text = [`🚨 ${item.side} LIQUIDATION — ${period}`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${action}`, `NEXT ${item.asset} ${period} UP/DOWN`, nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)].join('\n');
+  const text = [`🚨 ${item.side} LIQUIDATION — ${period}`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ NEXT ${item.asset} ${period} UP/DOWN`, nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)].join('\n');
   if (await sendTelegram(text)) { if (is15) lastAlertAsset15m = item.asset; else lastAlertAsset5m = item.asset; return true; }
   return false;
 }
@@ -116,5 +115,5 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('5M alert mapping: LONG -> BUY UP | SHORT -> BUY DOWN');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH');
 scheduleFlush(); connect();
