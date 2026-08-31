@@ -3,7 +3,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = true;
-const ENABLE_15M = false;
+const ENABLE_15M = true;
 const ENABLE_5M_SHORT = false;
 const ENABLE_15M_SHORT = true;
 const ASSETS_5M = new Set(['BTC', 'ETH']);
@@ -267,9 +267,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 10 USDT/USDC');
+console.log('5M: LONG ONLY | 15M: SHORT ONLY | minimum size: 10 USDT/USDC');
 console.log('5M assets: BTC, ETH');
-console.log('15M aggregation retained in code but disabled');
+console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('15M: aggregate liquidation sizes independently for each asset');
 console.log('5M and 15M use independent alert sequence suppression');
 console.log('Polymarket link: next market only, one link per alert');
 
