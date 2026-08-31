@@ -18,10 +18,12 @@ let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
 let largestLong5m = null;
 let largestShort5m = null;
-let largestLong15m = null;
-let largestShort15m = null;
-let lastAlertAsset = null;
-let alertedLiquidations = new Set();
+let totalLong15m = 0;
+let totalShort15m = 0;
+let totalLong15mItem = null;
+let totalShort15mItem = null;
+let lastAlertAsset5m = null;
+let lastAlertAsset15m = null;
 let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -68,19 +70,17 @@ async function sendTelegram(text) {
 }
 
 async function sendAlert(period, item, start, end) {
-  if (!item || item.notional < MIN_SIZE) return;
+  if (!item || item.notional < MIN_SIZE) return false;
   const is15 = period === '15M';
-  if (is15 ? !ENABLE_15M : !ENABLE_5M) return;
-  if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return;
+  if (is15 ? !ENABLE_15M : !ENABLE_5M) return false;
+  if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return false;
 
-  if (item.liquidationKey && alertedLiquidations.has(item.liquidationKey)) {
-    console.log(`Duplicate liquidation suppressed across timeframes: ${item.asset} ${period}`);
-    return;
-  }
-
-  if (lastAlertAsset === item.asset) {
-    console.log(`Duplicate suppressed: ${item.asset} ${period} — waiting for a different asset alert`);
-    return;
+  // 5M and 15M are independent alert streams. A 5M alert must NOT suppress
+  // the 15M aggregate alert, because every liquidation contributes to 15M.
+  const lastAsset = is15 ? lastAlertAsset15m : lastAlertAsset5m;
+  if (lastAsset === item.asset) {
+    console.log(`Duplicate suppressed in ${period}: ${item.asset} — waiting for a different asset alert`);
+    return false;
   }
 
   const text = [
@@ -94,12 +94,11 @@ async function sendAlert(period, item, start, end) {
   ].join('\n');
 
   if (await sendTelegram(text)) {
-    if (item.liquidationKey) alertedLiquidations.add(item.liquidationKey);
-    lastAlertAsset = item.asset;
-    if (alertedLiquidations.size > 5000) {
-      alertedLiquidations = new Set([...alertedLiquidations].slice(-2500));
-    }
+    if (is15) lastAlertAsset15m = item.asset;
+    else lastAlertAsset5m = item.asset;
+    return true;
   }
+  return false;
 }
 
 function clearWindowState(period) {
@@ -107,29 +106,49 @@ function clearWindowState(period) {
     largestLong5m = null;
     largestShort5m = null;
   } else {
-    largestLong15m = null;
-    largestShort15m = null;
+    totalLong15m = 0;
+    totalShort15m = 0;
+    totalLong15mItem = null;
+    totalShort15mItem = null;
   }
 }
 
 async function emitWindow(period, start, end) {
-  const is15 = period === '15M';
-  const longItem = is15 ? largestLong15m : largestLong5m;
-  const shortItem = is15 ? largestShort15m : largestShort5m;
-  clearWindowState(period);
+  if (period === '5M') {
+    const longItem = largestLong5m;
+    const shortItem = largestShort5m;
+    clearWindowState('5M');
 
-  if (!longItem && !shortItem) return;
-  if (longItem && shortItem) {
-    if (longItem.notional > shortItem.notional) {
-      await sendAlert(period, { ...longItem, side: 'LONG' }, start, end);
-    } else if (shortItem.notional > longItem.notional) {
-      await sendAlert(period, { ...shortItem, side: 'SHORT' }, start, end);
+    if (!longItem && !shortItem) return;
+    if (longItem && shortItem) {
+      if (longItem.notional > shortItem.notional) await sendAlert('5M', { ...longItem, side: 'LONG' }, start, end);
+      else if (shortItem.notional > longItem.notional) await sendAlert('5M', { ...shortItem, side: 'SHORT' }, start, end);
+      return;
     }
+    if (longItem) await sendAlert('5M', { ...longItem, side: 'LONG' }, start, end);
+    else await sendAlert('5M', { ...shortItem, side: 'SHORT' }, start, end);
     return;
   }
 
-  if (longItem) await sendAlert(period, { ...longItem, side: 'LONG' }, start, end);
-  else await sendAlert(period, { ...shortItem, side: 'SHORT' }, start, end);
+  // 15M is an aggregate of ALL liquidation sizes during the whole 15M window.
+  // It is NOT the largest single liquidation and is independent from 5M.
+  const longItem = totalLong15mItem && totalLong15m > 0
+    ? { ...totalLong15mItem, side: 'LONG', notional: totalLong15m }
+    : null;
+  const shortItem = totalShort15mItem && totalShort15m > 0
+    ? { ...totalShort15mItem, side: 'SHORT', notional: totalShort15m }
+    : null;
+
+  clearWindowState('15M');
+
+  if (!longItem && !shortItem) return;
+  if (longItem && shortItem) {
+    if (longItem.notional > shortItem.notional) await sendAlert('15M', longItem, start, end);
+    else if (shortItem.notional > longItem.notional) await sendAlert('15M', shortItem, start, end);
+    return;
+  }
+  if (longItem) await sendAlert('15M', longItem, start, end);
+  else await sendAlert('15M', shortItem, start, end);
 }
 
 async function advanceWindows(now) {
@@ -210,6 +229,7 @@ async function handleForceOrder(payload) {
     liquidationKey: liquidationKey(order, time)
   };
 
+  // 5M keeps the largest single liquidation. Current 5M SHORT setting remains OFF.
   if (ENABLE_5M && parsed5) {
     const w = Math.floor(time / WINDOW_5M) * WINDOW_5M;
     if (w === windowStart5m) {
@@ -218,11 +238,19 @@ async function handleForceOrder(payload) {
     }
   }
 
+  // 15M accumulates EVERY liquidation in the full 15-minute window.
+  // A liquidation may contribute to both 5M and 15M; this is intentional.
   if (ENABLE_15M && parsed15) {
     const w = Math.floor(time / WINDOW_15M) * WINDOW_15M;
     if (w === windowStart15m) {
-      if (side === 'SELL' && (!largestLong15m || notional > largestLong15m.notional)) largestLong15m = item;
-      if (side === 'BUY' && ENABLE_15M_SHORT && (!largestShort15m || notional > largestShort15m.notional)) largestShort15m = item;
+      if (side === 'SELL') {
+        totalLong15m += notional;
+        if (!totalLong15mItem) totalLong15mItem = item;
+      }
+      if (side === 'BUY' && ENABLE_15M_SHORT) {
+        totalShort15m += notional;
+        if (!totalShort15mItem) totalShort15mItem = item;
+      }
     }
   }
 }
@@ -261,8 +289,8 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: LONG + SHORT | minimum size: 10 USDT/USDC');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('Same Binance liquidation event cannot alert in both 5M and 15M');
-console.log('Global sequential duplicate suppression across 5M and 15M');
+console.log('15M: aggregate ALL liquidation sizes across the full 15-minute window');
+console.log('5M and 15M use independent alert sequence suppression');
 console.log('Polymarket link: next market only, one link per alert');
 
 scheduleFlush();
