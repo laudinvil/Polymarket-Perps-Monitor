@@ -14,6 +14,7 @@ const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let alerted5mWindow = null;
+let lastAlertAsset = null;
 let flush5mTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -71,10 +72,13 @@ async function handleForceOrder(payload) {
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
+  // A coin that generated the previous alert is blocked until another coin generates an alert.
+  if (lastAlertAsset === parsed.asset) return;
   alerted5mWindow = period;
   const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG' };
   const sent = await sendAlert(item, period);
-  if (!sent) console.error('[Alert] Telegram send failed; period remains consumed');
+  if (sent) lastAlertAsset = parsed.asset;
+  else console.error('[Alert] Telegram send failed; period remains consumed');
 }
 function connect() {
   if (stopping) return;
@@ -90,6 +94,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: exactly one first LONG liquidation alert per 5M period across ALL coins; current liquidation triggers link to NEXT 5M market');
+console.log('ALERT MODE: exactly one first LONG liquidation alert per 5M period across ALL coins; same coin is blocked until another coin produces an alert; link to NEXT 5M market');
 scheduleFlush();
 connect();
