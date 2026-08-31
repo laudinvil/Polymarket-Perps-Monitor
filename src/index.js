@@ -13,12 +13,12 @@ const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
-const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let largestLong5m = null;
 let largestShort5m = null;
+let lastAlertAsset5m = null;
 let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -37,9 +37,7 @@ function parseSymbol(symbol, assets) {
   return null;
 }
 function money(v, quote) { return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`; }
-function marketLink(asset, start) {
-  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(start / 1000)}`;
-}
+function marketLink(asset, start) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(start / 1000)}`; }
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
@@ -52,8 +50,14 @@ async function sendAlert(item, marketStart) {
   if (!item || item.notional < MIN_SIZE) return false;
   if (item.side === 'LONG' && !ENABLE_5M_LONG) return false;
   if (item.side === 'SHORT' && !ENABLE_5M_SHORT) return false;
+  // Suppress only an immediately consecutive alert for the same coin.
+  if (lastAlertAsset5m === item.asset) {
+    console.log(`Duplicate coin suppressed: ${item.asset}`);
+    return false;
+  }
   const text = [`🚨 ${item.side} LIQUIDATION — 5M`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
-  return sendTelegram(text);
+  if (await sendTelegram(text)) { lastAlertAsset5m = item.asset; return true; }
+  return false;
 }
 function clear5m() { largestLong5m = null; largestShort5m = null; }
 async function emitWindow5m(start, end) {
@@ -109,6 +113,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('5M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: largest liquidation per completed 5M period; target market skips one market');
+console.log('ALERT MODE: largest liquidation per completed 5M period; target market skips one market; consecutive same-coin alerts suppressed');
 scheduleFlush();
 connect();
