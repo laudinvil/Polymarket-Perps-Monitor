@@ -2,9 +2,6 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
-// Binance 5M data is collected only as a source for the 15M decision.
-// No 5M-period alerts are emitted. Every 15M window produces at most one
-// alert for the coin with the largest liquidation notional in that window.
 const ENABLE_5M = true;
 const ENABLE_15M = true;
 const ENABLE_5M_LONG = true;
@@ -14,7 +11,7 @@ const ENABLE_15M_SHORT = true;
 const ASSETS_5M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
-const MIN_SIZE = 0;
+const MIN_SIZE = 1000000;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
@@ -115,9 +112,6 @@ async function handleForceOrder(payload) {
   const time = num(payload.E) || num(order.T) || Date.now();
   await requestAdvance(time);
 
-  // We accept all configured coins and both liquidation directions on 5M,
-  // but 5M is not an alert period. Its data is accumulated into the active
-  // 15M bucket instead, so three 5M slices naturally form one 15M total.
   if (ENABLE_15M && parsed15) {
     const w = Math.floor(time / WINDOW_15M) * WINDOW_15M;
     if (w === windowStart15m) {
@@ -150,9 +144,8 @@ function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTime
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: ALL COINS LONG + SHORT DATA SOURCE | NO 5M ALERTS');
-console.log('15M: ALL COINS LONG + SHORT | ONE ALERT FOR LARGEST 15M LIQUIDATION');
-console.log('ALERT LINK: NEXT 5M UP/DOWN | minimum size: 0 USDT/USDC');
-console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('5M: LONG + SHORT | 15M: LONG + SHORT | minimum size: 1000000 USDT/USDC');
+console.log('5M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 scheduleFlush();
 connect();
