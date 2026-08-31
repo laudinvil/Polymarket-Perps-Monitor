@@ -6,14 +6,15 @@ const ENABLE_5M = true;
 const ENABLE_15M = false;
 const ENABLE_5M_LONG = true;
 const ENABLE_5M_SHORT = false;
-const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'BNB']);
+const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
-let alerted5mWindow = null;
+let latestByPeriod = null;
+let lastAlertPeriod = null;
 let lastAlertAsset = null;
 let flush5mTimer = null;
 let websocket = null;
@@ -54,14 +55,29 @@ async function advanceWindows(now) {
   const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
   if (target5 > windowStart5m) {
     windowStart5m = target5;
-    alerted5mWindow = null;
+    latestByPeriod = null;
+    lastAlertPeriod = null;
   }
 }
 function requestAdvance(now) { advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error)); return advancing; }
-function scheduleFlush() {
+async function flushCurrentPeriod() {
+  const period = windowStart5m;
+  const item = latestByPeriod;
+  latestByPeriod = null;
+  if (!item || item.period !== period || lastAlertPeriod === period) return;
+  if (lastAlertAsset === item.asset) return;
+  lastAlertPeriod = period;
+  const sent = await sendAlert(item, period);
+  if (sent) lastAlertAsset = item.asset;
+}
+function scheduleBoundary() {
   clearTimeout(flush5mTimer);
   const next = windowStart5m + WINDOW_5M;
-  flush5mTimer = setTimeout(async () => { await requestAdvance(Date.now()); if (!stopping) scheduleFlush(); }, Math.max(100, next - Date.now() + 50));
+  flush5mTimer = setTimeout(async () => {
+    await flushCurrentPeriod();
+    await requestAdvance(Date.now());
+    if (!stopping) scheduleBoundary();
+  }, Math.max(100, next - Date.now() + 50));
 }
 async function handleForceOrder(payload) {
   const order = payload?.o; if (!order) return;
@@ -71,13 +87,8 @@ async function handleForceOrder(payload) {
   if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
-  if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
-  if (lastAlertAsset === parsed.asset) return;
-  alerted5mWindow = period;
-  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG' };
-  const sent = await sendAlert(item, period);
-  if (sent) lastAlertAsset = parsed.asset;
-  else console.error('[Alert] Telegram send failed; period remains consumed');
+  if (!ENABLE_5M || period !== windowStart5m || lastAlertPeriod === period) return;
+  latestByPeriod = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG', period };
 }
 function connect() {
   if (stopping) return;
@@ -92,7 +103,7 @@ process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shut
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 0 USDT/USDC');
-console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, BNB');
-console.log('ALERT MODE: exactly one first LONG liquidation alert per 5M period across ALL coins; same coin is blocked until another coin produces an alert; link to NEXT 5M market');
-scheduleFlush();
+console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('ALERT MODE: latest LONG liquidation in each completed 5M period; maximum one alert per period; same coin blocked until another coin alerts; link to NEXT 5M market');
+scheduleBoundary();
 connect();
