@@ -21,15 +21,14 @@ let largestShort5m = null;
 let largestLong15m = null;
 let largestShort15m = null;
 let lastAlertAsset = null;
+let alertedLiquidations = new Set();
 let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
 let stopping = false;
 let advancing = Promise.resolve();
 
-function num(v) {
-  return Number.isFinite(Number(v)) ? Number(v) : 0;
-}
+function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 
 function parseSymbol(symbol, assets) {
   const s = String(symbol ?? '').toUpperCase();
@@ -74,7 +73,11 @@ async function sendAlert(period, item, start, end) {
   if (is15 ? !ENABLE_15M : !ENABLE_5M) return;
   if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return;
 
-  // Global sequential suppression across 5M and 15M.
+  if (item.liquidationKey && alertedLiquidations.has(item.liquidationKey)) {
+    console.log(`Duplicate liquidation suppressed across timeframes: ${item.asset} ${period}`);
+    return;
+  }
+
   if (lastAlertAsset === item.asset) {
     console.log(`Duplicate suppressed: ${item.asset} ${period} — waiting for a different asset alert`);
     return;
@@ -90,7 +93,13 @@ async function sendAlert(period, item, start, end) {
     nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)
   ].join('\n');
 
-  if (await sendTelegram(text)) lastAlertAsset = item.asset;
+  if (await sendTelegram(text)) {
+    if (item.liquidationKey) alertedLiquidations.add(item.liquidationKey);
+    lastAlertAsset = item.asset;
+    if (alertedLiquidations.size > 5000) {
+      alertedLiquidations = new Set([...alertedLiquidations].slice(-2500));
+    }
+  }
 }
 
 function clearWindowState(period) {
@@ -163,6 +172,16 @@ function scheduleFlush() {
   }, Math.max(100, next - Date.now() + 50));
 }
 
+function liquidationKey(order, time) {
+  return [
+    String(order.s ?? '').toUpperCase(),
+    String(order.S ?? '').toUpperCase(),
+    order.T ?? time,
+    order.ap || order.p,
+    order.q
+  ].join(':');
+}
+
 async function handleForceOrder(payload) {
   const order = payload?.o;
   if (!order) return;
@@ -187,7 +206,8 @@ async function handleForceOrder(payload) {
     quote: (parsed5 || parsed15).quote,
     price,
     quantity,
-    notional
+    notional,
+    liquidationKey: liquidationKey(order, time)
   };
 
   if (ENABLE_5M && parsed5) {
@@ -241,6 +261,7 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: LONG + SHORT | minimum size: 10 USDT/USDC');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('Same Binance liquidation event cannot alert in both 5M and 15M');
 console.log('Global sequential duplicate suppression across 5M and 15M');
 console.log('Polymarket link: next market only, one link per alert');
 
