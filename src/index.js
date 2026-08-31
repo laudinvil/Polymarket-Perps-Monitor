@@ -3,10 +3,11 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = true;
-const ENABLE_15M = false;
-const ENABLE_5M_LONG = true;
+const ENABLE_15M = true;
+const ENABLE_5M_LONG = false;
 const ENABLE_5M_SHORT = true;
-const ENABLE_15M_SHORT = true;
+const ENABLE_15M_LONG = true;
+const ENABLE_15M_SHORT = false;
 const ASSETS_5M = new Set(['BTC', 'ETH']);
 const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
@@ -57,8 +58,8 @@ async function sendAlert(period, item, start, end) {
   if (!item || item.notional < MIN_SIZE) return false;
   const is15 = period === '15M';
   if (is15 ? !ENABLE_15M : !ENABLE_5M) return false;
-  if (item.side === 'LONG' && (is15 ? false : !ENABLE_5M_LONG)) return false;
-  if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return false;
+  if (item.side === 'LONG' && !(is15 ? ENABLE_15M_LONG : ENABLE_5M_LONG)) return false;
+  if (item.side === 'SHORT' && !(is15 ? ENABLE_15M_SHORT : ENABLE_5M_SHORT)) return false;
   const lastAsset = is15 ? lastAlertAsset15m : lastAlertAsset5m;
   if (lastAsset === item.asset) { console.log(`Duplicate suppressed in ${period}: ${item.asset} — waiting for a different asset alert`); return false; }
   const text = [`🚨 ${item.side} LIQUIDATION — ${period}`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ NEXT ${item.asset} ${period} UP/DOWN`, nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)].join('\n');
@@ -105,7 +106,7 @@ async function handleForceOrder(payload) {
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const item = { asset: (parsed5 || parsed15).asset, quote: (parsed5 || parsed15).quote, price, quantity, notional };
   if (ENABLE_5M && parsed5) { const w = Math.floor(time / WINDOW_5M) * WINDOW_5M; if (w === windowStart5m) { if (side === 'SELL' && ENABLE_5M_LONG && (!largestLong5m || notional > largestLong5m.notional)) largestLong5m = item; if (side === 'BUY' && ENABLE_5M_SHORT && (!largestShort5m || notional > largestShort5m.notional)) largestShort5m = item; } }
-  if (ENABLE_15M && parsed15) { const w = Math.floor(time / WINDOW_15M) * WINDOW_15M; if (w === windowStart15m) { const asset = parsed15.asset; let totals = totals15m.get(asset); if (!totals) { totals = { quote: parsed15.quote, long: 0, short: 0 }; totals15m.set(asset, totals); } if (side === 'SELL') totals.long += notional; if (side === 'BUY' && ENABLE_15M_SHORT) totals.short += notional; } }
+  if (ENABLE_15M && parsed15) { const w = Math.floor(time / WINDOW_15M) * WINDOW_15M; if (w === windowStart15m) { const asset = parsed15.asset; let totals = totals15m.get(asset); if (!totals) { totals = { quote: parsed15.quote, long: 0, short: 0 }; totals15m.set(asset, totals); } if (side === 'SELL' && ENABLE_15M_LONG) totals.long += notional; if (side === 'BUY' && ENABLE_15M_SHORT) totals.short += notional; } }
 }
 function connect() {
   if (stopping) return; websocket = new WebSocket(BINANCE_WS_URL);
@@ -115,5 +116,5 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 20000 USDT/USDC'); console.log('5M assets: BTC, ETH');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: SHORT ONLY | 15M: LONG ONLY | minimum size: 20000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 scheduleFlush(); connect();
