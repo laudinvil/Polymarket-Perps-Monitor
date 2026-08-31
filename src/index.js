@@ -14,6 +14,7 @@ const RECONNECT_MS = 3000;
 
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
 let smallest15m = null;
+let lastAlertAsset = null;
 let flush15mTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -50,7 +51,10 @@ async function close15m(start, end) {
   if (!smallest15m) return;
   const item = smallest15m;
   smallest15m = null;
-  await sendAlert(item, end);
+  // Do not send the same coin in consecutive completed 15M periods.
+  if (item.asset === lastAlertAsset) return;
+  const sent = await sendAlert(item, end);
+  if (sent) lastAlertAsset = item.asset;
 }
 async function advanceWindows(now) {
   const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
@@ -100,6 +104,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: DISABLED | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: smallest liquidation across all coins/directions per completed 15M period; alert on next 15M market');
+console.log('ALERT MODE: smallest liquidation per completed 15M period; no same-coin alerts in consecutive periods');
 scheduleFlush();
 connect();
