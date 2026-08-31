@@ -4,8 +4,8 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = true;
 const ENABLE_15M = false;
-const ENABLE_5M_SHORT = true;
-const ENABLE_15M_SHORT = false;
+const ENABLE_5M_SHORT = false;
+const ENABLE_15M_SHORT = true;
 const ASSETS_5M = new Set(['BTC', 'ETH']);
 const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
@@ -113,5 +113,5 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('15M aggregation retained in code but disabled'); console.log('5M and 15M use independent alert sequence suppression'); console.log('Polymarket link: next market only, one link per alert');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('15M aggregation retained in code but disabled'); console.log('5M and 15M use independent alert sequence suppression'); console.log('Polymarket link: next market only, one link per alert');
 scheduleFlush(); connect();
