@@ -11,7 +11,7 @@ const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
-let alerted15m = false;
+let alerted15mWindow = null;
 let flush15mTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -46,9 +46,10 @@ async function sendAlert(item, marketStart) {
 }
 async function advanceWindows(now) {
   const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
-  while (windowStart15m < target15) {
-    windowStart15m += WINDOW_15M;
-    alerted15m = false;
+  if (target15 > windowStart15m) {
+    windowStart15m = target15;
+    // The new period has its own immutable period key; no alert can be sent twice for it.
+    alerted15mWindow = null;
   }
 }
 function requestAdvance(now) { advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error)); return advancing; }
@@ -69,11 +70,19 @@ async function handleForceOrder(payload) {
   const side = sideRaw === 'SELL' ? 'LONG' : 'SHORT';
   const time = num(payload.E) || num(order.T) || Date.now();
   await requestAdvance(time);
-  const w15 = Math.floor(time / WINDOW_15M) * WINDOW_15M;
-  if (!ENABLE_15M || w15 !== windowStart15m || alerted15m) return;
-  alerted15m = true;
+  const period = Math.floor(time / WINDOW_15M) * WINDOW_15M;
+  if (!ENABLE_15M || period !== windowStart15m) return;
+
+  // Exactly one alert per 15M period, regardless of coin or direction.
+  if (alerted15mWindow === period) return;
+  alerted15mWindow = period;
+
   const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side };
-  void sendAlert(item, w15);
+  const sent = await sendAlert(item, period);
+  if (!sent) {
+    // Do not allow a failed Telegram request to unlock duplicate alerts.
+    console.error('[Alert] Telegram send failed; period remains consumed');
+  }
 }
 function connect() {
   if (stopping) return;
@@ -89,6 +98,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: DISABLED | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: first liquidation of any coin/direction per completed 15M period; subsequent liquidations in the same period are ignored; current 15M market link');
+console.log('ALERT MODE: exactly one first liquidation alert per 15M period across ALL coins/directions; current 15M market link');
 scheduleFlush();
 connect();
