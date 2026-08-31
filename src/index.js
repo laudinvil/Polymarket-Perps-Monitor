@@ -11,11 +11,9 @@ const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
-const REQUIRED_PERIODS = 3;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
-const streaks = new Map();
-const currentPeriod = new Map();
+let alerted5mWindow = null;
 let flush5mTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -34,7 +32,10 @@ function parseSymbol(symbol) {
   return null;
 }
 function money(v, quote) { return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`; }
-function marketLink(asset, start) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(start / 1000)}`; }
+function marketLink(asset, start) {
+  const nextStart = start + WINDOW_5M;
+  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
+}
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
@@ -48,28 +49,11 @@ async function sendAlert(item, marketStart) {
   const text = [`🚨 LONG LIQUIDATION — 5M`, '', `${item.asset} — LONG LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
   return sendTelegram(text);
 }
-async function closePeriod(start, end) {
-  const present = new Set(currentPeriod.keys());
-  const keys = new Set([...streaks.keys(), ...present]);
-  for (const key of keys) {
-    const [asset, side] = key.split('|');
-    if (side !== 'LONG' || !present.has(key)) { streaks.delete(key); continue; }
-    const count = (streaks.get(key) || 0) + 1;
-    if (count === REQUIRED_PERIODS) {
-      const item = currentPeriod.get(key);
-      await sendAlert({ ...item, asset, side }, end);
-      streaks.delete(key);
-    } else streaks.set(key, count);
-  }
-  currentPeriod.clear();
-}
 async function advanceWindows(now) {
   const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
-  while (windowStart5m < target5) {
-    const start = windowStart5m;
-    const end = start + WINDOW_5M;
-    windowStart5m = end;
-    await closePeriod(start, end);
+  if (target5 > windowStart5m) {
+    windowStart5m = target5;
+    alerted5mWindow = null;
   }
 }
 function requestAdvance(now) { advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error)); return advancing; }
@@ -86,8 +70,11 @@ async function handleForceOrder(payload) {
   if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
-  if (!ENABLE_5M || period !== windowStart5m) return;
-  currentPeriod.set(`${parsed.asset}|LONG`, { asset: parsed.asset, quote: parsed.quote, price, quantity, notional });
+  if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
+  alerted5mWindow = period;
+  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG' };
+  const sent = await sendAlert(item, period);
+  if (!sent) console.error('[Alert] Telegram send failed; period remains consumed');
 }
 function connect() {
   if (stopping) return;
@@ -103,6 +90,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: LONG liquidation in 3 consecutive 5M periods; alert on next 5M market');
+console.log('ALERT MODE: exactly one first LONG liquidation alert per 5M period across ALL coins; current liquidation triggers link to NEXT 5M market');
 scheduleFlush();
 connect();
