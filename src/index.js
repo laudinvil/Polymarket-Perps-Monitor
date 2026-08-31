@@ -4,7 +4,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = false;
 const ENABLE_15M = true;
-const ENABLE_15M_LONG = true;
+const ENABLE_15M_LONG = false;
 const ENABLE_15M_SHORT = true;
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
@@ -102,8 +102,8 @@ function shutdown(signal) { stopping = true; clearTimeout(flush15mTimer); clearT
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: DISABLED | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
+console.log('5M: DISABLED | 15M: SHORT ONLY | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: smallest liquidation per completed 15M period; no same-coin alerts in consecutive periods');
+console.log('ALERT MODE: smallest SHORT liquidation per completed 15M period; no same-coin alerts in consecutive periods');
 scheduleFlush();
 connect();
