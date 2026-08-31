@@ -11,16 +11,14 @@ const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
-const REQUIRED_PERIODS = 4;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
-const streaks = new Map();
+let smallestLiquidation5m = null;
 let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
 let stopping = false;
 let advancing = Promise.resolve();
-const currentPeriod = new Map();
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function parseSymbol(symbol) {
@@ -50,25 +48,11 @@ async function sendAlert(item, marketStart) {
 }
 
 async function closePeriod(start, end) {
-  const present = new Set(currentPeriod.keys());
-  const keys = new Set([...streaks.keys(), ...present]);
-  for (const key of keys) {
-    const [asset, side] = key.split('|');
-    if (!present.has(key)) {
-      streaks.delete(key);
-      continue;
-    }
-    const count = (streaks.get(key) || 0) + 1;
-    if (count >= REQUIRED_PERIODS) {
-      const item = currentPeriod.get(key);
-      // Alert after the 4th consecutive period, on the following 5M market.
-      await sendAlert({ ...item, asset, side }, end);
-      streaks.delete(key);
-    } else {
-      streaks.set(key, count);
-    }
+  if (smallestLiquidation5m) {
+    const item = smallestLiquidation5m;
+    smallestLiquidation5m = null;
+    await sendAlert(item, end);
   }
-  currentPeriod.clear();
 }
 async function advanceWindows(now) {
   const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
@@ -101,8 +85,8 @@ async function handleForceOrder(payload) {
   await requestAdvance(time);
   const w = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (w !== windowStart5m) return;
-  const key = `${parsed.asset}|${side}`;
-  currentPeriod.set(key, { asset: parsed.asset, quote: parsed.quote, price, quantity, notional });
+  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side };
+  if (!smallestLiquidation5m || notional < smallestLiquidation5m.notional) smallestLiquidation5m = item;
 }
 function connect() {
   if (stopping) return;
@@ -118,6 +102,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('5M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: liquidation in 4 consecutive 5M periods, same coin + same direction; alert on next 5M market');
+console.log('ALERT MODE: smallest liquidation across all coins/directions per completed 5M period; alert on next 5M market');
 scheduleFlush();
 connect();
