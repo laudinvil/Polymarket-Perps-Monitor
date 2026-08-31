@@ -11,7 +11,7 @@ const ENABLE_15M_SHORT = false;
 const ASSETS_5M = new Set(['BTC', 'ETH']);
 const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
-const MIN_SIZE = 20000;
+const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
@@ -116,5 +116,5 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: DISABLED | 15M: LONG ONLY | minimum size: 20000 USDT/USDC'); console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: DISABLED | 15M: LONG ONLY | minimum size: 0 USDT/USDC'); console.log('15M assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 scheduleFlush(); connect();
