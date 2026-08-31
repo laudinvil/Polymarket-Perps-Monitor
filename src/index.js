@@ -30,7 +30,10 @@ function parseSymbol(symbol) {
   return null;
 }
 function money(v, quote) { return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`; }
-function marketLink(asset, start) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(start / 1000)}`; }
+function marketLink(asset, start) {
+  const nextStart = start + WINDOW_5M;
+  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
+}
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
@@ -41,7 +44,7 @@ async function sendTelegram(text) {
 }
 async function sendAlert(item, marketStart) {
   if (!item || item.notional < MIN_SIZE) return false;
-  const text = [`🚨 ${item.side} LIQUIDATION — 5M`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
+  const text = [`🚨 ${item.side} LIQUIDATION — 5M`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ NEXT ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
   return sendTelegram(text);
 }
 async function advanceWindows(now) {
@@ -71,11 +74,8 @@ async function handleForceOrder(payload) {
   await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (!ENABLE_5M || period !== windowStart5m) return;
-
-  // Exactly one alert per 5M period, regardless of coin or direction.
   if (alerted5mWindow === period) return;
   alerted5mWindow = period;
-
   const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side };
   const sent = await sendAlert(item, period);
   if (!sent) console.error('[Alert] Telegram send failed; period remains consumed');
@@ -94,6 +94,6 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: exactly one first liquidation alert per 5M period across ALL coins/directions; current 5M market link');
+console.log('ALERT MODE: exactly one first liquidation alert per 5M period across ALL coins/directions; NEXT 5M market link');
 scheduleFlush();
 connect();
