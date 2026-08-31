@@ -18,8 +18,7 @@ let largestLong5m = null;
 let largestShort5m = null;
 let largestLong15m = null;
 let largestShort15m = null;
-let lastAlertAsset5m = null;
-let lastAlertAsset15m = null;
+let lastAlertAsset = null;
 let flushTimer = null;
 let websocket = null;
 let reconnectTimer = null;
@@ -57,11 +56,7 @@ async function sendTelegram(text) {
     const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        disable_web_page_preview: false
-      })
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
     });
     if (!response.ok) console.error('[Telegram] HTTP', response.status, await response.text());
     return response.ok;
@@ -76,8 +71,9 @@ async function sendAlert(period, item, start, end) {
   const is15 = period === '15M';
   if (is15 ? !ENABLE_15M : !ENABLE_5M) return;
 
-  const last = is15 ? lastAlertAsset15m : lastAlertAsset5m;
-  if (last === item.asset) {
+  // Global sequential suppression: the same asset cannot alert again on either
+  // timeframe until an alert for a different asset has been sent.
+  if (lastAlertAsset === item.asset) {
     console.log(`Duplicate suppressed: ${item.asset} ${period} — waiting for a different asset alert`);
     return;
   }
@@ -92,10 +88,7 @@ async function sendAlert(period, item, start, end) {
     nextMarketLink(item.asset, end, is15 ? WINDOW_15M : WINDOW_5M)
   ].join('\n');
 
-  if (await sendTelegram(text)) {
-    if (is15) lastAlertAsset15m = item.asset;
-    else lastAlertAsset5m = item.asset;
-  }
+  if (await sendTelegram(text)) lastAlertAsset = item.asset;
 }
 
 function clearWindowState(period) {
@@ -114,7 +107,6 @@ async function emitWindow(period, start, end) {
   const shortItem = is15 ? largestShort15m : largestShort5m;
   clearWindowState(period);
 
-  // One alert per completed window: whichever side had the larger liquidation.
   if (!longItem && !shortItem) return;
   if (longItem && shortItem) {
     if (longItem.notional > shortItem.notional) {
@@ -126,7 +118,7 @@ async function emitWindow(period, start, end) {
   }
 
   if (longItem) await sendAlert(period, { ...longItem, side: 'LONG' }, start, end);
-  else if (shortItem) await sendAlert(period, { ...shortItem, side: 'SHORT' }, start, end);
+  else await sendAlert(period, { ...shortItem, side: 'SHORT' }, start, end);
 }
 
 async function advanceWindows(now) {
@@ -153,9 +145,7 @@ async function advanceWindows(now) {
 }
 
 function requestAdvance(now) {
-  advancing = advancing
-    .then(() => advanceWindows(now))
-    .catch(error => console.error('[Window]', error?.message ?? error));
+  advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error));
   return advancing;
 }
 
@@ -248,10 +238,10 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDT/USDC');
-console.log('LONG + SHORT enabled independently for both timeframes');
+console.log('LONG + SHORT enabled for both timeframes');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 console.log('One alert per completed window: larger LONG/SHORT liquidation wins');
-console.log('Sequential duplicate suppression is independent per timeframe');
+console.log('GLOBAL sequential duplicate suppression: same asset blocked across 5M and 15M');
 console.log('Polymarket link: next market only, one link per alert');
 
 scheduleFlush();
