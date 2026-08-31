@@ -4,6 +4,8 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = true;
 const ENABLE_15M = true;
+const ENABLE_5M_SHORT = false;
+const ENABLE_15M_SHORT = true;
 const ASSETS_5M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const ASSETS_15M = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
@@ -70,9 +72,9 @@ async function sendAlert(period, item, start, end) {
   if (!item || item.notional < MIN_SIZE) return;
   const is15 = period === '15M';
   if (is15 ? !ENABLE_15M : !ENABLE_5M) return;
+  if (item.side === 'SHORT' && (is15 ? !ENABLE_15M_SHORT : !ENABLE_5M_SHORT)) return;
 
-  // Global sequential suppression: the same asset cannot alert again on either
-  // timeframe until an alert for a different asset has been sent.
+  // Global sequential suppression across 5M and 15M.
   if (lastAlertAsset === item.asset) {
     console.log(`Duplicate suppressed: ${item.asset} ${period} — waiting for a different asset alert`);
     return;
@@ -192,7 +194,7 @@ async function handleForceOrder(payload) {
     const w = Math.floor(time / WINDOW_5M) * WINDOW_5M;
     if (w === windowStart5m) {
       if (side === 'SELL' && (!largestLong5m || notional > largestLong5m.notional)) largestLong5m = item;
-      if (side === 'BUY' && (!largestShort5m || notional > largestShort5m.notional)) largestShort5m = item;
+      if (side === 'BUY' && ENABLE_5M_SHORT && (!largestShort5m || notional > largestShort5m.notional)) largestShort5m = item;
     }
   }
 
@@ -200,7 +202,7 @@ async function handleForceOrder(payload) {
     const w = Math.floor(time / WINDOW_15M) * WINDOW_15M;
     if (w === windowStart15m) {
       if (side === 'SELL' && (!largestLong15m || notional > largestLong15m.notional)) largestLong15m = item;
-      if (side === 'BUY' && (!largestShort15m || notional > largestShort15m.notional)) largestShort15m = item;
+      if (side === 'BUY' && ENABLE_15M_SHORT && (!largestShort15m || notional > largestShort15m.notional)) largestShort15m = item;
     }
   }
 }
@@ -237,11 +239,9 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: ENABLED | 15M: ENABLED | minimum size: 10 USDT/USDC');
-console.log('LONG + SHORT enabled for both timeframes');
+console.log('5M: LONG ONLY | 15M: LONG + SHORT | minimum size: 10 USDT/USDC');
 console.log('Assets: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('One alert per completed window: larger LONG/SHORT liquidation wins');
-console.log('GLOBAL sequential duplicate suppression: same asset blocked across 5M and 15M');
+console.log('Global sequential duplicate suppression across 5M and 15M');
 console.log('Polymarket link: next market only, one link per alert');
 
 scheduleFlush();
