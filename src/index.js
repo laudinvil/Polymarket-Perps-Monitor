@@ -6,7 +6,7 @@ const ENABLE_5M = true;
 const ENABLE_15M = false;
 const ENABLE_5M_LONG = true;
 const ENABLE_5M_SHORT = false;
-const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
+const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
@@ -72,7 +72,6 @@ async function handleForceOrder(payload) {
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
-  // A coin that generated the previous alert is blocked until another coin generates an alert.
   if (lastAlertAsset === parsed.asset) return;
   alerted5mWindow = period;
   const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG' };
@@ -93,7 +92,7 @@ process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shut
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 0 USDT/USDC');
-console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
+console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, BNB');
 console.log('ALERT MODE: exactly one first LONG liquidation alert per 5M period across ALL coins; same coin is blocked until another coin produces an alert; link to NEXT 5M market');
 scheduleFlush();
 connect();
