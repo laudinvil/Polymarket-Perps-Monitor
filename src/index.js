@@ -102,7 +102,7 @@ async function handleForceOrder(payload) {
   const price = num(order.ap) || num(order.p); const quantity = num(order.q); const notional = Math.abs(price * quantity); if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const item = { asset: (parsed5 || parsed15).asset, quote: (parsed5 || parsed15).quote, price, quantity, notional };
-  if (ENABLE_5M && parsed5) { const w = Math.floor(time / WINDOW_5M) * WINDOW_5M; if (w === windowStart5m) { if (side === 'SELL' && !ENABLE_5M_SHORT && (!largestLong5m || notional > largestLong5m.notional)) largestLong5m = item; if (side === 'BUY' && ENABLE_5M_SHORT && (!largestShort5m || notional > largestShort5m.notional)) largestShort5m = item; } }
+  if (ENABLE_5M && parsed5) { const w = Math.floor(time / WINDOW_5M) * WINDOW_5M; if (w === windowStart5m) { if (side === 'SELL' && (!largestLong5m || notional > largestLong5m.notional)) largestLong5m = item; if (side === 'BUY' && ENABLE_5M_SHORT && (!largestShort5m || notional > largestShort5m.notional)) largestShort5m = item; } }
   if (ENABLE_15M && parsed15) { const w = Math.floor(time / WINDOW_15M) * WINDOW_15M; if (w === windowStart15m) { const asset = parsed15.asset; let totals = totals15m.get(asset); if (!totals) { totals = { quote: parsed15.quote, long: 0, short: 0 }; totals15m.set(asset, totals); } if (side === 'SELL') totals.long += notional; if (side === 'BUY' && ENABLE_15M_SHORT) totals.short += notional; } }
 }
 function connect() {
@@ -113,5 +113,5 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(flushTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: SHORT ONLY | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('15M aggregation retained in code but disabled'); console.log('5M and 15M use independent alert sequence suppression'); console.log('Polymarket link: next market only, one link per alert');
+console.log('=== POLYMARKET LIQUIDATION MONITOR ==='); console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM'); console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 10000 USDT/USDC'); console.log('5M assets: BTC, ETH'); console.log('15M aggregation retained in code but disabled'); console.log('5M and 15M use independent alert sequence suppression'); console.log('Polymarket link: next market only, one link per alert');
 scheduleFlush(); connect();
