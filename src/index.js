@@ -2,55 +2,131 @@ import { createServer } from 'node:http';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const HYPERLIQUID_WS = 'wss://api.hyperliquid.xyz/ws';
-const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
+const PINAX_API_KEY = process.env.PINAX_API_KEY;
+const PINAX_URL = 'https://api.pinax.network/v1/hyperliquid/markets/liquidations';
+const ASSETS = ['DOGE', 'BNB'];
 const WINDOW_MS = 5 * 60 * 1000;
-const RECONNECT_MS = 3000;
-const STATS_INTERVAL_MS = 15000;
-const FINALIZE_INTERVAL_MS = 1000;
+const POLL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
-const stats = new Map();
-const finalizedPeriods = new Set();
-let websocket = null, reconnectTimer = null, statsTimer = null, finalizeTimer = null;
-let stopping = false, streamConnected = false, lastMessageAt = null;
-function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
-function newBucket(start) { return { start, buyVolume: 0, sellVolume: 0, cvd: 0, lastTrade: null }; }
-function getState(asset) { let state = stats.get(asset); if (!state) { state = newBucket(Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS); stats.set(asset, state); } return state; }
-async function finalizePeriod(start) {
-  if (finalizedPeriods.has(start)) return;
-  finalizedPeriods.add(start);
-  const candidates = [];
-  for (const asset of ASSETS) {
-    const bucket = stats.get(asset);
-    if (!bucket || bucket.start !== start || !bucket.lastTrade) continue;
-    const cvd = bucket.buyVolume - bucket.sellVolume;
-    if (cvd !== 0) candidates.push({ asset, value: Math.abs(cvd), cvd });
+const alertedPeriods = new Set();
+let pollTimer = null;
+let stopping = false;
+let lastCheck = null;
+let lastResult = null;
+
+function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS; }
+function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function directionLabel(direction) {
+  return String(direction || '').includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION';
+}
+function polymarketUrl(asset, nextStartMs) {
+  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`;
+}
+
+async function fetchLiquidations(startMs, endMs) {
+  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY is not configured');
+  const url = new URL(PINAX_URL);
+  url.searchParams.set('coin', ASSETS.join(','));
+  url.searchParams.set('dex', 'perps');
+  url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
+  url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
+  url.searchParams.set('sort_by', 'notional');
+  url.searchParams.set('limit', '100');
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Pinax HTTP ${response.status}: ${await response.text()}`);
+  const body = await response.json();
+  return Array.isArray(body?.data) ? body.data : [];
+}
+
+async function sendTelegram(text) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) throw new Error('Telegram is not configured');
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
+  });
+  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${await response.text()}`);
+}
+
+async function processClosedWindow(startMs) {
+  const key = String(startMs);
+  if (alertedPeriods.has(key)) return;
+  const endMs = startMs + WINDOW_MS;
+  try {
+    const events = await fetchLiquidations(startMs, endMs);
+    const candidates = events
+      .filter(e => ASSETS.includes(String(e?.coin)))
+      .filter(e => Number(e?.notional) > 0)
+      .sort((a, b) => Number(b.notional) - Number(a.notional));
+    lastCheck = new Date().toISOString();
+    if (!candidates.length) {
+      lastResult = { periodStart: startMs, periodEnd: endMs, events: 0, alert: false };
+      return;
+    }
+    const winner = candidates[0];
+    const asset = String(winner.coin);
+    const notional = Number(winner.notional);
+    const direction = directionLabel(winner.direction || winner.liquidation_kind);
+    const nextStart = endMs;
+    const text = [
+      direction,
+      '',
+      `${asset} — 5M LIQUIDATION`,
+      `Size: ${fmtUsd(notional)} USDT`,
+      '',
+      '▶️ POLYMARKET',
+      polymarketUrl(asset, nextStart)
+    ].join('\n');
+    await sendTelegram(text);
+    alertedPeriods.add(key);
+    lastResult = { periodStart: startMs, periodEnd: endMs, events: candidates.length, alert: true, asset, direction: winner.direction || winner.liquidation_kind, notional, eventHash: winner.event_hash || null, nextMarket: polymarketUrl(asset, nextStart) };
+    console.log('[ALERT]', JSON.stringify(lastResult));
+  } catch (error) {
+    lastCheck = new Date().toISOString();
+    lastResult = { periodStart: startMs, periodEnd: endMs, alert: false, error: error?.message ?? String(error) };
+    console.error('[Liquidations]', error?.message ?? error);
   }
-  if (!candidates.length) return;
-  candidates.sort((a, b) => a.value - b.value);
-  const winner = candidates[0];
-  const direction = winner.cvd > 0 ? '🟢 POSITIVE CVD INFLOW' : '🔴 NEGATIVE CVD OUTFLOW';
-  const nextStart = start + WINDOW_MS;
-  await sendTelegram([
-    direction, '', `${winner.asset} — 5M CVD`, `CVD: ${winner.cvd >= 0 ? '+' : ''}${winner.cvd.toFixed(0)} USDT`, '', '▶️ POLYMARKET',
-    `https://polymarket.com/event/${winner.asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`
-  ].join('\n'));
 }
-function finalizeExpiredPeriod() {
-  const currentStart = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS;
-  const previousStart = currentStart - WINDOW_MS;
-  void finalizePeriod(previousStart);
-  for (const state of stats.values()) if (state.start !== currentStart) Object.assign(state, newBucket(currentStart));
+
+async function poll() {
+  if (stopping) return;
+  const current = currentWindowStart();
+  // Give the indexer a short grace period after the 5M boundary before querying the closed window.
+  const closedStart = current - WINDOW_MS;
+  await processClosedWindow(closedStart);
 }
-function addCvd(asset, isBuyerAggressor, usd, now) { const state = getState(asset); const start = Math.floor(now / WINDOW_MS) * WINDOW_MS; if (state.start !== start) Object.assign(state, newBucket(start)); if (isBuyerAggressor) state.buyVolume += usd; else state.sellVolume += usd; state.cvd = state.buyVolume - state.sellVolume; state.lastTrade = now; }
-async function sendTelegram(text) { if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) { console.error('[Telegram] Not configured'); return false; } try { const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }) }); if (!response.ok) console.error('[Telegram] HTTP', response.status, await response.text()); return response.ok; } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; } }
-function snapshot(asset) { const bucket = getState(asset); return { asset, period: '5M', start: bucket.start, buyVolume: bucket.buyVolume, sellVolume: bucket.sellVolume, cvd: bucket.cvd, lastTrade: bucket.lastTrade, ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null, status: bucket.lastTrade ? 'OK' : 'WAITING' }; }
-function allStats() { return ASSETS.map(snapshot); }
-function printStats() { console.log('=== CVD 5M ==='); for (const row of allStats()) console.log(JSON.stringify(row)); }
-function subscribeTrades(ws) { for (const coin of ASSETS) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } })); }
-function connect() { if (stopping) return; websocket = new WebSocket(HYPERLIQUID_WS); websocket.addEventListener('open', () => { streamConnected = true; console.log('Hyperliquid trades stream connected'); subscribeTrades(websocket); }); websocket.addEventListener('message', event => { try { const message = JSON.parse(String(event.data)); if (message?.channel !== 'trades' || !Array.isArray(message?.data)) return; lastMessageAt = Date.now(); for (const trade of message.data) { const asset = ASSETS.includes(String(trade?.coin)) ? String(trade.coin) : null; if (!asset) continue; const usd = num(trade.px) * num(trade.sz), now = num(trade.time) || Date.now(); if (usd > 0) addCvd(asset, String(trade.side).toUpperCase() === 'B', usd, now); } } catch (error) { console.error('[Trade Parse]', error?.message ?? error); } }); websocket.addEventListener('error', error => { streamConnected = false; console.error('[WebSocket]', error?.message ?? error); }); websocket.addEventListener('close', () => { streamConnected = false; if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS); }); }
-function shutdown(signal) { stopping = true; clearTimeout(reconnectTimer); clearInterval(statsTimer); clearInterval(finalizeTimer); try { websocket?.close(); } catch {} try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
-process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-const server = createServer((req, res) => { const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); if (url.pathname === '/cvd' || url.pathname === '/trades') { res.writeHead(200); res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M'], monitor: 'CVD_FLOW_5M', alerts: true, alertRule: 'ONE global smallest absolute non-zero net CVD per completed 5M period; positive=INFLOW, negative=OUTFLOW', data: allStats() })); return; } if (url.pathname === '/health') { res.writeHead(200); res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M'], streamConnected, lastMessageAt, alerts: true })); return; } res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] })); });
-server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT} (/cvd)`));
-console.log('=== POLYMARKET CVD FLOW MONITOR ==='); console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY'); console.log('CVD: TOTAL BUY VOLUME - TOTAL SELL VOLUME'); console.log('PERIOD: 5M ONLY'); console.log('ALERT ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB'); console.log('ALERT: ONE GLOBAL SMALLEST ABSOLUTE NON-ZERO NET CVD PER 5M PERIOD'); connect(); statsTimer = setInterval(printStats, STATS_INTERVAL_MS); finalizeTimer = setInterval(finalizeExpiredPeriod, FINALIZE_INTERVAL_MS);
+
+function start() {
+  console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
+  console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
+  console.log('ASSETS: DOGE, BNB');
+  console.log('PERIOD: 5M');
+  console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS DOGE + BNB');
+  console.log('DIRECTION: LONG OR SHORT');
+  console.log('LINK: NEXT 5M POLYMARKET MARKET');
+  void poll();
+  pollTimer = setInterval(() => void poll(), POLL_MS);
+}
+
+function shutdown(signal) {
+  stopping = true;
+  clearInterval(pollTimer);
+  try { server.close(); } catch {}
+  console.log(`Shutdown: ${signal}`);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+const server = createServer((req, res) => {
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  if (url.pathname === '/health' || url.pathname === '/liquidations') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, period: '5M', rule: 'one largest liquidation by notional across DOGE and BNB', lastCheck, lastResult }));
+    return;
+  }
+  res.writeHead(404);
+  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
+});
+server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT}`));
+start();
