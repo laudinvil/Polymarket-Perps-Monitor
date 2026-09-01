@@ -27,7 +27,7 @@ async function fetchLiquidations(startMs, endMs) {
   url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
   url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
   url.searchParams.set('sort_by', 'notional');
-  url.searchParams.set('limit', '100');
+  url.searchParams.set('limit', '10');
   const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
   if (!response.ok) throw new Error(`Pinax HTTP ${response.status}: ${await response.text()}`);
   const body = await response.json();
