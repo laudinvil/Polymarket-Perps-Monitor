@@ -18,7 +18,8 @@ async function fetchOhlc(coin, startMs, endMs) {
   url.searchParams.set('interval', '5m');
   url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
   url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
-  url.searchParams.set('limit', '20');
+  // Pinax OHLC rejects limit values above 10.
+  url.searchParams.set('limit', '10');
 
   console.log(`[OHLC][REQUEST] ${coin} interval=5m target=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
   const response = await fetch(url, {
