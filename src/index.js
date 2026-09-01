@@ -9,6 +9,7 @@ const MIN_SIZE_USDT = 1000;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
+const PAGE_LIMIT = 1000;
 const alertedPeriods = new Set();
 let lastAlertAsset = null;
 let boundaryTimer = null;
@@ -19,50 +20,67 @@ let lastProcessed5m = null;
 let lastProcessed15m = null;
 
 function windowStart(ms, size) { return Math.floor(ms / size) * size; }
-function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-function directionLabel(direction) {
-  const d = String(direction || '').toUpperCase();
-  return d.includes('LONG') ? '🔴 LONG LIQUIDATION' : d.includes('SHORT') ? '🟢 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
-}
-function actionLabel(direction) {
-  const d = String(direction || '').toUpperCase();
-  return d.includes('LONG') ? 'BUY UP' : d.includes('SHORT') ? 'BUY DOWN' : '';
-}
 function polymarketUrl(asset, startMs, minutes) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${minutes}m-${Math.floor(startMs / 1000)}`; }
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
-  const url = new URL(PINAX_URL);
-  url.searchParams.set('coin', coin);
-  url.searchParams.set('dex', 'perps');
-  url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
-  url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
-  url.searchParams.set('sort_by', 'notional');
-  url.searchParams.set('limit', '1');
-  url.searchParams.set('page', '1');
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
-  const raw = await response.text();
-  if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw}`);
-  let body;
-  try { body = JSON.parse(raw); } catch { throw new Error(`${coin}: Pinax returned non-JSON response: ${raw.slice(0, 300)}`); }
-  return Array.isArray(body?.data) ? body.data : [];
+  const all = [];
+  let page = 1;
+  while (page <= 20) {
+    const url = new URL(PINAX_URL);
+    url.searchParams.set('coin', coin);
+    url.searchParams.set('dex', 'perps');
+    url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
+    url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
+    url.searchParams.set('sort_by', 'time');
+    url.searchParams.set('limit', String(PAGE_LIMIT));
+    url.searchParams.set('page', String(page));
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
+    const raw = await response.text();
+    if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw}`);
+    let body;
+    try { body = JSON.parse(raw); } catch { throw new Error(`${coin}: Pinax returned non-JSON response: ${raw.slice(0, 300)}`); }
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    all.push(...rows);
+    if (rows.length < PAGE_LIMIT) break;
+    page += 1;
+  }
+  return all;
 }
 
-async function fetchLiquidations(startMs, endMs) {
+async function fetchLiquidationSpike(startMs, endMs) {
   const results = await Promise.all(ASSETS.map(async coin => {
     try {
       const events = await fetchCoinLiquidations(coin, startMs, endMs);
-      const top = events[0];
-      console.log(`[Pinax] ${coin}: ${events.length} events${top ? ` | top=${JSON.stringify({ coin: top.coin, notional: top.notional, direction: top.direction, liquidation_kind: top.liquidation_kind })}` : ''}`);
-      return events;
+      const users = new Set();
+      let longUsers = 0;
+      let shortUsers = 0;
+      let totalNotional = 0;
+      const seenDirectionalUsers = new Set();
+      for (const e of events) {
+        const notional = Number(e?.notional || 0);
+        const user = String(e?.liquidated_user || '').toLowerCase();
+        if (notional < MIN_SIZE_USDT || !user) continue;
+        users.add(user);
+        totalNotional += notional;
+        const direction = String(e?.direction || e?.liquidation_kind || '').toUpperCase();
+        const key = `${user}:${direction}`;
+        if (!seenDirectionalUsers.has(key)) {
+          seenDirectionalUsers.add(key);
+          if (direction.includes('LONG')) longUsers += 1;
+          if (direction.includes('SHORT')) shortUsers += 1;
+        }
+      }
+      const result = { coin, users: users.size, longUsers, shortUsers, totalNotional, events: events.length };
+      console.log(`[Pinax] ${coin}: events=${events.length} uniqueLiquidated=${users.size} longUsers=${longUsers} shortUsers=${shortUsers} notional=${totalNotional}`);
+      return result;
     } catch (error) {
       console.error('[Pinax]', error?.message ?? error);
-      return [];
+      return { coin, users: 0, longUsers: 0, shortUsers: 0, totalNotional: 0, events: 0, error: error?.message ?? String(error) };
     }
   }));
-  const flat = results.flat();
-  console.log(`[Pinax] TOTAL: ${flat.length} top events across ${ASSETS.length} assets`);
-  return flat;
+  console.log(`[SPIKE] ${JSON.stringify(results)}`);
+  return results;
 }
 
 async function sendTelegram(text) {
@@ -71,53 +89,58 @@ async function sendTelegram(text) {
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${await response.text()}`);
 }
 
-async function sendAlert(periodStart, events, minutes) {
-  const candidates = events
-    .filter(e => ASSETS.includes(String(e?.coin)))
-    .filter(e => Number(e?.notional) >= MIN_SIZE_USDT)
-    .sort((a, b) => Number(b.notional) - Number(a.notional));
+async function sendSpikeAlert(periodStart, stats, minutes) {
+  const candidates = stats.filter(x => x.users > 0).sort((a, b) => b.users - a.users || b.totalNotional - a.totalNotional);
   if (!candidates.length) return null;
-  const winner = candidates.find(e => String(e.coin) !== lastAlertAsset);
+  const winner = candidates.find(x => x.coin !== lastAlertAsset);
   if (!winner) {
-    console.log(`[ALERT] skipped ${minutes}M: all qualifying candidates are ${lastAlertAsset}; waiting for a different asset`);
+    console.log(`[ALERT] skipped ${minutes}M: only qualifying spike is ${lastAlertAsset}`);
     return null;
   }
-  const asset = String(winner.coin);
-  const notional = Number(winner.notional);
-  const direction = winner.direction || winner.liquidation_kind;
   const marketStart = periodStart + minutes * 60 * 1000;
-  const text = [directionLabel(direction), '', `${asset} — ${minutes}M`, `Size: ${fmtUsd(notional)} USDT`, actionLabel(direction), '', '▶️ POLYMARKET', polymarketUrl(asset, marketStart, minutes)].join('\n');
+  const text = [
+    '🚨 LIQUIDATION SPIKE',
+    '',
+    `${winner.coin} — ${minutes}M`,
+    `Liquidated users: ${winner.users}`,
+    `LONG users: ${winner.longUsers}`,
+    `SHORT users: ${winner.shortUsers}`,
+    `Liquidation volume: ${Math.round(winner.totalNotional).toLocaleString('en-US')} USDT`,
+    '',
+    '▶️ POLYMARKET',
+    polymarketUrl(winner.coin, marketStart, minutes)
+  ].join('\n');
   await sendTelegram(text);
-  lastAlertAsset = asset;
-  return { asset, notional, direction, timeframe: minutes, nextMarket: polymarketUrl(asset, marketStart, minutes) };
+  lastAlertAsset = winner.coin;
+  return { coin: winner.coin, users: winner.users, longUsers: winner.longUsers, shortUsers: winner.shortUsers, totalNotional: winner.totalNotional, timeframe: minutes, market: polymarketUrl(winner.coin, marketStart, minutes) };
 }
 
 async function process5m(startMs) {
   if (lastProcessed5m === startMs) return;
   const endMs = startMs + WINDOW_5M;
-  const events = await fetchLiquidations(startMs, endMs);
+  const stats = await fetchLiquidationSpike(startMs, endMs);
   lastProcessed5m = startMs;
   const key = `5m:${startMs}`;
   let alert5m = null;
   if (!alertedPeriods.has(key)) {
-    alert5m = await sendAlert(startMs, events, 5);
+    alert5m = await sendSpikeAlert(startMs, stats, 5);
     if (alert5m) alertedPeriods.add(key);
   }
-  return { periodStart: startMs, periodEnd: endMs, events: events.length, alert5m };
+  return { periodStart: startMs, periodEnd: endMs, stats, alert5m };
 }
 
 async function process15m(startMs) {
   if (lastProcessed15m === startMs) return;
   const endMs = startMs + WINDOW_15M;
-  const events = await fetchLiquidations(startMs, endMs);
+  const stats = await fetchLiquidationSpike(startMs, endMs);
   lastProcessed15m = startMs;
   const key = `15m:${startMs}`;
   let alert15m = null;
   if (!alertedPeriods.has(key)) {
-    alert15m = await sendAlert(startMs, events, 15);
+    alert15m = await sendSpikeAlert(startMs, stats, 15);
     if (alert15m) alertedPeriods.add(key);
   }
-  return { periodStart: startMs, periodEnd: endMs, events: events.length, alert15m };
+  return { periodStart: startMs, periodEnd: endMs, stats, alert15m };
 }
 
 async function processDueWindows() {
@@ -149,14 +172,14 @@ function scheduleNextBoundary() {
 }
 
 async function start() {
-  console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
+  console.log('=== POLYMARKET LIQUIDATION SPIKE MONITOR ===');
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M + 15M');
-  console.log(`MIN SIZE: ${MIN_SIZE_USDT} USDT`);
-  console.log('RULE: LARGEST QUALIFYING LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME ASSET CANNOT ALERT TWICE IN A ROW; NEXT QUALIFYING ASSET MUST BE DIFFERENT');
-  console.log('PINAX: ONE REQUEST PER COIN PER CLOSED PERIOD');
+  console.log(`MIN LIQUIDATION SIZE INCLUDED: ${MIN_SIZE_USDT} USDT`);
+  console.log('RULE: LARGEST NUMBER OF UNIQUE LIQUIDATED USERS PER COIN');
+  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME COIN CANNOT ALERT TWICE IN A ROW');
+  console.log('OLD RULE REMOVED: NO MORE ALERTS FOR SINGLE LARGEST LIQUIDATION');
   await processDueWindows();
   scheduleNextBoundary();
 }
@@ -171,7 +194,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minSizeUsdt: MIN_SIZE_USDT, rule: 'largest qualifying liquidation by notional across all 7 assets', repeatRule: 'cross-timeframe same asset cannot alert twice in a row', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSizeUsdt: MIN_SIZE_USDT, rule: 'largest number of unique liquidated users per coin', repeatRule: 'cross-timeframe same coin cannot alert twice in a row', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
