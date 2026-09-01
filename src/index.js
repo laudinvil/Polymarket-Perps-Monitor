@@ -22,9 +22,7 @@ function directionLabel(direction) {
   const d = String(direction || '').toUpperCase();
   return d.includes('LONG') ? '🔴 LONG LIQUIDATION' : d.includes('SHORT') ? '🟢 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
 }
-function polymarketUrl(asset, startMs, timeframeMinutes) {
-  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${timeframeMinutes}m-${Math.floor(startMs / 1000)}`;
-}
+function polymarketUrl(asset, startMs, timeframeMinutes) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${timeframeMinutes}m-${Math.floor(startMs / 1000)}`; }
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
@@ -71,11 +69,7 @@ function rememberFiveMinute(periodStart, events) {
   const byCoin = {};
   for (const asset of ASSETS) {
     const event = events.find(e => String(e?.coin) === asset);
-    byCoin[asset] = event ? {
-      notional: Number(event.notional) || 0,
-      direction: event.direction || event.liquidation_kind || '',
-      eventHash: event.event_hash || null
-    } : { notional: 0, direction: '', eventHash: null };
+    byCoin[asset] = event ? { notional: Number(event.notional) || 0, direction: event.direction || event.liquidation_kind || '', eventHash: event.event_hash || null } : { notional: 0, direction: '', eventHash: null };
   }
   fiveMinuteHistory.set(periodStart, byCoin);
   const cutoff = periodStart - (4 * WINDOW_MS);
@@ -84,9 +78,7 @@ function rememberFiveMinute(periodStart, events) {
 }
 
 function getLastThree(periodStart) {
-  return [periodStart - (2 * WINDOW_MS), periodStart - WINDOW_MS, periodStart]
-    .map(ts => fiveMinuteHistory.get(ts))
-    .filter(Boolean);
+  return [periodStart - (2 * WINDOW_MS), periodStart - WINDOW_MS, periodStart].map(ts => fiveMinuteHistory.get(ts)).filter(Boolean);
 }
 
 async function sendFiveMinuteAlert(periodStart, events) {
@@ -106,15 +98,14 @@ async function sendFifteenMinuteAlert(periodStart) {
   const periods = getLastThree(periodStart);
   if (periods.length !== 3) return null;
   const totals = ASSETS.map(asset => {
-    let total = 0;
-    let long = 0;
-    let short = 0;
+    let total = 0, long = 0, short = 0;
     for (const period of periods) {
       const row = period[asset];
-      total += Number(row?.notional) || 0;
+      const value = Number(row?.notional) || 0;
+      total += value;
       const d = String(row?.direction || '').toUpperCase();
-      if (d.includes('LONG')) long += Number(row?.notional) || 0;
-      if (d.includes('SHORT')) short += Number(row?.notional) || 0;
+      if (d.includes('LONG')) long += value;
+      if (d.includes('SHORT')) short += value;
     }
     return { asset, total, long, short };
   }).filter(x => x.total > 0).sort((a, b) => b.total - a.total);
@@ -129,20 +120,18 @@ async function sendFifteenMinuteAlert(periodStart) {
 
 async function processClosedWindow(startMs) {
   if (lastProcessedStart === startMs) return;
-  lastProcessedStart = startMs;
   const endMs = startMs + WINDOW_MS;
   try {
     const events = await fetchLiquidations(startMs, endMs);
     rememberFiveMinute(startMs, events);
+    lastProcessedStart = startMs;
     lastCheck = new Date().toISOString();
-
     let fiveMinuteAlert = null;
     const fiveKey = `5m:${startMs}`;
     if (!alertedPeriods.has(fiveKey)) {
       fiveMinuteAlert = await sendFiveMinuteAlert(startMs, events);
       if (fiveMinuteAlert) alertedPeriods.add(fiveKey);
     }
-
     let fifteenMinuteAlert = null;
     const periodNumber = Math.floor(startMs / WINDOW_MS);
     if (periodNumber % 3 === 2) {
@@ -152,7 +141,6 @@ async function processClosedWindow(startMs) {
         if (fifteenMinuteAlert) alertedPeriods.add(fifteenKey);
       }
     }
-
     lastResult = { periodStart: startMs, periodEnd: endMs, events: events.length, alert5m: fiveMinuteAlert, alert15m: fifteenMinuteAlert };
     console.log('[RESULT]', JSON.stringify(lastResult));
   } catch (error) {
@@ -165,8 +153,7 @@ async function processClosedWindow(startMs) {
 async function poll() {
   if (stopping) return;
   const current = currentWindowStart();
-  const closed = current - WINDOW_MS;
-  await processClosedWindow(closed);
+  await processClosedWindow(current - WINDOW_MS);
 }
 
 function start() {
@@ -175,7 +162,7 @@ function start() {
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M + 15M');
   console.log('RULE 5M: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('RULE 15M: SUM THE THREE PREVIOUS 5M WINNERS PER ASSET, THEN SELECT THE LARGEST TOTAL');
+  console.log('RULE 15M: SUM THE THREE PREVIOUS 5M TOP LIQUIDATIONS PER ASSET, THEN SELECT THE LARGEST TOTAL');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED 5M PERIOD');
   console.log('DIRECTION: SHORT=GREEN, LONG=RED');
   console.log('LINK: NEXT 5M/15M POLYMARKET MARKET');
@@ -198,5 +185,8 @@ const server = createServer((req, res) => {
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
 });
-server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT}`));
-start();
+
+server.listen(HTTP_PORT, () => {
+  console.log(`HTTP diagnostics listening on ${HTTP_PORT}`);
+  start();
+});
