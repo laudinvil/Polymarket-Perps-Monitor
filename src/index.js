@@ -8,7 +8,10 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
-const PAGE_LIMIT = 1000;
+// Pinax currently rejects limit values above 10.
+// Keep pagination so windows with more than 10 events are still fully collected.
+const PAGE_LIMIT = 10;
+const MAX_PAGES = 100;
 const RUN_ONCE = process.env.RUN_ONCE === 'true';
 const alertedPeriods = new Set();
 let lastAlertAsset = null;
@@ -26,7 +29,7 @@ async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const all = [];
   let page = 1;
-  while (page <= 20) {
+  while (page <= MAX_PAGES) {
     const url = new URL(PINAX_URL);
     url.searchParams.set('coin', coin);
     url.searchParams.set('dex', 'perps');
@@ -35,7 +38,7 @@ async function fetchCoinLiquidations(coin, startMs, endMs) {
     url.searchParams.set('sort_by', 'time');
     url.searchParams.set('limit', String(PAGE_LIMIT));
     url.searchParams.set('page', String(page));
-    console.log(`[Pinax][REQUEST] ${coin} page=${page} window=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
+    console.log(`[Pinax][REQUEST] ${coin} page=${page} limit=${PAGE_LIMIT} window=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
     const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
     const raw = await response.text();
     if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw.slice(0, 500)}`);
@@ -47,6 +50,7 @@ async function fetchCoinLiquidations(coin, startMs, endMs) {
     if (rows.length < PAGE_LIMIT) break;
     page += 1;
   }
+  if (page > MAX_PAGES) console.warn(`[Pinax][PAGINATION_LIMIT] ${coin}: reached MAX_PAGES=${MAX_PAGES}`);
   return all;
 }
 
