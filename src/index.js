@@ -106,7 +106,23 @@ function connect() {
 }
 function shutdown(signal) { stopping = true; clearTimeout(reconnectTimer); clearInterval(statsTimer); clearInterval(finalizeTimer); try { websocket?.close(); } catch {} try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-const server = createServer((req, res) => { const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); if (url.pathname === '/cvd' || url.pathname === '/trades') { res.writeHead(200); res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'exactly one strongest positive or negative flow per completed period; 15M duplicate of 5M suppressed', data: allStats() })); return; } if (url.pathname === '/health') { res.writeHead(200); res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true }); return; } res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] })); });
+const server = createServer((req, res) => {
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  if (url.pathname === '/cvd' || url.pathname === '/trades') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'exactly one strongest positive or negative flow per completed period; 15M duplicate of 5M suppressed', data: allStats() }));
+    return;
+  }
+  if (url.pathname === '/health') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true, dedupe: '15M duplicate of 5M suppressed' }));
+    return;
+  }
+  res.writeHead(404);
+  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] }));
+});
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT} (/cvd)`));
 console.log('=== POLYMARKET CVD FLOW MONITOR ===');
 console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY');
@@ -115,4 +131,6 @@ console.log('PERIODS: 5M + 15M');
 console.log('ALERT: ONE STRONGEST POSITIVE OR NEGATIVE FLOW PER COMPLETED PERIOD');
 console.log('NO MINIMUM CVD THRESHOLD');
 console.log('15M DUPLICATE OF 5M IS SUPPRESSED');
-connect(); statsTimer = setInterval(printStats, STATS_INTERVAL_MS); finalizeTimer = setInterval(finalizeExpiredBuckets, 1000);
+connect();
+statsTimer = setInterval(printStats, STATS_INTERVAL_MS);
+finalizeTimer = setInterval(finalizeExpiredBuckets, 1000);
