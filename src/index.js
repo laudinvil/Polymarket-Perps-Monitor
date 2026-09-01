@@ -8,6 +8,7 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_MS = 5 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
 const alertedPeriods = new Set();
+const alertedAssets = new Set();
 let boundaryTimer = null;
 let stopping = false;
 let lastCheck = null;
@@ -24,7 +25,7 @@ function actionLabel(direction) {
   const d = String(direction || '').toUpperCase();
   return d.includes('LONG') ? 'BUY UP' : d.includes('SHORT') ? 'BUY DOWN' : '';
 }
-function polymarketUrl(asset, startMs, timeframeMinutes) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${timeframeMinutes}m-${Math.floor(startMs / 1000)}`; }
+function polymarketUrl(asset, startMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(startMs / 1000)}`; }
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
@@ -74,10 +75,15 @@ async function sendFiveMinuteAlert(periodStart, events) {
   const asset = String(winner.coin);
   const notional = Number(winner.notional);
   const direction = winner.direction || winner.liquidation_kind;
+  if (alertedAssets.has(asset)) {
+    console.log(`[ALERT] skipped ${asset}: previous alert was also ${asset}; waiting for a different asset`);
+    return null;
+  }
   const nextStart = periodStart + WINDOW_MS;
-  const text = [directionLabel(direction), '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, actionLabel(direction), '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart, 5)].join('\n');
+  const text = [directionLabel(direction), '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, actionLabel(direction), '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart)].join('\n');
   await sendTelegram(text);
-  return { asset, notional, direction, nextMarket: polymarketUrl(asset, nextStart, 5) };
+  alertedAssets.add(asset);
+  return { asset, notional, direction, nextMarket: polymarketUrl(asset, nextStart) };
 }
 
 async function processClosedWindow(startMs) {
@@ -121,7 +127,8 @@ async function start() {
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M ONLY');
-  console.log('RULE 5M: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('REPEAT RULE: SAME ASSET CANNOT ALERT TWICE IN A ROW; NEXT ALERT MUST BE A DIFFERENT ASSET');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED 5M PERIOD');
   console.log('DIRECTION: SHORT=GREEN, LONG=RED');
   console.log('LINK: NEXT 5M POLYMARKET MARKET');
@@ -139,7 +146,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M'], rule5m: 'one largest liquidation by notional across all 7 assets', pinax: 'one request per coin per closed 5M period', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M'], rule5m: 'one largest liquidation by notional across all 7 assets', repeatRule: 'same asset cannot alert twice in a row', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
