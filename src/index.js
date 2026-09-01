@@ -3,20 +3,18 @@ import { createServer } from 'node:http';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_TRADE_WS = 'wss://fstream.binance.com/stream?streams=';
-const BINANCE_AGGTRADES_REST = 'https://fapi.binance.com/fapi/v1/aggTrades';
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 const STATS_INTERVAL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
-const REST_LIMIT = 1000;
 
 const stats = new Map();
 let websocket = null;
 let reconnectTimer = null;
 let statsTimer = null;
 let stopping = false;
-let bootstrapComplete = false;
+let streamConnected = false;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function symbol(asset) { return `${asset.toLowerCase()}usdt`; }
@@ -34,7 +32,7 @@ function rollBucket(state, now) {
   const start = Math.floor(now / WINDOW_5M) * WINDOW_5M;
   if (state.five.start !== start) state.five = newBucket(start);
 }
-function addCvd(asset, isBuyerAggressor, usd, now, allowAlert) {
+function addCvd(asset, isBuyerAggressor, usd, now) {
   const state = getState(asset);
   rollBucket(state, now);
   const bucket = state.five;
@@ -43,7 +41,15 @@ function addCvd(asset, isBuyerAggressor, usd, now, allowAlert) {
   bucket.lastTrade = now;
   const currentSign = signOfCvd(bucket.cvd);
 
-  if (allowAlert && bucket.initialized && previousSign && currentSign && previousSign !== currentSign && bucket.lastAlertSign !== currentSign) {
+  // The first realtime trade establishes the baseline for the current 5M window.
+  // It must never generate an alert by itself.
+  if (!bucket.initialized) {
+    bucket.initialized = true;
+    bucket.lastAlertSign = currentSign;
+    return;
+  }
+
+  if (previousSign && currentSign && previousSign !== currentSign && bucket.lastAlertSign !== currentSign) {
     bucket.lastAlertSign = currentSign;
     void alertCvdCrossing(asset, previousSign, currentSign, bucket.cvd, now);
   }
@@ -81,32 +87,6 @@ async function alertCvdCrossing(asset, previousSign, currentSign, cvd, now) {
   ];
   await sendTelegram(lines.join('\n'));
 }
-async function bootstrapAsset(asset, now) {
-  const state = getState(asset);
-  const start = Math.floor(now / WINDOW_5M) * WINDOW_5M;
-  const response = await fetch(`${BINANCE_AGGTRADES_REST}?symbol=${asset}USDT&startTime=${start}&endTime=${now}&limit=${REST_LIMIT}`);
-  if (!response.ok) throw new Error(`Binance aggTrades ${response.status}: ${await response.text()}`);
-  const trades = await response.json();
-  state.five = newBucket(start);
-  for (const trade of trades) {
-    const t = num(trade?.T || trade?.E);
-    if (!t || t < start || t > now) continue;
-    const usd = num(trade?.p) * num(trade?.q);
-    addCvd(asset, trade?.m === false, usd, t, false);
-  }
-  state.five.initialized = true;
-  state.five.lastAlertSign = 0;
-  console.log(`[Bootstrap] ${asset}: ${trades.length} AggTrades, 5M CVD=${state.five.cvd.toFixed(0)}, sign=${signOfCvd(state.five.cvd)}`);
-}
-async function bootstrapCvd() {
-  const now = Date.now();
-  console.log('=== 5M CVD BOOTSTRAP ===');
-  for (const asset of ASSETS) {
-    try { await bootstrapAsset(asset, now); }
-    catch (error) { console.error(`[Bootstrap] ${asset}:`, error?.message ?? error); }
-  }
-  bootstrapComplete = true;
-}
 function snapshot(asset) {
   const state = getState(asset);
   const bucket = state.five;
@@ -131,7 +111,10 @@ function connect() {
   if (stopping) return;
   const streams = ASSETS.map(asset => `${symbol(asset)}@aggTrade`).join('/');
   websocket = new WebSocket(`${BINANCE_TRADE_WS}${streams}`);
-  websocket.addEventListener('open', () => console.log('Binance Futures AggTrade stream connected'));
+  websocket.addEventListener('open', () => {
+    streamConnected = true;
+    console.log('Binance Futures AggTrade stream connected');
+  });
   websocket.addEventListener('message', event => {
     try {
       const message = JSON.parse(String(event.data));
@@ -144,11 +127,15 @@ function connect() {
       if (!asset) return;
       const usd = num(data.p) * num(data.q);
       const now = num(data.T || data.E) || Date.now();
-      addCvd(asset, data.m === false, usd, now, true);
+      addCvd(asset, data.m === false, usd, now);
     } catch (error) { console.error('[AggTrade Parse]', error?.message ?? error); }
   });
-  websocket.addEventListener('error', error => console.error('[WebSocket]', error?.message ?? error));
+  websocket.addEventListener('error', error => {
+    streamConnected = false;
+    console.error('[WebSocket]', error?.message ?? error);
+  });
   websocket.addEventListener('close', () => {
+    streamConnected = false;
     if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS);
   });
 }
@@ -171,9 +158,9 @@ const server = createServer((req, res) => {
     res.writeHead(200);
     res.end(JSON.stringify({
       ok: true,
-      source: 'Binance Futures AggTrades',
+      source: 'Binance Futures realtime AggTrades',
       checkedAt: new Date().toISOString(),
-      bootstrapComplete,
+      streamConnected,
       assets: ASSETS,
       period: '5M',
       monitor: '5M_CVD_ONLY',
@@ -184,7 +171,7 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/health') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', bootstrapComplete, alerts: true }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', streamConnected, alerts: true }));
     return;
   }
   res.writeHead(404);
@@ -193,14 +180,13 @@ const server = createServer((req, res) => {
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on :${HTTP_PORT} (/cvd)`));
 
 console.log('=== POLYMARKET 5M CVD MONITOR ===');
-console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES');
+console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES ONLY');
 console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('ONLY 5M CVD');
 console.log('CVD RESETS AT EVERY 5M MARKET BOUNDARY');
-console.log('BOOTSTRAP: CURRENT 5M MARKET, NO ALERT DURING INITIALIZATION');
-console.log('ALERT: ONE ZERO-CROSSING PER 5M CVD DIRECTION');
+console.log('NO REST BOOTSTRAP — FIRST REALTIME TRADE ESTABLISHES BASELINE');
+console.log('ALERT: ZERO-CROSSING AFTER BASELINE, MAX ONE ALERT PER DIRECTION');
 console.log(`ASSETS: ${ASSETS.join(', ')}`);
 
-await bootstrapCvd();
 connect();
 statsTimer = setInterval(printStats, STATS_INTERVAL_MS);
