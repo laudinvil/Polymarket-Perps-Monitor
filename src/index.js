@@ -22,6 +22,10 @@ function directionLabel(direction) {
   const d = String(direction || '').toUpperCase();
   return d.includes('LONG') ? '🔴 LONG LIQUIDATION' : d.includes('SHORT') ? '🟢 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
 }
+function actionLabel(direction) {
+  const d = String(direction || '').toUpperCase();
+  return d.includes('LONG') ? 'BUY UP' : d.includes('SHORT') ? 'BUY DOWN' : '';
+}
 function polymarketUrl(asset, startMs, timeframeMinutes) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${timeframeMinutes}m-${Math.floor(startMs / 1000)}`; }
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
@@ -87,11 +91,11 @@ async function sendFiveMinuteAlert(periodStart, events) {
   const winner = candidates[0];
   const asset = String(winner.coin);
   const notional = Number(winner.notional);
-  const direction = directionLabel(winner.direction || winner.liquidation_kind);
+  const direction = winner.direction || winner.liquidation_kind;
   const nextStart = periodStart + WINDOW_MS;
-  const text = [direction, '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart, 5)].join('\n');
+  const text = [directionLabel(direction), '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, actionLabel(direction), '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart, 5)].join('\n');
   await sendTelegram(text);
-  return { asset, notional, direction: winner.direction || winner.liquidation_kind, nextMarket: polymarketUrl(asset, nextStart, 5) };
+  return { asset, notional, direction, nextMarket: polymarketUrl(asset, nextStart, 5) };
 }
 
 async function sendFifteenMinuteAlert(periodStart) {
@@ -113,7 +117,7 @@ async function sendFifteenMinuteAlert(periodStart) {
   const winner = totals[0];
   const direction = winner.long > winner.short ? 'LONG' : winner.short > winner.long ? 'SHORT' : '';
   const nextStart = periodStart + WINDOW_MS;
-  const text = [directionLabel(direction), '', `${winner.asset} — 15M`, `Size: ${fmtUsd(winner.total)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(winner.asset, nextStart, 15)].join('\n');
+  const text = [directionLabel(direction), '', `${winner.asset} — 15M`, `Size: ${fmtUsd(winner.total)} USDT`, actionLabel(direction), '', '▶️ POLYMARKET', polymarketUrl(winner.asset, nextStart, 15)].join('\n');
   await sendTelegram(text);
   return { asset: winner.asset, total: winner.total, long: winner.long, short: winner.short, direction, nextMarket: polymarketUrl(winner.asset, nextStart, 15) };
 }
