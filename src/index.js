@@ -38,12 +38,13 @@ async function getOI(asset) {
 async function checkPeriod(asset, windowMs, now) {
   const key = `${asset}:${windowMs}`;
   const period = Math.floor(now / windowMs) * windowMs;
-  const s = state.get(key) || { period, baseline: null, alerted: false };
-  if (s.period !== period) { s.period = period; s.baseline = null; s.alerted = false; }
+  const s = state.get(key) || { period, previousOI: null, alerted: false };
+  if (s.period !== period) { s.period = period; s.previousOI = null; s.alerted = false; }
   const oi = await getOI(asset);
-  if (s.baseline === null) { s.baseline = oi; state.set(key, s); return; }
-  if (s.alerted || s.baseline <= 0) { state.set(key, s); return; }
-  const changePct = ((oi - s.baseline) / s.baseline) * 100;
+  if (s.previousOI === null) { s.previousOI = oi; state.set(key, s); return; }
+  if (s.alerted || s.previousOI <= 0) { s.previousOI = oi; state.set(key, s); return; }
+  const changePct = ((oi - s.previousOI) / s.previousOI) * 100;
+  s.previousOI = oi;
   if (Math.abs(changePct) < OI_THRESHOLD_PCT) { state.set(key, s); return; }
   s.alerted = true;
   const direction = changePct > 0 ? 'INCREASE' : 'DECREASE';
@@ -80,5 +81,6 @@ console.log('SOURCE: BINANCE FUTURES OPEN INTEREST API');
 console.log('5M: ON | 15M: ON | OI threshold: ±0.05%');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
 console.log('LIQUIDATIONS: DISABLED');
+console.log('OI CHANGE: COMPARE EACH POLL WITH THE PREVIOUS OI VALUE');
 console.log('5M ALERT: NEXT MARKET | 15M ALERT: CURRENT MARKET');
 loop();
