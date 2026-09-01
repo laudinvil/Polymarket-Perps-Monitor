@@ -215,10 +215,11 @@ async function process15m(startMs) {
 async function processDueWindows() {
   const now = Date.now();
   const closed5m = windowStart(now, WINDOW_5M) - WINDOW_5M;
-  // 15M is intentionally the three previous closed 5M intervals.
-  // Example at 19:28: closed5m = 19:20..19:25, so 15M = 19:10..19:25.
-  const closed15mStart = closed5m - WINDOW_15M;
-  console.log(`[SCHEDULER][DUE] now=${new Date(now).toISOString()} closed5m=${new Date(closed5m).toISOString()} closed15m=${new Date(closed15mStart).toISOString()}..${new Date(closed5m).toISOString()}`);
+  // 15M must match Polymarket's quarter-hour boundaries: 00-15, 15-30, 30-45, 45-00.
+  // Always process the previous fully closed 15M interval.
+  // Example at 19:28: closed5m = 19:20..19:25, closed15m = 19:00..19:15.
+  const closed15mStart = windowStart(now, WINDOW_15M) - WINDOW_15M;
+  console.log(`[SCHEDULER][DUE] now=${new Date(now).toISOString()} closed5m=${new Date(closed5m).toISOString()} closed15m=${new Date(closed15mStart).toISOString()}..${new Date(closed15mStart + WINDOW_15M).toISOString()}`);
   const five = await process5m(closed5m);
   let fifteen = null;
   if (lastProcessed15m !== closed15mStart) fifteen = await process15m(closed15mStart);
@@ -252,7 +253,7 @@ async function start() {
   console.log('RULE: LARGEST NUMBER OF UNIQUE LIQUIDATED USERS PER COIN');
   console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME COIN CANNOT ALERT TWICE IN A ROW');
   console.log('TIME FILTER: LOCAL — Pinax start_time/end_time intentionally not used');
-  console.log('15M WINDOW: PREVIOUS THREE CLOSED 5M INTERVALS');
+  console.log('15M WINDOW: PREVIOUS FULLY CLOSED POLYMARKET QUARTER-HOUR INTERVAL');
   console.log(`RUN_ONCE: ${RUN_ONCE}`);
   console.log('DIAGNOSTICS: Pinax requests, response keys, local filtering, stats, winner, Telegram result');
   console.log('OLD RULE REMOVED: NO MORE ALERTS FOR SINGLE LARGEST LIQUIDATION');
@@ -279,16 +280,17 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSizeUsdt: null, rule: 'largest number of unique liquidated users per coin', repeatRule: 'cross-timeframe same coin cannot alert twice in a row', timeFilter: 'local timestamp filtering', runOnce: RUN_ONCE, lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSize: null, rule: 'largest number of unique liquidated users per coin', repeatRule: 'same coin cannot alert twice in a row across timeframes', timeFilter: 'local', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404);
   res.end(JSON.stringify({ ok: false, error: 'not found' }));
 });
 
-server.listen(HTTP_PORT, () => console.log(`HTTP server listening on ${HTTP_PORT}`));
-
-start().catch(error => {
-  console.error('[FATAL]', error?.stack || error);
-  process.exitCode = 1;
+server.listen(HTTP_PORT, () => {
+  console.log(`HTTP diagnostics server listening on :${HTTP_PORT}`);
+  start().catch(error => {
+    console.error('[STARTUP_ERROR]', error?.stack || error);
+    process.exitCode = 1;
+  });
 });
