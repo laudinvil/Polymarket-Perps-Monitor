@@ -1,111 +1,110 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const BINANCE_DEPTH_WS = 'wss://fstream.binance.com/stream?streams=';
+const BINANCE_TRADE_WS = 'wss://fstream.binance.com/stream?streams=';
 
 const ENABLE_5M = true;
 const ENABLE_15M = true;
-const PRESSURE_ALERT_THRESHOLD_PCT = 95;
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
-const DEPTH_LEVELS = 20;
+const STATS_INTERVAL_MS = 15000;
 
-const state = new Map();
+const stats = new Map();
 let websocket = null;
 let reconnectTimer = null;
+let statsTimer = null;
 let stopping = false;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function symbol(asset) { return `${asset.toLowerCase()}usdt`; }
-function marketLink(asset, start, windowMs) {
-  const period = windowMs === WINDOW_15M ? '15m' : '5m';
-  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${period}-${Math.floor(start / 1000)}`;
+function newBucket(start) {
+  return { start, buyVolume: 0, sellVolume: 0, totalVolume: 0, buyTrades: 0, sellTrades: 0, largestBuy: 0, largestSell: 0 };
 }
-async function sendTelegram(text) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
-    });
-    if (!r.ok) console.error('[Telegram] HTTP', r.status, await r.text());
-    return r.ok;
-  } catch (e) { console.error('[Telegram]', e?.message ?? e); return false; }
-}
-function quoteVolume(levels) {
-  return (Array.isArray(levels) ? levels : []).reduce((sum, level) => {
-    const price = num(level?.[0]);
-    const quantity = num(level?.[1]);
-    return sum + price * quantity;
-  }, 0);
-}
-function pressure(bidVolume, askVolume) {
-  const total = bidVolume + askVolume;
-  if (!(total > 0)) return 0;
-  return ((bidVolume - askVolume) / total) * 100;
-}
-function formatPressure(value) { return `${value >= 0 ? '+' : ''}${value.toFixed(0)}%`; }
-function formatUsd(value) { return `${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} USDT`; }
-function pressureState(asset, windowMs, now) {
-  const key = `${asset}:${windowMs}`;
-  const period = Math.floor(now / windowMs) * windowMs;
-  let s = state.get(key);
-  if (!s || s.period !== period) {
-    s = { period, lastPressure: null, alerted: false, lastAlertPressure: null, lastUpdate: null, bidVolume: 0, askVolume: 0 };
-    state.set(key, s);
+function getState(asset) {
+  let s = stats.get(asset);
+  if (!s) {
+    const now = Date.now();
+    s = { five: newBucket(Math.floor(now / WINDOW_5M) * WINDOW_5M), fifteen: newBucket(Math.floor(now / WINDOW_15M) * WINDOW_15M), cvd: 0, lastTrade: null };
+    stats.set(asset, s);
   }
   return s;
 }
-async function processDepth(asset, bids, asks, eventTime) {
-  const bidVolume = quoteVolume(bids);
-  const askVolume = quoteVolume(asks);
-  const p = pressure(bidVolume, askVolume);
-  const now = num(eventTime) || Date.now();
-  for (const windowMs of [WINDOW_5M, WINDOW_15M]) {
-    if ((windowMs === WINDOW_5M && !ENABLE_5M) || (windowMs === WINDOW_15M && !ENABLE_15M)) continue;
-    const s = pressureState(asset, windowMs, now);
-    s.lastPressure = p;
-    s.lastUpdate = now;
-    s.bidVolume = bidVolume;
-    s.askVolume = askVolume;
-    if (s.alerted || Math.abs(p) < PRESSURE_ALERT_THRESHOLD_PCT) continue;
-    s.alerted = true;
-    s.lastAlertPressure = p;
-    const label = windowMs === WINDOW_5M ? '5M' : '15M';
-    const linkStart = windowMs === WINDOW_5M ? s.period + WINDOW_5M : s.period;
-    const direction = p > 0 ? 'BUY PRESSURE' : 'SELL PRESSURE';
-    const text = [
-      `🚨 ${direction} — ${label}`,
-      '',
-      `${asset} — ${direction}`,
-      `📊 Pressure: ${formatPressure(p)}`,
-      `🟢 Bid volume: ${formatUsd(bidVolume)}`,
-      `🔴 Ask volume: ${formatUsd(askVolume)}`,
-      '',
-      `▶️ ${windowMs === WINDOW_5M ? 'NEXT' : 'CURRENT'} ${asset} ${label} UP/DOWN`,
-      marketLink(asset, linkStart, windowMs)
-    ].join('\n');
-    await sendTelegram(text);
+function rollBuckets(s, now) {
+  const five = Math.floor(now / WINDOW_5M) * WINDOW_5M;
+  const fifteen = Math.floor(now / WINDOW_15M) * WINDOW_15M;
+  if (s.five.start !== five) s.five = newBucket(five);
+  if (s.fifteen.start !== fifteen) s.fifteen = newBucket(fifteen);
+}
+function addTrade(bucket, isBuyerAggressor, usd) {
+  bucket.totalVolume += usd;
+  if (isBuyerAggressor) {
+    bucket.buyVolume += usd;
+    bucket.buyTrades += 1;
+    bucket.largestBuy = Math.max(bucket.largestBuy, usd);
+  } else {
+    bucket.sellVolume += usd;
+    bucket.sellTrades += 1;
+    bucket.largestSell = Math.max(bucket.largestSell, usd);
+  }
+}
+function snapshot(asset, windowMs) {
+  const s = getState(asset);
+  const b = windowMs === WINDOW_5M ? s.five : s.fifteen;
+  const delta = b.buyVolume - b.sellVolume;
+  const deltaPct = b.totalVolume > 0 ? (delta / b.totalVolume) * 100 : 0;
+  return {
+    asset,
+    period: windowMs === WINDOW_5M ? '5M' : '15M',
+    start: b.start,
+    buyVolume: b.buyVolume,
+    sellVolume: b.sellVolume,
+    totalVolume: b.totalVolume,
+    delta,
+    deltaPct,
+    cvd: s.cvd,
+    buyTrades: b.buyTrades,
+    sellTrades: b.sellTrades,
+    largestBuy: b.largestBuy,
+    largestSell: b.largestSell,
+    lastTrade: s.lastTrade
+  };
+}
+function printStats() {
+  console.log('=== AGGTRADE STATISTICS ===');
+  for (const asset of ASSETS) {
+    const five = snapshot(asset, WINDOW_5M);
+    const fifteen = snapshot(asset, WINDOW_15M);
+    console.log(JSON.stringify({ asset, five, fifteen }));
   }
 }
 function connect() {
   if (stopping) return;
-  const streams = ASSETS.map(asset => `${symbol(asset)}@depth20@100ms`).join('/');
-  websocket = new WebSocket(`${BINANCE_DEPTH_WS}${streams}`);
-  websocket.addEventListener('open', () => console.log('Binance Futures depth stream connected'));
+  const streams = ASSETS.map(asset => `${symbol(asset)}@aggTrade`).join('/');
+  websocket = new WebSocket(`${BINANCE_TRADE_WS}${streams}`);
+  websocket.addEventListener('open', () => console.log('Binance Futures AggTrade stream connected'));
   websocket.addEventListener('message', event => {
     try {
       const message = JSON.parse(String(event.data));
       const data = message?.data;
-      if (data?.e !== 'depthUpdate') return;
+      if (data?.e !== 'aggTrade') return;
       const stream = String(message?.stream ?? '');
-      const match = stream.match(/^([a-z0-9]+)@depth20@100ms$/i);
+      const match = stream.match(/^([a-z0-9]+)@aggtrade$/i);
       if (!match) return;
       const asset = ASSETS.find(x => symbol(x) === match[1].toLowerCase());
       if (!asset) return;
-      void processDepth(asset, data.b || [], data.a || [], data.E || Date.now());
-    } catch (e) { console.error('[Depth Parse]', e?.message ?? e); }
+      const price = num(data.p);
+      const quantity = num(data.q);
+      const usd = price * quantity;
+      const now = num(data.T || data.E) || Date.now();
+      const s = getState(asset);
+      rollBuckets(s, now);
+      const isBuyerAggressor = Boolean(data.m === false);
+      addTrade(s.five, isBuyerAggressor, usd);
+      addTrade(s.fifteen, isBuyerAggressor, usd);
+      s.cvd += isBuyerAggressor ? usd : -usd;
+      s.lastTrade = now;
+    } catch (e) { console.error('[AggTrade Parse]', e?.message ?? e); }
   });
   websocket.addEventListener('error', error => console.error('[WebSocket]', error?.message ?? error));
   websocket.addEventListener('close', () => {
@@ -115,18 +114,19 @@ function connect() {
 function shutdown(signal) {
   stopping = true;
   clearTimeout(reconnectTimer);
+  clearInterval(statsTimer);
   try { websocket?.close(); } catch {}
   console.log(`Shutdown: ${signal}`);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-console.log('=== POLYMARKET ORDER BOOK PRESSURE MONITOR ===');
-console.log('SOURCE: BINANCE FUTURES REALTIME DEPTH STREAM');
-console.log('OI: DISABLED | LIQUIDATIONS: DISABLED');
+console.log('=== POLYMARKET AGGTRADE MONITOR ===');
+console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES');
+console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('5M: ON | 15M: ON');
-console.log(`PRESSURE ALERT: ±${PRESSURE_ALERT_THRESHOLD_PCT}%`);
 console.log(`ASSETS: ${ASSETS.join(', ')}`);
-console.log('PRESSURE = (BID VOLUME - ASK VOLUME) / (BID VOLUME + ASK VOLUME)');
-console.log('5M ALERT: NEXT MARKET | 15M ALERT: CURRENT MARKET');
+console.log('MODE: STATISTICS ONLY — TELEGRAM ALERTS DISABLED');
+console.log('TRACKING: BUY/SELL VOLUME, DELTA, DELTA %, CVD, TRADE COUNTS, LARGEST BUY/SELL');
 connect();
+statsTimer = setInterval(printStats, STATS_INTERVAL_MS);
