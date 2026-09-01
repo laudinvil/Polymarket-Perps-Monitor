@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const PINAX_API_KEY = process.env.PINAX_API_KEY;
+const PINAX_API_KEY = process.env.PINAX_API_KEY || process.env.PINAX_API_TOKEN;
 const PINAX_URL = 'https://api.pinax.network/v1/hyperliquid/markets/liquidations';
 const ASSETS = ['DOGE', 'BNB'];
 const WINDOW_MS = 5 * 60 * 1000;
@@ -16,15 +16,11 @@ let lastResult = null;
 
 function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS; }
 function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-function directionLabel(direction) {
-  return String(direction || '').includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION';
-}
-function polymarketUrl(asset, nextStartMs) {
-  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`;
-}
+function directionLabel(direction) { return String(direction || '').includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION'; }
+function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
 
 async function fetchLiquidations(startMs, endMs) {
-  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY is not configured');
+  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const url = new URL(PINAX_URL);
   url.searchParams.set('coin', ASSETS.join(','));
   url.searchParams.set('dex', 'perps');
@@ -40,10 +36,7 @@ async function fetchLiquidations(startMs, endMs) {
 
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) throw new Error('Telegram is not configured');
-  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
-  });
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }) });
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${await response.text()}`);
 }
 
@@ -53,29 +46,15 @@ async function processClosedWindow(startMs) {
   const endMs = startMs + WINDOW_MS;
   try {
     const events = await fetchLiquidations(startMs, endMs);
-    const candidates = events
-      .filter(e => ASSETS.includes(String(e?.coin)))
-      .filter(e => Number(e?.notional) > 0)
-      .sort((a, b) => Number(b.notional) - Number(a.notional));
+    const candidates = events.filter(e => ASSETS.includes(String(e?.coin))).filter(e => Number(e?.notional) > 0).sort((a, b) => Number(b.notional) - Number(a.notional));
     lastCheck = new Date().toISOString();
-    if (!candidates.length) {
-      lastResult = { periodStart: startMs, periodEnd: endMs, events: 0, alert: false };
-      return;
-    }
+    if (!candidates.length) { lastResult = { periodStart: startMs, periodEnd: endMs, events: 0, alert: false }; return; }
     const winner = candidates[0];
     const asset = String(winner.coin);
     const notional = Number(winner.notional);
     const direction = directionLabel(winner.direction || winner.liquidation_kind);
     const nextStart = endMs;
-    const text = [
-      direction,
-      '',
-      `${asset} — 5M LIQUIDATION`,
-      `Size: ${fmtUsd(notional)} USDT`,
-      '',
-      '▶️ POLYMARKET',
-      polymarketUrl(asset, nextStart)
-    ].join('\n');
+    const text = [direction, '', `${asset} — 5M LIQUIDATION`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart)].join('\n');
     await sendTelegram(text);
     alertedPeriods.add(key);
     lastResult = { periodStart: startMs, periodEnd: endMs, events: candidates.length, alert: true, asset, direction: winner.direction || winner.liquidation_kind, notional, eventHash: winner.event_hash || null, nextMarket: polymarketUrl(asset, nextStart) };
@@ -87,13 +66,7 @@ async function processClosedWindow(startMs) {
   }
 }
 
-async function poll() {
-  if (stopping) return;
-  const current = currentWindowStart();
-  // Give the indexer a short grace period after the 5M boundary before querying the closed window.
-  const closedStart = current - WINDOW_MS;
-  await processClosedWindow(closedStart);
-}
+async function poll() { if (stopping) return; const current = currentWindowStart(); await processClosedWindow(current - WINDOW_MS); }
 
 function start() {
   console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
@@ -107,12 +80,7 @@ function start() {
   pollTimer = setInterval(() => void poll(), POLL_MS);
 }
 
-function shutdown(signal) {
-  stopping = true;
-  clearInterval(pollTimer);
-  try { server.close(); } catch {}
-  console.log(`Shutdown: ${signal}`);
-}
+function shutdown(signal) { stopping = true; clearInterval(pollTimer); try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
@@ -125,8 +93,7 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, period: '5M', rule: 'one largest liquidation by notional across DOGE and BNB', lastCheck, lastResult }));
     return;
   }
-  res.writeHead(404);
-  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
+  res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
 });
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT}`));
 start();
