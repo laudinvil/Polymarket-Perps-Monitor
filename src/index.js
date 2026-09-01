@@ -3,21 +3,29 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 
 const ENABLE_5M = true;
-const ENABLE_15M = false;
+const ENABLE_15M = true;
 const ENABLE_5M_LONG = true;
 const ENABLE_5M_SHORT = true;
+const ENABLE_15M_LONG = true;
+const ENABLE_15M_SHORT = true;
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
 const WINDOW_5M = 5 * 60 * 1000;
+const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
-let alerted5mWindow = null;
-let lastAlertAsset = null;
-let flush5mTimer = null;
-let websocket = null;
-let reconnectTimer = null;
+let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
+let firstAlerted5m = null;
+let largest15m = null;
+let previousLargest15m = null;
+let lastAlertPair15m = null;
+let lastAlertAsset5m = null;
+let timer5m;
+let timer15m;
+let websocket;
+let reconnectTimer;
 let stopping = false;
 let advancing = Promise.resolve();
 
@@ -33,8 +41,9 @@ function parseSymbol(symbol) {
   return null;
 }
 function money(v, quote) { return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`; }
-function marketLink(asset, start) {
-  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(start / 1000)}`;
+function marketLink(asset, start, windowMs) {
+  const period = windowMs === WINDOW_15M ? '15m' : '5m';
+  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${period}-${Math.floor(start / 1000)}`;
 }
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
@@ -44,23 +53,27 @@ async function sendTelegram(text) {
     return response.ok;
   } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
 }
-async function sendAlert(item, marketStart) {
+async function sendAlert(item, start, windowMs, next = false) {
   if (!item || item.notional < MIN_SIZE) return false;
-  const text = [`🚨 ${item.side} LIQUIDATION — 5M`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
+  const label = windowMs === WINDOW_15M ? '15M' : '5M';
+  const linkStart = next ? start + windowMs : start;
+  const title = next ? `▶️ NEXT ${item.asset} ${label} UP/DOWN` : `▶️ ${item.asset} ${label} UP/DOWN`;
+  const text = [`🚨 ${item.side} LIQUIDATION — ${label}`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', title, marketLink(item.asset, linkStart, windowMs)].join('\n');
   return sendTelegram(text);
 }
-async function advanceWindows(now) {
-  const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
-  if (target5 > windowStart5m) {
-    windowStart5m = target5;
-    alerted5mWindow = null;
-  }
-}
-function requestAdvance(now) { advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error)); return advancing; }
-function scheduleFlush() {
-  clearTimeout(flush5mTimer);
-  const next = windowStart5m + WINDOW_5M;
-  flush5mTimer = setTimeout(async () => { await requestAdvance(Date.now()); if (!stopping) scheduleFlush(); }, Math.max(100, next - Date.now() + 50));
+function requestAdvance(now) {
+  advancing = advancing.then(async () => {
+    const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
+    const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
+    if (target5 > windowStart5m) { windowStart5m = target5; firstAlerted5m = null; }
+    while (target15 > windowStart15m) {
+      previousLargest15m = largest15m;
+      windowStart15m += WINDOW_15M;
+      largest15m = null;
+      lastAlertPair15m = null;
+    }
+  }).catch(error => console.error('[Window]', error?.message ?? error));
+  return advancing;
 }
 async function handleForceOrder(payload) {
   const order = payload?.o; if (!order) return;
@@ -70,17 +83,42 @@ async function handleForceOrder(payload) {
   const price = num(order.ap) || num(order.p); const quantity = num(order.q); const notional = Math.abs(price * quantity);
   if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
   const side = sideRaw === 'SELL' ? 'LONG' : 'SHORT';
-  if (side === 'LONG' && !ENABLE_5M_LONG) return;
-  if (side === 'SHORT' && !ENABLE_5M_SHORT) return;
-  const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
-  const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
-  if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
-  if (lastAlertAsset === parsed.asset) return;
-  alerted5mWindow = period;
-  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side };
-  const sent = await sendAlert(item, period);
-  if (sent) lastAlertAsset = parsed.asset;
-  else console.error('[Alert] Telegram send failed; period remains consumed');
+  if ((side === 'LONG' && !ENABLE_5M_LONG && !ENABLE_15M_LONG) || (side === 'SHORT' && !ENABLE_5M_SHORT && !ENABLE_15M_SHORT)) return;
+  const time = num(payload.E) || num(order.T) || Date.now();
+  await requestAdvance(time);
+  const p5 = Math.floor(time / WINDOW_5M) * WINDOW_5M;
+  const p15 = Math.floor(time / WINDOW_15M) * WINDOW_15M;
+  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p15 };
+
+  if (ENABLE_5M && p5 === windowStart5m && firstAlerted5m !== p5) {
+    const enabled = side === 'LONG' ? ENABLE_5M_LONG : ENABLE_5M_SHORT;
+    if (enabled && lastAlertAsset5m !== parsed.asset) {
+      firstAlerted5m = p5;
+      const sent = await sendAlert({ ...item }, p5, WINDOW_5M, false);
+      if (sent) lastAlertAsset5m = parsed.asset;
+    }
+  }
+
+  if (ENABLE_15M && p15 === windowStart15m) {
+    const enabled = side === 'LONG' ? ENABLE_15M_LONG : ENABLE_15M_SHORT;
+    if (enabled && (!largest15m || notional > largest15m.notional)) largest15m = item;
+  }
+}
+async function flush15m() {
+  const current = largest15m;
+  const previous = previousLargest15m;
+  if (!current || !previous) return;
+  if (current.asset !== previous.asset || current.side !== previous.side) return;
+  const key = `${previous.period}:${previous.asset}:${previous.side}|${current.period}:${current.asset}:${current.side}`;
+  if (lastAlertPair15m === key) return;
+  lastAlertPair15m = key;
+  const sent = await sendAlert(current, current.period, WINDOW_15M, true);
+  if (!sent) console.error('[15M Alert] Telegram send failed');
+}
+function scheduleTimers() {
+  clearTimeout(timer5m); clearTimeout(timer15m);
+  timer5m = setTimeout(async () => { await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart5m + WINDOW_5M - Date.now() + 50));
+  timer15m = setTimeout(async () => { await flush15m(); await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart15m + WINDOW_15M - Date.now() + 50));
 }
 function connect() {
   if (stopping) return;
@@ -90,12 +128,13 @@ function connect() {
   websocket.addEventListener('error', error => console.error('[WebSocket]', error?.message ?? error));
   websocket.addEventListener('close', () => { if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS); });
 }
-function shutdown(signal) { stopping = true; clearTimeout(flush5mTimer); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
+function shutdown(signal) { stopping = true; clearTimeout(timer5m); clearTimeout(timer15m); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 0 USDT/USDC');
+console.log('5M: LONG + SHORT | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: first liquidation per 5M period across ALL coins/directions; same coin is blocked until another coin alerts; current 5M market link');
-scheduleFlush();
+console.log('5M: first liquidation alerts immediately; current 5M market link; same-coin repeat block retained');
+console.log('15M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 15M market; same-coin repeat block removed');
+scheduleTimers();
 connect();
