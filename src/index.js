@@ -8,7 +8,7 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
-const PAGE_LIMIT = 100;
+const PAGE_LIMIT = 10;
 const MAX_PAGES = 100;
 const RUN_ONCE = process.env.RUN_ONCE === 'true';
 const alertedPeriods = new Set();
