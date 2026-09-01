@@ -4,7 +4,7 @@ const BINANCE_DEPTH_WS = 'wss://fstream.binance.com/stream?streams=';
 
 const ENABLE_5M = true;
 const ENABLE_15M = true;
-const PRESSURE_ALERT_THRESHOLD_PCT = 50;
+const PRESSURE_ALERT_THRESHOLD_PCT = 80;
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
