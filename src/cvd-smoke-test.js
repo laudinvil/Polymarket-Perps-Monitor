@@ -7,6 +7,7 @@ const totals = new Map(ASSETS.map(asset => [asset, { buyVolume: 0, sellVolume: 0
 let ws;
 let timer;
 let received = false;
+let finished = false;
 
 function num(v) {
   const n = Number(v);
@@ -14,15 +15,15 @@ function num(v) {
 }
 
 function printResults() {
+  if (finished) return;
+  finished = true;
   let failed = false;
   console.log('=== CVD SMOKE TEST ===');
   console.log(`sampleMs=${SAMPLE_MS}`);
   for (const asset of ASSETS) {
     const row = totals.get(asset);
     const cvd = row.buyVolume - row.sellVolume;
-    const rounded = Math.round(cvd * 100) / 100;
-    const expected = Math.round((row.buyVolume - row.sellVolume) * 100) / 100;
-    const ok = rounded === expected && row.trades > 0;
+    const ok = row.trades > 0 && Number.isFinite(cvd);
     if (!ok) failed = true;
     console.log(JSON.stringify({ asset, buyVolume: row.buyVolume, sellVolume: row.sellVolume, cvd, trades: row.trades, check: ok ? 'PASS' : 'FAIL' }));
   }
@@ -45,6 +46,7 @@ ws.addEventListener('open', () => {
   timer = setTimeout(printResults, SAMPLE_MS);
 });
 ws.addEventListener('message', event => {
+  if (finished) return;
   try {
     const message = JSON.parse(String(event.data));
     if (message?.channel !== 'trades' || !Array.isArray(message?.data)) return;
@@ -65,10 +67,13 @@ ws.addEventListener('message', event => {
   }
 });
 ws.addEventListener('error', error => {
+  if (finished) return;
   console.error('WebSocket error:', error?.message ?? error);
   clearTimeout(timer);
   process.exitCode = 1;
 });
 ws.addEventListener('close', () => {
-  if (!timer) return;
+  if (finished) return;
+  if (timer) return;
+  process.exitCode = 1;
 });
