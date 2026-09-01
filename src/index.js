@@ -9,6 +9,7 @@ const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
 const PAGE_LIMIT = 1000;
+const RUN_ONCE = process.env.RUN_ONCE === 'true';
 const alertedPeriods = new Set();
 let lastAlertAsset = null;
 let boundaryTimer = null;
@@ -208,9 +209,15 @@ async function start() {
   console.log('NO LIQUIDATION SIZE THRESHOLD — ALL LIQUIDATIONS COUNT');
   console.log('RULE: LARGEST NUMBER OF UNIQUE LIQUIDATED USERS PER COIN');
   console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME COIN CANNOT ALERT TWICE IN A ROW');
+  console.log(`RUN_ONCE: ${RUN_ONCE}`);
   console.log('DIAGNOSTICS: Pinax requests, response keys, stats, winner, Telegram result');
   console.log('OLD RULE REMOVED: NO MORE ALERTS FOR SINGLE LARGEST LIQUIDATION');
   await processDueWindows();
+  if (RUN_ONCE) {
+    console.log('[RUN_ONCE] Diagnostic cycle complete; exiting.');
+    stopping = true;
+    return;
+  }
   scheduleNextBoundary();
 }
 
@@ -224,7 +231,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSizeUsdt: null, rule: 'largest number of unique liquidated users per coin', repeatRule: 'cross-timeframe same coin cannot alert twice in a row', lastCheck, lastResult, lastAlertAsset, lastProcessed5m, lastProcessed15m }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSizeUsdt: null, rule: 'largest number of unique liquidated users per coin', repeatRule: 'cross-timeframe same coin cannot alert twice in a row', runOnce: RUN_ONCE, lastCheck, lastResult, lastAlertAsset, lastProcessed5m, lastProcessed15m }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
