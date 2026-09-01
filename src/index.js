@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const BINANCE_TRADE_WS = 'wss://fstream.binance.com/stream?streams=';
+const HYPERLIQUID_WS = 'wss://api.hyperliquid.xyz/ws';
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
@@ -15,9 +15,9 @@ let reconnectTimer = null;
 let statsTimer = null;
 let stopping = false;
 let streamConnected = false;
+let lastMessageAt = null;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
-function symbol(asset) { return `${asset.toLowerCase()}usdt`; }
 function signOfCvd(cvd) { return cvd > 0 ? 1 : cvd < 0 ? -1 : 0; }
 function newBucket(start) { return { start, cvd: 0, lastTrade: null, initialized: false, lastAlertSign: 0 }; }
 function getState(asset) {
@@ -41,8 +41,6 @@ function addCvd(asset, isBuyerAggressor, usd, now) {
   bucket.lastTrade = now;
   const currentSign = signOfCvd(bucket.cvd);
 
-  // The first realtime trade establishes the baseline for the current 5M window.
-  // It must never generate an alert by itself.
   if (!bucket.initialized) {
     bucket.initialized = true;
     bucket.lastAlertSign = currentSign;
@@ -107,28 +105,34 @@ function printStats() {
   console.log('=== 5M CVD ===');
   for (const row of allStats()) console.log(JSON.stringify(row));
 }
+function subscribeTrades(ws) {
+  for (const coin of ASSETS) {
+    ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } }));
+  }
+}
 function connect() {
   if (stopping) return;
-  const streams = ASSETS.map(asset => `${symbol(asset)}@aggTrade`).join('/');
-  websocket = new WebSocket(`${BINANCE_TRADE_WS}${streams}`);
+  websocket = new WebSocket(HYPERLIQUID_WS);
   websocket.addEventListener('open', () => {
     streamConnected = true;
-    console.log('Binance Futures AggTrade stream connected');
+    console.log('Hyperliquid trades stream connected');
+    subscribeTrades(websocket);
   });
   websocket.addEventListener('message', event => {
     try {
       const message = JSON.parse(String(event.data));
-      const data = message?.data;
-      if (data?.e !== 'aggTrade') return;
-      const stream = String(message?.stream ?? '');
-      const match = stream.match(/^([a-z0-9]+)@aggtrade$/i);
-      if (!match) return;
-      const asset = ASSETS.find(item => symbol(item) === match[1].toLowerCase());
-      if (!asset) return;
-      const usd = num(data.p) * num(data.q);
-      const now = num(data.T || data.E) || Date.now();
-      addCvd(asset, data.m === false, usd, now);
-    } catch (error) { console.error('[AggTrade Parse]', error?.message ?? error); }
+      if (message?.channel !== 'trades' || !Array.isArray(message?.data)) return;
+      lastMessageAt = Date.now();
+      for (const trade of message.data) {
+        const asset = ASSETS.includes(String(trade?.coin)) ? String(trade.coin) : null;
+        if (!asset) continue;
+        const usd = num(trade.px) * num(trade.sz);
+        const now = num(trade.time) || Date.now();
+        // Hyperliquid trade side: B = buyer aggressor, A = seller aggressor.
+        const isBuyerAggressor = String(trade.side).toUpperCase() === 'B';
+        if (usd > 0) addCvd(asset, isBuyerAggressor, usd, now);
+      }
+    } catch (error) { console.error('[Trade Parse]', error?.message ?? error); }
   });
   websocket.addEventListener('error', error => {
     streamConnected = false;
@@ -158,9 +162,10 @@ const server = createServer((req, res) => {
     res.writeHead(200);
     res.end(JSON.stringify({
       ok: true,
-      source: 'Binance Futures realtime AggTrades',
+      source: 'Hyperliquid realtime trades',
       checkedAt: new Date().toISOString(),
       streamConnected,
+      lastMessageAt,
       assets: ASSETS,
       period: '5M',
       monitor: '5M_CVD_ONLY',
@@ -171,7 +176,7 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/health') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', streamConnected, alerts: true }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', streamConnected, lastMessageAt, alerts: true }));
     return;
   }
   res.writeHead(404);
@@ -180,12 +185,12 @@ const server = createServer((req, res) => {
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on :${HTTP_PORT} (/cvd)`));
 
 console.log('=== POLYMARKET 5M CVD MONITOR ===');
-console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES ONLY');
+console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY');
 console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('ONLY 5M CVD');
 console.log('CVD RESETS AT EVERY 5M MARKET BOUNDARY');
-console.log('NO REST BOOTSTRAP — FIRST REALTIME TRADE ESTABLISHES BASELINE');
-console.log('ALERT: ZERO-CROSSING AFTER BASELINE, MAX ONE ALERT PER DIRECTION');
+console.log('NO REST BOOTSTRAP');
+console.log('ALERT: ZERO-CROSSING AFTER BASELINE');
 console.log(`ASSETS: ${ASSETS.join(', ')}`);
 
 connect();
