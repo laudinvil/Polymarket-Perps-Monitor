@@ -6,11 +6,10 @@ const PINAX_API_KEY = process.env.PINAX_API_KEY || process.env.PINAX_API_TOKEN;
 const PINAX_URL = 'https://api.pinax.network/v1/hyperliquid/markets/liquidations';
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_MS = 5 * 60 * 1000;
-const POLL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
 const alertedPeriods = new Set();
 const fiveMinuteHistory = new Map();
-let pollTimer = null;
+let boundaryTimer = null;
 let stopping = false;
 let lastCheck = null;
 let lastResult = null;
@@ -154,27 +153,35 @@ async function processClosedWindow(startMs) {
   }
 }
 
-async function poll() {
+function scheduleNextBoundary() {
   if (stopping) return;
-  const current = currentWindowStart();
-  await processClosedWindow(current - WINDOW_MS);
+  clearTimeout(boundaryTimer);
+  const now = Date.now();
+  const nextBoundary = currentWindowStart() + WINDOW_MS;
+  const delay = Math.max(0, nextBoundary - now);
+  console.log(`[SCHEDULER] next 5M boundary: ${new Date(nextBoundary).toISOString()} | delayMs=${delay}`);
+  boundaryTimer = setTimeout(async () => {
+    if (stopping) return;
+    await processClosedWindow(nextBoundary - WINDOW_MS);
+    scheduleNextBoundary();
+  }, delay);
 }
 
-function start() {
+async function start() {
   console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M + 15M');
   console.log('RULE 5M: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('RULE 15M: SUM THE THREE PREVIOUS 5M TOP LIQUIDATIONS PER ASSET, THEN SELECT THE LARGEST TOTAL');
+  console.log('RULE 15M: SUM THE THREE PREVIOUS 5M TOP LIQUIDATIONS PER ASSET, THEN SELECT LARGEST TOTAL');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED 5M PERIOD');
   console.log('DIRECTION: SHORT=GREEN, LONG=RED');
   console.log('LINK: NEXT 5M/15M POLYMARKET MARKET');
-  void poll();
-  pollTimer = setInterval(() => void poll(), POLL_MS);
+  await processClosedWindow(currentWindowStart() - WINDOW_MS);
+  scheduleNextBoundary();
 }
 
-function shutdown(signal) { stopping = true; clearInterval(pollTimer); try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
+function shutdown(signal) { stopping = true; clearTimeout(boundaryTimer); try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
@@ -192,5 +199,5 @@ const server = createServer((req, res) => {
 
 server.listen(HTTP_PORT, () => {
   console.log(`HTTP diagnostics listening on ${HTTP_PORT}`);
-  start();
+  void start();
 });
