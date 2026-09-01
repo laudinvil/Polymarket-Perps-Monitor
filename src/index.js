@@ -23,21 +23,24 @@ function directionLabel(direction) {
 function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
+  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const url = new URL(PINAX_URL);
   url.searchParams.set('coin', coin);
   url.searchParams.set('dex', 'perps');
   url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
   url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
   url.searchParams.set('sort_by', 'notional');
-  url.searchParams.set('limit', '10');
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('page', '1');
   const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${await response.text()}`);
-  const body = await response.json();
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw}`);
+  let body;
+  try { body = JSON.parse(raw); } catch { throw new Error(`${coin}: Pinax returned non-JSON response: ${raw.slice(0, 300)}`); }
   return Array.isArray(body?.data) ? body.data : [];
 }
 
 async function fetchLiquidations(startMs, endMs) {
-  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const results = await Promise.all(ASSETS.map(async coin => {
     try {
       const events = await fetchCoinLiquidations(coin, startMs, endMs);
@@ -94,7 +97,7 @@ function start() {
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIOD: 5M');
   console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('PINAX: ONE REQUEST PER COIN, LIMIT 10');
+  console.log('PINAX: ONE REQUEST PER COIN, LIMIT 1, SORT BY NOTIONAL');
   console.log('DIRECTION: LONG OR SHORT');
   console.log('LINK: NEXT 5M POLYMARKET MARKET');
   void poll();
