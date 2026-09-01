@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_TRADE_WS = 'wss://fstream.binance.com/stream?streams=';
@@ -9,6 +11,7 @@ const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const RECONNECT_MS = 3000;
 const STATS_INTERVAL_MS = 15000;
+const HTTP_PORT = Number(process.env.PORT || 3000);
 
 const stats = new Map();
 let websocket = null;
@@ -19,13 +22,13 @@ let stopping = false;
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function symbol(asset) { return `${asset.toLowerCase()}usdt`; }
 function newBucket(start) {
-  return { start, buyVolume: 0, sellVolume: 0, totalVolume: 0, buyTrades: 0, sellTrades: 0, largestBuy: 0, largestSell: 0 };
+  return { start, buyVolume: 0, sellVolume: 0, totalVolume: 0, buyTrades: 0, sellTrades: 0, largestBuy: 0, largestSell: 0, cvd: 0 };
 }
 function getState(asset) {
   let s = stats.get(asset);
   if (!s) {
     const now = Date.now();
-    s = { five: newBucket(Math.floor(now / WINDOW_5M) * WINDOW_5M), fifteen: newBucket(Math.floor(now / WINDOW_15M) * WINDOW_15M), cvd: 0, lastTrade: null };
+    s = { five: newBucket(Math.floor(now / WINDOW_5M) * WINDOW_5M), fifteen: newBucket(Math.floor(now / WINDOW_15M) * WINDOW_15M), lastTrade: null };
     stats.set(asset, s);
   }
   return s;
@@ -42,10 +45,12 @@ function addTrade(bucket, isBuyerAggressor, usd) {
     bucket.buyVolume += usd;
     bucket.buyTrades += 1;
     bucket.largestBuy = Math.max(bucket.largestBuy, usd);
+    bucket.cvd += usd;
   } else {
     bucket.sellVolume += usd;
     bucket.sellTrades += 1;
     bucket.largestSell = Math.max(bucket.largestSell, usd);
+    bucket.cvd -= usd;
   }
 }
 function snapshot(asset, windowMs) {
@@ -62,21 +67,22 @@ function snapshot(asset, windowMs) {
     totalVolume: b.totalVolume,
     delta,
     deltaPct,
-    cvd: s.cvd,
+    cvd: b.cvd,
     buyTrades: b.buyTrades,
     sellTrades: b.sellTrades,
     largestBuy: b.largestBuy,
     largestSell: b.largestSell,
-    lastTrade: s.lastTrade
+    lastTrade: s.lastTrade,
+    ageMs: s.lastTrade ? Math.max(0, Date.now() - s.lastTrade) : null,
+    status: s.lastTrade ? 'OK' : 'WAITING'
   };
+}
+function allStats() {
+  return ASSETS.map(asset => ({ asset, five: snapshot(asset, WINDOW_5M), fifteen: snapshot(asset, WINDOW_15M) }));
 }
 function printStats() {
   console.log('=== AGGTRADE STATISTICS ===');
-  for (const asset of ASSETS) {
-    const five = snapshot(asset, WINDOW_5M);
-    const fifteen = snapshot(asset, WINDOW_15M);
-    console.log(JSON.stringify({ asset, five, fifteen }));
-  }
+  for (const row of allStats()) console.log(JSON.stringify(row));
 }
 function connect() {
   if (stopping) return;
@@ -99,10 +105,9 @@ function connect() {
       const now = num(data.T || data.E) || Date.now();
       const s = getState(asset);
       rollBuckets(s, now);
-      const isBuyerAggressor = Boolean(data.m === false);
+      const isBuyerAggressor = data.m === false;
       addTrade(s.five, isBuyerAggressor, usd);
       addTrade(s.fifteen, isBuyerAggressor, usd);
-      s.cvd += isBuyerAggressor ? usd : -usd;
       s.lastTrade = now;
     } catch (e) { console.error('[AggTrade Parse]', e?.message ?? e); }
   });
@@ -120,6 +125,32 @@ function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+const server = createServer((req, res) => {
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/trades') {
+    const body = JSON.stringify({
+      ok: true,
+      source: 'Binance Futures AggTrades',
+      checkedAt: new Date().toISOString(),
+      assets: ASSETS,
+      periods: { '5M': ENABLE_5M, '15M': ENABLE_15M },
+      alerts: false,
+      data: allStats()
+    });
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(body);
+    return;
+  }
+  if (url.pathname === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-aggtrade-monitor', assets: ASSETS, alerts: false }));
+    return;
+  }
+  res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/trades', '/health'] }));
+});
+server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on :${HTTP_PORT} (/trades)`));
 
 console.log('=== POLYMARKET AGGTRADE MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES');
