@@ -5,6 +5,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const PINAX_API_KEY = process.env.PINAX_API_KEY || process.env.PINAX_API_TOKEN;
 const PINAX_URL = 'https://api.pinax.network/v1/hyperliquid/markets/liquidations';
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
+const MIN_SIZE_USDT = 1000;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
@@ -73,19 +74,14 @@ async function sendTelegram(text) {
 async function sendAlert(periodStart, events, minutes) {
   const candidates = events
     .filter(e => ASSETS.includes(String(e?.coin)))
-    .filter(e => Number(e?.notional) > 0)
+    .filter(e => Number(e?.notional) >= MIN_SIZE_USDT)
     .sort((a, b) => Number(b.notional) - Number(a.notional));
   if (!candidates.length) return null;
-
-  // Cross-timeframe anti-repeat rule: if the largest candidate is the same
-  // asset as the previous alert, do NOT discard the whole period. Move to the
-  // next-largest eligible asset. This applies equally to 5M and 15M alerts.
   const winner = candidates.find(e => String(e.coin) !== lastAlertAsset);
   if (!winner) {
-    console.log(`[ALERT] skipped ${minutes}M: all candidates are ${lastAlertAsset}; waiting for a different asset`);
+    console.log(`[ALERT] skipped ${minutes}M: all qualifying candidates are ${lastAlertAsset}; waiting for a different asset`);
     return null;
   }
-
   const asset = String(winner.coin);
   const notional = Number(winner.notional);
   const direction = winner.direction || winner.liquidation_kind;
@@ -130,7 +126,7 @@ async function processDueWindows() {
   const closed15m = windowStart(now, WINDOW_15M) - WINDOW_15M;
   const five = await process5m(closed5m);
   let fifteen = null;
-  if (closed15m !== null && (lastProcessed15m !== closed15m)) fifteen = await process15m(closed15m);
+  if (lastProcessed15m !== closed15m) fifteen = await process15m(closed15m);
   lastCheck = new Date().toISOString();
   lastResult = { five, fifteen };
   console.log('[RESULT]', JSON.stringify(lastResult));
@@ -157,11 +153,10 @@ async function start() {
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M + 15M');
-  console.log('RULE: LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME ASSET CANNOT ALERT TWICE IN A ROW; IF LARGEST IS BLOCKED, USE NEXT-LARGEST ELIGIBLE ASSET');
+  console.log(`MIN SIZE: ${MIN_SIZE_USDT} USDT`);
+  console.log('RULE: LARGEST QUALIFYING LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME ASSET CANNOT ALERT TWICE IN A ROW; NEXT QUALIFYING ASSET MUST BE DIFFERENT');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED PERIOD');
-  console.log('DIRECTION: SHORT=GREEN, LONG=RED');
-  console.log('LINK: NEXT MARKET FOR THE ALERT TIMEFRAME');
   await processDueWindows();
   scheduleNextBoundary();
 }
@@ -176,7 +171,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], rule: 'largest liquidation by notional across all 7 assets', repeatRule: 'cross-timeframe same asset cannot alert twice in a row; fallback to next-largest eligible asset', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minSizeUsdt: MIN_SIZE_USDT, rule: 'largest qualifying liquidation by notional across all 7 assets', repeatRule: 'cross-timeframe same asset cannot alert twice in a row', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
