@@ -42,10 +42,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
         run: node src/pinax-probe.js 2>&1 | tee probe.log
 
-      - name: Run Pinax liquidation OHLC diagnostic
-        if: github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
-        run: node src/pinax-liquidation-ohlc-diagnostic.js 2>&1 | tee ohlc.log
-
       - name: Run liquidation monitor
         run: node src/index.js 2>&1 | tee monitor.log
 
@@ -57,6 +53,5 @@ jobs:
           path: |
             monitor.log
             probe.log
-            ohlc.log
           if-no-files-found: warn
           retention-days: 7
