@@ -1,155 +1,179 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
+const BINANCE_OI_URL = 'https://fapi.binance.com/fapi/v1/openInterest';
 
 const ENABLE_5M = true;
 const ENABLE_15M = true;
-const ENABLE_5M_LONG = true;
-const ENABLE_5M_SHORT = true;
-const ENABLE_15M_LONG = true;
-const ENABLE_15M_SHORT = true;
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
-const QUOTES = new Set(['USDT', 'USDC']);
-const MIN_SIZE = 0;
+const QUOTE = 'USDT';
+const OI_THRESHOLD_PCT = 0.1;
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
+const POLL_MS = 15000;
 const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
-let largest5m = null;
-let previousLargest5m = null;
-let lastAlertPair5m = null;
-let largest15m = null;
-let previousLargest15m = null;
-let lastAlertPair15m = null;
-let timer5m;
-let timer15m;
-let websocket;
-let reconnectTimer;
+let baseline5m = new Map();
+let baseline15m = new Map();
+let alerted5m = new Set();
+let alerted15m = new Set();
+let pollTimer = null;
+let boundaryTimer = null;
 let stopping = false;
 let advancing = Promise.resolve();
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
-function parseSymbol(symbol) {
-  const s = String(symbol ?? '').toUpperCase();
-  for (const quote of QUOTES) {
-    if (s.endsWith(quote)) {
-      const asset = s.slice(0, -quote.length);
-      if (ASSETS.has(asset)) return { asset, quote };
-    }
-  }
-  return null;
-}
-function money(v, quote) { return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })} ${quote}`; }
+function symbol(asset) { return `${asset}USDT`; }
 function marketLink(asset, start, windowMs) {
   const period = windowMs === WINDOW_15M ? '15m' : '5m';
   return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${period}-${Math.floor(start / 1000)}`;
 }
+function formatPct(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`; }
+function formatOi(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }) });
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
+    });
     if (!response.ok) console.error('[Telegram] HTTP', response.status, await response.text());
     return response.ok;
-  } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
+  } catch (error) {
+    console.error('[Telegram]', error?.message ?? error);
+    return false;
+  }
 }
-async function sendAlert(item, start, windowMs, next = false) {
-  if (!item || item.notional < MIN_SIZE) return false;
+
+async function getOpenInterest(asset) {
+  const response = await fetch(`${BINANCE_OI_URL}?symbol=${symbol(asset)}`);
+  if (!response.ok) throw new Error(`Binance OI HTTP ${response.status}`);
+  const data = await response.json();
+  const oi = num(data?.openInterest);
+  if (!(oi > 0)) throw new Error(`Invalid OI for ${asset}`);
+  return oi;
+}
+
+async function getAllOi() {
+  const entries = await Promise.all([...ASSETS].map(async asset => {
+    try { return [asset, await getOpenInterest(asset)]; }
+    catch (error) { console.error(`[OI ${asset}]`, error?.message ?? error); return null; }
+  }));
+  return new Map(entries.filter(Boolean));
+}
+
+function pctChange(base, current) {
+  if (!(base > 0) || !(current > 0)) return 0;
+  return ((current - base) / base) * 100;
+}
+
+async function sendOiAlert(asset, direction, changePct, currentOi, start, windowMs, nextMarket) {
   const label = windowMs === WINDOW_15M ? '15M' : '5M';
-  const linkStart = next ? start + windowMs : start;
-  const title = next ? `▶️ NEXT ${item.asset} ${label} UP/DOWN` : `▶️ ${item.asset} ${label} UP/DOWN`;
-  const text = [`🚨 ${item.side} LIQUIDATION — ${label}`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', title, marketLink(item.asset, linkStart, windowMs)].join('\n');
+  const marketStart = nextMarket ? start + windowMs : start;
+  const title = nextMarket ? `▶️ NEXT ${asset} ${label} UP/DOWN` : `▶️ ${asset} ${label} UP/DOWN`;
+  const text = [
+    `🚨 OI ${direction} — ${label}`,
+    '',
+    `${asset} — OPEN INTEREST`,
+    `📊 Change: ${formatPct(changePct)}`,
+    `💥 OI: ${formatOi(currentOi)}`,
+    '',
+    title,
+    marketLink(asset, marketStart, windowMs)
+  ].join('\n');
   return sendTelegram(text);
 }
+
+async function advanceWindows(now) {
+  const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
+  const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
+  if (target5 > windowStart5m) {
+    windowStart5m = target5;
+    baseline5m = new Map();
+    alerted5m = new Set();
+  }
+  if (target15 > windowStart15m) {
+    windowStart15m = target15;
+    baseline15m = new Map();
+    alerted15m = new Set();
+  }
+}
 function requestAdvance(now) {
-  advancing = advancing.then(async () => {
-    const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
-    const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
-    if (target5 > windowStart5m) {
-      previousLargest5m = largest5m;
-      windowStart5m = target5;
-      largest5m = null;
-      lastAlertPair5m = null;
-    }
-    while (target15 > windowStart15m) {
-      previousLargest15m = largest15m;
-      windowStart15m += WINDOW_15M;
-      largest15m = null;
-      lastAlertPair15m = null;
-    }
-  }).catch(error => console.error('[Window]', error?.message ?? error));
+  advancing = advancing.then(() => advanceWindows(now)).catch(error => console.error('[Window]', error?.message ?? error));
   return advancing;
 }
-async function handleForceOrder(payload) {
-  const order = payload?.o; if (!order) return;
-  const sideRaw = String(order.S ?? '').toUpperCase();
-  if (sideRaw !== 'SELL' && sideRaw !== 'BUY') return;
-  const parsed = parseSymbol(order.s); if (!parsed) return;
-  const price = num(order.ap) || num(order.p); const quantity = num(order.q); const notional = Math.abs(price * quantity);
-  if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
-  const side = sideRaw === 'SELL' ? 'LONG' : 'SHORT';
-  if ((side === 'LONG' && !ENABLE_5M_LONG && !ENABLE_15M_LONG) || (side === 'SHORT' && !ENABLE_5M_SHORT && !ENABLE_15M_SHORT)) return;
-  const time = num(payload.E) || num(order.T) || Date.now();
-  await requestAdvance(time);
-  const p5 = Math.floor(time / WINDOW_5M) * WINDOW_5M;
-  const p15 = Math.floor(time / WINDOW_15M) * WINDOW_15M;
-  const item5 = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p5 };
-  const item15 = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p15 };
 
-  if (ENABLE_5M && p5 === windowStart5m) {
-    const enabled5 = side === 'LONG' ? ENABLE_5M_LONG : ENABLE_5M_SHORT;
-    if (enabled5 && (!largest5m || notional > largest5m.notional)) largest5m = item5;
-  }
-
-  if (ENABLE_15M && p15 === windowStart15m) {
-    const enabled15 = side === 'LONG' ? ENABLE_15M_LONG : ENABLE_15M_SHORT;
-    if (enabled15 && (!largest15m || notional > largest15m.notional)) largest15m = item15;
-  }
-}
-async function flush5m() {
-  const current = largest5m;
-  const previous = previousLargest5m;
-  if (!current || !previous) return;
-  if (current.asset !== previous.asset || current.side !== previous.side) return;
-  const key = `${previous.period}:${previous.asset}:${previous.side}|${current.period}:${current.asset}:${current.side}`;
-  if (lastAlertPair5m === key) return;
-  lastAlertPair5m = key;
-  const sent = await sendAlert(current, current.period, WINDOW_5M, true);
-  if (!sent) console.error('[5M Alert] Telegram send failed');
-}
-async function flush15m() {
-  const current = largest15m;
-  const previous = previousLargest15m;
-  if (!current || !previous) return;
-  if (current.asset !== previous.asset || current.side !== previous.side) return;
-  const key = `${previous.period}:${previous.asset}:${previous.side}|${current.period}:${current.asset}:${current.side}`;
-  if (lastAlertPair15m === key) return;
-  lastAlertPair15m = key;
-  const sent = await sendAlert(current, current.period, WINDOW_15M, true);
-  if (!sent) console.error('[15M Alert] Telegram send failed');
-}
-function scheduleTimers() {
-  clearTimeout(timer5m); clearTimeout(timer15m);
-  timer5m = setTimeout(async () => { await flush5m(); await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart5m + WINDOW_5M - Date.now() + 50));
-  timer15m = setTimeout(async () => { await flush15m(); await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart15m + WINDOW_15M - Date.now() + 50));
-}
-function connect() {
+async function pollOi() {
   if (stopping) return;
-  websocket = new WebSocket(BINANCE_WS_URL);
-  websocket.addEventListener('open', () => console.log('Binance liquidation stream connected'));
-  websocket.addEventListener('message', event => { try { const payload = JSON.parse(String(event.data)); if (payload?.e === 'forceOrder') void handleForceOrder(payload); else if (payload?.data?.e === 'forceOrder') void handleForceOrder(payload.data); } catch (error) { console.error('[Parse]', error?.message ?? error); } });
-  websocket.addEventListener('error', error => console.error('[WebSocket]', error?.message ?? error));
-  websocket.addEventListener('close', () => { if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS); });
+  const now = Date.now();
+  await requestAdvance(now);
+  const oiMap = await getAllOi();
+  if (!oiMap.size) return;
+
+  for (const [asset, currentOi] of oiMap) {
+    if (ENABLE_5M) {
+      if (!baseline5m.has(asset)) baseline5m.set(asset, currentOi);
+      const change5 = pctChange(baseline5m.get(asset), currentOi);
+      if (Math.abs(change5) >= OI_THRESHOLD_PCT && !alerted5m.has(asset)) {
+        alerted5m.add(asset);
+        const direction = change5 > 0 ? 'INCREASE' : 'DECREASE';
+        const sent = await sendOiAlert(asset, direction, change5, currentOi, windowStart5m, WINDOW_5M, true);
+        if (!sent) console.error(`[5M OI Alert] Telegram send failed for ${asset}`);
+      }
+    }
+
+    if (ENABLE_15M) {
+      if (!baseline15m.has(asset)) baseline15m.set(asset, currentOi);
+      const change15 = pctChange(baseline15m.get(asset), currentOi);
+      if (Math.abs(change15) >= OI_THRESHOLD_PCT && !alerted15m.has(asset)) {
+        alerted15m.add(asset);
+        const direction = change15 > 0 ? 'INCREASE' : 'DECREASE';
+        const sent = await sendOiAlert(asset, direction, change15, currentOi, windowStart15m, WINDOW_15M, false);
+        if (!sent) console.error(`[15M OI Alert] Telegram send failed for ${asset}`);
+      }
+    }
+  }
 }
-function shutdown(signal) { stopping = true; clearTimeout(timer5m); clearTimeout(timer15m); clearTimeout(reconnectTimer); try { websocket?.close(); } catch {} console.log(`Shutdown: ${signal}`); }
-process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
-console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
-console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: LONG + SHORT | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
+
+function schedule() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => {
+    try { await pollOi(); }
+    finally { if (!stopping) schedule(); }
+  }, POLL_MS);
+}
+
+function scheduleBoundary() {
+  clearTimeout(boundaryTimer);
+  const next5 = windowStart5m + WINDOW_5M;
+  const next15 = windowStart15m + WINDOW_15M;
+  const next = Math.min(next5, next15);
+  boundaryTimer = setTimeout(async () => {
+    await requestAdvance(Date.now());
+    if (!stopping) scheduleBoundary();
+  }, Math.max(100, next - Date.now() + 50));
+}
+
+function shutdown(signal) {
+  stopping = true;
+  clearTimeout(pollTimer);
+  clearTimeout(boundaryTimer);
+  console.log(`Shutdown: ${signal}`);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+console.log('=== POLYMARKET OI MONITOR ===');
+console.log('SOURCE: BINANCE FUTURES OPEN INTEREST REST API');
+console.log('LIQUIDATION LOGIC: DISABLED');
+console.log('5M: ENABLED | threshold: ±0.1% | alert on NEXT 5M market');
+console.log('15M: ENABLED | threshold: ±0.1% | alert on CURRENT 15M market');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('5M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 5M market');
-console.log('15M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 15M market');
-console.log('Same-coin repeat block: REMOVED');
-scheduleTimers();
-connect();
+console.log('ONE OI ALERT PER COIN PER PERIOD');
+
+void pollOi().catch(error => console.error('[Initial OI]', error?.message ?? error));
+schedule();
+scheduleBoundary();
