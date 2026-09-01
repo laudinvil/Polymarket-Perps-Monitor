@@ -4,7 +4,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const PINAX_API_KEY = process.env.PINAX_API_KEY || process.env.PINAX_API_TOKEN;
 const PINAX_URL = 'https://api.pinax.network/v1/hyperliquid/markets/liquidations';
-const ASSETS = ['DOGE', 'BNB'];
+const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
@@ -16,7 +16,7 @@ let lastResult = null;
 
 function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS; }
 function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-function directionLabel(direction) { return String(direction || '').includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION'; }
+function directionLabel(direction) { return String(direction || '').toUpperCase().includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION'; }
 function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
 
 async function fetchLiquidations(startMs, endMs) {
@@ -71,9 +71,9 @@ async function poll() { if (stopping) return; const current = currentWindowStart
 function start() {
   console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
-  console.log('ASSETS: DOGE, BNB');
+  console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIOD: 5M');
-  console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS DOGE + BNB');
+  console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
   console.log('DIRECTION: LONG OR SHORT');
   console.log('LINK: NEXT 5M POLYMARKET MARKET');
   void poll();
@@ -90,7 +90,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, period: '5M', rule: 'one largest liquidation by notional across DOGE and BNB', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, period: '5M', rule: 'one largest liquidation by notional across all 7 assets', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
