@@ -1,9 +1,6 @@
 import { createServer } from 'node:http';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const BINANCE_TRADE_WS = 'wss://fstream.binance.com/stream?streams=';
-
 const ENABLE_5M = true;
 const ENABLE_15M = true;
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
@@ -21,14 +18,12 @@ let stopping = false;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function symbol(asset) { return `${asset.toLowerCase()}usdt`; }
-function newBucket(start) {
-  return { start, buyVolume: 0, sellVolume: 0, totalVolume: 0, buyTrades: 0, sellTrades: 0, largestBuy: 0, largestSell: 0, cvd: 0 };
-}
+function newBucket(start) { return { start, cvd: 0, lastTrade: null }; }
 function getState(asset) {
   let s = stats.get(asset);
   if (!s) {
     const now = Date.now();
-    s = { five: newBucket(Math.floor(now / WINDOW_5M) * WINDOW_5M), fifteen: newBucket(Math.floor(now / WINDOW_15M) * WINDOW_15M), lastTrade: null };
+    s = { five: newBucket(Math.floor(now / WINDOW_5M) * WINDOW_5M), fifteen: newBucket(Math.floor(now / WINDOW_15M) * WINDOW_15M) };
     stats.set(asset, s);
   }
   return s;
@@ -39,51 +34,17 @@ function rollBuckets(s, now) {
   if (s.five.start !== five) s.five = newBucket(five);
   if (s.fifteen.start !== fifteen) s.fifteen = newBucket(fifteen);
 }
-function addTrade(bucket, isBuyerAggressor, usd) {
-  bucket.totalVolume += usd;
-  if (isBuyerAggressor) {
-    bucket.buyVolume += usd;
-    bucket.buyTrades += 1;
-    bucket.largestBuy = Math.max(bucket.largestBuy, usd);
-    bucket.cvd += usd;
-  } else {
-    bucket.sellVolume += usd;
-    bucket.sellTrades += 1;
-    bucket.largestSell = Math.max(bucket.largestSell, usd);
-    bucket.cvd -= usd;
-  }
+function addCvd(bucket, isBuyerAggressor, usd, now) {
+  bucket.cvd += isBuyerAggressor ? usd : -usd;
+  bucket.lastTrade = now;
 }
 function snapshot(asset, windowMs) {
   const s = getState(asset);
   const b = windowMs === WINDOW_5M ? s.five : s.fifteen;
-  const delta = b.buyVolume - b.sellVolume;
-  const deltaPct = b.totalVolume > 0 ? (delta / b.totalVolume) * 100 : 0;
-  return {
-    asset,
-    period: windowMs === WINDOW_5M ? '5M' : '15M',
-    start: b.start,
-    buyVolume: b.buyVolume,
-    sellVolume: b.sellVolume,
-    totalVolume: b.totalVolume,
-    delta,
-    deltaPct,
-    cvd: b.cvd,
-    buyTrades: b.buyTrades,
-    sellTrades: b.sellTrades,
-    largestBuy: b.largestBuy,
-    largestSell: b.largestSell,
-    lastTrade: s.lastTrade,
-    ageMs: s.lastTrade ? Math.max(0, Date.now() - s.lastTrade) : null,
-    status: s.lastTrade ? 'OK' : 'WAITING'
-  };
+  return { asset, period: windowMs === WINDOW_5M ? '5M' : '15M', start: b.start, cvd: b.cvd, lastTrade: b.lastTrade, ageMs: b.lastTrade ? Math.max(0, Date.now() - b.lastTrade) : null, status: b.lastTrade ? 'OK' : 'WAITING' };
 }
-function allStats() {
-  return ASSETS.map(asset => ({ asset, five: snapshot(asset, WINDOW_5M), fifteen: snapshot(asset, WINDOW_15M) }));
-}
-function printStats() {
-  console.log('=== AGGTRADE STATISTICS ===');
-  for (const row of allStats()) console.log(JSON.stringify(row));
-}
+function allStats() { return ASSETS.map(asset => ({ asset, five: snapshot(asset, WINDOW_5M), fifteen: snapshot(asset, WINDOW_15M) })); }
+function printStats() { console.log('=== CVD STATISTICS ==='); for (const row of allStats()) console.log(JSON.stringify(row)); }
 function connect() {
   if (stopping) return;
   const streams = ASSETS.map(asset => `${symbol(asset)}@aggTrade`).join('/');
@@ -99,65 +60,47 @@ function connect() {
       if (!match) return;
       const asset = ASSETS.find(x => symbol(x) === match[1].toLowerCase());
       if (!asset) return;
-      const price = num(data.p);
-      const quantity = num(data.q);
-      const usd = price * quantity;
+      const usd = num(data.p) * num(data.q);
       const now = num(data.T || data.E) || Date.now();
       const s = getState(asset);
       rollBuckets(s, now);
       const isBuyerAggressor = data.m === false;
-      addTrade(s.five, isBuyerAggressor, usd);
-      addTrade(s.fifteen, isBuyerAggressor, usd);
-      s.lastTrade = now;
+      if (ENABLE_5M) addCvd(s.five, isBuyerAggressor, usd, now);
+      if (ENABLE_15M) addCvd(s.fifteen, isBuyerAggressor, usd, now);
     } catch (e) { console.error('[AggTrade Parse]', e?.message ?? e); }
   });
   websocket.addEventListener('error', error => console.error('[WebSocket]', error?.message ?? error));
-  websocket.addEventListener('close', () => {
-    if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS);
-  });
+  websocket.addEventListener('close', () => { if (!stopping) reconnectTimer = setTimeout(connect, RECONNECT_MS); });
 }
-function shutdown(signal) {
-  stopping = true;
-  clearTimeout(reconnectTimer);
-  clearInterval(statsTimer);
-  try { websocket?.close(); } catch {}
-  console.log(`Shutdown: ${signal}`);
-}
+function shutdown(signal) { stopping = true; clearTimeout(reconnectTimer); clearInterval(statsTimer); try { websocket?.close(); } catch {} try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 const server = createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  if (url.pathname === '/trades') {
-    const body = JSON.stringify({
-      ok: true,
-      source: 'Binance Futures AggTrades',
-      checkedAt: new Date().toISOString(),
-      assets: ASSETS,
-      periods: { '5M': ENABLE_5M, '15M': ENABLE_15M },
-      alerts: false,
-      data: allStats()
-    });
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    res.end(body);
+  res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  if (url.pathname === '/trades' || url.pathname === '/cvd') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, source: 'Binance Futures AggTrades', checkedAt: new Date().toISOString(), assets: ASSETS, periods: { '5M': ENABLE_5M, '15M': ENABLE_15M }, alerts: false, monitor: 'CVD_ONLY', data: allStats() }));
     return;
   }
   if (url.pathname === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-aggtrade-monitor', assets: ASSETS, alerts: false }));
+    res.writeHead(200);
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, alerts: false }));
     return;
   }
-  res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/trades', '/health'] }));
+  res.writeHead(404);
+  res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] }));
 });
-server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on :${HTTP_PORT} (/trades)`));
+server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on :${HTTP_PORT} (/cvd)`));
 
-console.log('=== POLYMARKET AGGTRADE MONITOR ===');
+console.log('=== POLYMARKET CVD MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES REALTIME AGGTRADES');
 console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('5M: ON | 15M: ON');
 console.log(`ASSETS: ${ASSETS.join(', ')}`);
-console.log('MODE: STATISTICS ONLY — TELEGRAM ALERTS DISABLED');
-console.log('TRACKING: BUY/SELL VOLUME, DELTA, DELTA %, CVD, TRADE COUNTS, LARGEST BUY/SELL');
+console.log('MODE: CVD ONLY — TELEGRAM ALERTS DISABLED');
+console.log('5M CVD and 15M CVD are calculated independently and reset at each period boundary');
 connect();
 statsTimer = setInterval(printStats, STATS_INTERVAL_MS);
