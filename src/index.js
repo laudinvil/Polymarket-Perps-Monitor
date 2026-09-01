@@ -216,6 +216,10 @@ async function start() {
   if (RUN_ONCE) {
     console.log('[RUN_ONCE] Diagnostic cycle complete; exiting.');
     stopping = true;
+    boundaryTimer = null;
+    server.close(() => {
+      console.log('[RUN_ONCE] HTTP diagnostics server closed.');
+    });
     return;
   }
   scheduleNextBoundary();
