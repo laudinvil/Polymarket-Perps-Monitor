@@ -19,11 +19,17 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       PINAX_API_KEY: ${{ secrets.PINAX_API_KEY }}
+      PINAX_API_TOKEN: ${{ secrets.PINAX_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install dependencies
         uses: actions/setup-node@v5
         with:
           node-version: 24
