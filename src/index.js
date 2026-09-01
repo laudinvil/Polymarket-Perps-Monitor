@@ -18,7 +18,7 @@ function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WIND
 function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 function directionLabel(direction) {
   const d = String(direction || '').toUpperCase();
-  return d.includes('LONG') ? '🟢 LONG LIQUIDATION' : d.includes('SHORT') ? '🔴 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
+  return d.includes('LONG') ? '🔴 LONG LIQUIDATION' : d.includes('SHORT') ? '🟢 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
 }
 function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
 
@@ -77,7 +77,7 @@ async function processClosedWindow(startMs) {
     const notional = Number(winner.notional);
     const direction = directionLabel(winner.direction || winner.liquidation_kind);
     const nextStart = endMs;
-    const text = [direction, '', `${asset} — 5M LIQUIDATION`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart)].join('\n');
+    const text = [direction, '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart)].join('\n');
     await sendTelegram(text);
     alertedPeriods.add(key);
     lastResult = { periodStart: startMs, periodEnd: endMs, events: candidates.length, alert: true, asset, direction: winner.direction || winner.liquidation_kind, notional, eventHash: winner.event_hash || null, nextMarket: polymarketUrl(asset, nextStart) };
@@ -97,7 +97,7 @@ function start() {
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIOD: 5M');
   console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('PINAX: ONE REQUEST PER COIN, LIMIT 1, SORT BY NOTIONAL');
+  console.log('PINAX: ONE REQUEST PER COIN PER CLOSED 5M PERIOD');
   console.log('DIRECTION: LONG OR SHORT');
   console.log('LINK: NEXT 5M POLYMARKET MARKET');
   void poll();
