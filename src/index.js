@@ -8,6 +8,7 @@ const WINDOW_5M = 5 * 60 * 1000;
 const RECONNECT_MS = 3000;
 const STATS_INTERVAL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
+const CVD_ALERT_MIN_USD = Number(process.env.CVD_ALERT_MIN_USD || 100000);
 
 const stats = new Map();
 let websocket = null;
@@ -19,7 +20,16 @@ let lastMessageAt = null;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
 function signOfCvd(cvd) { return cvd > 0 ? 1 : cvd < 0 ? -1 : 0; }
-function newBucket(start) { return { start, cvd: 0, lastTrade: null, initialized: false, lastAlertSign: 0 }; }
+function newBucket(start) {
+  return {
+    start,
+    cvd: 0,
+    maxAbsCvd: 0,
+    lastTrade: null,
+    initialized: false,
+    lastAlertSign: 0
+  };
+}
 function getState(asset) {
   let state = stats.get(asset);
   if (!state) {
@@ -38,6 +48,7 @@ function addCvd(asset, isBuyerAggressor, usd, now) {
   const bucket = state.five;
   const previousSign = signOfCvd(bucket.cvd);
   bucket.cvd += isBuyerAggressor ? usd : -usd;
+  bucket.maxAbsCvd = Math.max(bucket.maxAbsCvd, Math.abs(bucket.cvd));
   bucket.lastTrade = now;
   const currentSign = signOfCvd(bucket.cvd);
 
@@ -47,9 +58,16 @@ function addCvd(asset, isBuyerAggressor, usd, now) {
     return;
   }
 
-  if (previousSign && currentSign && previousSign !== currentSign && bucket.lastAlertSign !== currentSign) {
+  const significantMove = bucket.maxAbsCvd >= CVD_ALERT_MIN_USD;
+  if (
+    previousSign &&
+    currentSign &&
+    previousSign !== currentSign &&
+    bucket.lastAlertSign !== currentSign &&
+    significantMove
+  ) {
     bucket.lastAlertSign = currentSign;
-    void alertCvdCrossing(asset, previousSign, currentSign, bucket.cvd, now);
+    void alertCvdCrossing(asset, previousSign, currentSign, bucket.cvd, bucket.maxAbsCvd, now);
   }
 }
 async function sendTelegram(text) {
@@ -70,7 +88,7 @@ async function sendTelegram(text) {
     return false;
   }
 }
-async function alertCvdCrossing(asset, previousSign, currentSign, cvd, now) {
+async function alertCvdCrossing(asset, previousSign, currentSign, cvd, maxAbsCvd, now) {
   const direction = currentSign > 0 ? 'CVD NEGATIVE → POSITIVE' : 'CVD POSITIVE → NEGATIVE';
   const start = Math.floor(now / WINDOW_5M) * WINDOW_5M;
   const nextStart = start + WINDOW_5M;
@@ -79,6 +97,7 @@ async function alertCvdCrossing(asset, previousSign, currentSign, cvd, now) {
     '',
     `${asset} — 5M CVD`,
     `📊 CVD: ${cvd >= 0 ? '+' : ''}${cvd.toFixed(0)} USDT`,
+    `📈 Max move: ${maxAbsCvd.toFixed(0)} USDT`,
     '',
     '▶️ POLYMARKET 5M',
     `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`
@@ -94,6 +113,8 @@ function snapshot(asset) {
     start: bucket.start,
     cvd: bucket.cvd,
     sign: signOfCvd(bucket.cvd),
+    maxAbsCvd: bucket.maxAbsCvd,
+    alertThresholdUsd: CVD_ALERT_MIN_USD,
     initialized: bucket.initialized,
     lastTrade: bucket.lastTrade,
     ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null,
@@ -128,7 +149,6 @@ function connect() {
         if (!asset) continue;
         const usd = num(trade.px) * num(trade.sz);
         const now = num(trade.time) || Date.now();
-        // Hyperliquid trade side: B = buyer aggressor, A = seller aggressor.
         const isBuyerAggressor = String(trade.side).toUpperCase() === 'B';
         if (usd > 0) addCvd(asset, isBuyerAggressor, usd, now);
       }
@@ -170,13 +190,14 @@ const server = createServer((req, res) => {
       period: '5M',
       monitor: '5M_CVD_ONLY',
       alerts: true,
+      alertThresholdUsd: CVD_ALERT_MIN_USD,
       data: allStats()
     }));
     return;
   }
   if (url.pathname === '/health') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', streamConnected, lastMessageAt, alerts: true }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, period: '5M', streamConnected, lastMessageAt, alertThresholdUsd: CVD_ALERT_MIN_USD, alerts: true }));
     return;
   }
   res.writeHead(404);
@@ -189,8 +210,7 @@ console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY');
 console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('ONLY 5M CVD');
 console.log('CVD RESETS AT EVERY 5M MARKET BOUNDARY');
-console.log('NO REST BOOTSTRAP');
-console.log('ALERT: ZERO-CROSSING AFTER BASELINE');
+console.log(`ALERT: ZERO-CROSSING AFTER BASELINE + MINIMUM MAX MOVE ${CVD_ALERT_MIN_USD} USDT`);
 console.log(`ASSETS: ${ASSETS.join(', ')}`);
 
 connect();
