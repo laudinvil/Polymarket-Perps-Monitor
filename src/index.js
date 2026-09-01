@@ -71,14 +71,22 @@ async function sendTelegram(text) {
 }
 
 async function sendAlert(periodStart, events, minutes) {
-  const candidates = events.filter(e => ASSETS.includes(String(e?.coin))).filter(e => Number(e?.notional) > 0).sort((a, b) => Number(b.notional) - Number(a.notional));
+  const candidates = events
+    .filter(e => ASSETS.includes(String(e?.coin)))
+    .filter(e => Number(e?.notional) > 0)
+    .sort((a, b) => Number(b.notional) - Number(a.notional));
   if (!candidates.length) return null;
-  const winner = candidates[0];
-  const asset = String(winner.coin);
-  if (lastAlertAsset === asset) {
-    console.log(`[ALERT] skipped ${asset} ${minutes}M: previous alert was also ${asset}; waiting for a different asset`);
+
+  // Cross-timeframe anti-repeat rule: if the largest candidate is the same
+  // asset as the previous alert, do NOT discard the whole period. Move to the
+  // next-largest eligible asset. This applies equally to 5M and 15M alerts.
+  const winner = candidates.find(e => String(e.coin) !== lastAlertAsset);
+  if (!winner) {
+    console.log(`[ALERT] skipped ${minutes}M: all candidates are ${lastAlertAsset}; waiting for a different asset`);
     return null;
   }
+
+  const asset = String(winner.coin);
   const notional = Number(winner.notional);
   const direction = winner.direction || winner.liquidation_kind;
   const marketStart = periodStart + minutes * 60 * 1000;
@@ -150,8 +158,10 @@ async function start() {
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIODS: 5M + 15M');
   console.log('RULE: LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
-  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME ASSET CANNOT ALERT TWICE IN A ROW; 5M AND 15M SHARE THE SAME LAST-ALERT ASSET');
+  console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME ASSET CANNOT ALERT TWICE IN A ROW; IF LARGEST IS BLOCKED, USE NEXT-LARGEST ELIGIBLE ASSET');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED PERIOD');
+  console.log('DIRECTION: SHORT=GREEN, LONG=RED');
+  console.log('LINK: NEXT MARKET FOR THE ALERT TIMEFRAME');
   await processDueWindows();
   scheduleNextBoundary();
 }
@@ -166,7 +176,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], rule: 'largest liquidation by notional across all 7 assets', repeatRule: 'cross-timeframe same asset cannot alert twice in a row', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], rule: 'largest liquidation by notional across all 7 assets', repeatRule: 'cross-timeframe same asset cannot alert twice in a row; fallback to next-largest eligible asset', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
