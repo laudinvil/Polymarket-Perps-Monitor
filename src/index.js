@@ -8,7 +8,7 @@ const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
-const PAGE_LIMIT = 10;
+const PAGE_LIMIT = 100;
 const MAX_PAGES = 100;
 const RUN_ONCE = process.env.RUN_ONCE === 'true';
 const alertedPeriods = new Set();
@@ -43,50 +43,28 @@ function eventTimestampMs(e) {
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
-  const all = [];
-  let page = 1;
-  let order = null;
-  while (page <= MAX_PAGES) {
-    const url = new URL(PINAX_URL);
-    url.searchParams.set('coin', coin);
-    url.searchParams.set('dex', 'perps');
-    url.searchParams.set('sort_by', 'time');
-    url.searchParams.set('limit', String(PAGE_LIMIT));
-    url.searchParams.set('page', String(page));
-    console.log(`[Pinax][REQUEST] ${coin} page=${page} limit=${PAGE_LIMIT} NO_TIME_FILTER target=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
-    const raw = await response.text();
-    if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw.slice(0, 500)}`);
-    let body;
-    try { body = JSON.parse(raw); } catch { throw new Error(`${coin}: Pinax returned non-JSON response: ${raw.slice(0, 300)}`); }
-    const rows = Array.isArray(body?.data) ? body.data : [];
-    console.log(`[Pinax][RESPONSE] ${coin} page=${page} rows=${rows.length} sampleKeys=${rows[0] ? Object.keys(rows[0]).join(',') : 'none'}`);
-    if (!rows.length) break;
+  const url = new URL(PINAX_URL);
+  url.searchParams.set('coin', coin);
+  url.searchParams.set('dex', 'perps');
+  url.searchParams.set('sort_by', 'time');
+  url.searchParams.set('limit', String(PAGE_LIMIT));
+  url.searchParams.set('page', '1');
+  url.searchParams.set('start_time', new Date(startMs).toISOString());
+  url.searchParams.set('end_time', new Date(endMs).toISOString());
+  console.log(`[Pinax][REQUEST] ${coin} page=1 limit=${PAGE_LIMIT} start_time=${new Date(startMs).toISOString()} end_time=${new Date(endMs).toISOString()}`);
 
-    if (!order && rows.length >= 2) {
-      const a = eventTimestampMs(rows[0]);
-      const b = eventTimestampMs(rows[rows.length - 1]);
-      if (Number.isFinite(a) && Number.isFinite(b) && a !== b) order = a > b ? 'desc' : 'asc';
-      if (order) console.log(`[Pinax][ORDER] ${coin} sort_by=time appears ${order}`);
-    }
-
-    all.push(...rows);
-    const times = rows.map(eventTimestampMs).filter(Number.isFinite);
-    const minTime = times.length ? Math.min(...times) : NaN;
-    const maxTime = times.length ? Math.max(...times) : NaN;
-
-    if (order === 'desc' && Number.isFinite(minTime) && minTime < startMs) break;
-    if (order === 'asc' && Number.isFinite(maxTime) && maxTime > endMs) break;
-    if (rows.length < PAGE_LIMIT) break;
-    page += 1;
-  }
-  if (page > MAX_PAGES) console.warn(`[Pinax][PAGINATION_LIMIT] ${coin}: reached MAX_PAGES=${MAX_PAGES}`);
-
-  const filtered = all.filter(e => {
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${raw.slice(0, 500)}`);
+  let body;
+  try { body = JSON.parse(raw); } catch { throw new Error(`${coin}: Pinax returned non-JSON response: ${raw.slice(0, 300)}`); }
+  const rows = Array.isArray(body?.data) ? body.data : [];
+  console.log(`[Pinax][RESPONSE] ${coin} page=1 rows=${rows.length} sampleKeys=${rows[0] ? Object.keys(rows[0]).join(',') : 'none'}`);
+  const filtered = rows.filter(e => {
     const ts = eventTimestampMs(e);
     return Number.isFinite(ts) && ts >= startMs && ts < endMs;
   });
-  console.log(`[Pinax][LOCAL_FILTER] ${coin} fetched=${all.length} matched=${filtered.length} window=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
+  console.log(`[Pinax][LOCAL_FILTER] ${coin} fetched=${rows.length} matched=${filtered.length} window=${new Date(startMs).toISOString()}..${new Date(endMs).toISOString()}`);
   return filtered;
 }
 
@@ -163,18 +141,21 @@ async function sendSpikeAlert(periodStart, stats, minutes) {
     return null;
   }
   const marketStart = periodStart + minutes * 60 * 1000;
-  const text = [
+  const lines = [
     '🚨 LIQUIDATION SPIKE',
     '',
     `${winner.coin} — ${minutes}M`,
-    `Liquidated users: ${winner.users}`,
-    `LONG users: ${winner.longUsers}`,
-    `SHORT users: ${winner.shortUsers}`,
+    `Liquidated users: ${winner.users}`
+  ];
+  if (winner.longUsers > 0) lines.push(`LONG users: ${winner.longUsers}`);
+  if (winner.shortUsers > 0) lines.push(`SHORT users: ${winner.shortUsers}`);
+  lines.push(
     `Liquidation volume: ${Math.round(winner.totalNotional).toLocaleString('en-US')} USDT`,
     '',
     '▶️ POLYMARKET',
     polymarketUrl(winner.coin, marketStart, minutes)
-  ].join('\n');
+  );
+  const text = lines.join('\n');
   console.log(`[ALERT][WINNER] ${minutes}M ${winner.coin} users=${winner.users} volume=${winner.totalNotional}`);
   await sendTelegram(text);
   lastAlertAsset = winner.coin;
@@ -215,9 +196,6 @@ async function process15m(startMs) {
 async function processDueWindows() {
   const now = Date.now();
   const closed5m = windowStart(now, WINDOW_5M) - WINDOW_5M;
-  // 15M must match Polymarket's quarter-hour boundaries: 00-15, 15-30, 30-45, 45-00.
-  // Always process the previous fully closed 15M interval.
-  // Example at 19:28: closed5m = 19:20..19:25, closed15m = 19:00..19:15.
   const closed15mStart = windowStart(now, WINDOW_15M) - WINDOW_15M;
   console.log(`[SCHEDULER][DUE] now=${new Date(now).toISOString()} closed5m=${new Date(closed5m).toISOString()} closed15m=${new Date(closed15mStart).toISOString()}..${new Date(closed15mStart + WINDOW_15M).toISOString()}`);
   const five = await process5m(closed5m);
@@ -252,19 +230,18 @@ async function start() {
   console.log('NO LIQUIDATION SIZE THRESHOLD — ALL LIQUIDATIONS COUNT');
   console.log('RULE: LARGEST NUMBER OF UNIQUE LIQUIDATED USERS PER COIN');
   console.log('REPEAT RULE: CROSS-TIMEFRAME — SAME COIN CANNOT ALERT TWICE IN A ROW');
-  console.log('TIME FILTER: LOCAL — Pinax start_time/end_time intentionally not used');
+  console.log('TIME FILTER: Pinax start_time/end_time + local safety filter');
   console.log('15M WINDOW: PREVIOUS FULLY CLOSED POLYMARKET QUARTER-HOUR INTERVAL');
   console.log(`RUN_ONCE: ${RUN_ONCE}`);
   console.log('DIAGNOSTICS: Pinax requests, response keys, local filtering, stats, winner, Telegram result');
   console.log('OLD RULE REMOVED: NO MORE ALERTS FOR SINGLE LARGEST LIQUIDATION');
+  console.log('DIRECTION ALERT: show LONG users only when >0; show SHORT users only when >0');
   await processDueWindows();
   if (RUN_ONCE) {
     console.log('[RUN_ONCE] Diagnostic cycle complete; exiting.');
     stopping = true;
     boundaryTimer = null;
-    server.close(() => {
-      console.log('[RUN_ONCE] HTTP diagnostics server closed.');
-    });
+    server.close(() => console.log('[RUN_ONCE] HTTP diagnostics server closed.'));
     return;
   }
   scheduleNextBoundary();
@@ -280,17 +257,15 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-spike-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], minLiquidationSize: null, rule: 'largest number of unique liquidated users per coin', repeatRule: 'same coin cannot alert twice in a row across timeframes', timeFilter: 'local', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, lastCheck, lastResult }));
     return;
   }
   res.writeHead(404);
-  res.end(JSON.stringify({ ok: false, error: 'not found' }));
+  res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
 
-server.listen(HTTP_PORT, () => {
-  console.log(`HTTP diagnostics server listening on :${HTTP_PORT}`);
-  start().catch(error => {
-    console.error('[STARTUP_ERROR]', error?.stack || error);
-    process.exitCode = 1;
-  });
+server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics server listening on :${HTTP_PORT}`));
+start().catch(error => {
+  console.error('[FATAL]', error?.stack ?? error);
+  process.exitCode = 1;
 });
