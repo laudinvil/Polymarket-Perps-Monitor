@@ -39,10 +39,19 @@ async function fetchCoinLiquidations(coin, startMs, endMs) {
 async function fetchLiquidations(startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const results = await Promise.all(ASSETS.map(async coin => {
-    try { return await fetchCoinLiquidations(coin, startMs, endMs); }
-    catch (error) { console.error('[Pinax]', error?.message ?? error); return []; }
+    try {
+      const events = await fetchCoinLiquidations(coin, startMs, endMs);
+      const top = events[0];
+      console.log(`[Pinax] ${coin}: ${events.length} events${top ? ` | top=${JSON.stringify({ coin: top.coin, notional: top.notional, direction: top.direction, liquidation_kind: top.liquidation_kind })}` : ''}`);
+      return events;
+    } catch (error) {
+      console.error('[Pinax]', error?.message ?? error);
+      return [];
+    }
   }));
-  return results.flat();
+  const flat = results.flat();
+  console.log(`[Pinax] TOTAL: ${flat.length} events across ${ASSETS.length} assets`);
+  return flat;
 }
 
 async function sendTelegram(text) {
