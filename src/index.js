@@ -41,10 +41,10 @@ async function finalizeBucket(asset, period, bucket) {
   const nextStart = bucket.start + WINDOWS[period];
   const sign = bucket.cvd >= 0 ? '+' : '';
   await sendTelegram([
-    `🚨 ${direction === 'POSITIVE' ? 'STRONG POSITIVE CVD INFLOW' : 'STRONG NEGATIVE CVD OUTFLOW'}`,
+    `${direction === 'POSITIVE' ? '🟢 POSITIVE CVD INFLOW' : '🔴 NEGATIVE CVD OUTFLOW'}`,
     '', `${asset} — ${period} CVD`,
     `📊 Final CVD: ${sign}${bucket.cvd.toFixed(0)} USDT`,
-    `🔥 Strongest ${direction === 'POSITIVE' ? 'positive inflow' : 'negative outflow'}: ${value.toFixed(0)} USDT`,
+    `${direction === 'POSITIVE' ? '📈' : '📉'} ${direction === 'POSITIVE' ? 'Positive inflow' : 'Negative outflow'}: ${value.toFixed(0)} USDT`,
     '', '▶️ POLYMARKET',
     `https://polymarket.com/event/${asset.toLowerCase()}-updown-${period.toLowerCase()}-${Math.floor(nextStart / 1000)}`
   ].join('\n'));
@@ -68,8 +68,7 @@ function rollBuckets(asset, state, now) {
 }
 
 function addCvd(asset, isBuyerAggressor, usd, now) {
-  const state = getState(asset);
-  rollBuckets(asset, state, now);
+  const state = getState(asset); rollBuckets(asset, state, now);
   for (const period of Object.keys(WINDOWS)) {
     const bucket = state[period];
     bucket.cvd += isBuyerAggressor ? usd : -usd;
@@ -81,21 +80,10 @@ function addCvd(asset, isBuyerAggressor, usd, now) {
 
 async function sendTelegram(text) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) { console.error('[Telegram] Not configured'); return false; }
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }) });
-    if (!response.ok) console.error('[Telegram] HTTP', response.status, await response.text());
-    return response.ok;
-  } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
+  try { const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }) }); if (!response.ok) console.error('[Telegram] HTTP', response.status, await response.text()); return response.ok; } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
 }
 
-function snapshot(asset) {
-  const state = getState(asset); const out = {};
-  for (const period of Object.keys(WINDOWS)) {
-    const bucket = state[period];
-    out[period] = { start: bucket.start, cvd: bucket.cvd, maxPositive: bucket.maxPositive, maxNegative: bucket.maxNegative, maxPositiveAt: bucket.maxPositiveAt, maxNegativeAt: bucket.maxNegativeAt, lastTrade: bucket.lastTrade, ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null, status: bucket.lastTrade ? 'OK' : 'WAITING', alerted: bucket.alerted };
-  }
-  return { asset, ...out };
-}
+function snapshot(asset) { const state = getState(asset); const out = {}; for (const period of Object.keys(WINDOWS)) { const bucket = state[period]; out[period] = { start: bucket.start, cvd: bucket.cvd, maxPositive: bucket.maxPositive, maxNegative: bucket.maxNegative, maxPositiveAt: bucket.maxPositiveAt, maxNegativeAt: bucket.maxNegativeAt, lastTrade: bucket.lastTrade, ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null, status: bucket.lastTrade ? 'OK' : 'WAITING', alerted: bucket.alerted }; } return { asset, ...out }; }
 function allStats() { return ASSETS.map(snapshot); }
 function printStats() { console.log('=== CVD 5M / 15M ==='); for (const row of allStats()) console.log(JSON.stringify(row)); }
 function subscribeTrades(ws) { for (const coin of ASSETS) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } })); }
@@ -110,13 +98,7 @@ function connect() {
 function shutdown(signal) { stopping = true; clearTimeout(reconnectTimer); clearInterval(statsTimer); try { websocket?.close(); } catch {} try { server.close(); } catch {} console.log(`Shutdown: ${signal}`); }
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-const server = createServer((req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store');
-  if (url.pathname === '/cvd' || url.pathname === '/trades') { res.writeHead(200); res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'one strongest positive or negative flow per period; 15M duplicate of 5M suppressed', data: allStats() })); return; }
-  if (url.pathname === '/health') { res.writeHead(200); res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true, alertRule: 'one strongest flow per period; 15M duplicates of 5M suppressed' })); return; }
-  res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] }));
-});
+const server = createServer((req, res) => { const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store'); if (url.pathname === '/cvd' || url.pathname === '/trades') { res.writeHead(200); res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'one strongest positive or negative flow per period; 15M duplicate of 5M suppressed', data: allStats() })); return; } if (url.pathname === '/health') { res.writeHead(200); res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true, alertRule: 'one strongest flow per period; 15M duplicates of 5M suppressed' })); return; } res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/cvd', '/trades', '/health'] })); });
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT} (/cvd)`));
 console.log('=== POLYMARKET CVD FLOW MONITOR ===');
 console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY');
