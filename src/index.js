@@ -5,7 +5,7 @@ const BINANCE_WS_URL = 'wss://fstream.binance.com/market/ws/!forceOrder@arr';
 const ENABLE_5M = true;
 const ENABLE_15M = false;
 const ENABLE_5M_LONG = true;
-const ENABLE_5M_SHORT = false;
+const ENABLE_5M_SHORT = true;
 const ASSETS = new Set(['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB']);
 const QUOTES = new Set(['USDT', 'USDC']);
 const MIN_SIZE = 0;
@@ -45,8 +45,8 @@ async function sendTelegram(text) {
   } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
 }
 async function sendAlert(item, marketStart) {
-  if (!item || item.notional < MIN_SIZE || item.side !== 'LONG') return false;
-  const text = [`🚨 LONG LIQUIDATION — 5M`, '', `${item.asset} — LONG LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
+  if (!item || item.notional < MIN_SIZE) return false;
+  const text = [`🚨 ${item.side} LIQUIDATION — 5M`, '', `${item.asset} — ${item.side} LIQUIDATION`, `💥 Size: ${money(item.notional, item.quote)}`, '', `▶️ ${item.asset} 5M UP/DOWN`, marketLink(item.asset, marketStart)].join('\n');
   return sendTelegram(text);
 }
 async function advanceWindows(now) {
@@ -64,16 +64,20 @@ function scheduleFlush() {
 }
 async function handleForceOrder(payload) {
   const order = payload?.o; if (!order) return;
-  if (String(order.S ?? '').toUpperCase() !== 'SELL') return;
+  const sideRaw = String(order.S ?? '').toUpperCase();
+  if (sideRaw !== 'SELL' && sideRaw !== 'BUY') return;
   const parsed = parseSymbol(order.s); if (!parsed) return;
   const price = num(order.ap) || num(order.p); const quantity = num(order.q); const notional = Math.abs(price * quantity);
   if (!(price > 0) || !(quantity > 0) || notional < MIN_SIZE) return;
+  const side = sideRaw === 'SELL' ? 'LONG' : 'SHORT';
+  if (side === 'LONG' && !ENABLE_5M_LONG) return;
+  if (side === 'SHORT' && !ENABLE_5M_SHORT) return;
   const time = num(payload.E) || num(order.T) || Date.now(); await requestAdvance(time);
   const period = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   if (!ENABLE_5M || period !== windowStart5m || alerted5mWindow === period) return;
   if (lastAlertAsset === parsed.asset) return;
   alerted5mWindow = period;
-  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side: 'LONG' };
+  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side };
   const sent = await sendAlert(item, period);
   if (sent) lastAlertAsset = parsed.asset;
   else console.error('[Alert] Telegram send failed; period remains consumed');
@@ -90,8 +94,8 @@ function shutdown(signal) { stopping = true; clearTimeout(flush5mTimer); clearTi
 process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
 console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
-console.log('5M: LONG ONLY | 15M: DISABLED | minimum size: 0 USDT/USDC');
+console.log('5M: LONG + SHORT | 15M: DISABLED | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('ALERT MODE: first LONG liquidation per 5M period across ALL coins; current 5M market link');
+console.log('ALERT MODE: first liquidation per 5M period across ALL coins/directions; same coin is blocked until another coin alerts; current 5M market link');
 scheduleFlush();
 connect();
