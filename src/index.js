@@ -22,6 +22,14 @@ let lastProcessed15m = null;
 function windowStart(ms, size) { return Math.floor(ms / size) * size; }
 function polymarketUrl(asset, startMs, minutes) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${minutes}m-${Math.floor(startMs / 1000)}`; }
 
+function getLiquidatedUser(e) {
+  return String(e?.liquidated_user ?? e?.liquidatedUser ?? e?.user ?? e?.account ?? e?.address ?? '').trim().toLowerCase();
+}
+
+function getDirection(e) {
+  return String(e?.direction ?? e?.liquidation_kind ?? e?.side ?? '').toUpperCase();
+}
+
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
   const all = [];
@@ -57,13 +65,15 @@ async function fetchLiquidationSpike(startMs, endMs) {
       let shortUsers = 0;
       let totalNotional = 0;
       const seenDirectionalUsers = new Set();
+      let missingUser = 0;
       for (const e of events) {
-        const notional = Number(e?.notional || 0);
-        const user = String(e?.liquidated_user || '').toLowerCase();
-        if (notional < MIN_SIZE_USDT || !user) continue;
+        const notional = Number(e?.notional ?? e?.size ?? 0);
+        if (!Number.isFinite(notional) || notional < MIN_SIZE_USDT) continue;
+        const user = getLiquidatedUser(e);
+        if (!user) { missingUser += 1; continue; }
         users.add(user);
         totalNotional += notional;
-        const direction = String(e?.direction || e?.liquidation_kind || '').toUpperCase();
+        const direction = getDirection(e);
         const key = `${user}:${direction}`;
         if (!seenDirectionalUsers.has(key)) {
           seenDirectionalUsers.add(key);
@@ -71,12 +81,13 @@ async function fetchLiquidationSpike(startMs, endMs) {
           if (direction.includes('SHORT')) shortUsers += 1;
         }
       }
-      const result = { coin, users: users.size, longUsers, shortUsers, totalNotional, events: events.length };
-      console.log(`[Pinax] ${coin}: events=${events.length} uniqueLiquidated=${users.size} longUsers=${longUsers} shortUsers=${shortUsers} notional=${totalNotional}`);
+      const result = { coin, users: users.size, longUsers, shortUsers, totalNotional, events: events.length, missingUser };
+      console.log(`[Pinax] ${coin}: events=${events.length} uniqueLiquidated=${users.size} longUsers=${longUsers} shortUsers=${shortUsers} notional=${totalNotional} missingUser=${missingUser}`);
+      if (events.length > 0 && missingUser === events.length) console.log(`[Pinax] ${coin}: WARNING no user field matched; first event keys=${Object.keys(events[0]).join(',')}`);
       return result;
     } catch (error) {
       console.error('[Pinax]', error?.message ?? error);
-      return { coin, users: 0, longUsers: 0, shortUsers: 0, totalNotional: 0, events: 0, error: error?.message ?? String(error) };
+      return { coin, users: 0, longUsers: 0, shortUsers: 0, totalNotional: 0, events: 0, missingUser: 0, error: error?.message ?? String(error) };
     }
   }));
   console.log(`[SPIKE] ${JSON.stringify(results)}`);
@@ -99,16 +110,12 @@ async function sendSpikeAlert(periodStart, stats, minutes) {
   }
   const marketStart = periodStart + minutes * 60 * 1000;
   const text = [
-    '🚨 LIQUIDATION SPIKE',
-    '',
-    `${winner.coin} — ${minutes}M`,
+    '🚨 LIQUIDATION SPIKE', '', `${winner.coin} — ${minutes}M`,
     `Liquidated users: ${winner.users}`,
     `LONG users: ${winner.longUsers}`,
     `SHORT users: ${winner.shortUsers}`,
-    `Liquidation volume: ${Math.round(winner.totalNotional).toLocaleString('en-US')} USDT`,
-    '',
-    '▶️ POLYMARKET',
-    polymarketUrl(winner.coin, marketStart, minutes)
+    `Liquidation volume: ${Math.round(winner.totalNotional).toLocaleString('en-US')} USDT`, '',
+    '▶️ POLYMARKET', polymarketUrl(winner.coin, marketStart, minutes)
   ].join('\n');
   await sendTelegram(text);
   lastAlertAsset = winner.coin;
@@ -122,10 +129,7 @@ async function process5m(startMs) {
   lastProcessed5m = startMs;
   const key = `5m:${startMs}`;
   let alert5m = null;
-  if (!alertedPeriods.has(key)) {
-    alert5m = await sendSpikeAlert(startMs, stats, 5);
-    if (alert5m) alertedPeriods.add(key);
-  }
+  if (!alertedPeriods.has(key)) { alert5m = await sendSpikeAlert(startMs, stats, 5); if (alert5m) alertedPeriods.add(key); }
   return { periodStart: startMs, periodEnd: endMs, stats, alert5m };
 }
 
@@ -136,10 +140,7 @@ async function process15m(startMs) {
   lastProcessed15m = startMs;
   const key = `15m:${startMs}`;
   let alert15m = null;
-  if (!alertedPeriods.has(key)) {
-    alert15m = await sendSpikeAlert(startMs, stats, 15);
-    if (alert15m) alertedPeriods.add(key);
-  }
+  if (!alertedPeriods.has(key)) { alert15m = await sendSpikeAlert(startMs, stats, 15); if (alert15m) alertedPeriods.add(key); }
   return { periodStart: startMs, periodEnd: endMs, stats, alert15m };
 }
 
@@ -200,7 +201,4 @@ const server = createServer((req, res) => {
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
 });
 
-server.listen(HTTP_PORT, () => {
-  console.log(`HTTP diagnostics listening on ${HTTP_PORT}`);
-  void start();
-});
+server.listen(HTTP_PORT, () => { console.log(`HTTP diagnostics listening on ${HTTP_PORT}`); void start(); });
