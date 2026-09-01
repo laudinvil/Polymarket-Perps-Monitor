@@ -22,7 +22,7 @@ let streamConnected = false;
 let lastMessageAt = null;
 
 function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
-function newBucket(start) { return { start, cvd: 0, maxPositive: 0, maxNegative: 0, lastTrade: null }; }
+function newBucket(start) { return { start, buyVolume: 0, sellVolume: 0, cvd: 0, lastTrade: null }; }
 function newState() { return { '5M': newBucket(Math.floor(Date.now() / WINDOWS['5M']) * WINDOWS['5M']), '15M': newBucket(Math.floor(Date.now() / WINDOWS['15M']) * WINDOWS['15M']) }; }
 function getState(asset) { let state = stats.get(asset); if (!state) { state = newState(); stats.set(asset, state); } return state; }
 
@@ -36,38 +36,30 @@ async function finalizePeriod(period, start) {
     const state = stats.get(asset);
     const bucket = state?.[period];
     if (!bucket || bucket.start !== start || !bucket.lastTrade) continue;
-    const positive = bucket.maxPositive;
-    const negative = Math.abs(bucket.maxNegative);
-    if (positive > 0) candidates.push({ asset, direction: 'POSITIVE', value: positive, bucket });
-    if (negative > 0) candidates.push({ asset, direction: 'NEGATIVE', value: negative, bucket });
+    const cvd = bucket.buyVolume - bucket.sellVolume;
+    if (cvd !== 0) candidates.push({ asset, direction: cvd > 0 ? 'POSITIVE' : 'NEGATIVE', value: Math.abs(cvd), cvd, bucket });
   }
 
   if (!candidates.length) return;
   candidates.sort((a, b) => b.value - a.value);
   const winner = candidates[0];
 
-  // Exactly one 5M alert for the entire market universe per 5M period.
-  // The 15M alert is also exactly one per 15M period, but is suppressed when
-  // the same asset/direction already won one of the three constituent 5M periods.
   if (period === '15M') {
     for (let ts = start; ts < start + WINDOWS['15M']; ts += WINDOWS['5M']) {
       if (alerted5mPeriods.has(`${winner.asset}:${winner.direction}:${ts}`)) return;
     }
   }
 
-  const signedValue = winner.direction === 'POSITIVE' ? winner.value : -winner.value;
   const nextStart = start + WINDOWS[period];
   const sent = await sendTelegram([
     winner.direction === 'POSITIVE' ? '🟢 POSITIVE CVD INFLOW' : '🔴 NEGATIVE CVD OUTFLOW',
     '', `${winner.asset} — ${period} CVD`,
-    `CVD: ${signedValue >= 0 ? '+' : ''}${signedValue.toFixed(0)} USDT`,
+    `CVD: ${winner.cvd >= 0 ? '+' : ''}${winner.cvd.toFixed(0)} USDT`,
     '', '▶️ POLYMARKET',
     `https://polymarket.com/event/${winner.asset.toLowerCase()}-updown-${period.toLowerCase()}-${Math.floor(nextStart / 1000)}`
   ].join('\n'));
 
-  if (sent && period === '5M') {
-    alerted5mPeriods.add(`${winner.asset}:${winner.direction}:${start}`);
-  }
+  if (sent && period === '5M') alerted5mPeriods.add(`${winner.asset}:${winner.direction}:${start}`);
 }
 
 function finalizeExpiredPeriods() {
@@ -94,10 +86,10 @@ function addCvd(asset, isBuyerAggressor, usd, now) {
   rollBuckets(asset, state, now);
   for (const period of Object.keys(WINDOWS)) {
     const bucket = state[period];
-    bucket.cvd += isBuyerAggressor ? usd : -usd;
+    if (isBuyerAggressor) bucket.buyVolume += usd;
+    else bucket.sellVolume += usd;
+    bucket.cvd = bucket.buyVolume - bucket.sellVolume;
     bucket.lastTrade = now;
-    if (bucket.cvd > bucket.maxPositive) bucket.maxPositive = bucket.cvd;
-    if (bucket.cvd < bucket.maxNegative) bucket.maxNegative = bucket.cvd;
   }
 }
 
@@ -110,7 +102,7 @@ async function sendTelegram(text) {
   } catch (error) { console.error('[Telegram]', error?.message ?? error); return false; }
 }
 
-function snapshot(asset) { const state = getState(asset); const out = {}; for (const period of Object.keys(WINDOWS)) { const bucket = state[period]; out[period] = { start: bucket.start, cvd: bucket.cvd, maxPositive: bucket.maxPositive, maxNegative: bucket.maxNegative, lastTrade: bucket.lastTrade, ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null, status: bucket.lastTrade ? 'OK' : 'WAITING' }; } return { asset, ...out }; }
+function snapshot(asset) { const state = getState(asset); const out = {}; for (const period of Object.keys(WINDOWS)) { const bucket = state[period]; out[period] = { start: bucket.start, buyVolume: bucket.buyVolume, sellVolume: bucket.sellVolume, cvd: bucket.cvd, lastTrade: bucket.lastTrade, ageMs: bucket.lastTrade ? Math.max(0, Date.now() - bucket.lastTrade) : null, status: bucket.lastTrade ? 'OK' : 'WAITING' }; } return { asset, ...out }; }
 function allStats() { return ASSETS.map(snapshot); }
 function printStats() { console.log('=== CVD 5M / 15M ==='); for (const row of allStats()) console.log(JSON.stringify(row)); }
 function subscribeTrades(ws) { for (const coin of ASSETS) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } })); }
@@ -130,12 +122,12 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/cvd' || url.pathname === '/trades') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'ONE global strongest positive or negative CVD alert per completed 5M and 15M period; no minimum threshold; 15M duplicate of 5M suppressed', data: allStats() }));
+    res.end(JSON.stringify({ ok: true, source: 'Hyperliquid realtime trades', checkedAt: new Date().toISOString(), streamConnected, lastMessageAt, assets: ASSETS, periods: ['5M', '15M'], monitor: 'CVD_FLOW_5M_15M', alerts: true, alertRule: 'ONE global strongest net CVD (total buys minus total sells) per completed 5M and 15M period; no minimum threshold; 15M duplicate of 5M suppressed', data: allStats() }));
     return;
   }
   if (url.pathname === '/health') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true, alertRule: 'ONE global alert per completed period' }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-cvd-monitor', assets: ASSETS, periods: ['5M', '15M'], streamConnected, lastMessageAt, alerts: true, alertRule: 'ONE global net CVD alert per completed period' }));
     return;
   }
   res.writeHead(404);
@@ -144,9 +136,10 @@ const server = createServer((req, res) => {
 server.listen(HTTP_PORT, () => console.log(`HTTP diagnostics listening on ${HTTP_PORT} (/cvd)`));
 console.log('=== POLYMARKET CVD FLOW MONITOR ===');
 console.log('SOURCE: HYPERLIQUID REALTIME TRADES ONLY');
+console.log('CVD: TOTAL BUY VOLUME - TOTAL SELL VOLUME');
 console.log('OI: DISABLED | LIQUIDATIONS: DISABLED | PRESSURE: DISABLED');
 console.log('PERIODS: 5M + 15M');
-console.log('ALERT: ONE GLOBAL STRONGEST POSITIVE OR NEGATIVE FLOW PER PERIOD');
+console.log('ALERT: ONE GLOBAL STRONGEST NET CVD PER PERIOD');
 console.log('NO MINIMUM CVD THRESHOLD');
 console.log('15M DUPLICATE OF 5M IS SUPPRESSED');
 connect();
