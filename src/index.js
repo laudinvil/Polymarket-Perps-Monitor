@@ -9,10 +9,12 @@ const WINDOW_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
 const HTTP_PORT = Number(process.env.PORT || 3000);
 const alertedPeriods = new Set();
+const fiveMinuteHistory = new Map();
 let pollTimer = null;
 let stopping = false;
 let lastCheck = null;
 let lastResult = null;
+let lastProcessedStart = null;
 
 function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS; }
 function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
@@ -20,7 +22,9 @@ function directionLabel(direction) {
   const d = String(direction || '').toUpperCase();
   return d.includes('LONG') ? '🔴 LONG LIQUIDATION' : d.includes('SHORT') ? '🟢 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
 }
-function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
+function polymarketUrl(asset, startMs, timeframeMinutes) {
+  return `https://polymarket.com/event/${asset.toLowerCase()}-updown-${timeframeMinutes}m-${Math.floor(startMs / 1000)}`;
+}
 
 async function fetchCoinLiquidations(coin, startMs, endMs) {
   if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
@@ -53,7 +57,7 @@ async function fetchLiquidations(startMs, endMs) {
     }
   }));
   const flat = results.flat();
-  console.log(`[Pinax] TOTAL: ${flat.length} events across ${ASSETS.length} assets`);
+  console.log(`[Pinax] TOTAL: ${flat.length} top events across ${ASSETS.length} assets`);
   return flat;
 }
 
@@ -63,25 +67,94 @@ async function sendTelegram(text) {
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${await response.text()}`);
 }
 
+function rememberFiveMinute(periodStart, events) {
+  const byCoin = {};
+  for (const asset of ASSETS) {
+    const event = events.find(e => String(e?.coin) === asset);
+    byCoin[asset] = event ? {
+      notional: Number(event.notional) || 0,
+      direction: event.direction || event.liquidation_kind || '',
+      eventHash: event.event_hash || null
+    } : { notional: 0, direction: '', eventHash: null };
+  }
+  fiveMinuteHistory.set(periodStart, byCoin);
+  const cutoff = periodStart - (4 * WINDOW_MS);
+  for (const ts of fiveMinuteHistory.keys()) if (ts < cutoff) fiveMinuteHistory.delete(ts);
+  return byCoin;
+}
+
+function getLastThree(periodStart) {
+  return [periodStart - (2 * WINDOW_MS), periodStart - WINDOW_MS, periodStart]
+    .map(ts => fiveMinuteHistory.get(ts))
+    .filter(Boolean);
+}
+
+async function sendFiveMinuteAlert(periodStart, events) {
+  const candidates = events.filter(e => ASSETS.includes(String(e?.coin))).filter(e => Number(e?.notional) > 0).sort((a, b) => Number(b.notional) - Number(a.notional));
+  if (!candidates.length) return null;
+  const winner = candidates[0];
+  const asset = String(winner.coin);
+  const notional = Number(winner.notional);
+  const direction = directionLabel(winner.direction || winner.liquidation_kind);
+  const nextStart = periodStart + WINDOW_MS;
+  const text = [direction, '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart, 5)].join('\n');
+  await sendTelegram(text);
+  return { asset, notional, direction: winner.direction || winner.liquidation_kind, nextMarket: polymarketUrl(asset, nextStart, 5) };
+}
+
+async function sendFifteenMinuteAlert(periodStart) {
+  const periods = getLastThree(periodStart);
+  if (periods.length !== 3) return null;
+  const totals = ASSETS.map(asset => {
+    let total = 0;
+    let long = 0;
+    let short = 0;
+    for (const period of periods) {
+      const row = period[asset];
+      total += Number(row?.notional) || 0;
+      const d = String(row?.direction || '').toUpperCase();
+      if (d.includes('LONG')) long += Number(row?.notional) || 0;
+      if (d.includes('SHORT')) short += Number(row?.notional) || 0;
+    }
+    return { asset, total, long, short };
+  }).filter(x => x.total > 0).sort((a, b) => b.total - a.total);
+  if (!totals.length) return null;
+  const winner = totals[0];
+  const direction = winner.long > winner.short ? 'LONG' : winner.short > winner.long ? 'SHORT' : '';
+  const nextStart = periodStart + WINDOW_MS;
+  const text = [directionLabel(direction), '', `${winner.asset} — 15M`, `Size: ${fmtUsd(winner.total)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(winner.asset, nextStart, 15)].join('\n');
+  await sendTelegram(text);
+  return { asset: winner.asset, total: winner.total, long: winner.long, short: winner.short, direction, nextMarket: polymarketUrl(winner.asset, nextStart, 15) };
+}
+
 async function processClosedWindow(startMs) {
-  const key = String(startMs);
-  if (alertedPeriods.has(key)) return;
+  if (lastProcessedStart === startMs) return;
+  lastProcessedStart = startMs;
   const endMs = startMs + WINDOW_MS;
   try {
     const events = await fetchLiquidations(startMs, endMs);
-    const candidates = events.filter(e => ASSETS.includes(String(e?.coin))).filter(e => Number(e?.notional) > 0).sort((a, b) => Number(b.notional) - Number(a.notional));
+    rememberFiveMinute(startMs, events);
     lastCheck = new Date().toISOString();
-    if (!candidates.length) { lastResult = { periodStart: startMs, periodEnd: endMs, events: 0, alert: false }; return; }
-    const winner = candidates[0];
-    const asset = String(winner.coin);
-    const notional = Number(winner.notional);
-    const direction = directionLabel(winner.direction || winner.liquidation_kind);
-    const nextStart = endMs;
-    const text = [direction, '', `${asset} — 5M`, `Size: ${fmtUsd(notional)} USDT`, '', '▶️ POLYMARKET', polymarketUrl(asset, nextStart)].join('\n');
-    await sendTelegram(text);
-    alertedPeriods.add(key);
-    lastResult = { periodStart: startMs, periodEnd: endMs, events: candidates.length, alert: true, asset, direction: winner.direction || winner.liquidation_kind, notional, eventHash: winner.event_hash || null, nextMarket: polymarketUrl(asset, nextStart) };
-    console.log('[ALERT]', JSON.stringify(lastResult));
+
+    let fiveMinuteAlert = null;
+    const fiveKey = `5m:${startMs}`;
+    if (!alertedPeriods.has(fiveKey)) {
+      fiveMinuteAlert = await sendFiveMinuteAlert(startMs, events);
+      if (fiveMinuteAlert) alertedPeriods.add(fiveKey);
+    }
+
+    let fifteenMinuteAlert = null;
+    const periodNumber = Math.floor(startMs / WINDOW_MS);
+    if (periodNumber % 3 === 2) {
+      const fifteenKey = `15m:${startMs}`;
+      if (!alertedPeriods.has(fifteenKey)) {
+        fifteenMinuteAlert = await sendFifteenMinuteAlert(startMs);
+        if (fifteenMinuteAlert) alertedPeriods.add(fifteenKey);
+      }
+    }
+
+    lastResult = { periodStart: startMs, periodEnd: endMs, events: events.length, alert5m: fiveMinuteAlert, alert15m: fifteenMinuteAlert };
+    console.log('[RESULT]', JSON.stringify(lastResult));
   } catch (error) {
     lastCheck = new Date().toISOString();
     lastResult = { periodStart: startMs, periodEnd: endMs, alert: false, error: error?.message ?? String(error) };
@@ -89,17 +162,23 @@ async function processClosedWindow(startMs) {
   }
 }
 
-async function poll() { if (stopping) return; const current = currentWindowStart(); await processClosedWindow(current - WINDOW_MS); }
+async function poll() {
+  if (stopping) return;
+  const current = currentWindowStart();
+  const closed = current - WINDOW_MS;
+  await processClosedWindow(closed);
+}
 
 function start() {
   console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
   console.log('SOURCE: PINAX HYPERLIQUID MARKET LIQUIDATIONS');
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-  console.log('PERIOD: 5M');
-  console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('PERIODS: 5M + 15M');
+  console.log('RULE 5M: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('RULE 15M: SUM THE THREE PREVIOUS 5M WINNERS PER ASSET, THEN SELECT THE LARGEST TOTAL');
   console.log('PINAX: ONE REQUEST PER COIN PER CLOSED 5M PERIOD');
-  console.log('DIRECTION: LONG OR SHORT');
-  console.log('LINK: NEXT 5M POLYMARKET MARKET');
+  console.log('DIRECTION: SHORT=GREEN, LONG=RED');
+  console.log('LINK: NEXT 5M/15M POLYMARKET MARKET');
   void poll();
   pollTimer = setInterval(() => void poll(), POLL_MS);
 }
@@ -114,7 +193,7 @@ const server = createServer((req, res) => {
   res.setHeader('cache-control', 'no-store');
   if (url.pathname === '/health' || url.pathname === '/liquidations') {
     res.writeHead(200);
-    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, period: '5M', rule: 'one largest liquidation by notional across all 7 assets', lastCheck, lastResult }));
+    res.end(JSON.stringify({ ok: true, service: 'polymarket-liquidation-monitor', source: 'Pinax Hyperliquid market liquidations', assets: ASSETS, periods: ['5M', '15M'], rule5m: 'one largest liquidation by notional across all 7 assets', rule15m: 'sum three previous 5M top liquidations per asset and select largest total', pinax: 'one request per coin per closed 5M period', lastCheck, lastResult }));
     return;
   }
   res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'Not found', endpoints: ['/health', '/liquidations'] }));
