@@ -16,22 +16,33 @@ let lastResult = null;
 
 function currentWindowStart() { return Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS; }
 function fmtUsd(v) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-function directionLabel(direction) { return String(direction || '').toUpperCase().includes('LONG') ? '🟢 LONG LIQUIDATION' : '🔴 SHORT LIQUIDATION'; }
+function directionLabel(direction) {
+  const d = String(direction || '').toUpperCase();
+  return d.includes('LONG') ? '🟢 LONG LIQUIDATION' : d.includes('SHORT') ? '🔴 SHORT LIQUIDATION' : '⚪ LIQUIDATION';
+}
 function polymarketUrl(asset, nextStartMs) { return `https://polymarket.com/event/${asset.toLowerCase()}-updown-5m-${Math.floor(nextStartMs / 1000)}`; }
 
-async function fetchLiquidations(startMs, endMs) {
-  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
+async function fetchCoinLiquidations(coin, startMs, endMs) {
   const url = new URL(PINAX_URL);
-  url.searchParams.set('coin', ASSETS.join(','));
+  url.searchParams.set('coin', coin);
   url.searchParams.set('dex', 'perps');
   url.searchParams.set('start_time', String(Math.floor(startMs / 1000)));
   url.searchParams.set('end_time', String(Math.floor(endMs / 1000)));
   url.searchParams.set('sort_by', 'notional');
   url.searchParams.set('limit', '10');
   const response = await fetch(url, { headers: { Authorization: `Bearer ${PINAX_API_KEY}`, Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`Pinax HTTP ${response.status}: ${await response.text()}`);
+  if (!response.ok) throw new Error(`${coin}: Pinax HTTP ${response.status}: ${await response.text()}`);
   const body = await response.json();
   return Array.isArray(body?.data) ? body.data : [];
+}
+
+async function fetchLiquidations(startMs, endMs) {
+  if (!PINAX_API_KEY) throw new Error('PINAX_API_KEY/PINAX_API_TOKEN is not configured');
+  const results = await Promise.all(ASSETS.map(async coin => {
+    try { return await fetchCoinLiquidations(coin, startMs, endMs); }
+    catch (error) { console.error('[Pinax]', error?.message ?? error); return []; }
+  }));
+  return results.flat();
 }
 
 async function sendTelegram(text) {
@@ -74,6 +85,7 @@ function start() {
   console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
   console.log('PERIOD: 5M');
   console.log('RULE: ONE LARGEST LIQUIDATION BY NOTIONAL ACROSS ALL 7 ASSETS');
+  console.log('PINAX: ONE REQUEST PER COIN, LIMIT 10');
   console.log('DIRECTION: LONG OR SHORT');
   console.log('LINK: NEXT 5M POLYMARKET MARKET');
   void poll();
