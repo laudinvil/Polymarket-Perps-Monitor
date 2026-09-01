@@ -17,11 +17,12 @@ const RECONNECT_MS = 3000;
 
 let windowStart5m = Math.floor(Date.now() / WINDOW_5M) * WINDOW_5M;
 let windowStart15m = Math.floor(Date.now() / WINDOW_15M) * WINDOW_15M;
-let firstAlerted5m = null;
+let largest5m = null;
+let previousLargest5m = null;
+let lastAlertPair5m = null;
 let largest15m = null;
 let previousLargest15m = null;
 let lastAlertPair15m = null;
-let lastAlertAsset5m = null;
 let timer5m;
 let timer15m;
 let websocket;
@@ -65,7 +66,12 @@ function requestAdvance(now) {
   advancing = advancing.then(async () => {
     const target5 = Math.floor(now / WINDOW_5M) * WINDOW_5M;
     const target15 = Math.floor(now / WINDOW_15M) * WINDOW_15M;
-    if (target5 > windowStart5m) { windowStart5m = target5; firstAlerted5m = null; }
+    if (target5 > windowStart5m) {
+      previousLargest5m = largest5m;
+      windowStart5m = target5;
+      largest5m = null;
+      lastAlertPair5m = null;
+    }
     while (target15 > windowStart15m) {
       previousLargest15m = largest15m;
       windowStart15m += WINDOW_15M;
@@ -88,21 +94,29 @@ async function handleForceOrder(payload) {
   await requestAdvance(time);
   const p5 = Math.floor(time / WINDOW_5M) * WINDOW_5M;
   const p15 = Math.floor(time / WINDOW_15M) * WINDOW_15M;
-  const item = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p15 };
+  const item5 = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p5 };
+  const item15 = { asset: parsed.asset, quote: parsed.quote, price, quantity, notional, side, period: p15 };
 
-  if (ENABLE_5M && p5 === windowStart5m && firstAlerted5m !== p5) {
-    const enabled = side === 'LONG' ? ENABLE_5M_LONG : ENABLE_5M_SHORT;
-    if (enabled && lastAlertAsset5m !== parsed.asset) {
-      firstAlerted5m = p5;
-      const sent = await sendAlert({ ...item }, p5, WINDOW_5M, false);
-      if (sent) lastAlertAsset5m = parsed.asset;
-    }
+  if (ENABLE_5M && p5 === windowStart5m) {
+    const enabled5 = side === 'LONG' ? ENABLE_5M_LONG : ENABLE_5M_SHORT;
+    if (enabled5 && (!largest5m || notional > largest5m.notional)) largest5m = item5;
   }
 
   if (ENABLE_15M && p15 === windowStart15m) {
-    const enabled = side === 'LONG' ? ENABLE_15M_LONG : ENABLE_15M_SHORT;
-    if (enabled && (!largest15m || notional > largest15m.notional)) largest15m = item;
+    const enabled15 = side === 'LONG' ? ENABLE_15M_LONG : ENABLE_15M_SHORT;
+    if (enabled15 && (!largest15m || notional > largest15m.notional)) largest15m = item15;
   }
+}
+async function flush5m() {
+  const current = largest5m;
+  const previous = previousLargest5m;
+  if (!current || !previous) return;
+  if (current.asset !== previous.asset || current.side !== previous.side) return;
+  const key = `${previous.period}:${previous.asset}:${previous.side}|${current.period}:${current.asset}:${current.side}`;
+  if (lastAlertPair5m === key) return;
+  lastAlertPair5m = key;
+  const sent = await sendAlert(current, current.period, WINDOW_5M, true);
+  if (!sent) console.error('[5M Alert] Telegram send failed');
 }
 async function flush15m() {
   const current = largest15m;
@@ -117,7 +131,7 @@ async function flush15m() {
 }
 function scheduleTimers() {
   clearTimeout(timer5m); clearTimeout(timer15m);
-  timer5m = setTimeout(async () => { await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart5m + WINDOW_5M - Date.now() + 50));
+  timer5m = setTimeout(async () => { await flush5m(); await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart5m + WINDOW_5M - Date.now() + 50));
   timer15m = setTimeout(async () => { await flush15m(); await requestAdvance(Date.now()); if (!stopping) scheduleTimers(); }, Math.max(100, windowStart15m + WINDOW_15M - Date.now() + 50));
 }
 function connect() {
@@ -134,7 +148,8 @@ console.log('=== POLYMARKET LIQUIDATION MONITOR ===');
 console.log('SOURCE: BINANCE FUTURES FORCE ORDER STREAM');
 console.log('5M: LONG + SHORT | 15M: LONG + SHORT | minimum size: 0 USDT/USDC');
 console.log('ASSETS: BTC, ETH, XRP, SOL, DOGE, HYPE, BNB');
-console.log('5M: first liquidation alerts immediately; current 5M market link; same-coin repeat block retained');
-console.log('15M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 15M market; same-coin repeat block removed');
+console.log('5M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 5M market');
+console.log('15M: largest liquidation across ALL coins; same coin + direction must be largest in TWO consecutive periods; alert on NEXT 15M market');
+console.log('Same-coin repeat block: REMOVED');
 scheduleTimers();
 connect();
