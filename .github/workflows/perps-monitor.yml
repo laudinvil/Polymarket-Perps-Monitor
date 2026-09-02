@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  IMMINENT_LIQUIDATION_PCT: '2'
+  IMMINENT_LIQUIDATION_PCT: '1.95'
   IMMINENT_LIQUIDATION_INTERVAL_MS: '300000'
   IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
 
@@ -39,19 +39,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 24
-
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
       - name: Run Pinax unfiltered probe
         if: env.DIAGNOSTIC == 'true'
         run: node src/pinax-probe.js 2>&1 | tee probe.log
-
       - name: Run liquidation monitors
         run: |
           if [ "$DIAGNOSTIC" = "true" ]; then
@@ -70,7 +66,6 @@ jobs:
             wait $IMMINENT_PID 2>/dev/null || true
             exit $STATUS
           fi
-
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
