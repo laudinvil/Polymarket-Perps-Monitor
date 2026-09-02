@@ -43,16 +43,27 @@ jobs:
       - name: Run detailed IMMINENT diagnostic
         if: env.DIAGNOSTIC == 'true'
         run: node src/imminent-diagnostic.js 2>&1 | tee imminent-diagnostic.log
-      - name: Run IMMINENT liquidation monitor
-        run: node src/imminent-liquidation.js 2>&1 | tee imminent.log
-      - name: Run SPIKE 5M + 15M monitor
-        run: node src/spike.js 2>&1 | tee spike.log
+      - name: Run IMMINENT + SPIKE + BINANCE SPIKE monitors
+        run: |
+          node src/imminent-liquidation.js 2>&1 | tee imminent.log &
+          PID_IMMINENT=$!
+          node src/spike.js 2>&1 | tee spike.log &
+          PID_SPIKE=$!
+          node src/binance-spike.js 2>&1 | tee binance-spike.log &
+          PID_BINANCE=$!
+          wait $PID_IMMINENT
+          STATUS_IMMINENT=$?
+          wait $PID_SPIKE
+          STATUS_SPIKE=$?
+          wait $PID_BINANCE
+          STATUS_BINANCE=$?
+          test $STATUS_IMMINENT -eq 0 && test $STATUS_SPIKE -eq 0 && test $STATUS_BINANCE -eq 0
       - name: Persist monitor state
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/imminent-alerted-positions.json src/spike-alerted-windows.json
+          git add src/imminent-alerted-positions.json src/spike-alerted-windows.json src/binance-spike-alerted-windows.json
           git diff --cached --quiet || git commit -m "Persist liquidation monitor state"
           git push
       - name: Upload diagnostic log
@@ -64,7 +75,9 @@ jobs:
             imminent-diagnostic.log
             imminent.log
             spike.log
+            binance-spike.log
             src/imminent-alerted-positions.json
             src/spike-alerted-windows.json
+            src/binance-spike-alerted-windows.json
           if-no-files-found: warn
           retention-days: 7
