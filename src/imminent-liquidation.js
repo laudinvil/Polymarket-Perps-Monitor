@@ -4,7 +4,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const PINAX_ACTIVITY_URL = 'https://api.pinax.network/v1/hyperliquid/markets/activity';
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
-const THRESHOLD_PCT = Number(process.env.IMMINENT_LIQUIDATION_PCT || 1);
+const THRESHOLD_PCT = Number(process.env.IMMINENT_LIQUIDATION_PCT || 1.5);
 const SCAN_INTERVAL_MS = Number(process.env.IMMINENT_LIQUIDATION_INTERVAL_MS || 300000);
 const CANDIDATE_LOOKBACK_MS = Number(process.env.IMMINENT_LIQUIDATION_LOOKBACK_MS || 30 * 60 * 1000);
 const ACTIVITY_LIMIT = 10;
@@ -130,7 +130,6 @@ async function scan() {
   alerts.sort((a, b) => a.distancePct - b.distancePct || b.positionValue - a.positionValue);
   console.log(`[IMMINENT][FOUND] qualifying=${alerts.length}`);
   if (alerts.length) console.log(`[IMMINENT][TOP] ${JSON.stringify(alerts[0])}`);
-  // One alert only per scan: the closest liquidation across all 7 coins/users.
   const item = alerts[0];
   if (!item) return alerts;
   const key = `${item.user}:${item.coin}:${item.side}`;
