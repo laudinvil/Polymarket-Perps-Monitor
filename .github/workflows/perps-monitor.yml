@@ -26,6 +26,10 @@ jobs:
       PINAX_API_TOKEN: ${{ secrets.PINAX_API_TOKEN }}
       RUN_ONCE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
       DIAGNOSTIC: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
+      IMMINENT_LIQUIDATION_PCT: '0.2'
+      IMMINENT_LIQUIDATION_INTERVAL_MS: '30000'
+      IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
+      IMMINENT_LIQUIDATION_ALERT_COOLDOWN_MS: '600000'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -42,8 +46,15 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
         run: node src/pinax-probe.js 2>&1 | tee probe.log
 
-      - name: Run liquidation monitor
-        run: node src/index.js 2>&1 | tee monitor.log
+      - name: Run liquidation monitors
+        run: |
+          node src/imminent-liquidation.js 2>&1 | tee imminent.log &
+          IMMINENT_PID=$!
+          node src/index.js 2>&1 | tee monitor.log
+          STATUS=$?
+          kill $IMMINENT_PID 2>/dev/null || true
+          wait $IMMINENT_PID 2>/dev/null || true
+          exit $STATUS
 
       - name: Upload diagnostic log
         if: always() && github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
@@ -52,6 +63,7 @@ jobs:
           name: liquidation-monitor-diagnostic
           path: |
             monitor.log
+            imminent.log
             probe.log
           if-no-files-found: warn
           retention-days: 7
