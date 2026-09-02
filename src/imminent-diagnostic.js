@@ -61,11 +61,15 @@ async function main(){
           const value=Math.abs(Number(p?.positionValue)); if(Number.isFinite(value)&&value<MIN_USD){belowMin++;continue;}
           const size=Number(p?.szi),liq=Number(p?.liquidationPx),mark=marks.get(coin); if(!size||!Number.isFinite(liq)||!mark) continue;
           const side=size>0?'Long':'Short',distance=pct(side,mark,liq);
-          if(Number.isFinite(distance)&&distance>=0&&distance<=THRESHOLD_PCT){qualifying++;const x={user,side,value,distance,liq};if(!best||distance<best.distance)best=x;}
+          if(Number.isFinite(distance)&&distance>=0){
+            const x={user,side,value,distance,liq};
+            if(!best||distance<best.distance) best=x;
+            if(distance<=THRESHOLD_PCT) qualifying++;
+          }
         }
       }
       grand.pinaxUsers+=activityUsers.length;grand.uniqueUsers+=users.length;grand.hlChecks+=hlChecks;grand.positions+=positions;grand.belowMin+=belowMin;grand.qualifying+=qualifying;
-      console.log(`[COIN][${coin}] pinaxActivityRows=${rows.length} activityUsers=${activityUsers.length} topUsers=${topUsers.length} uniqueCandidates=${users.length} hlChecks=${hlChecks} positions=${positions} belowMin=${belowMin} qualifying=${qualifying}${best?` best=${best.side} ${usd(best.value)} ${best.distance.toFixed(4)}% liq=${usd(best.liq)}`:''}`);
+      console.log(`[COIN][${coin}] pinaxActivityRows=${rows.length} activityUsers=${activityUsers.length} topUsers=${topUsers.length} uniqueCandidates=${users.length} hlChecks=${hlChecks} positions=${positions} belowMin=${belowMin} qualifying=${qualifying}${best?` nearest=${best.side} ${usd(best.value)} ${best.distance.toFixed(4)}% liq=${usd(best.liq)}`:' nearest=none'}`);
     }catch(e){grand.errors++;console.error(`[COIN][${coin}][ERROR] ${e?.message??e}`);}
   }
   console.log(`[SUMMARY] pinaxActivityUsers=${grand.pinaxUsers} uniqueCandidates=${grand.uniqueUsers} hyperliquidChecks=${grand.hlChecks} positions=${grand.positions} belowMin=${grand.belowMin} qualifying=${grand.qualifying} errors=${grand.errors} totalMs=${Date.now()-started}`);
