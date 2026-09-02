@@ -4,12 +4,14 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ASSETS = ['BTC', 'ETH', 'XRP', 'SOL', 'DOGE', 'HYPE', 'BNB'];
 const PINAX_ACTIVITY_URL = 'https://api.pinax.network/v1/hyperliquid/markets/activity';
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
-const THRESHOLD_PCT = Number(process.env.IMMINENT_LIQUIDATION_PCT || 0.2);
-const SCAN_INTERVAL_MS = 5 * 60 * 1000;
+const THRESHOLD_PCT = Number(process.env.IMMINENT_LIQUIDATION_PCT || 1);
+const SCAN_INTERVAL_MS = Number(process.env.IMMINENT_LIQUIDATION_INTERVAL_MS || 300000);
 const CANDIDATE_LOOKBACK_MS = Number(process.env.IMMINENT_LIQUIDATION_LOOKBACK_MS || 30 * 60 * 1000);
 const ACTIVITY_LIMIT = 10;
 const LEADERBOARD_LIMIT = 10;
+const ALERT_COOLDOWN_MS = Number(process.env.IMMINENT_LIQUIDATION_ALERT_COOLDOWN_MS || 10 * 60 * 1000);
 const RUN_ONCE = process.env.RUN_ONCE === 'true';
+const alerted = new Map();
 let stopping = false;
 
 function assertConfig() {
@@ -25,8 +27,9 @@ async function pinaxGet(url) {
   return JSON.parse(raw);
 }
 
-async function discoverRecentUsers(coin, now) {
+async function discoverRecentUsers(coin) {
   const url = new URL(PINAX_ACTIVITY_URL);
+  const now = Date.now();
   url.searchParams.set('coin', coin);
   url.searchParams.set('dex', 'perps');
   url.searchParams.set('start_time', new Date(now - CANDIDATE_LOOKBACK_MS).toISOString());
@@ -51,10 +54,10 @@ async function discoverTopUsers(coin) {
   return rows.map(x => String(x?.user || '').toLowerCase()).filter(Boolean);
 }
 
-async function discoverCandidates(now) {
+async function discoverCandidates() {
   const byCoin = new Map();
   await Promise.all(ASSETS.map(async coin => {
-    const [recent, top] = await Promise.all([discoverRecentUsers(coin, now), discoverTopUsers(coin)]);
+    const [recent, top] = await Promise.all([discoverRecentUsers(coin), discoverTopUsers(coin)]);
     byCoin.set(coin, [...new Set([...recent, ...top])]);
     console.log(`[IMMINENT][CANDIDATES] ${coin} recent=${recent.length} top=${top.length} unique=${byCoin.get(coin).length}`);
   }));
@@ -102,15 +105,9 @@ function parsePosition(position, markPx) {
   return { side, coin: position?.coin, markPx, liqPx, distancePct, positionValue, size };
 }
 
-function nextFiveMinuteMarketUrl(coin, scanMs) {
-  const nextStart = Math.floor(scanMs / (5 * 60 * 1000)) * (5 * 60 * 1000) + 5 * 60 * 1000;
-  return `https://polymarket.com/event/${coin.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
-}
-
 async function scan() {
-  const now = Date.now();
-  console.log(`[IMMINENT][SCAN] threshold=${THRESHOLD_PCT}% windowEnd=${new Date(now).toISOString()}`);
-  const [candidates, marks] = await Promise.all([discoverCandidates(now), getMarketContexts()]);
+  console.log(`[IMMINENT][SCAN] threshold=${THRESHOLD_PCT}% interval=${SCAN_INTERVAL_MS}ms lookback=${Math.round(CANDIDATE_LOOKBACK_MS / 60000)}m`);
+  const [candidates, marks] = await Promise.all([discoverCandidates(), getMarketContexts()]);
   const alerts = [];
   for (const coin of ASSETS) {
     const users = candidates.get(coin) || [];
@@ -132,64 +129,60 @@ async function scan() {
   }
   alerts.sort((a, b) => a.distancePct - b.distancePct || b.positionValue - a.positionValue);
   console.log(`[IMMINENT][FOUND] qualifying=${alerts.length}`);
-  if (!alerts.length) return null;
-
-  // One alert only per 5-minute check: closest liquidation first, then largest position.
-  const winner = alerts[0];
-  await sendAlert(winner, now);
-  return winner;
+  if (alerts.length) console.log(`[IMMINENT][TOP] ${JSON.stringify(alerts[0])}`);
+  // One alert only per scan: the closest liquidation across all 7 coins/users.
+  const item = alerts[0];
+  if (!item) return alerts;
+  const key = `${item.user}:${item.coin}:${item.side}`;
+  const previous = alerted.get(key) || 0;
+  if (Date.now() - previous < ALERT_COOLDOWN_MS) {
+    console.log(`[IMMINENT][COOLDOWN] ${item.coin} ${item.side} ${item.distancePct.toFixed(2)}%`);
+    return alerts;
+  }
+  await sendAlert(item);
+  alerted.clear();
+  alerted.set(key, Date.now());
+  return alerts;
 }
 
 function fmtUsd(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '$0.00';
-  if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
-  if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(2)}K`;
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-async function sendAlert(item, scanMs) {
+function nextPolymarket5mUrl(coin) {
+  const now = Date.now();
+  const nextStart = Math.floor(now / 300000) * 300000 + 300000;
+  return `https://polymarket.com/event/${coin.toLowerCase()}-updown-5m-${Math.floor(nextStart / 1000)}`;
+}
+
+async function sendAlert(item) {
   const emoji = item.side === 'Long' ? '🔴' : '🟢';
-  const market = nextFiveMinuteMarketUrl(item.coin, scanMs);
-  const text = [
-    `⚠️ ${emoji} #${item.coin} Imminent ${item.side} Liquidation: ${fmtUsd(item.positionValue)} @ ${item.distancePct.toFixed(2)}% away (liq: ${fmtUsd(item.liqPx)})`,
-    '',
-    '▶️ NEXT POLYMARKET 5M',
-    market
-  ].join('\n');
-  console.log(`[IMMINENT][ALERT] ${text.replace(/\n/g, ' | ')} user=${item.user} mark=${item.markPx}`);
+  const text = `⚠️ ${emoji} #${item.coin} Imminent ${item.side} Liquidation: ${fmtUsd(item.positionValue)} @ ${item.distancePct.toFixed(2)}% away (liq: ${fmtUsd(item.liqPx)})\n\n▶️ NEXT POLYMARKET 5M\n${nextPolymarket5mUrl(item.coin)}`;
+  console.log(`[IMMINENT][ALERT] ${text} user=${item.user} mark=${item.markPx}`);
   const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: false })
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true })
   });
   const raw = await response.text();
   console.log(`[IMMINENT][TELEGRAM] HTTP ${response.status}: ${raw.slice(0, 300)}`);
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}: ${raw}`);
 }
 
-function msToNextBoundary() {
-  const size = 5 * 60 * 1000;
-  const now = Date.now();
-  const next = Math.floor(now / size) * size + size;
-  return Math.max(1000, next - now);
-}
-
 async function main() {
   assertConfig();
   console.log('=== IMMINENT LIQUIDATION MONITOR ===');
   console.log(`THRESHOLD: ${THRESHOLD_PCT}%`);
-  console.log('SCAN: every 5 minutes at the end of the closed 5M period');
-  console.log('RULE: one Telegram alert only; closest liquidation wins, then largest position');
-  console.log('MARKET LINK: next Polymarket 5M market');
-  console.log('CANDIDATES: recent Pinax market activity + top 1h volume users per coin');
-  if (RUN_ONCE) {
-    await scan();
-    return;
-  }
+  console.log(`SCAN INTERVAL: ${SCAN_INTERVAL_MS}ms`);
+  console.log('RULE: one alert only — closest liquidation across all 7 coins/users');
+  console.log('MARKET: next Polymarket 5M');
+  await scan();
+  if (RUN_ONCE) return;
   while (!stopping) {
-    const delay = msToNextBoundary();
-    console.log(`[IMMINENT][SCHEDULER] next scan in ${delay}ms`);
+    const now = Date.now();
+    const nextBoundary = Math.floor(now / 300000) * 300000 + 300000;
+    const delay = Math.max(1000, nextBoundary - now);
+    console.log(`[IMMINENT][SCHEDULER] next 5M boundary=${new Date(nextBoundary).toISOString()} delay=${delay}ms`);
     await new Promise(resolve => setTimeout(resolve, delay));
     if (stopping) break;
     try { await scan(); } catch (error) { console.error('[IMMINENT][SCAN_ERROR]', error?.stack ?? error); }
