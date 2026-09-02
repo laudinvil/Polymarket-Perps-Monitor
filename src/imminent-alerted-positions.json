@@ -3,7 +3,10 @@
   "rule": "one position = one alert permanently",
   "positions": {
     "0x004edcd40360e293e4cf260d2ebdf8c7076c1bb8|BTC|Short|entry:77035.40000000": {
-      "alertedAt": "2026-09-02T07:35:50.133Z"
+      "alertedAt": "2026-09-02T07:59:41.009Z"
+    },
+    "0x7276da0d30ec73d1c77ff8dee3e46f1fa074bfe1|XRP|Long|entry:1.35720000": {
+      "alertedAt": "2026-09-02T07:59:41.009Z"
     }
   }
 }
