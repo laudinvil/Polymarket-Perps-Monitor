@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       diagnostic:
-        description: 'Run one IMMINENT diagnostic and upload the log'
+        description: 'Run one IMMINENT + SPIKE diagnostic'
         required: false
         default: false
         type: boolean
@@ -45,6 +45,8 @@ jobs:
         run: node src/pinax-probe.js 2>&1 | tee probe.log
       - name: Run IMMINENT liquidation monitor
         run: node src/imminent-liquidation.js 2>&1 | tee imminent.log
+      - name: Run Hyperliquid SPIKE monitor
+        run: node src/spike.js 2>&1 | tee spike.log
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
@@ -52,7 +54,9 @@ jobs:
           name: liquidation-monitor-diagnostic
           path: |
             imminent.log
+            spike.log
             probe.log
             src/imminent-alerted-positions.json
+            src/spike-alerted-windows.json
           if-no-files-found: warn
           retention-days: 7
