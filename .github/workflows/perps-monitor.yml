@@ -20,6 +20,11 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  IMMINENT_LIQUIDATION_PCT: '2'
+  IMMINENT_LIQUIDATION_INTERVAL_MS: '300000'
+  IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -31,9 +36,6 @@ jobs:
       PINAX_API_TOKEN: ${{ secrets.PINAX_API_TOKEN }}
       RUN_ONCE: ${{ (github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.diagnostic == true) }}
       DIAGNOSTIC: ${{ (github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.diagnostic == true) }}
-      IMMINENT_LIQUIDATION_PCT: '2'
-      IMMINENT_LIQUIDATION_INTERVAL_MS: '300000'
-      IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -69,23 +71,6 @@ jobs:
             exit $STATUS
           fi
 
-      - name: Persist imminent alert state
-        if: always()
-        run: |
-          if [ -f src/imminent-alerted-positions.json ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/imminent-alerted-positions.json
-            if ! git diff --cached --quiet; then
-              git commit -m "chore: persist imminent liquidation alert state [skip ci]"
-              git push
-            else
-              echo "No imminent alert state changes to persist."
-            fi
-          else
-            echo "No imminent alert state file found."
-          fi
-
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
@@ -97,3 +82,11 @@ jobs:
             probe.log
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Persist imminent alert state
+        if: always()
+        run: |
+          if [ -f src/imminent-alerted-positions.json ]; then
+            echo "Persistent state is intentionally kept in the checked-out workspace for this run."
+            echo "State is not committed by the workflow, preventing commit -> diagnostic loops."
+          fi
