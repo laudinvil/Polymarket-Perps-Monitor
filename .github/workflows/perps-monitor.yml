@@ -40,9 +40,9 @@ jobs:
           node-version: 24
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Run Pinax unfiltered probe
+      - name: Run detailed IMMINENT diagnostic
         if: env.DIAGNOSTIC == 'true'
-        run: node src/pinax-probe.js 2>&1 | tee probe.log
+        run: node src/imminent-diagnostic.js 2>&1 | tee imminent-diagnostic.log
       - name: Run IMMINENT liquidation monitor
         run: node src/imminent-liquidation.js 2>&1 | tee imminent.log
       - name: Persist monitor state
@@ -59,8 +59,8 @@ jobs:
         with:
           name: liquidation-monitor-diagnostic
           path: |
+            imminent-diagnostic.log
             imminent.log
-            probe.log
             src/imminent-alerted-positions.json
           if-no-files-found: warn
           retention-days: 7
