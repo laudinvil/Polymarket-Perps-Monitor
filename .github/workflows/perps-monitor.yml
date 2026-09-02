@@ -49,13 +49,22 @@ jobs:
 
       - name: Run liquidation monitors
         run: |
-          node src/imminent-liquidation.js 2>&1 | tee imminent.log &
-          IMMINENT_PID=$!
-          node src/index.js 2>&1 | tee monitor.log
-          STATUS=$?
-          kill $IMMINENT_PID 2>/dev/null || true
-          wait $IMMINENT_PID 2>/dev/null || true
-          exit $STATUS
+          if [ "$DIAGNOSTIC" = "true" ]; then
+            node src/imminent-liquidation.js 2>&1 | tee imminent.log &
+            IMMINENT_PID=$!
+            node src/index.js 2>&1 | tee monitor.log
+            STATUS=$?
+            wait $IMMINENT_PID 2>/dev/null || true
+            exit $STATUS
+          else
+            node src/imminent-liquidation.js 2>&1 | tee imminent.log &
+            IMMINENT_PID=$!
+            node src/index.js 2>&1 | tee monitor.log
+            STATUS=$?
+            kill $IMMINENT_PID 2>/dev/null || true
+            wait $IMMINENT_PID 2>/dev/null || true
+            exit $STATUS
+          fi
 
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
