@@ -27,9 +27,8 @@ jobs:
       RUN_ONCE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
       DIAGNOSTIC: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
       IMMINENT_LIQUIDATION_PCT: '0.2'
-      IMMINENT_LIQUIDATION_INTERVAL_MS: '30000'
+      IMMINENT_LIQUIDATION_INTERVAL_MS: '300000'
       IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
-      IMMINENT_LIQUIDATION_ALERT_COOLDOWN_MS: '600000'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
