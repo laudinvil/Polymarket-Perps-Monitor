@@ -1,6 +1,8 @@
 name: Polymarket Liquidation Monitor
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       diagnostic:
@@ -24,8 +26,8 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       PINAX_API_KEY: ${{ secrets.PINAX_API_KEY }}
       PINAX_API_TOKEN: ${{ secrets.PINAX_API_TOKEN }}
-      RUN_ONCE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
-      DIAGNOSTIC: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic == true }}
+      RUN_ONCE: ${{ (github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.diagnostic == true) }}
+      DIAGNOSTIC: ${{ (github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.diagnostic == true) }}
       IMMINENT_LIQUIDATION_PCT: '2'
       IMMINENT_LIQUIDATION_INTERVAL_MS: '300000'
       IMMINENT_LIQUIDATION_LOOKBACK_MS: '1800000'
@@ -42,7 +44,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Run Pinax unfiltered probe
-        if: github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
+        if: env.DIAGNOSTIC == 'true'
         run: node src/pinax-probe.js 2>&1 | tee probe.log
 
       - name: Run liquidation monitors
@@ -56,7 +58,7 @@ jobs:
           exit $STATUS
 
       - name: Upload diagnostic log
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
+        if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: liquidation-monitor-diagnostic
