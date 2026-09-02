@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   monitor:
@@ -47,6 +47,14 @@ jobs:
         run: node src/imminent-liquidation.js 2>&1 | tee imminent.log
       - name: Run Hyperliquid SPIKE monitor
         run: node src/spike.js 2>&1 | tee spike.log
+      - name: Persist monitor state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/imminent-alerted-positions.json src/spike-alerted-windows.json
+          git diff --cached --quiet || git commit -m "Persist monitor alert state"
+          git push
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
