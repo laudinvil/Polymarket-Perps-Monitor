@@ -17,6 +17,9 @@ concurrency:
   group: polymarket-liquidation-monitor
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -64,6 +67,23 @@ jobs:
             kill $IMMINENT_PID 2>/dev/null || true
             wait $IMMINENT_PID 2>/dev/null || true
             exit $STATUS
+          fi
+
+      - name: Persist imminent alert state
+        if: always()
+        run: |
+          if [ -f src/imminent-alerted-positions.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/imminent-alerted-positions.json
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: persist imminent liquidation alert state [skip ci]"
+              git push
+            else
+              echo "No imminent alert state changes to persist."
+            fi
+          else
+            echo "No imminent alert state file found."
           fi
 
       - name: Upload diagnostic log
