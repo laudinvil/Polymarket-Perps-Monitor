@@ -1,0 +1,22 @@
+import fs from 'node:fs';
+
+const TG_TOKEN=process.env.TELEGRAM_BOT_TOKEN;
+const TG_CHAT=process.env.TELEGRAM_CHAT_ID;
+const RUN_ONCE=process.env.RUN_ONCE==='true';
+const STATE='src/binance-spike-alerted-windows.json';
+const WINDOW=5*60*1000;
+const SYMBOLS=new Set(['BTCUSDT','ETHUSDT','XRPUSDT','SOLUSDT','DOGEUSDT','HYPEUSDT','BNBUSDT']);
+const COIN=s=>s.replace(/USDT$/,'');
+const WS_URL='wss://fstream.binance.com/ws/!forceOrder@arr';
+let state={windows:{}};
+try{state=JSON.parse(fs.readFileSync(STATE,'utf8'));}catch(e){if(e?.code!=='ENOENT')console.error('[BINANCE][STATE]',e?.message??e);}
+function save(){fs.writeFileSync(STATE,JSON.stringify(state,null,2)+'\n');}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function market(coin,start){const next=start+WINDOW;return `https://polymarket.com/event/${coin.toLowerCase()}-updown-5m-${Math.floor(next/1000)}`;}
+async function send(text){const r=await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:TG_CHAT,text,disable_web_page_preview:true})});if(!r.ok)throw Error(`Telegram HTTP ${r.status}: ${await r.text()}`);}
+function assertConfig(){if(!TG_TOKEN||!TG_CHAT)throw Error('Telegram is not configured');}
+function normalize(msg){const rows=Array.isArray(msg)?msg:[msg];return rows.map(x=>x?.o||x).filter(x=>SYMBOLS.has(String(x?.s||'').toUpperCase()));}
+async function collectWindow(start,end){return await new Promise((resolve,reject)=>{const counts=new Map(),volumes=new Map();let ws;let timer;let settled=false;const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);try{ws?.close();}catch{};resolve({counts,volumes});};try{ws=new WebSocket(WS_URL);ws.onopen=()=>{console.log(`[BINANCE][WS] connected; collecting ${new Date(start).toISOString()}..${new Date(end).toISOString()}`);};ws.onmessage=e=>{try{for(const o of normalize(JSON.parse(String(e.data)))){const t=Number(o.T||o.E||Date.now());if(t<start||t>=end)continue;const c=COIN(String(o.s).toUpperCase());counts.set(c,(counts.get(c)||0)+1);const q=Math.abs(Number(o.q)||0),p=Number(o.ap||o.p)||0;volumes.set(c,(volumes.get(c)||0)+q*p);console.log(`[BINANCE][LIQ] ${c} side=${o.S||'?'} qty=${q} price=${p} time=${new Date(t).toISOString()}`);}}catch(err){console.error('[BINANCE][MESSAGE]',err?.message??err);}};ws.onerror=e=>{if(!settled)reject(Error(`Binance WebSocket error: ${e?.message||'connection error'}`));};ws.onclose=()=>{if(!settled)reject(Error('Binance WebSocket closed before window ended'));};timer=setTimeout(finish,Math.max(1000,end-Date.now()));}catch(e){reject(e);}});}
+async function runWindow(start){const end=start+WINDOW,key=String(start);if(state.windows[key]){console.log(`[BINANCE][SKIP] already checked ${key}`);return;}console.log(`[BINANCE][WINDOW] 5M ${new Date(start).toISOString()}..${new Date(end).toISOString()}`);const {counts,volumes}=await collectWindow(start,end);const qualifying=[...counts.entries()].filter(([,n])=>n>=2).map(([coin,n])=>({coin,count:n,volume:volumes.get(coin)||0})).sort((a,b)=>b.count-a.count||b.volume-a.volume);if(!qualifying.length){console.log('[BINANCE][5M] no coin reached 2 liquidations');state.windows[key]={checkedAt:new Date().toISOString(),sent:false};save();return;}const winner=qualifying[0];const text=['🚨 BINANCE LIQUIDATION SPIKE','',`${winner.coin} — 5M`,`Liquidations: ${winner.count}`,'','▶️ NEXT POLYMARKET 5M',market(winner.coin,start)].join('\n');await send(text);state.windows[key]={checkedAt:new Date().toISOString(),sent:true,coin:winner.coin,liquidations:winner.count,volume:winner.volume};save();console.log(`[BINANCE][ALERT] ${winner.coin} liquidations=${winner.count}`);}
+async function main(){assertConfig();console.log('=== BINANCE LIQUIDATION SPIKE 5M ===');console.log('SOURCE: BINANCE USDⓈ-M FUTURES forceOrder stream');console.log('RULE: >= 2 liquidation events for one coin in a closed 5M window');const now=Date.now();const currentEnd=Math.floor(now/WINDOW)*WINDOW;const start=RUN_ONCE?currentEnd:currentEnd;if(!RUN_ONCE){await sleep(Math.max(0,currentEnd-Date.now()));}await runWindow(start);if(RUN_ONCE){console.log('[RUN_ONCE] BINANCE SPIKE window complete; exiting.');return;}while(true){const next=Math.floor(Date.now()/WINDOW)*WINDOW+WINDOW;await sleep(Math.max(1000,next-Date.now()));await runWindow(next-WINDOW);}}
+main().catch(e=>{console.error('[BINANCE][FATAL]',e?.stack??e);process.exitCode=1;});
