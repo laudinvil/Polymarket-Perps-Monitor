@@ -4,7 +4,7 @@ const PINAX_ACTIVITY_URL='https://api.pinax.network/v1/hyperliquid/markets/activ
 const PINAX_USERS_URL='https://api.pinax.network/v1/hyperliquid/users';
 const HL_INFO_URL='https://api.hyperliquid.xyz/info';
 const LOOKBACK_MS=Number(process.env.IMMINENT_LIQUIDATION_LOOKBACK_MS||1800000);
-const THRESHOLD_PCT=Number(process.env.IMMINENT_LIQUIDATION_PCT||1.95);
+const THRESHOLD_PCT=Number(process.env.IMMINENT_LIQUIDATION_PCT||1.91);
 const MIN_USD=1000;
 const LIMIT=10;
 
