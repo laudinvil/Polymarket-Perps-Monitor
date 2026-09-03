@@ -5,6 +5,7 @@ const { sendTelegramMessage } = require('./telegram');
 
 const symbols = DEFAULT_SYMBOLS;
 const POLL_MS = 15000;
+const MIN_LIQUIDATIONS = 20;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const processedBuckets = new Set();
@@ -115,12 +116,12 @@ async function checkOnce() {
 
   const longCandidates = [...rows.entries()]
     .map(([symbol, row]) => ({ symbol, count: row.longEvents, total: row.events }))
-    .filter(candidate => candidate.count > 0)
+    .filter(candidate => candidate.count >= MIN_LIQUIDATIONS)
     .sort((a, b) => b.count - a.count || b.total - a.total);
 
   const shortCandidates = [...rows.entries()]
     .map(([symbol, row]) => ({ symbol, count: row.shortEvents, total: row.events }))
-    .filter(candidate => candidate.count > 0)
+    .filter(candidate => candidate.count >= MIN_LIQUIDATIONS)
     .sort((a, b) => b.count - a.count || b.total - a.total);
 
   const bestLong = longCandidates[0] || null;
@@ -135,8 +136,9 @@ async function checkOnce() {
 
   if (!winner) {
     console.log(JSON.stringify({
-      type: 'liquidation_5m_tie_or_empty',
+      type: 'liquidation_5m_below_threshold_or_tie',
       closedBucket: new Date(closedBucket).toISOString(),
+      threshold: MIN_LIQUIDATIONS,
       bestLong: bestLong?.count || 0,
       bestShort: bestShort?.count || 0,
       alertSent: false,
@@ -179,6 +181,7 @@ async function checkOnce() {
     liquidations: winnerRow.events,
     longCount: winnerRow.longEvents,
     shortCount: winnerRow.shortEvents,
+    threshold: MIN_LIQUIDATIONS,
     alertSent: true,
     currentMarket: currentMarket?.url || null,
   }));
@@ -188,7 +191,7 @@ async function checkOnce() {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; minimum direction count=${MIN_LIQUIDATIONS}; alert at start of next period`);
   while (true) {
     try { await checkOnce(); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
