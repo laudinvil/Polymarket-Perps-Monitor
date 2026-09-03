@@ -12,7 +12,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 2
     permissions:
       contents: read
     steps:
@@ -25,16 +25,11 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Collect MarginPad events for one 5m window
+      - name: Check one closed 5m bucket
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          end=$(( $(date +%s) + 300 ))
-          while [ $(date +%s) -lt $end ]; do
-            node src/index.js 2>&1 | tee -a monitor.log
-            sleep 15
-          done
+        run: node src/index.js 2>&1 | tee monitor.log
 
       - name: Upload monitor log
         if: always()
