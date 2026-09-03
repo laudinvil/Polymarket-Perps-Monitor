@@ -1,7 +1,7 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 
-const DEFAULT_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const DEFAULT_SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
@@ -56,10 +56,6 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Dat
   const allowed = new Set(symbols.map(normalizeSymbol));
   const closedBucket = bucketStart(now) - WINDOW_MS;
 
-  // /feed can contain a symbol only in the current bucket while providing no
-  // historical event for the just-closed bucket. In that case it still needs the
-  // per-symbol endpoint. Coverage is therefore checked against the target bucket,
-  // not merely by symbol presence anywhere in /feed.
   const coveredInClosedBucket = new Set(
     feedEvents
       .map((event) => {
