@@ -10,7 +10,7 @@ const GRACE_BUCKETS = 2;
 const POLL_INTERVAL_MS = 30 * 1000;
 const FEED_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
 const FEED_HEARTBEAT_MS = 10 * 60 * 1000;
-const VERSION = '2026-09-03-marginpad-symbol-live-2';
+const VERSION = '2026-09-03-marginpad-symbol-live-3';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -135,7 +135,8 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil((async () => {
       const monitor = getMonitor(env);
-      await monitor.fetch('https://monitor/cron', { method: 'POST', headers: internalHeaders(env), body: JSON.stringify({ scheduledTime: controller.scheduledTime, now: Date.now() }) });
+      await monitor.fetch('https://monitor/health', { headers: internalHeaders(env) });
+      await bootstrapAlarm(env);
     })().catch(error => console.error(JSON.stringify({ ok: false, error: error.message }))));
   },
   async fetch(request, env) { const url = new URL(request.url); if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health', { headers: internalHeaders(env) }); if (url.pathname === '/run' && request.method === 'POST') { try { await bootstrapAlarm(env); return Response.json({ ok: true, started: true, version: VERSION }); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } } return new Response('Polymarket Perps Monitor', { status: 200 }); },
