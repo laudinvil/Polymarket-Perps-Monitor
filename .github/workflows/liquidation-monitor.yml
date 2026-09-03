@@ -2,6 +2,8 @@ name: MarginPad Liquidation Monitor
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '1-59/5 * * * *'
 
 concurrency:
   group: liquidation-monitor
