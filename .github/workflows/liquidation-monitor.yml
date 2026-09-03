@@ -24,4 +24,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node src/index.js
+        run: |
+          set +e
+          timeout --signal=TERM 4m30s node src/index.js
+          status=$?
+          if [ "$status" -ne 124 ]; then
+            exit "$status"
+          fi
+          echo "Monitor window completed normally; next scheduled run continues monitoring."
