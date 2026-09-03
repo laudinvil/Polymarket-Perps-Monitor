@@ -1,4 +1,4 @@
-const { DEFAULT_SYMBOLS, fetchFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WINDOW_MS } = require('./liquidation-monitor');
+const { DEFAULT_SYMBOLS, fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart } = require('./liquidation-monitor');
 const { findCurrentMarket, findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
@@ -23,18 +23,28 @@ async function checkOnce() {
   const now = Date.now();
   const currentBucket = bucketStart(now);
 
-  // Reset state automatically when a new 5-minute bucket begins.
+  // At every new 5-minute bucket the alert state is automatically cleared.
   for (const bucket of alertedBuckets) {
     if (bucket < currentBucket) alertedBuckets.delete(bucket);
   }
 
   if (alertedBuckets.has(currentBucket)) return;
 
-  const events = await fetchFeed(symbols, fetch, now);
-  const allowed = new Set(symbols.map(normalizeSymbol));
+  // Read the raw per-symbol liquidation streams. This avoids relying on the
+  // global /feed being large enough to contain the first event of the bucket.
+  const results = await Promise.all(
+    symbols.map(async symbol => {
+      try {
+        return await fetchSymbolFeed(symbol, fetch);
+      } catch (error) {
+        console.warn(`MarginPad live ${symbol}: ${error.message}`);
+        return [];
+      }
+    }),
+  );
 
-  const candidates = events
-    .map(event => ({ event, ts: normalizeTs(event.ts) }))
+  const allowed = new Set(symbols.map(normalizeSymbol));
+  const candidates = results.flat().map(event => ({ event, ts: normalizeTs(event.ts) }))
     .filter(({ event, ts }) => {
       const symbol = normalizeSymbol(event.symbol);
       return ts && bucketStart(ts) === currentBucket && allowed.has(symbol);
@@ -45,13 +55,13 @@ async function checkOnce() {
     console.log(JSON.stringify({
       type: 'liquidation_first_5m',
       bucketStart: new Date(currentBucket).toISOString(),
-      fetchedEvents: events.length,
+      rawEvents: results.reduce((sum, events) => sum + events.length, 0),
       alertSent: false,
     }));
     return;
   }
 
-  // First raw liquidation seen in this 5-minute period wins. Nothing else alerts until reset.
+  // Exactly one Telegram alert per 5-minute bucket: the first raw liquidation.
   const first = candidates[0].event;
   const firstTs = normalizeTs(first.ts) || now;
   const symbol = normalizeSymbol(first.symbol);
@@ -90,13 +100,12 @@ async function checkOnce() {
     type: 'liquidation_first_5m',
     bucketStart: new Date(currentBucket).toISOString(),
     firstEvent: {
-      key: eventKey(first),
       symbol,
       side,
       ts: firstTs,
       notionalUsd: notional,
     },
-    fetchedEvents: events.length,
+    rawEvents: results.reduce((sum, events) => sum + events.length, 0),
     alertSent: true,
   }));
 }
