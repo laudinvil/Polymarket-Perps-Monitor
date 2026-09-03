@@ -1,5 +1,5 @@
 const { DEFAULT_SYMBOLS, fetchFeed, aggregateEvents, selectWinner, bucketStart, eventKey } = require('./liquidation-monitor');
-const { findNextMarket } = require('./polymarket');
+const { findCurrentMarket, findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
@@ -42,7 +42,10 @@ async function main() {
     return;
   }
 
-  const market = await findNextMarket(winner.symbol, now);
+  const [currentMarket, nextMarket] = await Promise.all([
+    findCurrentMarket(winner.symbol, now),
+    findNextMarket(winner.symbol, now),
+  ]);
   const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
   let message = [
     '🔥 LIQUIDATION SPIKE',
@@ -53,7 +56,12 @@ async function main() {
     `Long volume: ${formatUsd(winner.longNotionalUsd)}`,
     `Short volume: ${formatUsd(winner.shortNotionalUsd)}`,
   ].join('\n');
-  message += market ? `\n\n➡️ Next Polymarket 5M\n${market.url}` : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
+  message += currentMarket
+    ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}`
+    : '\n\n🔴 Current Polymarket 5M\nMarket not found';
+  message += nextMarket
+    ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}`
+    : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
 
   await sendTelegramMessage(message);
   console.log(`Telegram alert sent for ${winner.symbol} ${new Date(closedBucket).toISOString()}`);
