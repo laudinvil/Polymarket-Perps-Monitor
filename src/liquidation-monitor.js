@@ -1,7 +1,7 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 
-const DEFAULT_SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const DEFAULT_SYMBOLS = ['BTC'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
