@@ -8,7 +8,9 @@ const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const BUFFER_TTL_MS = 15 * 60 * 1000;
 const GRACE_BUCKETS = 2;
 const POLL_INTERVAL_MS = 30 * 1000;
-const VERSION = '2026-09-03-alarm-feed-2';
+const FEED_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
+const FEED_HEARTBEAT_MS = 10 * 60 * 1000;
+const VERSION = '2026-09-03-feed-watchdog-1';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -96,10 +98,49 @@ export class MonitorState {
     for (const bucketId of index) { if (Number(bucketId) >= cutoff) keep.push(bucketId); else await this.ctx.storage.delete(`sent:${bucketId}`); }
     if (keep.length !== index.length) await this.ctx.storage.put('sent_index', keep);
   }
+  async recordFeedHealth(now, incoming) {
+    const previous = (await this.ctx.storage.get('feed_health')) || {};
+    const health = { ok: true, lastSuccessAt: now, lastEventTs: incoming.reduce((max, e) => Math.max(max, normalizeTs(e.ts) || 0), Number(previous.lastEventTs) || 0), lastEventCount: incoming.length, totalPolls: (Number(previous.totalPolls) || 0) + 1, lastError: null, lastErrorAt: null };
+    await this.ctx.storage.put('feed_health', health);
+    const lastNotice = Number(previous.lastNoticeAt) || 0;
+    const lastHeartbeat = Number(previous.lastHeartbeatAt) || 0;
+    if (previous.ok === false) {
+      await sendTelegram(this.env, `🟢 MARGINPAD FEED RECOVERED\n\nFeed is reachable again.\nEvents in latest feed: ${incoming.length}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`);
+      health.lastNoticeAt = now;
+    } else if (now - lastHeartbeat >= FEED_HEARTBEAT_MS) {
+      await sendTelegram(this.env, `📡 MARGINPAD FEED OK\n\nHTTP feed: connected\nEvents in latest poll: ${incoming.length}\nLast event: ${health.lastEventTs ? new Date(health.lastEventTs).toISOString() : 'none'}\nPoll interval: 30s\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`);
+      health.lastHeartbeatAt = now;
+      health.lastNoticeAt = Math.max(lastNotice, now);
+    }
+    await this.ctx.storage.put('feed_health', health);
+    return health;
+  }
+  async recordFeedFailure(now, error) {
+    const previous = (await this.ctx.storage.get('feed_health')) || {};
+    const health = { ...previous, ok: false, lastError: error.message, lastErrorAt: now, totalFailures: (Number(previous.totalFailures) || 0) + 1 };
+    const lastNotice = Number(previous.lastNoticeAt) || 0;
+    if (now - lastNotice >= FEED_ALERT_COOLDOWN_MS) {
+      try {
+        await sendTelegram(this.env, `🚨 MARGINPAD FEED ERROR\n\nThe Worker cannot read MarginPad /feed.\nError: ${error.message}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC\n\nNo new liquidation data can be processed until the feed recovers.`);
+        health.lastNoticeAt = now;
+      } catch (telegramError) {
+        health.telegramError = telegramError.message;
+      }
+    }
+    await this.ctx.storage.put('feed_health', health);
+    return health;
+  }
   async process(now) {
     const current = bucketStart(now);
     const targets = [current - WINDOW_MS, current - 2 * WINDOW_MS, current - 3 * WINDOW_MS].slice(0, GRACE_BUCKETS + 1);
-    const incoming = await fetchFeedEvents();
+    let incoming;
+    try {
+      incoming = await fetchFeedEvents();
+      await this.recordFeedHealth(now, incoming);
+    } catch (error) {
+      await this.recordFeedFailure(now, error);
+      throw error;
+    }
     const { events, added } = await mergeBuffer(this.ctx.storage, incoming, now);
     const results = [];
     for (const target of targets) {
@@ -140,7 +181,7 @@ export class MonitorState {
   }
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, pollIntervalMs: POLL_INTERVAL_MS, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, lastAlarm: (await this.ctx.storage.get('last_alarm')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, pollIntervalMs: POLL_INTERVAL_MS, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, feedHealth: (await this.ctx.storage.get('feed_health')) || null, lastAlarm: (await this.ctx.storage.get('last_alarm')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
     if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { await this.scheduleNext(); return Response.json(await this.process(Number(body.now) || Date.now())); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
     return new Response('Not found', { status: 404 });
   }
