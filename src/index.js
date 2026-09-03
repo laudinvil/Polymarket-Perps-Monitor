@@ -1,5 +1,5 @@
 const https = require('https');
-const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, DEFAULT_SYMBOLS } = require('./liquidation-monitor');
+const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, DEFAULT_SYMBOLS, WINDOW_MS } = require('./liquidation-monitor');
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
@@ -10,10 +10,6 @@ const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSIT
 const processedBuckets = new Set();
 const sentAlerts = new Set();
 let stateSha = null;
-
-function formatUsd(value) {
-  return `$${Math.round(Number(value) || 0).toLocaleString('en-US')}`;
-}
 
 function githubRequest(method, body = null) {
   return new Promise((resolve, reject) => {
@@ -65,14 +61,8 @@ async function saveState() {
     processedBuckets: [...processedBuckets].slice(-100),
     alerts: [...sentAlerts].slice(-200),
   }, null, 2)).toString('base64');
-
-  const body = {
-    message: 'Persist monitor state',
-    content,
-    branch: process.env.GITHUB_REF_NAME || 'main',
-  };
+  const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
   if (stateSha) body.sha = stateSha;
-
   try {
     const result = await githubRequest('PUT', body);
     stateSha = result?.content?.sha || stateSha;
@@ -84,18 +74,13 @@ async function saveState() {
 async function checkOnce() {
   const now = Date.now();
   const currentBucket = bucketStart(now);
-  const closedBucket = currentBucket - 5 * 60 * 1000;
+  const closedBucket = currentBucket - WINDOW_MS;
   const bucketKey = String(closedBucket);
-
   if (processedBuckets.has(bucketKey)) return;
 
   const results = await Promise.all(symbols.map(async symbol => {
-    try {
-      return [symbol, await fetchSymbolFeed(symbol, fetch)];
-    } catch (error) {
-      console.warn(`MarginPad live ${symbol}: ${error.message}`);
-      return [symbol, []];
-    }
+    try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
+    catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
   }));
 
   const allowed = new Set(symbols.map(normalizeSymbol));
@@ -109,89 +94,71 @@ async function checkOnce() {
       const side = String(event.side || '').toLowerCase();
       if (!ts || bucketStart(ts) !== closedBucket || !allowed.has(symbol)) continue;
       if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-
       const key = eventKey(event);
       if (seen.has(key)) continue;
       seen.add(key);
 
-      if (!rows.has(symbol)) {
-        rows.set(symbol, {
-          events: 0,
-          longEvents: 0,
-          shortEvents: 0,
-          totalVolume: 0,
-          longVolume: 0,
-          shortVolume: 0,
-        });
-      }
-
+      if (!rows.has(symbol)) rows.set(symbol, { events: 0, longEvents: 0, shortEvents: 0 });
       const row = rows.get(symbol);
-      const notional = Number(event.notional) || 0;
       row.events += 1;
-      row.totalVolume += notional;
-
-      if (side.includes('long') || side === 'buy') {
-        row.longEvents += 1;
-        row.longVolume += notional;
-      } else {
-        row.shortEvents += 1;
-        row.shortVolume += notional;
-      }
+      if (side.includes('long') || side === 'buy') row.longEvents += 1;
+      else row.shortEvents += 1;
     }
   }
 
   processedBuckets.add(bucketKey);
+  const winner = [...rows.entries()]
+    .map(([symbol, row]) => ({ symbol, ...row }))
+    .sort((a, b) => b.events - a.events || b.longEvents - a.longEvents)[0];
 
-  for (const symbol of symbols) {
-    const row = rows.get(normalizeSymbol(symbol));
-    if (!row || row.events === 0) continue;
-
-    const alertKey = `${bucketKey}:${normalizeSymbol(symbol)}`;
-    if (sentAlerts.has(alertKey)) continue;
-
-    const currentMarket = await findCurrentMarket(symbol, now);
-    const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
-    const directionEmoji = row.longVolume > row.shortVolume ? '🔴' : row.shortVolume > row.longVolume ? '🟢' : '⚪';
-
-    let message = [
-      `${directionEmoji} LIQUIDATION SPIKE`,
-      `${normalizeSymbol(symbol)} · 5M · ${bucketLabel} UTC`, '',
-      `Liquidations: ${row.events}`,
-      `Long: ${row.longEvents} · Short: ${row.shortEvents}`,
-      `Volume: ${formatUsd(row.totalVolume)}`,
-      `Long volume: ${formatUsd(row.longVolume)}`,
-      `Short volume: ${formatUsd(row.shortVolume)}`,
-    ].join('\n');
-
-    message += currentMarket
-      ? `\n\n➡️ Current Polymarket 5M\n${currentMarket.url}`
-      : '\n\n➡️ Current Polymarket 5M\nMarket not found yet';
-
-    await sendTelegramMessage(message);
-    sentAlerts.add(alertKey);
-
-    console.log(JSON.stringify({
-      type: 'liquidation_5m',
-      bucketStart: new Date(closedBucket).toISOString(),
-      symbol: normalizeSymbol(symbol),
-      liquidations: row.events,
-      longCount: row.longEvents,
-      shortCount: row.shortEvents,
-      notionalUsd: row.totalVolume,
-      longNotionalUsd: row.longVolume,
-      shortNotionalUsd: row.shortVolume,
-      direction: row.longVolume > row.shortVolume ? 'long' : row.shortVolume > row.longVolume ? 'short' : 'equal',
-      alertSent: true,
-      market: currentMarket?.url || null,
-    }));
+  if (!winner || winner.events === 0) {
+    await saveState();
+    return;
   }
+
+  const alertKey = `15m:${bucketKey}`;
+  if (sentAlerts.has(alertKey)) {
+    await saveState();
+    return;
+  }
+
+  // Alert at the beginning of the new 15-minute period. Therefore this is the
+  // current market link, while the numbers describe the just-closed period.
+  const currentMarket = await findCurrentMarket(winner.symbol, now);
+  const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
+  const directionEmoji = winner.longEvents > winner.shortEvents ? '🔴' : winner.shortEvents > winner.longEvents ? '🟢' : '⚪';
+
+  let message = [
+    `${directionEmoji} LIQUIDATION WINNER`,
+    `${normalizeSymbol(winner.symbol)} · 15M · ${bucketLabel} UTC`, '',
+    `Liquidations: ${winner.events}`,
+    `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`,
+    '',
+    `➡️ Current Polymarket 15M`,
+    currentMarket?.url || 'Market not found yet',
+  ].join('\n');
+
+  await sendTelegramMessage(message);
+  sentAlerts.add(alertKey);
+
+  console.log(JSON.stringify({
+    type: 'liquidation_15m_winner',
+    closedBucket: new Date(closedBucket).toISOString(),
+    symbol: normalizeSymbol(winner.symbol),
+    liquidations: winner.events,
+    longCount: winner.longEvents,
+    shortCount: winner.shortEvents,
+    direction: winner.longEvents > winner.shortEvents ? 'long' : winner.shortEvents > winner.longEvents ? 'short' : 'equal',
+    alertSent: true,
+    currentMarket: currentMarket?.url || null,
+  }));
 
   await saveState();
 }
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation monitor started; symbols=${symbols.join(',')}; no volume threshold; polling every ${POLL_MS}ms`);
+  console.log(`15M liquidation winner monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
   while (true) {
     try { await checkOnce(); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
