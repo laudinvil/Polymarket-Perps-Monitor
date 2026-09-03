@@ -1,4 +1,4 @@
-const FEED_URL = 'https://marginpad.io/api/v1/feed';
+const MARGINPAD_BASE = 'https://marginpad.io/api/v1/liquidations/live';
 const GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
 const MARKET_BASE_URL = 'https://polymarket.com/event';
 const TELEGRAM_API = 'https://api.telegram.org';
@@ -10,7 +10,7 @@ const GRACE_BUCKETS = 2;
 const POLL_INTERVAL_MS = 30 * 1000;
 const FEED_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
 const FEED_HEARTBEAT_MS = 10 * 60 * 1000;
-const VERSION = '2026-09-03-secret-header-fix-1';
+const VERSION = '2026-09-03-marginpad-symbol-live-1';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -27,7 +27,21 @@ async function fetchJson(url) {
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.json();
 }
-async function fetchFeedEvents() { return extractEvents(await fetchJson(FEED_URL)); }
+async function fetchSymbolEvents(symbol) {
+  const url = `${MARGINPAD_BASE}?symbol=${encodeURIComponent(symbol)}&limit=400`;
+  return extractEvents(await fetchJson(url));
+}
+async function fetchLiquidationEvents() {
+  const results = await Promise.allSettled(SYMBOLS.map(fetchSymbolEvents));
+  const events = [];
+  const errors = [];
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') events.push(...result.value);
+    else errors.push(`${SYMBOLS[i]}: ${result.reason?.message || 'request failed'}`);
+  });
+  if (events.length === 0 && errors.length === SYMBOLS.length) throw new Error(`All MarginPad symbol feeds failed: ${errors.join('; ')}`);
+  return { events, errors };
+}
 async function mergeBuffer(storage, incoming, now) {
   const cutoff = now - BUFFER_TTL_MS;
   const previous = (await storage.get('event_buffer')) || [];
@@ -76,22 +90,25 @@ function runtimeEnvFromRequest(request, baseEnv) { return { ...baseEnv, TELEGRAM
 export class MonitorState {
   constructor(ctx, env) { this.ctx = ctx; this.env = env; }
   async cleanup(now) { const index = (await this.ctx.storage.get('sent_index')) || []; const cutoff = now - SENT_TTL_MS; const keep = []; for (const bucketId of index) { if (Number(bucketId) >= cutoff) keep.push(bucketId); else await this.ctx.storage.delete(`sent:${bucketId}`); } if (keep.length !== index.length) await this.ctx.storage.put('sent_index', keep); }
-  async recordFeedHealth(now, incoming, runtimeEnv) {
+  async recordFeedHealth(now, incoming, feedErrors, runtimeEnv) {
     const previous = (await this.ctx.storage.get('feed_health')) || {};
-    const health = { ok: true, lastSuccessAt: now, lastEventTs: incoming.reduce((max, e) => Math.max(max, normalizeTs(e.ts) || 0), Number(previous.lastEventTs) || 0), lastEventCount: incoming.length, totalPolls: (Number(previous.totalPolls) || 0) + 1, lastError: null, lastErrorAt: null };
-    const lastNotice = Number(previous.lastNoticeAt) || 0; const lastHeartbeat = Number(previous.lastHeartbeatAt) || 0;
-    if (previous.ok === false) { try { await sendTelegram(runtimeEnv, `🟢 MARGINPAD FEED RECOVERED\n\nFeed is reachable again.\nEvents in latest feed: ${incoming.length}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`); health.lastNoticeAt = now; } catch (e) { health.telegramError = e.message; } }
-    else if (now - lastHeartbeat >= FEED_HEARTBEAT_MS) { try { await sendTelegram(runtimeEnv, `📡 MARGINPAD FEED OK\n\nHTTP feed: connected\nEvents in latest poll: ${incoming.length}\nLast event: ${health.lastEventTs ? new Date(health.lastEventTs).toISOString() : 'none'}\nPoll interval: 30s\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`); health.lastHeartbeatAt = now; health.lastNoticeAt = Math.max(lastNotice, now); } catch (e) { health.telegramError = e.message; } }
+    const health = { ok: feedErrors.length < SYMBOLS.length, source: 'marginpad_symbol_live', lastSuccessAt: now, lastEventTs: incoming.reduce((max, e) => Math.max(max, normalizeTs(e.ts) || 0), Number(previous.lastEventTs) || 0), lastEventCount: incoming.length, totalPolls: (Number(previous.totalPolls) || 0) + 1, partialErrors: feedErrors, lastError: feedErrors.length ? feedErrors.join('; ') : null, lastErrorAt: feedErrors.length ? now : null };
+    const lastHeartbeat = Number(previous.lastHeartbeatAt) || 0;
+    if (previous.ok === false && health.ok) { try { await sendTelegram(runtimeEnv, `🟢 MARGINPAD LIQUIDATION FEEDS RECOVERED\n\nPer-symbol live feeds are reachable again.\nEvents in latest poll: ${incoming.length}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`); health.lastHeartbeatAt = now; } catch (e) { health.telegramError = e.message; } }
+    else if (health.ok && now - lastHeartbeat >= FEED_HEARTBEAT_MS) { try { await sendTelegram(runtimeEnv, `📡 MARGINPAD LIQUIDATION FEEDS OK\n\nSource: /liquidations/live per symbol\nEvents in latest poll: ${incoming.length}\nSymbols: ${SYMBOLS.join(', ')}\nPoll interval: 30s\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`); health.lastHeartbeatAt = now; } catch (e) { health.telegramError = e.message; } }
     await this.ctx.storage.put('feed_health', health); return health;
   }
   async recordFeedFailure(now, error, runtimeEnv) {
-    const previous = (await this.ctx.storage.get('feed_health')) || {}; const health = { ...previous, ok: false, lastError: error.message, lastErrorAt: now, totalFailures: (Number(previous.totalFailures) || 0) + 1 }; const lastNotice = Number(previous.lastNoticeAt) || 0;
-    if (now - lastNotice >= FEED_ALERT_COOLDOWN_MS) { try { await sendTelegram(runtimeEnv, `🚨 MARGINPAD FEED ERROR\n\nThe Worker cannot read MarginPad /feed.\nError: ${error.message}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC\n\nNo new liquidation data can be processed until the feed recovers.`); health.lastNoticeAt = now; } catch (telegramError) { health.telegramError = telegramError.message; } }
+    const previous = (await this.ctx.storage.get('feed_health')) || {}; const health = { ...previous, ok: false, source: 'marginpad_symbol_live', lastError: error.message, lastErrorAt: now, totalFailures: (Number(previous.totalFailures) || 0) + 1 };
+    const lastNotice = Number(previous.lastNoticeAt) || 0;
+    if (now - lastNotice >= FEED_ALERT_COOLDOWN_MS) { try { await sendTelegram(runtimeEnv, `🚨 MARGINPAD LIQUIDATION FEEDS ERROR\n\nAll per-symbol liquidation requests failed.\nError: ${error.message}\nTime: ${new Date(now).toISOString().slice(11,16)} UTC`); health.lastNoticeAt = now; } catch (telegramError) { health.telegramError = telegramError.message; } }
     await this.ctx.storage.put('feed_health', health); return health;
   }
   async process(now, runtimeEnv) {
-    const current = bucketStart(now); const targets = [current - WINDOW_MS, current - 2 * WINDOW_MS, current - 3 * WINDOW_MS].slice(0, GRACE_BUCKETS + 1); let incoming;
-    try { incoming = await fetchFeedEvents(); await this.recordFeedHealth(now, incoming, runtimeEnv); } catch (error) { await this.recordFeedFailure(now, error, runtimeEnv); throw error; }
+    const current = bucketStart(now); const targets = [current - WINDOW_MS, current - 2 * WINDOW_MS, current - 3 * WINDOW_MS].slice(0, GRACE_BUCKETS + 1);
+    let incoming, feedErrors;
+    try { ({ events: incoming, errors: feedErrors } = await fetchLiquidationEvents()); await this.recordFeedHealth(now, incoming, feedErrors, runtimeEnv); }
+    catch (error) { await this.recordFeedFailure(now, error, runtimeEnv); throw error; }
     const { events, added } = await mergeBuffer(this.ctx.storage, incoming, now); const results = [];
     for (const target of targets) {
       const bucketId = String(target); if (await this.ctx.storage.get(`sent:${bucketId}`)) continue;
@@ -99,16 +116,16 @@ export class MonitorState {
       const [currentMarket, nextMarket] = await Promise.all([findCurrentMarket(winner.symbol, now), findNextMarket(winner.symbol, now)]); const bucketLabel = new Date(target).toISOString().slice(11,16);
       let text = ['🔥 LIQUIDATION SPIKE', `${winner.symbol} · 5M · ${bucketLabel} UTC`, '', `Liquidations: ${winner.events}`, `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`, `Volume: ${formatUsd(winner.notionalUsd)}`, `Long volume: ${formatUsd(winner.longNotionalUsd)}`, `Short volume: ${formatUsd(winner.shortNotionalUsd)}`].join('\n');
       text += currentMarket ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}` : '\n\n🔴 Current Polymarket 5M\nMarket not found'; text += nextMarket ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}` : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
-      const sent = await sendTelegram(runtimeEnv, text); const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now() }; await this.ctx.storage.put(`sent:${bucketId}`, record); const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
+      const sent = await sendTelegram(runtimeEnv, text); await this.ctx.storage.put(`sent:${bucketId}`, { result: 'sent', messageId: sent?.message_id || null, at: Date.now() }); const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
       results.push({ bucket: new Date(target).toISOString(), sent: true, winner, telegramMessageId: sent?.message_id || null });
     }
-    await this.ctx.storage.put('last_result', { ok: true, at: Date.now(), source: 'marginpad_feed', addedEvents: added, feedEvents: incoming.length, bufferedEvents: events.length, checkedBuckets: targets.map(t => new Date(t).toISOString()), results }); await this.cleanup(now); return { ok: true, results, feedEvents: incoming.length, bufferedEvents: events.length, addedEvents: added };
+    await this.ctx.storage.put('last_result', { ok: true, at: Date.now(), source: 'marginpad_symbol_live', addedEvents: added, feedEvents: incoming.length, bufferedEvents: events.length, feedErrors, checkedBuckets: targets.map(t => new Date(t).toISOString()), results }); await this.cleanup(now); return { ok: true, results, feedEvents: incoming.length, bufferedEvents: events.length, addedEvents: added, feedErrors };
   }
   async scheduleNext() { await this.ctx.storage.setAlarm(Date.now() + POLL_INTERVAL_MS); }
-  async alarm() { try { const result = await this.process(Date.now(), this.env); await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: true, result }); } catch (error) { await this.ctx.storage.put('last_result', { ok: false, error: error.message, at: Date.now(), source: 'marginpad_feed' }); await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: false, error: error.message }); } finally { await this.scheduleNext(); } }
+  async alarm() { try { const result = await this.process(Date.now(), this.env); await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: true, result }); } catch (error) { await this.ctx.storage.put('last_result', { ok: false, error: error.message, at: Date.now(), source: 'marginpad_symbol_live' }); await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: false, error: error.message }); } finally { await this.scheduleNext(); } }
   async fetch(request) {
     const url = new URL(request.url); const runtimeEnv = runtimeEnvFromRequest(request, this.env);
-    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, pollIntervalMs: POLL_INTERVAL_MS, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, feedHealth: (await this.ctx.storage.get('feed_health')) || null, lastAlarm: (await this.ctx.storage.get('last_alarm')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, pollIntervalMs: POLL_INTERVAL_MS, source: 'MarginPad /liquidations/live per symbol', lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, feedHealth: (await this.ctx.storage.get('feed_health')) || null, lastAlarm: (await this.ctx.storage.get('last_alarm')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
     if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { await this.scheduleNext(); return Response.json(await this.process(Number(body.now) || Date.now(), runtimeEnv)); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
     return new Response('Not found', { status: 404 });
   }
