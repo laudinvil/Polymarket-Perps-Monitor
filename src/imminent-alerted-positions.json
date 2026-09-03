@@ -1,52 +1,118 @@
 {
   "version": 8,
   "rule": "one position and one 5m market permanently; next alert only after a different coin alert; minimum liquidation size $1000",
-  "lastAlertCoin": "BTC",
-  "lastAlertAt": 1788382679768,
+  "lastAlertCoin": "XRP",
+  "lastAlertAt": 1788405604582,
   "positions": {
     "0x004edcd40360e293e4cf260d2ebdf8c7076c1bb8|BTC|Short|entry:77035.40000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x7276da0d30ec73d1c77ff8dee3e46f1fa074bfe1|XRP|Long|entry:1.35720000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x69423c20cb04da697996534507f8541fdb3e9aa9|BTC|Long|entry:77192.40000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x50b309f78e774a756a2230e1769729094cac9f20|BTC|Short|entry:77130.10000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x90b5e0c5ca3b0c0c47b575b0f62c07eb8b39b010|BTC|Long|entry:76936.60000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x7f6cfa38fb3b40768e6eccd5f84770f249c70444|ETH|Short|entry:2393.85000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x90b5e0c5ca3b0c0c47b575b0f62c07eb8b39b010|BTC|Long|entry:77141.80000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0xd083b4e1cb32f2fe39ff9ef5dc2a6b8169602b59|XRP|Short|entry:1.34649600": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "0x95ccaf0846757c74b33b146db85e757249b99c8a|BTC|Long|entry:77403.20000000": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x24b3dcbac67e74cbe5403d2cff8ac4b8d6018f59|ETH|Short|entry:2393.80000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x80e3c88f2f6889755917f55f0de5f1ad4206d392|BTC|Short|entry:77129.60000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0xa3f81cf40b9edada2665f934dfb8dd28f855d53d|XRP|Short|entry:1.33170500": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x3ca040f47c27c23bdf465ecbae152e9637141e62|BTC|Short|entry:77080.00000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0xbc9fd7977420212a82764df58eb032f8283b89fd|ETH|Short|entry:2383.50000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x77a613b6c17d533edb0542136a9828851db8359d|BTC|Short|entry:77150.80000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x98d5754c5c552b2cc938e87c6b0400ed7d750aa3|XRP|Short|entry:1.35320200": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x317b5b5036ec2d845ccd5c47e79c7ffa1f19b8c5|ETH|Short|entry:2386.10000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0xc3a5dd249d298a73053021293da301c19f2e1e02|BTC|Short|entry:77595.00000000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x07bc8722872197a2e013ff64d19c78d63af35dac|SOL|Short|entry:99.68910000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "0x7cceed3a3fd600ce3bee10156bd8a61ccf9d3b7c|XRP|Short|entry:1.36163800": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     }
   },
   "markets5m": {
     "https://polymarket.com/event/btc-updown-5m-1788356700": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "https://polymarket.com/event/eth-updown-5m-1788375300": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788375900": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "https://polymarket.com/event/xrp-updown-5m-1788382800": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788382800": {
-      "alertedAt": "2026-09-02T20:57:59.769Z"
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/eth-updown-5m-1788385500": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/btc-updown-5m-1788385800": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/xrp-updown-5m-1788387600": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/btc-updown-5m-1788387900": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/eth-updown-5m-1788391500": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/btc-updown-5m-1788391800": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/xrp-updown-5m-1788399300": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/eth-updown-5m-1788401100": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/btc-updown-5m-1788402900": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/sol-updown-5m-1788405000": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
+    },
+    "https://polymarket.com/event/xrp-updown-5m-1788405900": {
+      "alertedAt": "2026-09-03T03:20:04.582Z"
     }
   }
 }
