@@ -1,3 +1,4 @@
+const https = require('https');
 const { DEFAULT_SYMBOLS, fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey } = require('./liquidation-monitor');
 const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
@@ -6,27 +7,94 @@ const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
   .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
 
 const POLL_MS = 15000;
-const reportedBuckets = new Set();
+const STATE_PATH = '.monitor-state.json';
+const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
+const processedBuckets = new Set();
+const sentAlerts = new Set();
+let stateSha = null;
 
 function formatUsd(value) {
   return `$${Math.round(Number(value) || 0).toLocaleString('en-US')}`;
 }
 
-function pruneState(currentBucket) {
-  for (const bucket of reportedBuckets) {
-    if (bucket < currentBucket) reportedBuckets.delete(bucket);
+function githubRequest(method, body = null) {
+  return new Promise((resolve, reject) => {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) return reject(new Error('GITHUB_TOKEN is not configured'));
+
+    const url = new URL(STATE_API_URL);
+    const payload = body == null ? null : JSON.stringify(body);
+    const req = https.request(url, {
+      method,
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'Polymarket-Perps-Monitor',
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+      },
+    }, res => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = data ? JSON.parse(data) : null; } catch (_) {}
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
+        reject(new Error(`GitHub state API ${res.statusCode}: ${data.slice(0, 300)}`));
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+async function loadPersistentState() {
+  try {
+    const result = await githubRequest('GET');
+    stateSha = result.sha;
+    const raw = Buffer.from(result.content || '', 'base64').toString('utf8');
+    const state = JSON.parse(raw);
+    for (const bucket of state.processedBuckets || []) processedBuckets.add(bucket);
+    for (const alert of state.alerts || []) sentAlerts.add(alert);
+    console.log(JSON.stringify({ type: 'state_loaded', processedBuckets: processedBuckets.size, sentAlerts: sentAlerts.size }));
+  } catch (error) {
+    console.warn(`Persistent state load failed: ${error.message}`);
   }
+}
+
+async function savePersistentState() {
+  if (!process.env.GITHUB_TOKEN) return;
+
+  const processed = [...processedBuckets].sort().slice(-100);
+  const alerts = [...sentAlerts].sort().slice(-100);
+  const content = JSON.stringify({ processedBuckets: processed, alerts }, null, 2) + '\n';
+
+  try {
+    const result = await githubRequest('PUT', {
+      message: 'Update monitor deduplication state',
+      content: Buffer.from(content, 'utf8').toString('base64'),
+      sha: stateSha,
+      branch: 'main',
+    });
+    stateSha = result.content?.sha || stateSha;
+  } catch (error) {
+    console.warn(`Persistent state save failed: ${error.message}`);
+  }
+}
+
+function bucketKey(symbol, bucket) {
+  return `${normalizeSymbol(symbol)}|${new Date(bucket).toISOString()}`;
 }
 
 async function checkOnce() {
   const now = Date.now();
   const currentBucket = bucketStart(now);
-  pruneState(currentBucket);
-
-  // Only evaluate a bucket after it has closed. This guarantees that the
-  // alert contains the final liquidation counts for all monitored coins.
   const closedBucket = currentBucket - 5 * 60 * 1000;
-  if (reportedBuckets.has(closedBucket)) return;
+  const closedBucketIso = new Date(closedBucket).toISOString();
+
+  if (processedBuckets.has(closedBucketIso)) return;
 
   const results = await Promise.all(
     symbols.map(async symbol => {
@@ -42,6 +110,7 @@ async function checkOnce() {
   const allowed = new Set(symbols.map(normalizeSymbol));
   const counts = new Map(symbols.map(symbol => [normalizeSymbol(symbol), 0]));
   const seen = new Set();
+  const eventsBySymbol = new Map(symbols.map(symbol => [normalizeSymbol(symbol), []]));
 
   for (const [, events] of results) {
     for (const event of events) {
@@ -55,20 +124,36 @@ async function checkOnce() {
       if (seen.has(key)) continue;
       seen.add(key);
       counts.set(symbol, (counts.get(symbol) || 0) + 1);
+      eventsBySymbol.get(symbol).push({ key, event, ts });
     }
   }
 
-  reportedBuckets.add(closedBucket);
-
   const ranking = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const [winnerSymbol, winnerCount] = ranking[0] || [null, 0];
+  const alertKey = winnerSymbol ? bucketKey(winnerSymbol, closedBucket) : null;
 
-  // One liquidation is not an alert. We also require a strict leader:
-  // if two or more coins have the same highest count, no alert is sent.
-  if (!winnerSymbol || winnerCount <= 1 || ranking[1]?.[1] === winnerCount) {
+  // A previously sent alert remains suppressed even if the workflow restarted.
+  if (alertKey && sentAlerts.has(alertKey)) {
+    processedBuckets.add(closedBucketIso);
+    await savePersistentState();
     console.log(JSON.stringify({
       type: 'liquidation_max_count_5m',
-      bucketStart: new Date(closedBucket).toISOString(),
+      bucketStart: closedBucketIso,
+      counts: Object.fromEntries(ranking),
+      alertSent: false,
+      reason: 'already_alerted',
+    }));
+    return;
+  }
+
+  // Mark every closed bucket as processed, including buckets with no alert.
+  processedBuckets.add(closedBucketIso);
+
+  if (!winnerSymbol || winnerCount <= 1 || ranking[1]?.[1] === winnerCount) {
+    await savePersistentState();
+    console.log(JSON.stringify({
+      type: 'liquidation_max_count_5m',
+      bucketStart: closedBucketIso,
       counts: Object.fromEntries(ranking),
       alertSent: false,
       reason: winnerCount <= 1 ? 'winner_count_le_1' : 'no_unique_winner',
@@ -76,20 +161,7 @@ async function checkOnce() {
     return;
   }
 
-  const winnerEvents = [];
-  for (const [, events] of results) {
-    for (const event of events) {
-      const ts = normalizeTs(event.ts);
-      const symbol = normalizeSymbol(event.symbol);
-      if (symbol !== winnerSymbol || !ts || bucketStart(ts) !== closedBucket) continue;
-      const side = String(event.side || '').toLowerCase();
-      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-      const key = eventKey(event);
-      if (winnerEvents.some(item => item.key === key)) continue;
-      winnerEvents.push({ key, event, ts });
-    }
-  }
-
+  const winnerEvents = eventsBySymbol.get(winnerSymbol) || [];
   const longCount = winnerEvents.filter(({ event }) => {
     const side = String(event.side || '').toLowerCase();
     return side.includes('long') || side === 'buy';
@@ -114,9 +186,12 @@ async function checkOnce() {
 
   await sendTelegramMessage(message);
 
+  if (alertKey) sentAlerts.add(alertKey);
+  await savePersistentState();
+
   console.log(JSON.stringify({
     type: 'liquidation_max_count_5m',
-    bucketStart: new Date(closedBucket).toISOString(),
+    bucketStart: closedBucketIso,
     winner: {
       symbol: winnerSymbol,
       liquidations: winnerCount,
@@ -131,6 +206,7 @@ async function checkOnce() {
 
 async function main() {
   console.log(`5M liquidation count monitor started; polling every ${POLL_MS}ms`);
+  await loadPersistentState();
 
   while (true) {
     try {
