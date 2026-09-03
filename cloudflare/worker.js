@@ -7,6 +7,7 @@ const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS = 5 * 60 * 1000;
 const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const GRACE_BUCKETS = 2;
+const VERSION = '2026-09-03-cron-health-1';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -113,7 +114,7 @@ export class MonitorState {
   }
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', lastResult: (await this.ctx.storage.get('last_result')) || null });
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
     if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { return Response.json(await this.process(Number(body.now) || Date.now())); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
     return new Response('Not found', { status: 404 });
   }
@@ -123,7 +124,14 @@ async function runThroughDurableObject(env, now) {
   const result = await response.json(); if (!response.ok) throw new Error(result.error || `Monitor HTTP ${response.status}`); return result;
 }
 export default {
-  async scheduled(controller, env, ctx) { ctx.waitUntil(runThroughDurableObject(env, controller.scheduledTime).then(result => console.log(JSON.stringify(result))).catch(error => console.error(JSON.stringify({ ok: false, error: error.message })))); },
+  async scheduled(controller, env, ctx) {
+    const monitor = getMonitor(env);
+    ctx.waitUntil((async () => {
+      await monitor.storage.put('last_cron_seen', { at: Date.now(), scheduledTime: controller.scheduledTime, version: VERSION });
+      const result = await runThroughDurableObject(env, controller.scheduledTime);
+      console.log(JSON.stringify(result));
+    })().catch(error => console.error(JSON.stringify({ ok: false, error: error.message }))));
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health');
