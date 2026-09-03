@@ -7,309 +7,117 @@ const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS = 5 * 60 * 1000;
 const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-function bucketStart(ts) {
-  return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS;
-}
-
-function normalizeTs(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return n < 1e12 ? n * 1000 : n;
-}
-
-function normalizeSymbol(symbol) {
-  return String(symbol || '').toUpperCase().replace(/USDT$|USD$/i, '');
-}
-
+function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
+function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
+function normalizeSymbol(symbol) { return String(symbol || '').toUpperCase().replace(/USDT$|USD$/i, ''); }
 function extractEvents(json) {
   if (json && Array.isArray(json.events)) return json.events;
   if (json?.data && Array.isArray(json.data.events)) return json.data.events;
   if (json && Array.isArray(json.data)) return json.data;
   return [];
 }
-
-function eventKey(event) {
-  return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|');
-}
-
+function eventKey(event) { return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|'); }
 async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
-  });
+  const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.json();
 }
-
 async function fetchEvents() {
   const feed = await fetchJson(FEED_URL);
   const all = [...extractEvents(feed)];
-
-  const results = await Promise.allSettled(
-    SYMBOLS.map(async (symbol) => {
-      const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(symbol)}&limit=400`);
-      return extractEvents(json);
-    }),
-  );
-
-  for (const result of results) {
-    if (result.status === 'fulfilled') all.push(...result.value);
-  }
-
+  const results = await Promise.allSettled(SYMBOLS.map(async symbol => extractEvents(await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(symbol)}&limit=400`))));
+  for (const result of results) if (result.status === 'fulfilled') all.push(...result.value);
   const unique = new Map();
   for (const event of all) unique.set(eventKey(event), event);
   return [...unique.values()];
 }
-
 function selectWinner(events, targetBucket) {
   const rows = new Map();
   const allowed = new Set(SYMBOLS);
-
   for (const event of events) {
-    const ts = normalizeTs(event.ts);
-    const symbol = normalizeSymbol(event.symbol);
+    const ts = normalizeTs(event.ts); const symbol = normalizeSymbol(event.symbol);
     if (!ts || !allowed.has(symbol) || bucketStart(ts) !== targetBucket) continue;
-
-    if (!rows.has(symbol)) {
-      rows.set(symbol, {
-        symbol,
-        events: 0,
-        longEvents: 0,
-        shortEvents: 0,
-        notionalUsd: 0,
-        longNotionalUsd: 0,
-        shortNotionalUsd: 0,
-      });
-    }
-
-    const row = rows.get(symbol);
-    const notional = Number(event.notional) || 0;
-    const side = String(event.side || '').toLowerCase();
-    row.events += 1;
-    row.notionalUsd += notional;
-
-    if (side.includes('long') || side === 'buy') {
-      row.longEvents += 1;
-      row.longNotionalUsd += notional;
-    } else if (side.includes('short') || side === 'sell') {
-      row.shortEvents += 1;
-      row.shortNotionalUsd += notional;
-    }
+    if (!rows.has(symbol)) rows.set(symbol, { symbol, events: 0, longEvents: 0, shortEvents: 0, notionalUsd: 0, longNotionalUsd: 0, shortNotionalUsd: 0 });
+    const row = rows.get(symbol); const notional = Number(event.notional) || 0; const side = String(event.side || '').toLowerCase();
+    row.events += 1; row.notionalUsd += notional;
+    if (side.includes('long') || side === 'buy') { row.longEvents += 1; row.longNotionalUsd += notional; }
+    else if (side.includes('short') || side === 'sell') { row.shortEvents += 1; row.shortNotionalUsd += notional; }
   }
-
-  return [...rows.values()].sort((a, b) => b.notionalUsd - a.notionalUsd || b.events - a.events)[0] || null;
+  return [...rows.values()].sort((a,b) => b.notionalUsd - a.notionalUsd || b.events - a.events)[0] || null;
 }
-
-function formatUsd(value) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-}
-
+function formatUsd(value) { return `$${Math.round(Number(value) || 0).toLocaleString('en-US')}`; }
 async function findMarketByEpoch(symbol, epoch) {
-  const asset = String(symbol || '').trim().toLowerCase();
-  if (!asset) return null;
-
+  const asset = String(symbol || '').trim().toLowerCase(); if (!asset) return null;
   const slug = `${asset}-updown-5m-${epoch}`;
   try {
     const market = await fetchJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
-    if (market && market.slug === slug && market.active === true && market.closed !== true) {
-      return {
-        slug,
-        url: `${MARKET_BASE_URL}/${slug}`,
-      };
-    }
-  } catch (_) {
-    // A missing market is normal while Polymarket creates the next interval.
-  }
+    if (market && market.slug === slug && market.active === true && market.closed !== true) return { slug, url: `${MARKET_BASE_URL}/${slug}` };
+  } catch (_) {}
   return null;
 }
-
-async function findCurrentMarket(symbol, now) {
-  const epoch = Math.floor(bucketStart(now) / 1000);
-  return findMarketByEpoch(symbol, epoch);
-}
-
+async function findCurrentMarket(symbol, now) { return findMarketByEpoch(symbol, Math.floor(bucketStart(now) / 1000)); }
 async function findNextMarket(symbol, now) {
   const start = bucketStart(now) + WINDOW_MS;
   for (let i = 0; i < 6; i += 1) {
-    const epoch = Math.floor((start + i * WINDOW_MS) / 1000);
-    const market = await findMarketByEpoch(symbol, epoch);
+    const market = await findMarketByEpoch(symbol, Math.floor((start + i * WINDOW_MS) / 1000));
     if (market) return market;
   }
   return null;
 }
-
 async function sendTelegram(env, text) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-    throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
-  }
-
-  const response = await fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: env.TELEGRAM_CHAT_ID,
-      text,
-      disable_web_page_preview: false,
-    }),
-    signal: AbortSignal.timeout(10000),
-  });
-
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+  const response = await fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }), signal: AbortSignal.timeout(10000) });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok !== true) {
-    throw new Error(`Telegram HTTP ${response.status}: ${data.description || 'unknown error'}`);
-  }
+  if (!response.ok || data.ok !== true) throw new Error(`Telegram HTTP ${response.status}: ${data.description || 'unknown error'}`);
   return data.result;
 }
-
-function getMonitor(env) {
-  return env.MONITOR.get(env.MONITOR.idFromName('global'));
-}
-
+function getMonitor(env) { return env.MONITOR.get(env.MONITOR.idFromName('global')); }
 export class MonitorState {
-  constructor(ctx, env) {
-    this.ctx = ctx;
-    this.env = env;
-  }
-
+  constructor(ctx, env) { this.ctx = ctx; this.env = env; }
   async cleanup(now) {
-    const index = (await this.ctx.storage.get('sent_index')) || [];
-    const cutoff = now - SENT_TTL_MS;
-    const keep = [];
-    for (const bucketId of index) {
-      if (Number(bucketId) >= cutoff) keep.push(bucketId);
-      else await this.ctx.storage.delete(`sent:${bucketId}`);
-    }
+    const index = (await this.ctx.storage.get('sent_index')) || []; const cutoff = now - SENT_TTL_MS; const keep = [];
+    for (const bucketId of index) { if (Number(bucketId) >= cutoff) keep.push(bucketId); else await this.ctx.storage.delete(`sent:${bucketId}`); }
     if (keep.length !== index.length) await this.ctx.storage.put('sent_index', keep);
   }
-
   async process(now) {
-    const target = bucketStart(now) - WINDOW_MS;
-    const bucketId = String(target);
-    const sentKey = `sent:${bucketId}`;
-
+    const target = bucketStart(now) - WINDOW_MS; const bucketId = String(target); const sentKey = `sent:${bucketId}`;
     const existing = await this.ctx.storage.get(sentKey);
-    if (existing) {
-      return { ok: true, skipped: true, reason: 'already_processed', bucket: new Date(target).toISOString(), existing };
-    }
-
-    const events = await fetchEvents();
-    const winner = selectWinner(events, target);
-
+    if (existing) return { ok: true, skipped: true, reason: 'already_processed', bucket: new Date(target).toISOString(), existing };
+    const events = await fetchEvents(); const winner = selectWinner(events, target);
     if (!winner || winner.notionalUsd <= 0) {
       await this.ctx.storage.put(sentKey, { result: 'no_liquidations', at: Date.now() });
-      const index = (await this.ctx.storage.get('sent_index')) || [];
-      if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
-      await this.ctx.storage.put('last_result', { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString(), at: Date.now() });
-      await this.cleanup(now);
+      const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
+      await this.ctx.storage.put('last_result', { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString(), at: Date.now() }); await this.cleanup(now);
       return { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString() };
     }
-
-    const [currentMarket, nextMarket] = await Promise.all([
-      findCurrentMarket(winner.symbol, now),
-      findNextMarket(winner.symbol, now),
-    ]);
-
-    const dominant = winner.longNotionalUsd >= winner.shortNotionalUsd ? 'Long' : 'Short';
-    const text = [
-      '🔥 LIQUIDATION SPIKE',
-      `${winner.symbol} · 5M · ${new Date(target).toISOString().slice(11, 16)} UTC`,
-      '',
-      `Liquidations: ${winner.events}`,
-      `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`,
-      `Volume: ${formatUsd(winner.notionalUsd)}`,
-      `Long volume: ${formatUsd(winner.longNotionalUsd)}`,
-      `Short volume: ${formatUsd(winner.shortNotionalUsd)}`,
-      '',
-      currentMarket ? `🔴 Current Polymarket 5M\n${currentMarket.url}` : '🔴 Current Polymarket 5M\n(not available)',
-      '',
-      nextMarket ? `➡️ Next Polymarket 5M\n${nextMarket.url}` : '➡️ Next Polymarket 5M\n(not available)',
-    ].join('\n');
-
+    const [currentMarket, nextMarket] = await Promise.all([findCurrentMarket(winner.symbol, now), findNextMarket(winner.symbol, now)]);
+    const bucketLabel = new Date(target).toISOString().slice(11,16);
+    let text = ['🔥 LIQUIDATION SPIKE', `${winner.symbol} · 5M · ${bucketLabel} UTC`, '', `Liquidations: ${winner.events}`, `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`, `Volume: ${formatUsd(winner.notionalUsd)}`, `Long volume: ${formatUsd(winner.longNotionalUsd)}`, `Short volume: ${formatUsd(winner.shortNotionalUsd)}`].join('\n');
+    text += currentMarket ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}` : '\n\n🔴 Current Polymarket 5M\nMarket not found';
+    text += nextMarket ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}` : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
     const sent = await sendTelegram(this.env, text);
-    const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now(), dominant };
-    await this.ctx.storage.put(sentKey, record);
-    const index = (await this.ctx.storage.get('sent_index')) || [];
-    if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
-
-    const result = {
-      ok: true,
-      sent: true,
-      bucket: new Date(target).toISOString(),
-      winner,
-      currentMarket,
-      nextMarket,
-      telegramMessageId: sent?.message_id || null,
-    };
-    await this.ctx.storage.put('last_result', { ...result, at: Date.now() });
-    await this.cleanup(now);
-    return result;
+    const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now() }; await this.ctx.storage.put(sentKey, record);
+    const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
+    const result = { ok: true, sent: true, bucket: new Date(target).toISOString(), winner, currentMarket, nextMarket, telegramMessageId: sent?.message_id || null };
+    await this.ctx.storage.put('last_result', { ...result, at: Date.now() }); await this.cleanup(now); return result;
   }
-
   async fetch(request) {
     const url = new URL(request.url);
-
-    if (url.pathname === '/health') {
-      return Response.json({
-        ok: true,
-        service: 'polymarket-perps-monitor',
-        lastResult: (await this.ctx.storage.get('last_result')) || null,
-      });
-    }
-
-    if (url.pathname === '/run' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      try {
-        return Response.json(await this.process(Number(body.now) || Date.now()));
-      } catch (error) {
-        const failure = { ok: false, error: error.message, at: Date.now() };
-        await this.ctx.storage.put('last_result', failure);
-        return Response.json(failure, { status: 500 });
-      }
-    }
-
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', lastResult: (await this.ctx.storage.get('last_result')) || null });
+    if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { return Response.json(await this.process(Number(body.now) || Date.now())); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
     return new Response('Not found', { status: 404 });
   }
 }
-
 async function runThroughDurableObject(env, now) {
-  const response = await getMonitor(env).fetch('https://monitor/run', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ now }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || `Monitor HTTP ${response.status}`);
-  return result;
+  const response = await getMonitor(env).fetch('https://monitor/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ now }) });
+  const result = await response.json(); if (!response.ok) throw new Error(result.error || `Monitor HTTP ${response.status}`); return result;
 }
-
 export default {
-  async scheduled(controller, env, ctx) {
-    ctx.waitUntil(
-      runThroughDurableObject(env, controller.scheduledTime)
-        .then((result) => console.log(JSON.stringify(result)))
-        .catch((error) => console.error(JSON.stringify({ ok: false, error: error.message }))),
-    );
-  },
-
+  async scheduled(controller, env, ctx) { ctx.waitUntil(runThroughDurableObject(env, controller.scheduledTime).then(result => console.log(JSON.stringify(result))).catch(error => console.error(JSON.stringify({ ok: false, error: error.message })))); },
   async fetch(request, env) {
     const url = new URL(request.url);
-
-    if (url.pathname === '/health') {
-      return getMonitor(env).fetch('https://monitor/health');
-    }
-
-    if (url.pathname === '/run' && request.method === 'POST') {
-      try {
-        return Response.json(await runThroughDurableObject(env, Date.now()));
-      } catch (error) {
-        return Response.json({ ok: false, error: error.message }, { status: 500 });
-      }
-    }
-
+    if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health');
+    if (url.pathname === '/run' && request.method === 'POST') { try { return Response.json(await runThroughDurableObject(env, Date.now())); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
     return new Response('Polymarket Perps Monitor', { status: 200 });
   },
 };
