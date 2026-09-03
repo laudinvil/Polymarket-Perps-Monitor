@@ -13,52 +13,52 @@
   },
   "markets5m": {
     "https://polymarket.com/event/btc-updown-5m-1788356700": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/eth-updown-5m-1788375300": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788375900": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/xrp-updown-5m-1788382800": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788382800": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/eth-updown-5m-1788385500": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788385800": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/xrp-updown-5m-1788387600": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788387900": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/eth-updown-5m-1788391500": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788391800": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/xrp-updown-5m-1788399300": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/eth-updown-5m-1788401100": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788402900": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/sol-updown-5m-1788405000": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/xrp-updown-5m-1788405900": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     },
     "https://polymarket.com/event/btc-updown-5m-1788419100": {
       "alertedAt": "2026-09-03T07:02:37.838Z"
@@ -69,7 +69,7 @@
   },
   "coins": {
     "BTC": {
-      "alertedAt": "2026-09-03T07:20:19.697Z"
+      "alertedAt": "2026-09-03T07:02:37.838Z"
     }
   }
 }
