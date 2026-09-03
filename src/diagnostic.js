@@ -16,6 +16,12 @@ async function main() {
   const events = await fetchFeed();
   console.log(`MarginPad feed events: ${events.length}`);
 
+  if (events.length > 0) {
+    console.log('RAW FIRST EVENT:');
+    console.log(JSON.stringify(events[0], null, 2));
+    console.log(`FIRST EVENT KEYS: ${Object.keys(events[0]).join(', ')}`);
+  }
+
   const present = new Set(events.map((e) => String(e.symbol || '').toUpperCase().replace(/USDT$|USD$/i, '')));
   console.log(`Symbols present in feed: ${symbols.filter((s) => present.has(s)).join(', ') || 'NONE'}`);
   console.log(`HYPE present: ${present.has('HYPE') ? 'YES' : 'NO'}`);
