@@ -12,7 +12,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     permissions:
       contents: read
     steps:
@@ -23,24 +23,19 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          package-manager-cache: false
 
-      - name: Run liquidation monitor
+      - name: Check one closed 5m bucket
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          set +e
-          timeout --signal=TERM 290s node src/index.js 2>&1 | tee monitor.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 124 ]; then
-            exit "$status"
-          fi
-          echo "Monitor window completed normally; next scheduled run continues monitoring."
+        run: node src/index.js 2>&1 | tee monitor.log
 
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: liquidation-monitor-log
+          name: liquidation-monitor-log-${{ github.run_id }}
           path: monitor.log
+          if-no-files-found: ignore
           retention-days: 7
