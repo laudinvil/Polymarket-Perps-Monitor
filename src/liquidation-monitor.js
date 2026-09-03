@@ -1,11 +1,10 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 
-const DEFAULT_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const DEFAULT_SYMBOLS = ['DOGE', 'BNB'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
-const LIQUIDATION_THRESHOLD_USD = 500000;
 
 let fallbackCache = { fetchedAt: 0, eventsBySymbol: new Map() };
 
@@ -56,34 +55,49 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Dat
 
   const allowed = new Set(symbols.map(normalizeSymbol));
   const closedBucket = bucketStart(now) - WINDOW_MS;
+
   const coveredInClosedBucket = new Set(
-    feedEvents.map((event) => {
-      const symbol = normalizeSymbol(event.symbol);
-      const ts = normalizeTs(event.ts);
-      return ts && allowed.has(symbol) && bucketStart(ts) === closedBucket ? symbol : null;
-    }).filter(Boolean),
+    feedEvents
+      .map((event) => {
+        const symbol = normalizeSymbol(event.symbol);
+        const ts = normalizeTs(event.ts);
+        return ts && allowed.has(symbol) && bucketStart(ts) === closedBucket ? symbol : null;
+      })
+      .filter(Boolean),
   );
+
   const missingSymbols = symbols.filter((symbol) => !coveredInClosedBucket.has(normalizeSymbol(symbol)));
 
   if (missingSymbols.length > 0) {
     const fresh = Date.now();
     if (fresh - fallbackCache.fetchedAt >= FALLBACK_REFRESH_MS) {
-      const results = await Promise.all(missingSymbols.map(async (symbol) => {
-        try { return [symbol, await fetchSymbolFeed(symbol, fetchImpl)]; }
-        catch (error) {
-          console.warn(`MarginPad live fallback ${symbol}: ${error.message}`);
-          return [symbol, []];
-        }
-      }));
+      const results = await Promise.all(
+        missingSymbols.map(async (symbol) => {
+          try {
+            return [symbol, await fetchSymbolFeed(symbol, fetchImpl)];
+          } catch (error) {
+            console.warn(`MarginPad live fallback ${symbol}: ${error.message}`);
+            return [symbol, []];
+          }
+        }),
+      );
+
       const eventsBySymbol = new Map(fallbackCache.eventsBySymbol);
-      for (const [symbol, events] of results) eventsBySymbol.set(normalizeSymbol(symbol), events);
+      for (const [symbol, events] of results) {
+        eventsBySymbol.set(normalizeSymbol(symbol), events);
+      }
       fallbackCache = { fetchedAt: fresh, eventsBySymbol };
     }
   }
 
-  const fallbackEvents = missingSymbols.flatMap(symbol => fallbackCache.eventsBySymbol.get(normalizeSymbol(symbol)) || []);
+  const fallbackEvents = missingSymbols.flatMap(
+    (symbol) => fallbackCache.eventsBySymbol.get(normalizeSymbol(symbol)) || [],
+  );
+
   const unique = new Map();
-  for (const event of [...feedEvents, ...fallbackEvents]) unique.set(eventKey(event), event);
+  for (const event of [...feedEvents, ...fallbackEvents]) {
+    unique.set(eventKey(event), event);
+  }
   return [...unique.values()];
 }
 
@@ -96,14 +110,29 @@ function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
     const ts = normalizeTs(event.ts);
     const symbol = normalizeSymbol(event.symbol);
     if (!ts || !allowed.has(symbol)) continue;
+
     const bucket = bucketStart(ts);
     if (bucket >= currentBucket) continue;
+
     const key = `${bucket}:${symbol}`;
-    if (!rows.has(key)) rows.set(key, { bucket, symbol, events: 0, longEvents: 0, shortEvents: 0, notionalUsd: 0, longNotionalUsd: 0, shortNotionalUsd: 0 });
+    if (!rows.has(key)) {
+      rows.set(key, {
+        bucket,
+        symbol,
+        events: 0,
+        longEvents: 0,
+        shortEvents: 0,
+        notionalUsd: 0,
+        longNotionalUsd: 0,
+        shortNotionalUsd: 0,
+      });
+    }
+
     const row = rows.get(key);
     const notional = Number(event.notional) || 0;
     row.events += 1;
     row.notionalUsd += notional;
+
     const side = String(event.side || '').toLowerCase();
     if (side.includes('long') || side === 'buy') {
       row.longEvents += 1;
@@ -113,11 +142,30 @@ function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
       row.shortNotionalUsd += notional;
     }
   }
+
   return [...rows.values()].sort((a, b) => b.notionalUsd - a.notionalUsd || b.events - a.events);
 }
 
 function selectWinner(rows, bucket) {
-  return rows.filter(row => row.bucket === bucket).sort((a, b) => b.notionalUsd - a.notionalUsd || b.events - a.events)[0] || null;
+  return rows
+    .filter((row) => row.bucket === bucket)
+    .sort((a, b) => b.notionalUsd - a.notionalUsd || b.events - a.events)[0] || null;
 }
 
-module.exports = { FEED_URL, LIVE_URL, DEFAULT_SYMBOLS, LIQUIDATION_THRESHOLD_USD, POLL_MS, FALLBACK_REFRESH_MS, WINDOW_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, aggregateEvents, selectWinner };
+module.exports = {
+  FEED_URL,
+  LIVE_URL,
+  DEFAULT_SYMBOLS,
+  POLL_MS,
+  FALLBACK_REFRESH_MS,
+  WINDOW_MS,
+  bucketStart,
+  normalizeTs,
+  normalizeSymbol,
+  eventKey,
+  extractEvents,
+  fetchFeed,
+  fetchSymbolFeed,
+  aggregateEvents,
+  selectWinner,
+};
