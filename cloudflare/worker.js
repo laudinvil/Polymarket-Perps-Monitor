@@ -10,7 +10,7 @@ const GRACE_BUCKETS = 2;
 const POLL_INTERVAL_MS = 30 * 1000;
 const FEED_ALERT_COOLDOWN_MS = 10 * 60 * 1000;
 const FEED_HEARTBEAT_MS = 10 * 60 * 1000;
-const VERSION = '2026-09-03-feed-watchdog-1';
+const VERSION = '2026-09-03-env-forward-1';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -84,7 +84,7 @@ async function findNextMarket(symbol, now) {
   return null;
 }
 async function sendTelegram(env, text) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+  if (!env?.TELEGRAM_BOT_TOKEN || !env?.TELEGRAM_CHAT_ID) throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
   const response = await fetch(`${TELEGRAM_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: false }), signal: AbortSignal.timeout(10000) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok !== true) throw new Error(`Telegram HTTP ${response.status}: ${data.description || 'unknown error'}`);
@@ -187,7 +187,8 @@ export class MonitorState {
   }
 }
 async function bootstrapAlarm(env) {
-  await getMonitor(env).fetch('https://monitor/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ now: Date.now() }) });
+  const monitor = getMonitor(env);
+  return monitor.fetch('https://monitor/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ now: Date.now() }), env });
 }
 export default {
   async scheduled(controller, env, ctx) {
@@ -199,7 +200,7 @@ export default {
   },
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health');
+    if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health', { env });
     if (url.pathname === '/run' && request.method === 'POST') { try { await bootstrapAlarm(env); return Response.json({ ok: true, started: true, version: VERSION }); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
     return new Response('Polymarket Perps Monitor', { status: 200 });
   },
