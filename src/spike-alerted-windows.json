@@ -67,5 +67,32 @@
   "5:1788383700000": true,
   "5:1788384000000": true,
   "5:1788384600000": true,
-  "5:1788384900000": true
+  "5:1788384900000": true,
+  "5:1788418500000": {
+    "checkedAt": "2026-09-03T07:02:36.937Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  },
+  "5:1788418800000": {
+    "checkedAt": "2026-09-03T07:05:01.706Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  },
+  "5:1788419100000": {
+    "checkedAt": "2026-09-03T07:10:01.969Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  },
+  "5:1788419400000": {
+    "checkedAt": "2026-09-03T07:15:01.502Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  },
+  "positions": {},
+  "markets5m": {},
+  "coins": {}
 }
