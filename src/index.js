@@ -107,11 +107,17 @@ async function checkOnce() {
   }
 
   processedBuckets.add(bucketKey);
-  const winner = [...rows.entries()]
-    .map(([symbol, row]) => ({ symbol, ...row }))
-    .sort((a, b) => b.events - a.events || b.longEvents - a.longEvents)[0];
 
-  if (!winner || winner.events === 0) {
+  // Leader is selected by ONE direction only: compare every Long count and
+  // every Short count across all monitored coins. Total Long+Short is not used.
+  const candidates = [...rows.entries()].flatMap(([symbol, row]) => [
+    { symbol, side: 'long', count: row.longEvents, total: row.events },
+    { symbol, side: 'short', count: row.shortEvents, total: row.events },
+  ]).filter(candidate => candidate.count > 0);
+
+  const winner = candidates.sort((a, b) => b.count - a.count || b.total - a.total)[0];
+
+  if (!winner) {
     await saveState();
     return;
   }
@@ -122,17 +128,19 @@ async function checkOnce() {
     return;
   }
 
-  // Alert at the beginning of the new 15-minute period. Therefore this is the
-  // current market link, while the numbers describe the just-closed period.
+  // Alert at the beginning of the new 15-minute period, so this is the
+  // current market link while the numbers describe the just-closed period.
   const currentMarket = await findCurrentMarket(winner.symbol, now);
+  const winnerRow = rows.get(winner.symbol);
   const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
-  const directionEmoji = winner.longEvents > winner.shortEvents ? '🔴' : winner.shortEvents > winner.longEvents ? '🟢' : '⚪';
+  const directionEmoji = winner.side === 'long' ? '🔴' : '🟢';
 
   let message = [
-    `${directionEmoji} LIQUIDATION WINNER`,
+    `${directionEmoji} LIQUIDATION LEADER`,
     `${normalizeSymbol(winner.symbol)} · 15M · ${bucketLabel} UTC`, '',
-    `Liquidations: ${winner.events}`,
-    `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`,
+    `Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidations`,
+    `Long: ${winnerRow.longEvents} · Short: ${winnerRow.shortEvents}`,
+    `Total: ${winnerRow.events}`,
     '',
     `➡️ Current Polymarket 15M`,
     currentMarket?.url || 'Market not found yet',
@@ -142,13 +150,14 @@ async function checkOnce() {
   sentAlerts.add(alertKey);
 
   console.log(JSON.stringify({
-    type: 'liquidation_15m_winner',
+    type: 'liquidation_15m_direction_winner',
     closedBucket: new Date(closedBucket).toISOString(),
     symbol: normalizeSymbol(winner.symbol),
-    liquidations: winner.events,
-    longCount: winner.longEvents,
-    shortCount: winner.shortEvents,
-    direction: winner.longEvents > winner.shortEvents ? 'long' : winner.shortEvents > winner.longEvents ? 'short' : 'equal',
+    leaderSide: winner.side,
+    leaderCount: winner.count,
+    liquidations: winnerRow.events,
+    longCount: winnerRow.longEvents,
+    shortCount: winnerRow.shortEvents,
     alertSent: true,
     currentMarket: currentMarket?.url || null,
   }));
@@ -158,7 +167,7 @@ async function checkOnce() {
 
 async function main() {
   await loadState();
-  console.log(`15M liquidation winner monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
+  console.log(`15M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
   while (true) {
     try { await checkOnce(); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
