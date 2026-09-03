@@ -1,5 +1,7 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
+const GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
+const MARKET_BASE_URL = 'https://polymarket.com/event';
 const TELEGRAM_API = 'https://api.telegram.org';
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS = 5 * 60 * 1000;
@@ -106,6 +108,40 @@ function formatUsd(value) {
   }).format(value || 0);
 }
 
+async function findMarketByEpoch(symbol, epoch) {
+  const asset = String(symbol || '').trim().toLowerCase();
+  if (!asset) return null;
+
+  const slug = `${asset}-updown-5m-${epoch}`;
+  try {
+    const market = await fetchJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
+    if (market && market.slug === slug && market.active === true && market.closed !== true) {
+      return {
+        slug,
+        url: `${MARKET_BASE_URL}/${slug}`,
+      };
+    }
+  } catch (_) {
+    // A missing market is normal while Polymarket creates the next interval.
+  }
+  return null;
+}
+
+async function findCurrentMarket(symbol, now) {
+  const epoch = Math.floor(bucketStart(now) / 1000);
+  return findMarketByEpoch(symbol, epoch);
+}
+
+async function findNextMarket(symbol, now) {
+  const start = bucketStart(now) + WINDOW_MS;
+  for (let i = 0; i < 6; i += 1) {
+    const epoch = Math.floor((start + i * WINDOW_MS) / 1000);
+    const market = await findMarketByEpoch(symbol, epoch);
+    if (market) return market;
+  }
+  return null;
+}
+
 async function sendTelegram(env, text) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
@@ -172,17 +208,29 @@ export class MonitorState {
       return { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString() };
     }
 
-    const dominant = winner.longNotionalUsd >= winner.shortNotionalUsd ? 'LONG liquidations' : 'SHORT liquidations';
+    const [currentMarket, nextMarket] = await Promise.all([
+      findCurrentMarket(winner.symbol, now),
+      findNextMarket(winner.symbol, now),
+    ]);
+
+    const dominant = winner.longNotionalUsd >= winner.shortNotionalUsd ? 'Long' : 'Short';
     const text = [
-      '🔥 5m Liquidation Leader',
-      `${winner.symbol} — ${formatUsd(winner.notionalUsd)}`,
-      `${dominant}: ${formatUsd(Math.max(winner.longNotionalUsd, winner.shortNotionalUsd))}`,
-      `Events: ${winner.events}`,
-      `Bucket: ${new Date(target).toISOString()}`,
+      '🔥 LIQUIDATION SPIKE',
+      `${winner.symbol} · 5M · ${new Date(target).toISOString().slice(11, 16)} UTC`,
+      '',
+      `Liquidations: ${winner.events}`,
+      `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`,
+      `Volume: ${formatUsd(winner.notionalUsd)}`,
+      `Long volume: ${formatUsd(winner.longNotionalUsd)}`,
+      `Short volume: ${formatUsd(winner.shortNotionalUsd)}`,
+      '',
+      currentMarket ? `🔴 Current Polymarket 5M\n${currentMarket.url}` : '🔴 Current Polymarket 5M\n(not available)',
+      '',
+      nextMarket ? `➡️ Next Polymarket 5M\n${nextMarket.url}` : '➡️ Next Polymarket 5M\n(not available)',
     ].join('\n');
 
     const sent = await sendTelegram(this.env, text);
-    const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now() };
+    const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now(), dominant };
     await this.ctx.storage.put(sentKey, record);
     const index = (await this.ctx.storage.get('sent_index')) || [];
     if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
@@ -192,6 +240,8 @@ export class MonitorState {
       sent: true,
       bucket: new Date(target).toISOString(),
       winner,
+      currentMarket,
+      nextMarket,
       telegramMessageId: sent?.message_id || null,
     };
     await this.ctx.storage.put('last_result', { ...result, at: Date.now() });
