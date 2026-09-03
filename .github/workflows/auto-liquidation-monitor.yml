@@ -1,0 +1,41 @@
+name: Auto Liquidation Monitor
+
+on:
+  schedule:
+    - cron: '1-59/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: auto-liquidation-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Run liquidation monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node src/index.js 2>&1 | tee monitor.log
+
+      - name: Upload monitor log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-liquidation-monitor-log-${{ github.run_id }}
+          path: monitor.log
+          if-no-files-found: ignore
+          retention-days: 7
