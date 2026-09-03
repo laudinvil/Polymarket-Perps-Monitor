@@ -6,7 +6,7 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
 
-let fallbackCache = { fetchedAt: 0, events: [] };
+let fallbackCache = { fetchedAt: 0, eventsBySymbol: new Map() };
 
 function bucketStart(ts) {
   const ms = Number(ts);
@@ -48,47 +48,61 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   return events;
 }
 
-async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
+async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Date.now()) {
   const json = await fetchJson(FEED_URL, fetchImpl);
   const feedEvents = extractEvents(json);
   if (!feedEvents) throw new Error('MarginPad feed: invalid response shape');
 
   const allowed = new Set(symbols.map(normalizeSymbol));
-  const present = new Set(
+  const closedBucket = bucketStart(now) - WINDOW_MS;
+
+  // /feed can contain a symbol only in the current bucket while providing no
+  // historical event for the just-closed bucket. In that case it still needs the
+  // per-symbol endpoint. Coverage is therefore checked against the target bucket,
+  // not merely by symbol presence anywhere in /feed.
+  const coveredInClosedBucket = new Set(
     feedEvents
-      .map((event) => normalizeSymbol(event.symbol))
-      .filter((symbol) => allowed.has(symbol)),
+      .map((event) => {
+        const symbol = normalizeSymbol(event.symbol);
+        const ts = normalizeTs(event.ts);
+        return ts && allowed.has(symbol) && bucketStart(ts) === closedBucket ? symbol : null;
+      })
+      .filter(Boolean),
   );
-  const missingSymbols = symbols.filter((symbol) => !present.has(normalizeSymbol(symbol)));
 
-  // /feed is the cheap market-wide source, but it can be incomplete: in practice
-  // it may contain only a subset of monitored symbols. Fill only the missing
-  // symbols from the per-symbol live endpoint so one partial /feed payload cannot
-  // suppress ETH/SOL/XRP/DOGE/HYPE while still retaining the cheap primary feed.
-  if (missingSymbols.length === 0 || feedEvents.length === 0) return feedEvents;
+  const missingSymbols = symbols.filter((symbol) => !coveredInClosedBucket.has(normalizeSymbol(symbol)));
 
-  const now = Date.now();
-  if (now - fallbackCache.fetchedAt < FALLBACK_REFRESH_MS) {
-    return [...feedEvents, ...fallbackCache.events];
+  if (missingSymbols.length > 0) {
+    const fresh = Date.now();
+    if (fresh - fallbackCache.fetchedAt >= FALLBACK_REFRESH_MS) {
+      const results = await Promise.all(
+        missingSymbols.map(async (symbol) => {
+          try {
+            return [symbol, await fetchSymbolFeed(symbol, fetchImpl)];
+          } catch (error) {
+            console.warn(`MarginPad live fallback ${symbol}: ${error.message}`);
+            return [symbol, []];
+          }
+        }),
+      );
+
+      const eventsBySymbol = new Map(fallbackCache.eventsBySymbol);
+      for (const [symbol, events] of results) {
+        eventsBySymbol.set(normalizeSymbol(symbol), events);
+      }
+      fallbackCache = { fetchedAt: fresh, eventsBySymbol };
+    }
   }
 
-  const results = await Promise.all(
-    missingSymbols.map(async (symbol) => {
-      try {
-        return await fetchSymbolFeed(symbol, fetchImpl);
-      } catch (error) {
-        console.warn(`MarginPad live fallback ${symbol}: ${error.message}`);
-        return [];
-      }
-    }),
+  const fallbackEvents = missingSymbols.flatMap(
+    (symbol) => fallbackCache.eventsBySymbol.get(normalizeSymbol(symbol)) || [],
   );
 
-  fallbackCache = {
-    fetchedAt: now,
-    events: results.flat(),
-  };
-
-  return [...feedEvents, ...fallbackCache.events];
+  const unique = new Map();
+  for (const event of [...feedEvents, ...fallbackEvents]) {
+    unique.set(eventKey(event), event);
+  }
+  return [...unique.values()];
 }
 
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
