@@ -7,8 +7,8 @@ const WINDOW_MS = 5 * 60 * 1000;
 const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const BUFFER_TTL_MS = 15 * 60 * 1000;
 const GRACE_BUCKETS = 2;
-const POLL_INTERVAL_MS = 15 * 1000;
-const VERSION = '2026-09-03-alarm-feed-1';
+const POLL_INTERVAL_MS = 30 * 1000;
+const VERSION = '2026-09-03-alarm-feed-2';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -25,9 +25,7 @@ async function fetchJson(url) {
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.json();
 }
-async function fetchFeedEvents() {
-  return extractEvents(await fetchJson(FEED_URL));
-}
+async function fetchFeedEvents() { return extractEvents(await fetchJson(FEED_URL)); }
 async function mergeBuffer(storage, incoming, now) {
   const cutoff = now - BUFFER_TTL_MS;
   const previous = (await storage.get('event_buffer')) || [];
@@ -161,7 +159,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health');
-    if (url.pathname === '/run' && request.method === 'POST') { try { return Response.json(await (async () => { await bootstrapAlarm(env); return { ok: true, started: true, version: VERSION }; })()); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
+    if (url.pathname === '/run' && request.method === 'POST') { try { await bootstrapAlarm(env); return Response.json({ ok: true, started: true, version: VERSION }); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
     return new Response('Polymarket Perps Monitor', { status: 200 });
   },
 };
