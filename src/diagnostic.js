@@ -13,8 +13,8 @@ const symbols = DEFAULT_SYMBOLS;
 async function main() {
   console.log(`Symbols: ${symbols.join(', ')}`);
 
-  const events = await fetchFeed();
-  console.log(`MarginPad feed events: ${events.length}`);
+  const events = await fetchFeed(symbols);
+  console.log(`MarginPad events used: ${events.length}`);
 
   if (events.length > 0) {
     console.log('RAW FIRST EVENT:');
