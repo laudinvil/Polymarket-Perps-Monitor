@@ -54,19 +54,26 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   if (!feedEvents) throw new Error('MarginPad feed: invalid response shape');
 
   const allowed = new Set(symbols.map(normalizeSymbol));
-  const relevant = feedEvents.filter((event) => allowed.has(normalizeSymbol(event.symbol)));
+  const present = new Set(
+    feedEvents
+      .map((event) => normalizeSymbol(event.symbol))
+      .filter((symbol) => allowed.has(symbol)),
+  );
+  const missingSymbols = symbols.filter((symbol) => !present.has(normalizeSymbol(symbol)));
 
-  // /feed is the cheap market-wide source and should be preferred. If it returns
-  // a payload with none of our monitored symbols (as happened with the malformed
-  // "T" payload), use the per-symbol live endpoint instead of silently producing
-  // a false NONE winner.
-  if (relevant.length > 0 || feedEvents.length === 0) return feedEvents;
+  // /feed is the cheap market-wide source, but it can be incomplete: in practice
+  // it may contain only a subset of monitored symbols. Fill only the missing
+  // symbols from the per-symbol live endpoint so one partial /feed payload cannot
+  // suppress ETH/SOL/XRP/DOGE/HYPE while still retaining the cheap primary feed.
+  if (missingSymbols.length === 0 || feedEvents.length === 0) return feedEvents;
 
   const now = Date.now();
-  if (now - fallbackCache.fetchedAt < FALLBACK_REFRESH_MS) return fallbackCache.events;
+  if (now - fallbackCache.fetchedAt < FALLBACK_REFRESH_MS) {
+    return [...feedEvents, ...fallbackCache.events];
+  }
 
   const results = await Promise.all(
-    symbols.map(async (symbol) => {
+    missingSymbols.map(async (symbol) => {
       try {
         return await fetchSymbolFeed(symbol, fetchImpl);
       } catch (error) {
@@ -81,7 +88,7 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
     events: results.flat(),
   };
 
-  return fallbackCache.events;
+  return [...feedEvents, ...fallbackCache.events];
 }
 
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
