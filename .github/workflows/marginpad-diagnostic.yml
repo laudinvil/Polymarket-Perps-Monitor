@@ -9,15 +9,23 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Run MarginPad diagnostic
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node src/diagnostic.js
+        run: node src/diagnostic.js 2>&1 | tee marginpad-diagnostic.log
+
+      - name: Upload MarginPad diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marginpad-diagnostic
+          path: marginpad-diagnostic.log
+          retention-days: 7
