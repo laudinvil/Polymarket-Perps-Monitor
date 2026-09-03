@@ -3,6 +3,8 @@ name: MarginPad Auto Monitor
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '.monitor-state.json'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
@@ -16,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -31,6 +33,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node src/index.js 2>&1 | tee monitor.log
 
       - name: Upload monitor log
