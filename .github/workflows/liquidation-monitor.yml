@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '*/5 * * * *'
 
+concurrency:
+  group: liquidation-monitor
+  cancel-in-progress: false
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -26,9 +30,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set +e
-          timeout --signal=TERM 290s node src/index.js
-          status=$?
+          timeout --signal=TERM 290s node src/index.js 2>&1 | tee monitor.log
+          status=${PIPESTATUS[0]}
           if [ "$status" -ne 124 ]; then
             exit "$status"
           fi
           echo "Monitor window completed normally; next scheduled run continues monitoring."
+
+      - name: Upload monitor log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquidation-monitor-log
+          path: monitor.log
+          retention-days: 7
