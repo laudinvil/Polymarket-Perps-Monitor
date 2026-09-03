@@ -13,8 +13,14 @@ const symbols = DEFAULT_SYMBOLS;
 async function main() {
   console.log(`Symbols: ${symbols.join(', ')}`);
 
-  const events = await fetchFeed(symbols);
+  const now = Date.now();
+  const currentBucket = bucketStart(now);
+  const closedBucket = currentBucket - 5 * 60 * 1000;
+  const events = await fetchFeed(symbols, fetch, now);
+
   console.log(`MarginPad events used: ${events.length}`);
+  console.log(`Current 5m bucket: ${new Date(currentBucket).toISOString()}`);
+  console.log(`Closed 5m bucket: ${new Date(closedBucket).toISOString()}`);
 
   if (events.length > 0) {
     console.log('RAW FIRST EVENT:');
@@ -30,26 +36,24 @@ async function main() {
   console.log(`Unique event keys: ${uniqueKeys.size}`);
   console.log(`Duplicate events in response: ${events.length - uniqueKeys.size}`);
 
-  const now = Date.now();
-  const currentBucket = bucketStart(now);
-  const closedBucket = currentBucket - 5 * 60 * 1000;
-  console.log(`Current 5m bucket: ${new Date(currentBucket).toISOString()}`);
-  console.log(`Closed 5m bucket: ${new Date(closedBucket).toISOString()}`);
-
   const rows = aggregateEvents(events, symbols, now);
+  const closedRows = rows.filter((row) => row.bucket === closedBucket);
   const winner = selectWinner(rows, closedBucket);
-  console.log('Closed 5m aggregation:');
-  for (const row of rows) {
+
+  console.log('CLOSED 5M BUCKET — ALL SYMBOLS:');
+  for (const symbol of symbols) {
+    const row = closedRows.find((item) => item.symbol === symbol);
     console.log(JSON.stringify({
-      symbol: row.symbol,
-      events: row.events,
-      longEvents: row.longEvents,
-      shortEvents: row.shortEvents,
-      notionalUsd: row.notionalUsd,
-      longNotionalUsd: row.longNotionalUsd,
-      shortNotionalUsd: row.shortNotionalUsd,
+      symbol,
+      events: row?.events || 0,
+      longEvents: row?.longEvents || 0,
+      shortEvents: row?.shortEvents || 0,
+      notionalUsd: row?.notionalUsd || 0,
+      longNotionalUsd: row?.longNotionalUsd || 0,
+      shortNotionalUsd: row?.shortNotionalUsd || 0,
     }));
   }
+
   console.log(`Winner: ${winner ? `${winner.symbol} (${winner.events} events, $${Math.round(winner.notionalUsd)})` : 'NONE'}`);
 
   console.log('Polymarket next 5m markets:');
