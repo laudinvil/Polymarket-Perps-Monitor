@@ -48,6 +48,7 @@ jobs:
         if: env.DIAGNOSTIC == 'true'
         run: node src/imminent-diagnostic.js 2>&1 | tee imminent-diagnostic.log
       - name: Run IMMINENT + SPIKE + BINANCE SPIKE monitors
+        if: env.DIAGNOSTIC != 'true'
         run: |
           node src/imminent-liquidation.js 2>&1 | tee imminent.log &
           PID_IMMINENT=$!
@@ -63,13 +64,47 @@ jobs:
           STATUS_BINANCE=$?
           test $STATUS_IMMINENT -eq 0 && test $STATUS_SPIKE -eq 0 && test $STATUS_BINANCE -eq 0
       - name: Persist monitor state
-        if: always()
+        if: always() && env.DIAGNOSTIC != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/imminent-alerted-positions.json src/spike-alerted-windows.json src/binance-spike-alerted-windows.json
-          git diff --cached --quiet || git commit -m "Persist liquidation monitor state"
-          git push
+          git diff --cached --quiet && exit 0
+          git fetch origin main
+          for f in src/imminent-alerted-positions.json src/spike-alerted-windows.json src/binance-spike-alerted-windows.json; do
+            cp "$f" "/tmp/$(basename "$f").local"
+          done
+          git reset --hard origin/main
+          node <<'NODE'
+          const fs = require('fs');
+          const files = [
+            'src/imminent-alerted-positions.json',
+            'src/spike-alerted-windows.json',
+            'src/binance-spike-alerted-windows.json'
+          ];
+          for (const file of files) {
+            const localPath = `/tmp/${file.split('/').pop()}.local`;
+            const local = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+            let remote = {};
+            try { remote = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+            const merged = {
+              ...remote,
+              ...local,
+              positions: {...(remote.positions||{}), ...(local.positions||{})},
+              markets5m: {...(remote.markets5m||{}), ...(local.markets5m||{})},
+              coins: {...(remote.coins||{}), ...(local.coins||{})}
+            };
+            if (Number(remote.lastAlertAt||0) > Number(local.lastAlertAt||0)) {
+              merged.lastAlertAt = remote.lastAlertAt;
+              merged.lastAlertCoin = remote.lastAlertCoin;
+            }
+            fs.writeFileSync(file, JSON.stringify(merged, null, 2) + '\n');
+          }
+          NODE
+          git add src/imminent-alerted-positions.json src/spike-alerted-windows.json src/binance-spike-alerted-windows.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Persist liquidation monitor state"
+          git push origin HEAD:main
       - name: Upload diagnostic log
         if: always() && env.DIAGNOSTIC == 'true'
         uses: actions/upload-artifact@v4
