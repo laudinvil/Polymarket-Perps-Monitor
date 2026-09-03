@@ -1,13 +1,14 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
-const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 const GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
 const MARKET_BASE_URL = 'https://polymarket.com/event';
 const TELEGRAM_API = 'https://api.telegram.org';
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS = 5 * 60 * 1000;
 const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const BUFFER_TTL_MS = 15 * 60 * 1000;
 const GRACE_BUCKETS = 2;
-const VERSION = '2026-09-03-cron-health-1';
+const POLL_INTERVAL_MS = 15 * 1000;
+const VERSION = '2026-09-03-alarm-feed-1';
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -24,14 +25,28 @@ async function fetchJson(url) {
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.json();
 }
-async function fetchEvents() {
-  const feed = await fetchJson(FEED_URL);
-  const all = [...extractEvents(feed)];
-  const results = await Promise.allSettled(SYMBOLS.map(async symbol => extractEvents(await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(symbol)}&limit=400`))));
-  for (const result of results) if (result.status === 'fulfilled') all.push(...result.value);
-  const unique = new Map();
-  for (const event of all) unique.set(eventKey(event), event);
-  return [...unique.values()];
+async function fetchFeedEvents() {
+  return extractEvents(await fetchJson(FEED_URL));
+}
+async function mergeBuffer(storage, incoming, now) {
+  const cutoff = now - BUFFER_TTL_MS;
+  const previous = (await storage.get('event_buffer')) || [];
+  const merged = new Map();
+  for (const event of previous) {
+    const ts = normalizeTs(event.ts);
+    if (ts && ts >= cutoff) merged.set(eventKey(event), event);
+  }
+  let added = 0;
+  for (const event of incoming) {
+    const ts = normalizeTs(event.ts);
+    if (!ts || ts < cutoff) continue;
+    const key = eventKey(event);
+    if (!merged.has(key)) added += 1;
+    merged.set(key, event);
+  }
+  const events = [...merged.values()].sort((a, b) => (normalizeTs(a.ts) || 0) - (normalizeTs(b.ts) || 0));
+  if (added > 0 || previous.length !== events.length) await storage.put('event_buffer', events);
+  return { events, added };
 }
 function selectWinner(events, targetBucket) {
   const rows = new Map();
@@ -86,7 +101,8 @@ export class MonitorState {
   async process(now) {
     const current = bucketStart(now);
     const targets = [current - WINDOW_MS, current - 2 * WINDOW_MS, current - 3 * WINDOW_MS].slice(0, GRACE_BUCKETS + 1);
-    const events = await fetchEvents();
+    const incoming = await fetchFeedEvents();
+    const { events, added } = await mergeBuffer(this.ctx.storage, incoming, now);
     const results = [];
     for (const target of targets) {
       const bucketId = String(target); const sentKey = `sent:${bucketId}`;
@@ -108,34 +124,44 @@ export class MonitorState {
       if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
       results.push({ bucket: new Date(target).toISOString(), sent: true, winner, telegramMessageId: sent?.message_id || null });
     }
-    await this.ctx.storage.put('last_result', { ok: true, at: Date.now(), checkedBuckets: targets.map(t => new Date(t).toISOString()), results });
+    await this.ctx.storage.put('last_result', { ok: true, at: Date.now(), source: 'marginpad_feed', addedEvents: added, feedEvents: incoming.length, bufferedEvents: events.length, checkedBuckets: targets.map(t => new Date(t).toISOString()), results });
     await this.cleanup(now);
-    return { ok: true, results };
+    return { ok: true, results, feedEvents: incoming.length, bufferedEvents: events.length, addedEvents: added };
+  }
+  async scheduleNext() { await this.ctx.storage.setAlarm(Date.now() + POLL_INTERVAL_MS); }
+  async alarm() {
+    try {
+      const result = await this.process(Date.now());
+      await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: true, result });
+    } catch (error) {
+      await this.ctx.storage.put('last_result', { ok: false, error: error.message, at: Date.now(), source: 'marginpad_feed' });
+      await this.ctx.storage.put('last_alarm', { at: Date.now(), ok: false, error: error.message });
+    } finally {
+      await this.scheduleNext();
+    }
   }
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
-    if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { return Response.json(await this.process(Number(body.now) || Date.now())); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
+    if (url.pathname === '/health') return Response.json({ ok: true, service: 'polymarket-perps-monitor', version: VERSION, pollIntervalMs: POLL_INTERVAL_MS, lastCronSeen: (await this.ctx.storage.get('last_cron_seen')) || null, lastAlarm: (await this.ctx.storage.get('last_alarm')) || null, lastResult: (await this.ctx.storage.get('last_result')) || null });
+    if (url.pathname === '/run' && request.method === 'POST') { const body = await request.json().catch(() => ({})); try { await this.scheduleNext(); return Response.json(await this.process(Number(body.now) || Date.now())); } catch (error) { const failure = { ok: false, error: error.message, at: Date.now() }; await this.ctx.storage.put('last_result', failure); return Response.json(failure, { status: 500 }); } }
     return new Response('Not found', { status: 404 });
   }
 }
-async function runThroughDurableObject(env, now) {
-  const response = await getMonitor(env).fetch('https://monitor/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ now }) });
-  const result = await response.json(); if (!response.ok) throw new Error(result.error || `Monitor HTTP ${response.status}`); return result;
+async function bootstrapAlarm(env) {
+  await getMonitor(env).fetch('https://monitor/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ now: Date.now() }) });
 }
 export default {
   async scheduled(controller, env, ctx) {
     const monitor = getMonitor(env);
     ctx.waitUntil((async () => {
       await monitor.storage.put('last_cron_seen', { at: Date.now(), scheduledTime: controller.scheduledTime, version: VERSION });
-      const result = await runThroughDurableObject(env, controller.scheduledTime);
-      console.log(JSON.stringify(result));
+      await bootstrapAlarm(env);
     })().catch(error => console.error(JSON.stringify({ ok: false, error: error.message }))));
   },
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/health') return getMonitor(env).fetch('https://monitor/health');
-    if (url.pathname === '/run' && request.method === 'POST') { try { return Response.json(await runThroughDurableObject(env, Date.now())); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
+    if (url.pathname === '/run' && request.method === 'POST') { try { return Response.json(await (async () => { await bootstrapAlarm(env); return { ok: true, started: true, version: VERSION }; })()); } catch (error) { return Response.json({ ok: false, error: error.message }, { status: 500 }); } }
     return new Response('Polymarket Perps Monitor', { status: 200 });
   },
 };
