@@ -1,6 +1,6 @@
 const https = require('https');
 const { DEFAULT_SYMBOLS, fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey } = require('./liquidation-monitor');
-const { findNextMarket } = require('./polymarket');
+const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
@@ -20,81 +20,76 @@ function formatUsd(value) {
 function githubRequest(method, body = null) {
   return new Promise((resolve, reject) => {
     const token = process.env.GITHUB_TOKEN;
-    if (!token) return reject(new Error('GITHUB_TOKEN is not configured'));
-
-    const url = new URL(STATE_API_URL);
-    const payload = body == null ? null : JSON.stringify(body);
-    const req = https.request(url, {
+    if (!token) return reject(new Error('GITHUB_TOKEN is not available'));
+    const data = body ? JSON.stringify(body) : null;
+    const request = https.request(STATE_API_URL, {
       method,
       headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'Polymarket-Perps-Monitor',
-        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+        'User-Agent': 'marginpad-monitor',
+        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
       },
-    }, res => {
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        let parsed = null;
-        try { parsed = data ? JSON.parse(data) : null; } catch (_) {}
-        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
-        reject(new Error(`GitHub state API ${res.statusCode}: ${data.slice(0, 300)}`));
+    }, response => {
+      let text = '';
+      response.on('data', chunk => { text += chunk; });
+      response.on('end', () => {
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch {}
+        if (response.statusCode >= 200 && response.statusCode < 300) return resolve(json);
+        reject(new Error(`GitHub state request failed: ${response.statusCode} ${text}`));
       });
     });
-    req.on('error', reject);
-    if (payload) req.write(payload);
-    req.end();
+    request.on('error', reject);
+    if (data) request.write(data);
+    request.end();
   });
 }
 
-async function loadPersistentState() {
+async function loadState() {
   try {
-    const result = await githubRequest('GET');
-    stateSha = result.sha;
-    const raw = Buffer.from(result.content || '', 'base64').toString('utf8');
-    const state = JSON.parse(raw);
-    for (const bucket of state.processedBuckets || []) processedBuckets.add(bucket);
-    for (const alert of state.alerts || []) sentAlerts.add(alert);
-    console.log(JSON.stringify({ type: 'state_loaded', processedBuckets: processedBuckets.size, sentAlerts: sentAlerts.size }));
+    const data = await githubRequest('GET');
+    if (!data || !data.content) return;
+    stateSha = data.sha || null;
+    const decoded = Buffer.from(data.content, 'base64').toString('utf8');
+    const state = JSON.parse(decoded);
+    for (const key of state.processedBuckets || []) processedBuckets.add(key);
+    for (const key of state.alerts || []) sentAlerts.add(key);
   } catch (error) {
-    console.warn(`Persistent state load failed: ${error.message}`);
+    console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
 }
 
-async function savePersistentState() {
+async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
+  const content = Buffer.from(JSON.stringify({
+    processedBuckets: [...processedBuckets].slice(-100),
+    alerts: [...sentAlerts].slice(-100),
+  }, null, 2)).toString('base64');
 
-  const processed = [...processedBuckets].sort().slice(-100);
-  const alerts = [...sentAlerts].sort().slice(-100);
-  const content = JSON.stringify({ processedBuckets: processed, alerts }, null, 2) + '\n';
+  const body = {
+    message: 'Persist monitor state',
+    content,
+    branch: process.env.GITHUB_REF_NAME || 'main',
+  };
+  if (stateSha) body.sha = stateSha;
 
   try {
-    const result = await githubRequest('PUT', {
-      message: 'Update monitor deduplication state',
-      content: Buffer.from(content, 'utf8').toString('base64'),
-      sha: stateSha,
-      branch: 'main',
-    });
-    stateSha = result.content?.sha || stateSha;
+    const result = await githubRequest('PUT', body);
+    stateSha = result?.content?.sha || stateSha;
   } catch (error) {
-    console.warn(`Persistent state save failed: ${error.message}`);
+    console.warn(`STATE SAVE FAILED: ${error.message}`);
   }
-}
-
-function bucketKey(symbol, bucket) {
-  return `${normalizeSymbol(symbol)}|${new Date(bucket).toISOString()}`;
 }
 
 async function checkOnce() {
   const now = Date.now();
   const currentBucket = bucketStart(now);
   const closedBucket = currentBucket - 5 * 60 * 1000;
-  const closedBucketIso = new Date(closedBucket).toISOString();
+  const bucketKey = String(closedBucket);
 
-  if (processedBuckets.has(closedBucketIso)) return;
+  if (processedBuckets.has(bucketKey)) return;
 
   const results = await Promise.all(
     symbols.map(async symbol => {
@@ -110,7 +105,6 @@ async function checkOnce() {
   const allowed = new Set(symbols.map(normalizeSymbol));
   const counts = new Map(symbols.map(symbol => [normalizeSymbol(symbol), 0]));
   const seen = new Set();
-  const eventsBySymbol = new Map(symbols.map(symbol => [normalizeSymbol(symbol), []]));
 
   for (const [, events] of results) {
     for (const event of events) {
@@ -124,36 +118,19 @@ async function checkOnce() {
       if (seen.has(key)) continue;
       seen.add(key);
       counts.set(symbol, (counts.get(symbol) || 0) + 1);
-      eventsBySymbol.get(symbol).push({ key, event, ts });
     }
   }
 
+  processedBuckets.add(bucketKey);
+
   const ranking = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const [winnerSymbol, winnerCount] = ranking[0] || [null, 0];
-  const alertKey = winnerSymbol ? bucketKey(winnerSymbol, closedBucket) : null;
-
-  // A previously sent alert remains suppressed even if the workflow restarted.
-  if (alertKey && sentAlerts.has(alertKey)) {
-    processedBuckets.add(closedBucketIso);
-    await savePersistentState();
-    console.log(JSON.stringify({
-      type: 'liquidation_max_count_5m',
-      bucketStart: closedBucketIso,
-      counts: Object.fromEntries(ranking),
-      alertSent: false,
-      reason: 'already_alerted',
-    }));
-    return;
-  }
-
-  // Mark every closed bucket as processed, including buckets with no alert.
-  processedBuckets.add(closedBucketIso);
 
   if (!winnerSymbol || winnerCount <= 1 || ranking[1]?.[1] === winnerCount) {
-    await savePersistentState();
+    await saveState();
     console.log(JSON.stringify({
       type: 'liquidation_max_count_5m',
-      bucketStart: closedBucketIso,
+      bucketStart: new Date(closedBucket).toISOString(),
       counts: Object.fromEntries(ranking),
       alertSent: false,
       reason: winnerCount <= 1 ? 'winner_count_le_1' : 'no_unique_winner',
@@ -161,7 +138,29 @@ async function checkOnce() {
     return;
   }
 
-  const winnerEvents = eventsBySymbol.get(winnerSymbol) || [];
+  const alertKey = `${bucketKey}:${winnerSymbol}`;
+  if (sentAlerts.has(alertKey)) {
+    await saveState();
+    console.log(JSON.stringify({ type: 'duplicate_alert_blocked', bucketStart: new Date(closedBucket).toISOString(), symbol: winnerSymbol }));
+    return;
+  }
+
+  const winnerEvents = [];
+  const winnerSeen = new Set();
+  for (const [, events] of results) {
+    for (const event of events) {
+      const ts = normalizeTs(event.ts);
+      const symbol = normalizeSymbol(event.symbol);
+      if (symbol !== winnerSymbol || !ts || bucketStart(ts) !== closedBucket) continue;
+      const side = String(event.side || '').toLowerCase();
+      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
+      const key = eventKey(event);
+      if (winnerSeen.has(key)) continue;
+      winnerSeen.add(key);
+      winnerEvents.push({ key, event, ts });
+    }
+  }
+
   const longCount = winnerEvents.filter(({ event }) => {
     const side = String(event.side || '').toLowerCase();
     return side.includes('long') || side === 'buy';
@@ -169,7 +168,9 @@ async function checkOnce() {
   const shortCount = winnerCount - longCount;
   const totalVolume = winnerEvents.reduce((sum, { event }) => sum + (Number(event.notional) || 0), 0);
 
-  const nextMarket = await findNextMarket(winnerSymbol, now);
+  // The alert is sent at the start of the new 5-minute bucket, so the link
+  // must point to the market that is live NOW, not the following market.
+  const currentMarket = await findCurrentMarket(winnerSymbol, now);
   const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
 
   let message = [
@@ -180,18 +181,17 @@ async function checkOnce() {
     `Volume: ${formatUsd(totalVolume)}`,
   ].join('\n');
 
-  message += nextMarket
-    ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}`
-    : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
+  message += currentMarket
+    ? `\n\n➡️ Current Polymarket 5M\n${currentMarket.url}`
+    : '\n\n➡️ Current Polymarket 5M\nMarket not found yet';
 
   await sendTelegramMessage(message);
-
-  if (alertKey) sentAlerts.add(alertKey);
-  await savePersistentState();
+  sentAlerts.add(alertKey);
+  await saveState();
 
   console.log(JSON.stringify({
     type: 'liquidation_max_count_5m',
-    bucketStart: closedBucketIso,
+    bucketStart: new Date(closedBucket).toISOString(),
     winner: {
       symbol: winnerSymbol,
       liquidations: winnerCount,
@@ -201,12 +201,13 @@ async function checkOnce() {
     },
     counts: Object.fromEntries(ranking),
     alertSent: true,
+    market: currentMarket?.url || null,
   }));
 }
 
 async function main() {
+  await loadState();
   console.log(`5M liquidation count monitor started; polling every ${POLL_MS}ms`);
-  await loadPersistentState();
 
   while (true) {
     try {
