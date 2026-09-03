@@ -26,7 +26,21 @@ async function findMarketByEpoch(symbol, epoch) {
   const url = `${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`;
   const market = await getJson(url);
 
-  if (market && market.slug === slug && market.active === true && market.closed !== true) {
+  // A market can already exist even when Gamma has not yet marked it active.
+  // The slug is the authoritative 5-minute market identifier for our link.
+  if (market && market.slug === slug && market.closed !== true) {
+    return {
+      slug,
+      url: `${MARKET_BASE_URL}/${slug}`,
+      question: market.question || null,
+      startDate: market.startDate || market.startDateIso || null,
+      endDate: market.endDate || market.endDateIso || null,
+    };
+  }
+
+  // If Gamma returns a market object without the expected flags, still use the
+  // exact Polymarket slug because it is the stable public event URL.
+  if (market && market.slug === slug) {
     return {
       slug,
       url: `${MARKET_BASE_URL}/${slug}`,
@@ -46,8 +60,6 @@ async function findCurrentMarket(symbol, now = Date.now()) {
 
 async function findNextMarket(symbol, now = Date.now()) {
   const start = nextFiveMinuteTimestamp(now);
-  // Check a small forward range because the current next market can be missing
-  // briefly while Polymarket creates the next interval.
   for (let i = 0; i < 6; i += 1) {
     const epoch = Math.floor((start + i * WINDOW_MS) / 1000);
     const market = await findMarketByEpoch(symbol, epoch);
