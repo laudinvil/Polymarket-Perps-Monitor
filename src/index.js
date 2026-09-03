@@ -24,7 +24,7 @@ function formatUsd(value) {
 
 async function tick() {
   const now = Date.now();
-  const events = await fetchFeed();
+  const events = await fetchFeed(symbols);
 
   for (const event of events) {
     recentEvents.set(eventKey(event), event);
@@ -58,7 +58,7 @@ async function tick() {
     } : null,
   }));
 
-  if (!winner || winner.events <= 0) return;
+  if (!winner || winner.notionalUsd <= 0) return;
 
   try {
     const market = await findNextMarket(winner.symbol, now);
