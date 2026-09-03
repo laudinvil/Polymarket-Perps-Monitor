@@ -1,46 +1,38 @@
 # Cloudflare Worker deployment
 
-This Worker is the long-running replacement for the 5-minute GitHub Actions monitor.
+This directory is deploy-ready. No Cloudflare resource IDs, namespace IDs, tokens, chat IDs, or other account-specific values need to be edited into repository files.
 
-## What it does
+## Architecture
 
-- Runs every minute with a Cloudflare Cron Trigger.
-- Reads MarginPad liquidation data for BTC, ETH, SOL, XRP, DOGE, BNB and HYPE.
-- Processes the just-closed 5-minute UTC bucket.
-- Sends at most one alert per bucket.
-- Stores the last processed bucket in Workers KV.
-- Retries a failed Telegram send automatically on the next scheduled invocation because the bucket is saved only after Telegram confirms success.
-- Exposes `/health` and a protected-by-intent `/run` POST endpoint for diagnostics.
+- Cloudflare Cron Trigger invokes the Worker every minute.
+- A SQLite-backed Durable Object named `MonitorState` serializes executions and persists processed 5-minute buckets.
+- MarginPad liquidation data is fetched for BTC, ETH, SOL, XRP, DOGE, BNB and HYPE.
+- The just-closed 5-minute UTC bucket is processed.
+- Telegram is marked processed only after Telegram confirms delivery.
+- Failed sends are retried by a later invocation.
+- `/health` exposes the last persisted result.
+- `POST /run` executes the same production processing path for diagnostics.
 
-## Deploy
+## Files
 
-From the `cloudflare` directory:
+- `worker.js` — production Worker and Durable Object.
+- `wrangler.jsonc` — complete Worker, cron, Durable Object binding, and SQLite migration configuration.
+- `package.json` — deterministic Wrangler commands.
 
-```bash
-npx wrangler deploy
-```
+There are no `REPLACE_WITH_*` placeholders and no resource IDs to paste into source control.
 
-Wrangler can automatically provision the KV resource when the binding has no ID. The resulting KV ID is managed by Wrangler/Cloudflare; do not commit credentials to Git.
+## Deployment
 
-Set encrypted secrets:
-
-```bash
-npx wrangler secret put TELEGRAM_BOT_TOKEN
-npx wrangler secret put TELEGRAM_CHAT_ID
-```
-
-Then deploy again if needed:
+For Cloudflare Workers Builds, connect this repository and use `cloudflare` as the root directory. The deploy command is:
 
 ```bash
-npx wrangler deploy
+npm run deploy
 ```
 
-Cloudflare Cron Triggers use UTC. The configured `* * * * *` schedule runs once per minute.
+The project configuration is already in `wrangler.jsonc`, so deployment does not require editing files in Cloudflare or GitHub.
 
-## GitHub Actions deployment (optional)
-
-A GitHub Actions deploy workflow can run Wrangler with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. The API token should be scoped to the minimum Workers/KV permissions required for this Worker.
+The only account-scoped runtime values are the encrypted Worker secrets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. They must exist in the Cloudflare Worker environment, but they are never stored in repository files.
 
 ## Security
 
-Do not put Telegram bot tokens, chat IDs, Cloudflare API tokens, or account credentials in source files. Cloudflare Worker secrets are encrypted bindings.
+Do not commit Telegram bot tokens, chat IDs, Cloudflare API tokens, account credentials, or generated secret files. Runtime secrets belong in Cloudflare encrypted bindings.
