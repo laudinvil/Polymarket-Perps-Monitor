@@ -94,5 +94,17 @@
   },
   "positions": {},
   "markets5m": {},
-  "coins": {}
+  "coins": {},
+  "5:1788419700000": {
+    "checkedAt": "2026-09-03T07:20:18.671Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  },
+  "5:1788420000000": {
+    "checkedAt": "2026-09-03T07:25:01.303Z",
+    "sent": false,
+    "coin": null,
+    "users": 0
+  }
 }
