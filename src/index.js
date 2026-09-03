@@ -71,11 +71,16 @@ async function saveState() {
   }
 }
 
+function formatUtcPlus3(ms) {
+  const d = new Date(ms + 3 * 60 * 60 * 1000);
+  return d.toISOString().slice(11, 16);
+}
+
 async function checkOnce() {
   const now = Date.now();
   const currentBucket = bucketStart(now);
   const closedBucket = currentBucket - WINDOW_MS;
-  const bucketKey = String(closedBucket);
+  const bucketKey = `5m:${closedBucket}`;
   if (processedBuckets.has(bucketKey)) return;
 
   const results = await Promise.all(symbols.map(async symbol => {
@@ -108,41 +113,57 @@ async function checkOnce() {
 
   processedBuckets.add(bucketKey);
 
-  // Leader is selected by ONE direction only: compare every Long count and
-  // every Short count across all monitored coins. Total Long+Short is not used.
-  const candidates = [...rows.entries()].flatMap(([symbol, row]) => [
-    { symbol, side: 'long', count: row.longEvents, total: row.events },
-    { symbol, side: 'short', count: row.shortEvents, total: row.events },
-  ]).filter(candidate => candidate.count > 0);
+  const longCandidates = [...rows.entries()]
+    .map(([symbol, row]) => ({ symbol, count: row.longEvents, total: row.events }))
+    .filter(candidate => candidate.count > 0)
+    .sort((a, b) => b.count - a.count || b.total - a.total);
 
-  const winner = candidates.sort((a, b) => b.count - a.count || b.total - a.total)[0];
+  const shortCandidates = [...rows.entries()]
+    .map(([symbol, row]) => ({ symbol, count: row.shortEvents, total: row.events }))
+    .filter(candidate => candidate.count > 0)
+    .sort((a, b) => b.count - a.count || b.total - a.total);
+
+  const bestLong = longCandidates[0] || null;
+  const bestShort = shortCandidates[0] || null;
+
+  let winner = null;
+  if (bestLong && (!bestShort || bestLong.count > bestShort.count)) {
+    winner = { ...bestLong, side: 'long' };
+  } else if (bestShort && (!bestLong || bestShort.count > bestLong.count)) {
+    winner = { ...bestShort, side: 'short' };
+  }
 
   if (!winner) {
+    console.log(JSON.stringify({
+      type: 'liquidation_5m_tie_or_empty',
+      closedBucket: new Date(closedBucket).toISOString(),
+      bestLong: bestLong?.count || 0,
+      bestShort: bestShort?.count || 0,
+      alertSent: false,
+    }));
     await saveState();
     return;
   }
 
-  const alertKey = `15m:${bucketKey}`;
+  const alertKey = `5m:${closedBucket}`;
   if (sentAlerts.has(alertKey)) {
     await saveState();
     return;
   }
 
-  // Alert at the beginning of the new 15-minute period, so this is the
-  // current market link while the numbers describe the just-closed period.
   const currentMarket = await findCurrentMarket(winner.symbol, now);
   const winnerRow = rows.get(winner.symbol);
-  const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
+  const bucketLabel = formatUtcPlus3(closedBucket);
   const directionEmoji = winner.side === 'long' ? '🔴' : '🟢';
 
-  let message = [
+  const message = [
     `${directionEmoji} LIQUIDATION LEADER`,
-    `${normalizeSymbol(winner.symbol)} · 15M · ${bucketLabel} UTC`, '',
+    `${normalizeSymbol(winner.symbol)} · 5M · ${bucketLabel} UTC+3`, '',
     `Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidations`,
     `Long: ${winnerRow.longEvents} · Short: ${winnerRow.shortEvents}`,
     `Total: ${winnerRow.events}`,
     '',
-    `➡️ Current Polymarket 15M`,
+    '➡️ Current Polymarket 5M',
     currentMarket?.url || 'Market not found yet',
   ].join('\n');
 
@@ -150,7 +171,7 @@ async function checkOnce() {
   sentAlerts.add(alertKey);
 
   console.log(JSON.stringify({
-    type: 'liquidation_15m_direction_winner',
+    type: 'liquidation_5m_direction_winner',
     closedBucket: new Date(closedBucket).toISOString(),
     symbol: normalizeSymbol(winner.symbol),
     leaderSide: winner.side,
@@ -167,7 +188,7 @@ async function checkOnce() {
 
 async function main() {
   await loadState();
-  console.log(`15M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no threshold; alert at start of next period`);
   while (true) {
     try { await checkOnce(); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
