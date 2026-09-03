@@ -1,5 +1,5 @@
 const https = require('https');
-const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, DEFAULT_SYMBOLS, LIQUIDATION_THRESHOLD_USD } = require('./liquidation-monitor');
+const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, DEFAULT_SYMBOLS } = require('./liquidation-monitor');
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
@@ -63,10 +63,16 @@ async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
   const content = Buffer.from(JSON.stringify({
     processedBuckets: [...processedBuckets].slice(-100),
-    alerts: [...sentAlerts].slice(-100),
+    alerts: [...sentAlerts].slice(-200),
   }, null, 2)).toString('base64');
-  const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
+
+  const body = {
+    message: 'Persist monitor state',
+    content,
+    branch: process.env.GITHUB_REF_NAME || 'main',
+  };
   if (stateSha) body.sha = stateSha;
+
   try {
     const result = await githubRequest('PUT', body);
     stateSha = result?.content?.sha || stateSha;
@@ -80,74 +86,76 @@ async function checkOnce() {
   const currentBucket = bucketStart(now);
   const closedBucket = currentBucket - 5 * 60 * 1000;
   const bucketKey = String(closedBucket);
+
   if (processedBuckets.has(bucketKey)) return;
 
-  const events = await fetchFeed(symbols, fetch, now);
+  const results = await Promise.all(symbols.map(async symbol => {
+    try {
+      return [symbol, await fetchSymbolFeed(symbol, fetch)];
+    } catch (error) {
+      console.warn(`MarginPad live ${symbol}: ${error.message}`);
+      return [symbol, []];
+    }
+  }));
+
   const allowed = new Set(symbols.map(normalizeSymbol));
-  const unique = new Map();
+  const rows = new Map();
+  const seen = new Set();
 
-  for (const event of events) {
-    const ts = normalizeTs(event.ts);
-    const symbol = normalizeSymbol(event.symbol);
-    const side = String(event.side || '').toLowerCase();
-    if (!ts || bucketStart(ts) !== closedBucket || !allowed.has(symbol)) continue;
-    if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-    unique.set(eventKey(event), event);
-  }
+  for (const [, events] of results) {
+    for (const event of events) {
+      const ts = normalizeTs(event.ts);
+      const symbol = normalizeSymbol(event.symbol);
+      const side = String(event.side || '').toLowerCase();
+      if (!ts || bucketStart(ts) !== closedBucket || !allowed.has(symbol)) continue;
+      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
 
-  const totals = new Map(symbols.map(symbol => [normalizeSymbol(symbol), {
-    symbol: normalizeSymbol(symbol),
-    events: 0,
-    longEvents: 0,
-    shortEvents: 0,
-    totalVolume: 0,
-    longVolume: 0,
-    shortVolume: 0,
-  }]));
+      const key = eventKey(event);
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-  for (const event of unique.values()) {
-    const symbol = normalizeSymbol(event.symbol);
-    const row = totals.get(symbol);
-    if (!row) continue;
-    const notional = Number(event.notional) || 0;
-    const side = String(event.side || '').toLowerCase();
-    row.events += 1;
-    row.totalVolume += notional;
-    if (side.includes('long') || side === 'buy') {
-      row.longEvents += 1;
-      row.longVolume += notional;
-    } else if (side.includes('short') || side === 'sell') {
-      row.shortEvents += 1;
-      row.shortVolume += notional;
+      if (!rows.has(symbol)) {
+        rows.set(symbol, {
+          events: 0,
+          longEvents: 0,
+          shortEvents: 0,
+          totalVolume: 0,
+          longVolume: 0,
+          shortVolume: 0,
+        });
+      }
+
+      const row = rows.get(symbol);
+      const notional = Number(event.notional) || 0;
+      row.events += 1;
+      row.totalVolume += notional;
+
+      if (side.includes('long') || side === 'buy') {
+        row.longEvents += 1;
+        row.longVolume += notional;
+      } else {
+        row.shortEvents += 1;
+        row.shortVolume += notional;
+      }
     }
   }
 
   processedBuckets.add(bucketKey);
-  const qualifying = [...totals.values()]
-    .filter(row => row.totalVolume >= LIQUIDATION_THRESHOLD_USD)
-    .sort((a, b) => b.totalVolume - a.totalVolume);
 
-  if (qualifying.length === 0) {
-    await saveState();
-    console.log(JSON.stringify({
-      type: 'liquidation_volume_5m',
-      bucketStart: new Date(closedBucket).toISOString(),
-      thresholdUsd: LIQUIDATION_THRESHOLD_USD,
-      totals: Object.fromEntries([...totals.values()].map(row => [row.symbol, row.totalVolume])),
-      alertSent: false,
-    }));
-    return;
-  }
+  for (const symbol of symbols) {
+    const row = rows.get(normalizeSymbol(symbol));
+    if (!row || row.events === 0) continue;
 
-  for (const row of qualifying) {
-    const alertKey = `${bucketKey}:${row.symbol}`;
+    const alertKey = `${bucketKey}:${normalizeSymbol(symbol)}`;
     if (sentAlerts.has(alertKey)) continue;
 
-    const currentMarket = await findCurrentMarket(row.symbol, now);
+    const currentMarket = await findCurrentMarket(symbol, now);
     const bucketLabel = new Date(closedBucket).toISOString().slice(11, 16);
+    const directionEmoji = row.longVolume > row.shortVolume ? '🔴' : row.shortVolume > row.longVolume ? '🟢' : '⚪';
+
     let message = [
-      '🔥 LIQUIDATION SPIKE',
-      `${row.symbol} · 5M · ${bucketLabel} UTC`, '',
+      `${directionEmoji} LIQUIDATION SPIKE`,
+      `${normalizeSymbol(symbol)} · 5M · ${bucketLabel} UTC`, '',
       `Liquidations: ${row.events}`,
       `Long: ${row.longEvents} · Short: ${row.shortEvents}`,
       `Volume: ${formatUsd(row.totalVolume)}`,
@@ -163,10 +171,16 @@ async function checkOnce() {
     sentAlerts.add(alertKey);
 
     console.log(JSON.stringify({
-      type: 'liquidation_volume_5m',
+      type: 'liquidation_5m',
       bucketStart: new Date(closedBucket).toISOString(),
-      winner: row,
-      thresholdUsd: LIQUIDATION_THRESHOLD_USD,
+      symbol: normalizeSymbol(symbol),
+      liquidations: row.events,
+      longCount: row.longEvents,
+      shortCount: row.shortEvents,
+      notionalUsd: row.totalVolume,
+      longNotionalUsd: row.longVolume,
+      shortNotionalUsd: row.shortVolume,
+      direction: row.longVolume > row.shortVolume ? 'long' : row.shortVolume > row.longVolume ? 'short' : 'equal',
       alertSent: true,
       market: currentMarket?.url || null,
     }));
@@ -177,7 +191,7 @@ async function checkOnce() {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation volume monitor started; symbols=${symbols.join(',')}; threshold=$${LIQUIDATION_THRESHOLD_USD.toLocaleString('en-US')}; polling every ${POLL_MS}ms`);
+  console.log(`5M liquidation monitor started; symbols=${symbols.join(',')}; no volume threshold; polling every ${POLL_MS}ms`);
   while (true) {
     try { await checkOnce(); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
