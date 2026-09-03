@@ -4,7 +4,7 @@ const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 const DEFAULT_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
-const WINDOW_MS = 15 * 60 * 1000;
+const WINDOW_MS = 5 * 60 * 1000;
 
 let fallbackCache = { fetchedAt: 0, eventsBySymbol: new Map() };
 
