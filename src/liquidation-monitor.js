@@ -1,8 +1,12 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
+const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 
 const DEFAULT_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 4000;
+const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
+
+let fallbackCache = { fetchedAt: 0, events: [] };
 
 function bucketStart(ts) {
   const ms = Number(ts);
@@ -21,6 +25,63 @@ function normalizeSymbol(symbol) {
 
 function eventKey(event) {
   return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|');
+}
+
+function extractEvents(json) {
+  if (json && Array.isArray(json.events)) return json.events;
+  if (json && json.data && Array.isArray(json.data.events)) return json.data.events;
+  if (json && Array.isArray(json.data)) return json.data;
+  return null;
+}
+
+async function fetchJson(url, fetchImpl = fetch) {
+  const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error(`MarginPad feed HTTP ${response.status}`);
+  return response.json();
+}
+
+async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
+  const url = `${LIVE_URL}?symbol=${encodeURIComponent(symbol)}&limit=400`;
+  const json = await fetchJson(url, fetchImpl);
+  const events = extractEvents(json);
+  if (!events) throw new Error(`MarginPad live feed: invalid response shape for ${symbol}`);
+  return events;
+}
+
+async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
+  const json = await fetchJson(FEED_URL, fetchImpl);
+  const feedEvents = extractEvents(json);
+  if (!feedEvents) throw new Error('MarginPad feed: invalid response shape');
+
+  const allowed = new Set(symbols.map(normalizeSymbol));
+  const relevant = feedEvents.filter((event) => allowed.has(normalizeSymbol(event.symbol)));
+
+  // /feed is the cheap market-wide source and should be preferred. If it returns
+  // a payload with none of our monitored symbols (as happened with the malformed
+  // "T" payload), use the per-symbol live endpoint instead of silently producing
+  // a false NONE winner.
+  if (relevant.length > 0 || feedEvents.length === 0) return feedEvents;
+
+  const now = Date.now();
+  if (now - fallbackCache.fetchedAt < FALLBACK_REFRESH_MS) return fallbackCache.events;
+
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      try {
+        return await fetchSymbolFeed(symbol, fetchImpl);
+      } catch (error) {
+        console.warn(`MarginPad live fallback ${symbol}: ${error.message}`);
+        return [];
+      }
+    }),
+  );
+
+  fallbackCache = {
+    fetchedAt: now,
+    events: results.flat(),
+  };
+
+  return fallbackCache.events;
 }
 
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
@@ -68,30 +129,26 @@ function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
   return [...rows.values()].sort((a, b) => b.events - a.events || b.notionalUsd - a.notionalUsd);
 }
 
-async function fetchFeed(fetchImpl = fetch) {
-  const response = await fetchImpl(FEED_URL, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`MarginPad feed HTTP ${response.status}`);
-  const json = await response.json();
-  if (!json || !Array.isArray(json.events)) throw new Error('MarginPad feed: invalid response shape');
-  return json.events;
-}
-
 function selectWinner(rows, bucket) {
   return rows
     .filter((row) => row.bucket === bucket)
-    .sort((a, b) => b.events - a.events || b.notionalUsd - a.notionalUsd)[0] || null;
+    .sort((a, b) => b.notionalUsd - a.notionalUsd || b.events - a.events)[0] || null;
 }
 
 module.exports = {
   FEED_URL,
+  LIVE_URL,
   DEFAULT_SYMBOLS,
   POLL_MS,
+  FALLBACK_REFRESH_MS,
   WINDOW_MS,
   bucketStart,
   normalizeTs,
   normalizeSymbol,
   eventKey,
-  aggregateEvents,
+  extractEvents,
   fetchFeed,
+  fetchSymbolFeed,
+  aggregateEvents,
   selectWinner,
 };
