@@ -19,7 +19,7 @@ on:
 
 concurrency:
   group: polymarket-liquidation-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
