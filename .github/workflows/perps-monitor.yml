@@ -3,6 +3,10 @@ name: Polymarket Liquidation Monitor
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'src/imminent-alerted-positions.json'
+      - 'src/spike-alerted-windows.json'
+      - 'src/binance-spike-alerted-windows.json'
   workflow_dispatch:
     inputs:
       diagnostic:
@@ -15,7 +19,7 @@ on:
 
 concurrency:
   group: polymarket-liquidation-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -23,7 +27,7 @@ permissions:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 350
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
