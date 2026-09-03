@@ -6,6 +6,7 @@ const TELEGRAM_API = 'https://api.telegram.org';
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS = 5 * 60 * 1000;
 const SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const GRACE_BUCKETS = 2;
 
 function bucketStart(ts) { return Math.floor(Number(ts) / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) { const n = Number(value); if (!Number.isFinite(n)) return null; return n < 1e12 ? n * 1000 : n; }
@@ -38,8 +39,10 @@ function selectWinner(events, targetBucket) {
     const ts = normalizeTs(event.ts); const symbol = normalizeSymbol(event.symbol);
     if (!ts || !allowed.has(symbol) || bucketStart(ts) !== targetBucket) continue;
     if (!rows.has(symbol)) rows.set(symbol, { symbol, events: 0, longEvents: 0, shortEvents: 0, notionalUsd: 0, longNotionalUsd: 0, shortNotionalUsd: 0 });
-    const row = rows.get(symbol); const notional = Number(event.notional) || 0; const side = String(event.side || '').toLowerCase();
+    const row = rows.get(symbol);
+    const notional = Number(event.notional) || 0;
     row.events += 1; row.notionalUsd += notional;
+    const side = String(event.side || '').toLowerCase();
     if (side.includes('long') || side === 'buy') { row.longEvents += 1; row.longNotionalUsd += notional; }
     else if (side.includes('short') || side === 'sell') { row.shortEvents += 1; row.shortNotionalUsd += notional; }
   }
@@ -80,26 +83,33 @@ export class MonitorState {
     if (keep.length !== index.length) await this.ctx.storage.put('sent_index', keep);
   }
   async process(now) {
-    const target = bucketStart(now) - WINDOW_MS; const bucketId = String(target); const sentKey = `sent:${bucketId}`;
-    const existing = await this.ctx.storage.get(sentKey);
-    if (existing) return { ok: true, skipped: true, reason: 'already_processed', bucket: new Date(target).toISOString(), existing };
-    const events = await fetchEvents(); const winner = selectWinner(events, target);
-    if (!winner || winner.notionalUsd <= 0) {
-      await this.ctx.storage.put(sentKey, { result: 'no_liquidations', at: Date.now() });
-      const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
-      await this.ctx.storage.put('last_result', { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString(), at: Date.now() }); await this.cleanup(now);
-      return { ok: true, skipped: true, reason: 'no_liquidations', bucket: new Date(target).toISOString() };
+    const current = bucketStart(now);
+    const targets = [current - WINDOW_MS, current - 2 * WINDOW_MS, current - 3 * WINDOW_MS].slice(0, GRACE_BUCKETS + 1);
+    const events = await fetchEvents();
+    const results = [];
+    for (const target of targets) {
+      const bucketId = String(target); const sentKey = `sent:${bucketId}`;
+      if (await this.ctx.storage.get(sentKey)) continue;
+      const winner = selectWinner(events, target);
+      if (!winner || winner.notionalUsd <= 0) {
+        results.push({ bucket: new Date(target).toISOString(), reason: 'no_liquidations' });
+        continue;
+      }
+      const [currentMarket, nextMarket] = await Promise.all([findCurrentMarket(winner.symbol, now), findNextMarket(winner.symbol, now)]);
+      const bucketLabel = new Date(target).toISOString().slice(11,16);
+      let text = ['🔥 LIQUIDATION SPIKE', `${winner.symbol} · 5M · ${bucketLabel} UTC`, '', `Liquidations: ${winner.events}`, `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`, `Volume: ${formatUsd(winner.notionalUsd)}`, `Long volume: ${formatUsd(winner.longNotionalUsd)}`, `Short volume: ${formatUsd(winner.shortNotionalUsd)}`].join('\n');
+      text += currentMarket ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}` : '\n\n🔴 Current Polymarket 5M\nMarket not found';
+      text += nextMarket ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}` : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
+      const sent = await sendTelegram(this.env, text);
+      const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now() };
+      await this.ctx.storage.put(sentKey, record);
+      const index = (await this.ctx.storage.get('sent_index')) || [];
+      if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
+      results.push({ bucket: new Date(target).toISOString(), sent: true, winner, telegramMessageId: sent?.message_id || null });
     }
-    const [currentMarket, nextMarket] = await Promise.all([findCurrentMarket(winner.symbol, now), findNextMarket(winner.symbol, now)]);
-    const bucketLabel = new Date(target).toISOString().slice(11,16);
-    let text = ['🔥 LIQUIDATION SPIKE', `${winner.symbol} · 5M · ${bucketLabel} UTC`, '', `Liquidations: ${winner.events}`, `Long: ${winner.longEvents} · Short: ${winner.shortEvents}`, `Volume: ${formatUsd(winner.notionalUsd)}`, `Long volume: ${formatUsd(winner.longNotionalUsd)}`, `Short volume: ${formatUsd(winner.shortNotionalUsd)}`].join('\n');
-    text += currentMarket ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}` : '\n\n🔴 Current Polymarket 5M\nMarket not found';
-    text += nextMarket ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}` : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
-    const sent = await sendTelegram(this.env, text);
-    const record = { result: 'sent', messageId: sent?.message_id || null, at: Date.now() }; await this.ctx.storage.put(sentKey, record);
-    const index = (await this.ctx.storage.get('sent_index')) || []; if (!index.includes(bucketId)) await this.ctx.storage.put('sent_index', [...index, bucketId]);
-    const result = { ok: true, sent: true, bucket: new Date(target).toISOString(), winner, currentMarket, nextMarket, telegramMessageId: sent?.message_id || null };
-    await this.ctx.storage.put('last_result', { ...result, at: Date.now() }); await this.cleanup(now); return result;
+    await this.ctx.storage.put('last_result', { ok: true, at: Date.now(), checkedBuckets: targets.map(t => new Date(t).toISOString()), results });
+    await this.cleanup(now);
+    return { ok: true, results };
   }
   async fetch(request) {
     const url = new URL(request.url);
