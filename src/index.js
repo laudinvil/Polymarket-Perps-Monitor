@@ -5,6 +5,7 @@ const {
   aggregateEvents,
   selectWinner,
   bucketStart,
+  eventKey,
 } = require('./liquidation-monitor');
 
 const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
@@ -13,36 +14,34 @@ const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
   .filter(Boolean);
 
 let seenBucket = null;
-let recentEvents = [];
+const recentEvents = new Map();
 
 async function tick() {
   const events = await fetchFeed();
-  recentEvents = recentEvents.concat(events);
 
-  // Keep a rolling 15 minutes locally; the feed is polled every 4 seconds.
+  for (const event of events) {
+    const key = eventKey(event);
+    recentEvents.set(key, event);
+  }
+
   const cutoff = Date.now() - 15 * 60 * 1000;
-  recentEvents = recentEvents.filter((e) => {
-    const ts = Number(e.ts) < 1e12 ? Number(e.ts) * 1000 : Number(e.ts);
-    return Number.isFinite(ts) && ts >= cutoff;
-  });
+  for (const [key, event] of recentEvents) {
+    const ts = Number(event.ts) < 1e12 ? Number(event.ts) * 1000 : Number(event.ts);
+    if (!Number.isFinite(ts) || ts < cutoff) recentEvents.delete(key);
+  }
 
   const currentBucket = bucketStart(Date.now());
   const closedBucket = currentBucket - 5 * 60 * 1000;
   if (seenBucket === closedBucket) return;
 
-  const rows = aggregateEvents(recentEvents, symbols, Date.now());
+  const rows = aggregateEvents([...recentEvents.values()], symbols, Date.now());
   const winner = selectWinner(rows, closedBucket);
   seenBucket = closedBucket;
 
-  if (!winner) {
-    console.log(JSON.stringify({ type: 'liquidation_5m', bucket: closedBucket, winner: null }));
-    return;
-  }
-
   console.log(JSON.stringify({
     type: 'liquidation_5m',
-    bucket: closedBucket,
-    winner: {
+    bucketStart: new Date(closedBucket).toISOString(),
+    winner: winner ? {
       symbol: winner.symbol,
       events: winner.events,
       longEvents: winner.longEvents,
@@ -50,14 +49,14 @@ async function tick() {
       notionalUsd: winner.notionalUsd,
       longNotionalUsd: winner.longNotionalUsd,
       shortNotionalUsd: winner.shortNotionalUsd,
-    },
+    } : null,
   }));
 }
 
 async function main() {
   console.log(`MarginPad liquidation monitor started: ${symbols.join(', ')}`);
   await tick();
-  setInterval(() => tick().catch((error) => console.error(error.message)), POLL_MS);
+  setInterval(() => tick().catch((error) => console.error(`tick error: ${error.message}`)), POLL_MS);
 }
 
 main().catch((error) => {
