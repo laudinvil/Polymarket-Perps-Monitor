@@ -5,7 +5,7 @@ const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = DEFAULT_SYMBOLS;
-const MIN_LIQUIDATIONS = 20;
+const MIN_LIQUIDATIONS = 21;
 const MAX_LIQUIDATIONS = 55;
 const MAX_OPPOSITE_LIQUIDATIONS = 2;
 const WINDOW_MS_5M = WINDOW_MS;
