@@ -4,7 +4,7 @@ const { findCurrentMarket15m } = require('./polymarket');
 
 const SYMBOL = 'BTC';
 const WINDOW_MS_15M = 15 * 60 * 1000;
-const MAX_LIQUIDATIONS_15M = 100;
+const MAX_LIQUIDATIONS_15M = 60;
 const POLL_MS_15M = 15000;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
