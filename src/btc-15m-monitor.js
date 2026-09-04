@@ -39,6 +39,8 @@ async function check15mOnce() {
   }
 
   processedBuckets15m.add(bucketKey);
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc_bucket', closedBucket: new Date(closedBucket).toISOString(), bucketLabelUtcPlus3: formatUtcPlus3(closedBucket), longCount, shortCount, total: longCount + shortCount, minThreshold: MIN_LIQUIDATIONS_15M }));
+
   const best = Math.max(longCount, shortCount);
   if (best < MIN_LIQUIDATIONS_15M || longCount === shortCount) return;
 
