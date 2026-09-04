@@ -6,7 +6,7 @@ const { sendTelegramMessage } = require('./telegram');
 
 const symbols = DEFAULT_SYMBOLS;
 const MIN_LIQUIDATIONS = 21;
-const MAX_LIQUIDATIONS = 55;
+const MAX_LIQUIDATIONS = 59;
 const MAX_OPPOSITE_LIQUIDATIONS = 2;
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
