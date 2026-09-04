@@ -4,7 +4,7 @@ const { findCurrentMarket15m } = require('./polymarket');
 
 const SYMBOL = 'BTC';
 const WINDOW_MS_15M = 15 * 60 * 1000;
-const MAX_LIQUIDATIONS_15M = 60;
+const MIN_LIQUIDATIONS_15M = 70;
 const POLL_MS_15M = 15000;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
@@ -40,7 +40,7 @@ async function check15mOnce() {
 
   processedBuckets15m.add(bucketKey);
   const best = Math.max(longCount, shortCount);
-  if (best > MAX_LIQUIDATIONS_15M || longCount === shortCount) return;
+  if (best < MIN_LIQUIDATIONS_15M || longCount === shortCount) return;
 
   const side = longCount > shortCount ? 'long' : 'short';
   const count = side === 'long' ? longCount : shortCount;
@@ -62,11 +62,11 @@ async function check15mOnce() {
 
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, max: MAX_LIQUIDATIONS_15M, alertSent: true, currentMarket: market?.url || null }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, min: MIN_LIQUIDATIONS_15M, alertSent: true, currentMarket: market?.url || null }));
 }
 
 async function main15m() {
-  console.log(`BTC 15M liquidation monitor started; no minimum; max=${MAX_LIQUIDATIONS_15M}`);
+  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; no maximum`);
   while (true) {
     try { await check15mOnce(); } catch (error) { console.error(`15M BTC monitor failed: ${error.stack || error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS_15M));
