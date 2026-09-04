@@ -6,7 +6,6 @@ const SYMBOL = 'BTC';
 const WINDOW_MS_15M = 15 * 60 * 1000;
 const MIN_LIQUIDATIONS_15M = 75;
 const POLL_MS_15M = 15000;
-const MAX_ALERT_DELAY_MS = 2 * 60 * 1000;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
 let lastAlertBucket15m = null;
@@ -21,12 +20,10 @@ async function check15mOnce() {
   const bucketKey = `15m:${closedBucket}`;
   if (processedBuckets15m.has(bucketKey)) return;
 
-  // Never send a stale alert deep into the next 15M market.
-  // The closed 15M bucket should be evaluated right after the new bucket starts.
-  if (now - currentBucket > MAX_ALERT_DELAY_MS) {
-    processedBuckets15m.add(bucketKey);
-    console.log(JSON.stringify({ type: 'liquidation_15m_btc_stale_skip', closedBucket: new Date(closedBucket).toISOString(), currentBucket: new Date(currentBucket).toISOString(), delayMs: now-currentBucket, maxAlertDelayMs: MAX_ALERT_DELAY_MS }));
-    return;
+  // A bucket is valid for alerting only on the exact boundary when the next market starts.
+  // If this process wakes up later, do not send a stale alert into an already-running market.
+  if (now !== currentBucket) {
+    if (now - currentBucket > 0) return;
   }
 
   let events = [];
@@ -61,8 +58,7 @@ async function check15mOnce() {
   const alertKey = bucketKey;
   if (sentAlerts15m.has(alertKey)) return;
 
-  // Pin the Polymarket link to the bucket that has just started,
-  // not to whatever happens to be current later if the process is delayed.
+  // The market link is explicitly pinned to the new 15M bucket.
   const market = await findCurrentMarket15m(SYMBOL, currentBucket);
   const emoji = side === 'long' ? '🔴' : '🟢';
   const message = [
@@ -83,7 +79,7 @@ async function check15mOnce() {
 }
 
 async function main15m() {
-  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; stale alerts blocked after ${MAX_ALERT_DELAY_MS/1000}s; consecutive alerts blocked`);
+  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; exact boundary only; consecutive alerts blocked`);
   while (true) {
     try { await check15mOnce(); } catch (error) { console.error(`15M BTC monitor failed: ${error.stack || error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS_15M));
