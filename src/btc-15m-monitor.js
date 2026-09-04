@@ -5,7 +5,6 @@ const { findCurrentMarket15m } = require('./polymarket');
 const SYMBOL = 'BTC';
 const WINDOW_MS_15M = 15 * 60 * 1000;
 const MIN_LIQUIDATIONS_15M = 75;
-const POLL_MS_15M = 15000;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
 let lastAlertBucket15m = null;
@@ -13,18 +12,11 @@ let lastAlertBucket15m = null;
 function bucketStart15m(ts) { return Math.floor(Number(ts) / WINDOW_MS_15M) * WINDOW_MS_15M; }
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 
-async function check15mOnce() {
-  const now = Date.now();
-  const currentBucket = bucketStart15m(now);
+async function check15mOnce(boundary) {
+  const currentBucket = boundary;
   const closedBucket = currentBucket - WINDOW_MS_15M;
   const bucketKey = `15m:${closedBucket}`;
   if (processedBuckets15m.has(bucketKey)) return;
-
-  // A bucket is valid for alerting only on the exact boundary when the next market starts.
-  // If this process wakes up later, do not send a stale alert into an already-running market.
-  if (now !== currentBucket) {
-    if (now - currentBucket > 0) return;
-  }
 
   let events = [];
   try { events = await fetchSymbolFeed(SYMBOL, fetch); }
@@ -50,7 +42,6 @@ async function check15mOnce() {
 
   const best = Math.max(longCount, shortCount);
   if (best < MIN_LIQUIDATIONS_15M || longCount === shortCount) return;
-
   if (lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M) return;
 
   const side = longCount > shortCount ? 'long' : 'short';
@@ -58,7 +49,6 @@ async function check15mOnce() {
   const alertKey = bucketKey;
   if (sentAlerts15m.has(alertKey)) return;
 
-  // The market link is explicitly pinned to the new 15M bucket.
   const market = await findCurrentMarket15m(SYMBOL, currentBucket);
   const emoji = side === 'long' ? '🔴' : '🟢';
   const message = [
@@ -78,11 +68,15 @@ async function check15mOnce() {
   console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, min: MIN_LIQUIDATIONS_15M, consecutiveAlertBlocked: false, alertSent: true, nextMarket: market?.url || null, delayMs: Date.now()-currentBucket }));
 }
 
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
 async function main15m() {
-  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; exact boundary only; consecutive alerts blocked`);
+  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; exact boundary scheduling; consecutive alerts blocked`);
   while (true) {
-    try { await check15mOnce(); } catch (error) { console.error(`15M BTC monitor failed: ${error.stack || error.message}`); }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS_15M));
+    const now = Date.now();
+    const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
+    await sleep(Math.max(0, nextBoundary - Date.now()));
+    try { await check15mOnce(nextBoundary); } catch (error) { console.error(`15M BTC monitor failed: ${error.stack || error.message}`); }
   }
 }
 
