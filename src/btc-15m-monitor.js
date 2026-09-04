@@ -8,6 +8,7 @@ const MIN_LIQUIDATIONS_15M = 75;
 const POLL_MS_15M = 15000;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
+let lastAlertBucket15m = null;
 
 function bucketStart15m(ts) { return Math.floor(Number(ts) / WINDOW_MS_15M) * WINDOW_MS_15M; }
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
@@ -39,10 +40,13 @@ async function check15mOnce() {
   }
 
   processedBuckets15m.add(bucketKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_btc_bucket', closedBucket: new Date(closedBucket).toISOString(), bucketLabelUtcPlus3: formatUtcPlus3(closedBucket), longCount, shortCount, total: longCount + shortCount, minThreshold: MIN_LIQUIDATIONS_15M }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc_bucket', closedBucket: new Date(closedBucket).toISOString(), bucketLabelUtcPlus3: formatUtcPlus3(closedBucket), longCount, shortCount, total: longCount + shortCount, minThreshold: MIN_LIQUIDATIONS_15M, consecutiveAlertBlocked: lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M }));
 
   const best = Math.max(longCount, shortCount);
   if (best < MIN_LIQUIDATIONS_15M || longCount === shortCount) return;
+
+  // Do not alert on two consecutive 15M periods. After an alert, the immediately following period is blocked.
+  if (lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M) return;
 
   const side = longCount > shortCount ? 'long' : 'short';
   const count = side === 'long' ? longCount : shortCount;
@@ -64,11 +68,12 @@ async function check15mOnce() {
 
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, min: MIN_LIQUIDATIONS_15M, alertSent: true, currentMarket: market?.url || null }));
+  lastAlertBucket15m = closedBucket;
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, min: MIN_LIQUIDATIONS_15M, consecutiveAlertBlocked: false, alertSent: true, currentMarket: market?.url || null }));
 }
 
 async function main15m() {
-  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; no maximum`);
+  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; no maximum; consecutive alerts blocked`);
   while (true) {
     try { await check15mOnce(); } catch (error) { console.error(`15M BTC monitor failed: ${error.stack || error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS_15M));
