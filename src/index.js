@@ -1,4 +1,5 @@
 const https = require('https');
+const { spawn } = require('child_process');
 const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, DEFAULT_SYMBOLS, WINDOW_MS } = require('./liquidation-monitor');
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
@@ -18,191 +19,34 @@ function githubRequest(method, body = null) {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return reject(new Error('GITHUB_TOKEN is not available'));
     const data = body ? JSON.stringify(body) : null;
-    const request = https.request(STATE_API_URL, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'marginpad-monitor',
-        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
-      },
-    }, response => {
-      let text = '';
-      response.on('data', chunk => { text += chunk; });
-      response.on('end', () => {
-        let json = null;
-        try { json = text ? JSON.parse(text) : null; } catch {}
-        if (response.statusCode >= 200 && response.statusCode < 300) return resolve(json);
-        reject(new Error(`GitHub state request failed: ${response.statusCode} ${text}`));
-      });
+    const request = https.request(STATE_API_URL, { method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'marginpad-monitor', ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) } }, response => {
+      let text = ''; response.on('data', chunk => { text += chunk; }); response.on('end', () => { let json = null; try { json = text ? JSON.parse(text) : null; } catch {} if (response.statusCode >= 200 && response.statusCode < 300) return resolve(json); reject(new Error(`GitHub state request failed: ${response.statusCode} ${text}`)); });
     });
-    request.on('error', reject);
-    if (data) request.write(data);
-    request.end();
+    request.on('error', reject); if (data) request.write(data); request.end();
   });
 }
+async function loadState() { try { const data=await githubRequest('GET'); if(!data||!data.content)return; stateSha=data.sha||null; const state=JSON.parse(Buffer.from(data.content,'base64').toString('utf8')); for(const key of state.processedBuckets||[])processedBuckets.add(key); for(const key of state.alerts||[])sentAlerts.add(key); } catch(error){ console.warn(`STATE LOAD FAILED: ${error.message}`); } }
+async function saveState() { if(!process.env.GITHUB_TOKEN)return; const content=Buffer.from(JSON.stringify({processedBuckets:[...processedBuckets].slice(-100),alerts:[...sentAlerts].slice(-200)},null,2)).toString('base64'); const body={message:'Persist monitor state',content,branch:process.env.GITHUB_REF_NAME||'main'}; if(stateSha)body.sha=stateSha; try{const result=await githubRequest('PUT',body);stateSha=result?.content?.sha||stateSha;}catch(error){console.warn(`STATE SAVE FAILED: ${error.message}`);} }
+function formatUtcPlus3(ms){return new Date(ms+3*60*60*1000).toISOString().slice(11,16);}
 
-async function loadState() {
-  try {
-    const data = await githubRequest('GET');
-    if (!data || !data.content) return;
-    stateSha = data.sha || null;
-    const decoded = Buffer.from(data.content, 'base64').toString('utf8');
-    const state = JSON.parse(decoded);
-    for (const key of state.processedBuckets || []) processedBuckets.add(key);
-    for (const key of state.alerts || []) sentAlerts.add(key);
-  } catch (error) {
-    console.warn(`STATE LOAD FAILED: ${error.message}`);
-  }
-}
-
-async function saveState() {
-  if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify({
-    processedBuckets: [...processedBuckets].slice(-100),
-    alerts: [...sentAlerts].slice(-200),
-  }, null, 2)).toString('base64');
-  const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
-  if (stateSha) body.sha = stateSha;
-  try {
-    const result = await githubRequest('PUT', body);
-    stateSha = result?.content?.sha || stateSha;
-  } catch (error) {
-    console.warn(`STATE SAVE FAILED: ${error.message}`);
-  }
-}
-
-function formatUtcPlus3(ms) {
-  const d = new Date(ms + 3 * 60 * 60 * 1000);
-  return d.toISOString().slice(11, 16);
-}
-
-async function checkOnce() {
-  const now = Date.now();
-  const currentBucket = bucketStart(now);
-  const closedBucket = currentBucket - WINDOW_MS;
-  const bucketKey = `5m:${closedBucket}`;
-  if (processedBuckets.has(bucketKey)) return;
-
-  const results = await Promise.all(symbols.map(async symbol => {
-    try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
-    catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
-  }));
-
-  const allowed = new Set(symbols.map(normalizeSymbol));
-  const rows = new Map();
-  const seen = new Set();
-
-  for (const [, events] of results) {
-    for (const event of events) {
-      const ts = normalizeTs(event.ts);
-      const symbol = normalizeSymbol(event.symbol);
-      const side = String(event.side || '').toLowerCase();
-      if (!ts || bucketStart(ts) !== closedBucket || !allowed.has(symbol)) continue;
-      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-      const key = eventKey(event);
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      if (!rows.has(symbol)) rows.set(symbol, { events: 0, longEvents: 0, shortEvents: 0 });
-      const row = rows.get(symbol);
-      row.events += 1;
-      if (side.includes('long') || side === 'buy') row.longEvents += 1;
-      else row.shortEvents += 1;
-    }
-  }
-
+async function checkOnce(){
+  const now=Date.now(), currentBucket=bucketStart(now), closedBucket=currentBucket-WINDOW_MS, bucketKey=`5m:${closedBucket}`;
+  if(processedBuckets.has(bucketKey))return;
+  const results=await Promise.all(symbols.map(async symbol=>{try{return [symbol,await fetchSymbolFeed(symbol,fetch)];}catch(error){console.warn(`MarginPad live ${symbol}: ${error.message}`);return [symbol,[]];}}));
+  const allowed=new Set(symbols.map(normalizeSymbol)), rows=new Map(), seen=new Set();
+  for(const [,events] of results)for(const event of events){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol),side=String(event.side||'').toLowerCase();if(!ts||bucketStart(ts)!==closedBucket||!allowed.has(symbol))continue;if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;const key=eventKey(event);if(seen.has(key))continue;seen.add(key);if(!rows.has(symbol))rows.set(symbol,{events:0,longEvents:0,shortEvents:0});const row=rows.get(symbol);row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}
   processedBuckets.add(bucketKey);
-
-  const longCandidates = [...rows.entries()]
-    .map(([symbol, row]) => ({ symbol, count: row.longEvents, total: row.events }))
-    .filter(candidate => candidate.count >= MIN_LIQUIDATIONS && candidate.count <= MAX_LIQUIDATIONS)
-    .sort((a, b) => b.count - a.count || b.total - a.total);
-
-  const shortCandidates = [...rows.entries()]
-    .map(([symbol, row]) => ({ symbol, count: row.shortEvents, total: row.events }))
-    .filter(candidate => candidate.count >= MIN_LIQUIDATIONS && candidate.count <= MAX_LIQUIDATIONS)
-    .sort((a, b) => b.count - a.count || b.total - a.total);
-
-  const bestLong = longCandidates[0] || null;
-  const bestShort = shortCandidates[0] || null;
-
-  let winner = null;
-  if (bestLong && (!bestShort || bestLong.count > bestShort.count)) {
-    winner = { ...bestLong, side: 'long' };
-  } else if (bestShort && (!bestLong || bestShort.count > bestLong.count)) {
-    winner = { ...bestShort, side: 'short' };
-  }
-
-  if (!winner) {
-    console.log(JSON.stringify({
-      type: 'liquidation_5m_below_threshold_or_above_max_or_tie',
-      closedBucket: new Date(closedBucket).toISOString(),
-      minThreshold: MIN_LIQUIDATIONS,
-      maxThreshold: MAX_LIQUIDATIONS,
-      bestLong: bestLong?.count || 0,
-      bestShort: bestShort?.count || 0,
-      alertSent: false,
-    }));
-    await saveState();
-    return;
-  }
-
-  const alertKey = `5m:${closedBucket}`;
-  if (sentAlerts.has(alertKey)) {
-    await saveState();
-    return;
-  }
-
-  const currentMarket = await findCurrentMarket(winner.symbol, now);
-  const winnerRow = rows.get(winner.symbol);
-  const bucketLabel = formatUtcPlus3(closedBucket);
-  const directionEmoji = winner.side === 'long' ? '🔴' : '🟢';
-
-  const message = [
-    `${directionEmoji} LIQUIDATION LEADER`,
-    `${normalizeSymbol(winner.symbol)} · 5M · ${bucketLabel} UTC+3`, '',
-    `Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidations`,
-    `Long: ${winnerRow.longEvents} · Short: ${winnerRow.shortEvents}`,
-    `Total: ${winnerRow.events}`,
-    '',
-    '➡️ Current Polymarket 5M',
-    currentMarket?.url || 'Market not found yet',
-  ].join('\n');
-
-  await sendTelegramMessage(message);
-  sentAlerts.add(alertKey);
-
-  console.log(JSON.stringify({
-    type: 'liquidation_5m_direction_winner',
-    closedBucket: new Date(closedBucket).toISOString(),
-    symbol: normalizeSymbol(winner.symbol),
-    leaderSide: winner.side,
-    leaderCount: winner.count,
-    liquidations: winnerRow.events,
-    longCount: winnerRow.longEvents,
-    shortCount: winnerRow.shortEvents,
-    minThreshold: MIN_LIQUIDATIONS,
-    maxThreshold: MAX_LIQUIDATIONS,
-    alertSent: true,
-    currentMarket: currentMarket?.url || null,
-  }));
-
-  await saveState();
+  const longCandidates=[...rows.entries()].map(([symbol,row])=>({symbol,count:row.longEvents,total:row.events})).filter(c=>c.count>=MIN_LIQUIDATIONS&&c.count<=MAX_LIQUIDATIONS).sort((a,b)=>b.count-a.count||b.total-a.total);
+  const shortCandidates=[...rows.entries()].map(([symbol,row])=>({symbol,count:row.shortEvents,total:row.events})).filter(c=>c.count>=MIN_LIQUIDATIONS&&c.count<=MAX_LIQUIDATIONS).sort((a,b)=>b.count-a.count||b.total-a.total);
+  const bestLong=longCandidates[0]||null,bestShort=shortCandidates[0]||null;let winner=null;
+  if(bestLong&&(!bestShort||bestLong.count>bestShort.count))winner={...bestLong,side:'long'};else if(bestShort&&(!bestLong||bestShort.count>bestLong.count))winner={...bestShort,side:'short'};
+  if(!winner){console.log(JSON.stringify({type:'liquidation_5m_no_alert',closedBucket:new Date(closedBucket).toISOString(),minThreshold:MIN_LIQUIDATIONS,maxThreshold:MAX_LIQUIDATIONS,bestLong:bestLong?.count||0,bestShort:bestShort?.count||0,alertSent:false}));await saveState();return;}
+  const alertKey=`5m:${closedBucket}`;if(sentAlerts.has(alertKey)){await saveState();return;}
+  const currentMarket=await findCurrentMarket(winner.symbol,now),winnerRow=rows.get(winner.symbol),bucketLabel=formatUtcPlus3(closedBucket),directionEmoji=winner.side==='long'?'🔴':'🟢';
+  const message=[`${directionEmoji} LIQUIDATION LEADER`,`${normalizeSymbol(winner.symbol)} · 5M · ${bucketLabel} UTC+3`,'',`Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidations`,`Long: ${winnerRow.longEvents} · Short: ${winnerRow.shortEvents}`,`Total: ${winnerRow.events}`,'','➡️ Current Polymarket 5M',currentMarket?.url||'Market not found yet'].join('\n');
+  await sendTelegramMessage(message);sentAlerts.add(alertKey);console.log(JSON.stringify({type:'liquidation_5m_direction_winner',closedBucket:new Date(closedBucket).toISOString(),symbol:normalizeSymbol(winner.symbol),leaderSide:winner.side,leaderCount:winner.count,liquidations:winnerRow.events,longCount:winnerRow.longEvents,shortCount:winnerRow.shortEvents,minThreshold:MIN_LIQUIDATIONS,maxThreshold:MAX_LIQUIDATIONS,alertSent:true,currentMarket:currentMarket?.url||null}));await saveState();
 }
 
-async function main() {
-  await loadState();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; allowed direction count=${MIN_LIQUIDATIONS}-${MAX_LIQUIDATIONS}; alert at start of next period`);
-  while (true) {
-    try { await checkOnce(); }
-    catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS));
-  }
-}
-
-main().catch(error => {
-  console.error(`MONITOR FAILED: ${error.stack || error.message}`);
-  process.exitCode = 1;
-});
+function start15m(){ const child=spawn(process.execPath,['src/btc-15m-monitor.js'],{env:process.env,stdio:'inherit'});child.on('exit',(code,signal)=>{console.error(`15M BTC monitor exited code=${code} signal=${signal}; restarting`);setTimeout(start15m,5000);}); }
+async function main(){await loadState();start15m();console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; allowed direction count=${MIN_LIQUIDATIONS}-${MAX_LIQUIDATIONS}; BTC 15M monitor enabled; 15M max=300; no minimum`);while(true){try{await checkOnce();}catch(error){console.error(`MONITOR CYCLE FAILED: ${error.stack||error.message}`);}await new Promise(resolve=>setTimeout(resolve,POLL_MS));}}
+main().catch(error=>{console.error(`MONITOR FAILED: ${error.stack||error.message}`);process.exitCode=1;});
