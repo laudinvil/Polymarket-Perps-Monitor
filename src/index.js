@@ -4,10 +4,8 @@ const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WI
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
-// 5M LIQUIDATION LEADER: monitor all supported coins.
+// 5M LIQUIDATION LEADER: all supported coins, no liquidation-count threshold.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const MIN_LIQUIDATIONS = 21;
-const MAX_LIQUIDATIONS = 59;
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
@@ -54,17 +52,16 @@ async function checkOnce(boundary){
   console.log(JSON.stringify({type:'liquidation_5m_feed_diagnostics',boundary:new Date(currentBucket).toISOString(),closedBucket:new Date(closedBucket).toISOString(),symbols:diagnostics}));
   for(const [,events] of results)for(const event of events){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol),side=String(event.side||'').toLowerCase();if(!ts||bucketStart(ts)!==closedBucket||!allowed.has(symbol))continue;if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;const key=eventKey(event);if(seen.has(key))continue;seen.add(key);if(!rows.has(symbol))rows.set(symbol,{events:0,longEvents:0,shortEvents:0});const row=rows.get(symbol);row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}
   processedBuckets.add(bucketKey);
-  const longCandidates=[...rows.entries()].map(([symbol,row])=>({symbol,count:row.longEvents,opposite:row.shortEvents,total:row.events})).filter(c=>c.count>=MIN_LIQUIDATIONS&&c.count<=MAX_LIQUIDATIONS&&c.opposite===MAX_OPPOSITE_LIQUIDATIONS).sort((a,b)=>b.count-a.count||b.total-a.total);
-  const shortCandidates=[...rows.entries()].map(([symbol,row])=>({symbol,count:row.shortEvents,opposite:row.longEvents,total:row.events})).filter(c=>c.count>=MIN_LIQUIDATIONS&&c.count<=MAX_LIQUIDATIONS&&c.opposite===MAX_OPPOSITE_LIQUIDATIONS).sort((a,b)=>b.count-a.count||b.total-a.total);
-  const bestLong=longCandidates[0]||null,bestShort=shortCandidates[0]||null;let winner=null;
-  if(bestLong&&(!bestShort||bestLong.count>bestShort.count))winner={...bestLong,side:'long'};else if(bestShort&&(!bestLong||bestShort.count>bestLong.count))winner={...bestShort,side:'short'};
-  if(!winner){console.log(JSON.stringify({type:'liquidation_5m_no_alert',closedBucket:new Date(closedBucket).toISOString(),minThreshold:MIN_LIQUIDATIONS,maxThreshold:MAX_LIQUIDATIONS,maxOppositeThreshold:MAX_OPPOSITE_LIQUIDATIONS,bestLong:bestLong?.count||0,bestShort:bestShort?.count||0,alertSent:false}));await saveState();return;}
+  const candidates=[...rows.entries()].map(([symbol,row])=>({symbol,long:row.longEvents,short:row.shortEvents,total:row.events})).filter(c=>(c.long>0&&c.short===MAX_OPPOSITE_LIQUIDATIONS)||(c.short>0&&c.long===MAX_OPPOSITE_LIQUIDATIONS)).sort((a,b)=>b.total-a.total||Math.max(b.long,b.short)-Math.max(a.long,a.short));
+  const best=candidates[0]||null;
+  if(!best){console.log(JSON.stringify({type:'liquidation_5m_no_alert',closedBucket:new Date(closedBucket).toISOString(),condition:'exactly_one_side_zero_and_other_side_positive',alertSent:false}));await saveState();return;}
+  const winnerSide=best.long>0?'long':'short',winnerCount=winnerSide==='long'?best.long:best.short;
   const alertKey=`5m:${closedBucket}`;if(sentAlerts.has(alertKey)){await saveState();return;}
-  const currentMarket=await findCurrentMarket(winner.symbol,currentBucket),winnerRow=rows.get(winner.symbol),bucketLabel=formatUtcPlus3(closedBucket),directionEmoji=winner.side==='long'?'🔴':'🟢';
-  const message=[`${directionEmoji} LIQUIDATION LEADER`,`${normalizeSymbol(winner.symbol)} · 5M · ${bucketLabel} UTC+3`,'',`Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidations`,`Long: ${winnerRow.longEvents} · Short: ${winnerRow.shortEvents}`,`Total: ${winnerRow.events}`,'','➡️ NEXT Polymarket 5M',currentMarket?.url||'Market not found yet'].join('\n');
-  await sendTelegramMessage(message);sentAlerts.add(alertKey);console.log(JSON.stringify({type:'liquidation_5m_direction_winner',closedBucket:new Date(closedBucket).toISOString(),symbol:normalizeSymbol(winner.symbol),leaderSide:winner.side,leaderCount:winner.count,liquidations:winnerRow.events,longCount:winnerRow.longEvents,shortCount:winnerRow.shortEvents,minThreshold:MIN_LIQUIDATIONS,maxThreshold:MAX_LIQUIDATIONS,maxOppositeThreshold:MAX_OPPOSITE_LIQUIDATIONS,alertSent:true,currentMarket:currentMarket?.url||null,delayMs:Date.now()-currentBucket}));await saveState();
+  const currentMarket=await findCurrentMarket(best.symbol,currentBucket),bucketLabel=formatUtcPlus3(closedBucket),directionEmoji=winnerSide==='long'?'🔴':'🟢';
+  const message=[`${directionEmoji} LIQUIDATION LEADER`,`${normalizeSymbol(best.symbol)} · 5M · ${bucketLabel} UTC+3`,'',`Leader: ${winnerSide.toUpperCase()} · ${winnerCount} liquidations`,`Long: ${best.long} · Short: ${best.short}`,`Total: ${best.total}`,'','➡️ NEXT Polymarket 5M',currentMarket?.url||'Market not found yet'].join('\n');
+  await sendTelegramMessage(message);sentAlerts.add(alertKey);console.log(JSON.stringify({type:'liquidation_5m_direction_winner',closedBucket:new Date(closedBucket).toISOString(),symbol:normalizeSymbol(best.symbol),leaderSide:winnerSide,leaderCount:winnerCount,liquidations:best.total,longCount:best.long,shortCount:best.short,condition:'exactly_one_side_zero_and_other_side_positive',alertSent:true,currentMarket:currentMarket?.url||null,delayMs:Date.now()-currentBucket}));await saveState();
 }
 
 function start15m(){ const child=spawn(process.execPath,['src/btc-15m-monitor.js'],{env:process.env,stdio:'inherit'});child.on('exit',(code,signal)=>{console.error(`15M BTC monitor exited code=${code} signal=${signal}; restarting`);setTimeout(start15m,5000);}); }
-async function main(){await loadState();start15m();console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; leader=${MIN_LIQUIDATIONS}-${MAX_LIQUIDATIONS}; opposite=${MAX_OPPOSITE_LIQUIDATIONS}; exact boundary scheduling; BTC 15M monitor enabled`);while(true){const now=Date.now(),nextBoundary=bucketStart(now)+WINDOW_MS_5M;await sleep(Math.max(0,nextBoundary-Date.now()));try{await checkOnce(nextBoundary);}catch(error){console.error(`MONITOR CYCLE FAILED: ${error.stack||error.message}`);}}}
+async function main(){await loadState();start15m();console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no count thresholds; opposite=0; exact boundary scheduling; BTC 15M monitor enabled`);while(true){const now=Date.now(),nextBoundary=bucketStart(now)+WINDOW_MS_5M;await sleep(Math.max(0,nextBoundary-Date.now()));try{await checkOnce(nextBoundary);}catch(error){console.error(`MONITOR CYCLE FAILED: ${error.stack||error.message}`);}}}
 main().catch(error=>{console.error(`MONITOR FAILED: ${error.stack||error.message}`);process.exitCode=1;});
