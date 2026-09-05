@@ -4,7 +4,8 @@ const { findCurrentMarket15m } = require('./polymarket');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_15M = 15 * 60 * 1000;
-const REQUIRED_LEADER_LIQUIDATIONS = 1;
+const REQUIRED_LONG_LIQUIDATIONS = 1;
+const MIN_SHORT_LIQUIDATIONS = 1;
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
@@ -53,19 +54,19 @@ async function check15mOnce(boundary) {
     const row = rows.get(symbol) || { longCount: 0, shortCount: 0, total: 0 };
     return { symbol, ...row };
   }).filter(row =>
-    (row.longCount === REQUIRED_LEADER_LIQUIDATIONS && row.shortCount === MAX_OPPOSITE_LIQUIDATIONS) ||
-    (row.shortCount === REQUIRED_LEADER_LIQUIDATIONS && row.longCount === MAX_OPPOSITE_LIQUIDATIONS)
+    (row.longCount === REQUIRED_LONG_LIQUIDATIONS && row.shortCount === MAX_OPPOSITE_LIQUIDATIONS) ||
+    (row.shortCount >= MIN_SHORT_LIQUIDATIONS && row.longCount === MAX_OPPOSITE_LIQUIDATIONS)
   );
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_15m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'exactly_1_liquidation_on_one_side_and_0_on_the_other', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_15m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: false }));
     return;
   }
 
-  // One alert per 15M bucket: select the qualifying coin.
-  const winner = candidates[0];
-  const winnerSide = winner.longCount === REQUIRED_LEADER_LIQUIDATIONS ? 'long' : 'short';
-  const winnerCount = REQUIRED_LEADER_LIQUIDATIONS;
+  // One alert per 15M bucket: select the strongest qualifying liquidation flow.
+  const winner = candidates.sort((a, b) => b.total - a.total)[0];
+  const winnerSide = winner.longCount === REQUIRED_LONG_LIQUIDATIONS ? 'long' : 'short';
+  const winnerCount = winnerSide === 'long' ? winner.longCount : winner.shortCount;
   const alertKey = `15m:${closedBucket}`;
   if (sentAlerts15m.has(alertKey)) return;
 
@@ -74,7 +75,7 @@ async function check15mOnce(boundary) {
   const message = [
     `${emoji} LIQUIDATION LEADER`,
     `${winner.symbol} · 15M · ${formatUtcPlus3(closedBucket)} UTC+3`, '',
-    `Leader: ${winnerSide.toUpperCase()} · ${winnerCount} liquidation`,
+    `Leader: ${winnerSide.toUpperCase()} · ${winnerCount} liquidation${winnerCount === 1 ? '' : 's'}`,
     `Long: ${winner.longCount} · Short: ${winner.shortCount}`,
     `Total: ${winner.total}`,
     '',
@@ -84,13 +85,13 @@ async function check15mOnce(boundary) {
 
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_direction_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, condition: 'exactly_1_liquidation_on_one_side_and_0_on_the_other', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_direction_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function main15m() {
-  console.log(`15M liquidation direction-leader monitor started; symbols=${SYMBOLS.join(',')}; leader=1; opposite=0`);
+  console.log(`15M liquidation direction-leader monitor started; symbols=${SYMBOLS.join(',')}; LONG=1; SHORT>=1; opposite=0`);
   while (true) {
     const now = Date.now();
     const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
