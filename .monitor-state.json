@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-09-05T21:09:59.193Z",
-  "period": "2026-09-05T21:05:00.000Z",
+  "updatedAt": "2026-09-05T21:10:10.169Z",
+  "period": "2026-09-05T21:10:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -122,25 +122,25 @@
       "imbalance": 0,
       "totalLiquidations": 0,
       "lastEvent": null,
-      "period": "2026-09-05T21:05:00.000Z"
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "ETH",
       "longLiquidations": 0,
-      "shortLiquidations": 1,
-      "imbalance": -1,
-      "totalLiquidations": 1,
-      "lastEvent": "2026-09-05T21:07:30.923Z",
-      "period": "2026-09-05T21:05:00.000Z"
+      "shortLiquidations": 0,
+      "imbalance": 0,
+      "totalLiquidations": 0,
+      "lastEvent": null,
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "SOL",
       "longLiquidations": 0,
-      "shortLiquidations": 1,
-      "imbalance": -1,
-      "totalLiquidations": 1,
-      "lastEvent": "2026-09-05T21:07:30.924Z",
-      "period": "2026-09-05T21:05:00.000Z"
+      "shortLiquidations": 0,
+      "imbalance": 0,
+      "totalLiquidations": 0,
+      "lastEvent": null,
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "XRP",
@@ -149,7 +149,7 @@
       "imbalance": 0,
       "totalLiquidations": 0,
       "lastEvent": null,
-      "period": "2026-09-05T21:05:00.000Z"
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "DOGE",
@@ -158,7 +158,7 @@
       "imbalance": 0,
       "totalLiquidations": 0,
       "lastEvent": null,
-      "period": "2026-09-05T21:05:00.000Z"
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "BNB",
@@ -167,7 +167,7 @@
       "imbalance": 0,
       "totalLiquidations": 0,
       "lastEvent": null,
-      "period": "2026-09-05T21:05:00.000Z"
+      "period": "2026-09-05T21:10:00.000Z"
     },
     {
       "symbol": "HYPE",
@@ -176,7 +176,7 @@
       "imbalance": 0,
       "totalLiquidations": 0,
       "lastEvent": null,
-      "period": "2026-09-05T21:05:00.000Z"
+      "period": "2026-09-05T21:10:00.000Z"
     }
   ]
 }
