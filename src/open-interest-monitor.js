@@ -1,6 +1,9 @@
 const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 
-const OI_URL = 'https://marginpad.io/api/v1/open-interest';
+// MarginPad currently returns an empty `coins` array for open interest.
+// Use Bybit's public linear-perpetual ticker snapshot instead. It provides
+// openInterestValue directly in USD and one request covers all 7 symbols.
+const OI_URL = 'https://api.bybit.com/v5/market/tickers?category=linear';
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE']);
@@ -17,49 +20,42 @@ function normalizeSymbol(value) {
   return SYMBOLS.has(base) ? base : '';
 }
 
-function numericOi(row) {
-  if (typeof row === 'number' || typeof row === 'string') {
-    const value = Number(row);
-    return Number.isFinite(value) ? value : NaN;
-  }
-  if (!row || typeof row !== 'object') return NaN;
-  for (const field of ['openInterestUsd','open_interest_usd','openInterestUSD','oiUsd','oi_usd','valueUsd','value_usd','notionalUsd','notional_usd','openInterest','open_interest','oi','value']) {
-    if (row[field] === undefined || row[field] === null) continue;
-    const value = Number(row[field]);
-    if (Number.isFinite(value)) return value;
-  }
-  return NaN;
-}
-
-function collectRows(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== 'object') return [];
-  if (Array.isArray(payload.rows)) return payload.rows;
-  if (Array.isArray(payload.openInterest)) return payload.openInterest;
-  if (Array.isArray(payload.open_interest)) return payload.open_interest;
-  if (Array.isArray(payload.items)) return payload.items;
-  return Object.entries(payload).map(([symbol, value]) => value && typeof value === 'object' && !Array.isArray(value) ? { symbol, ...value } : { symbol, value });
-}
-
 async function fetchOpenInterest() {
-  const response = await fetch(OI_URL, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(OI_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
   const text = await response.text();
   let json;
-  try { json = JSON.parse(text); } catch { throw new Error(`MarginPad OI returned non-JSON response: ${text.slice(0, 200)}`); }
-  if (!response.ok) throw new Error(`MarginPad OI HTTP ${response.status}: ${json?.error?.message || text.slice(0, 200)}`);
-  if (json?.ok === false) throw new Error(json?.error?.message || 'MarginPad OI returned an error');
+  try { json = JSON.parse(text); } catch {
+    throw new Error(`Bybit OI returned non-JSON response: ${text.slice(0, 200)}`);
+  }
+  if (!response.ok) {
+    throw new Error(`Bybit OI HTTP ${response.status}: ${text.slice(0, 300)}`);
+  }
+  if (json?.retCode !== 0) {
+    throw new Error(`Bybit OI retCode ${json?.retCode}: ${json?.retMsg || 'unknown error'}`);
+  }
 
-  const payload = json?.data ?? json;
-  const rows = collectRows(payload);
+  const rows = json?.result?.list;
+  if (!Array.isArray(rows)) {
+    throw new Error(`Bybit OI response has no result.list: ${JSON.stringify(json).slice(0, 500)}`);
+  }
+
   const snapshot = new Map();
   for (const row of rows) {
-    const symbol = normalizeSymbol(row?.symbol || row?.ticker || row?.base || row?.asset);
-    const value = numericOi(row);
+    const symbol = normalizeSymbol(row?.symbol);
+    const value = Number(row?.openInterestValue);
     if (!symbol || !Number.isFinite(value)) continue;
     snapshot.set(symbol, value);
   }
-  if (!snapshot.size) throw new Error(`MarginPad OI response contained no configured symbols; rows=${rows.length}; sample=${JSON.stringify(rows.slice(0, 5))}`);
-  console.log(`OI snapshot received: ${[...snapshot.keys()].join(',')}`);
+
+  const missing = [...SYMBOLS].filter(symbol => !snapshot.has(symbol));
+  if (missing.length) {
+    throw new Error(`Bybit OI missing configured symbols: ${missing.join(',')}; received=${[...snapshot.keys()].join(',')}`);
+  }
+
+  console.log(`OI snapshot received from Bybit: ${[...snapshot.keys()].join(',')}`);
   return snapshot;
 }
 
@@ -80,41 +76,93 @@ async function sendTelegram(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) throw new Error('Telegram secrets are missing');
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: false }) });
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: false }),
+  });
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
 }
 
 async function sendAlert(timeframe, previous, current, boundary) {
   const winner = largestChange(previous, current);
-  if (!winner) return console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString() }));
-  const market = timeframe === '5M' ? await findCurrentMarket(winner.symbol, boundary) : await findCurrentMarket15m(winner.symbol, boundary);
+  if (!winner) {
+    return console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString() }));
+  }
+  const market = timeframe === '5M'
+    ? await findCurrentMarket(winner.symbol, boundary)
+    : await findCurrentMarket15m(winner.symbol, boundary);
   const direction = winner.delta > 0 ? 'POSITIVE' : 'NEGATIVE';
   const emoji = winner.delta > 0 ? '🟢' : '🔴';
-  const message = [`${emoji} OPEN INTEREST LEADER`, `${winner.symbol} · OI · ${timeframe} · ${formatUtcPlus3(boundary)} UTC+3`, '', `Change: ${direction}`, `OI change: ${winner.delta > 0 ? '+' : ''}${formatUsd(winner.delta)} USD`, `Previous OI: ${formatUsd(winner.previousOi)} USD`, `Current OI: ${formatUsd(winner.currentOi)} USD`, '', `➡️ NEXT Polymarket ${timeframe}`, market?.url || 'Market not found yet'].join('\n');
+  const message = [
+    `${emoji} OPEN INTEREST LEADER`,
+    `${winner.symbol} · OI · ${timeframe} · ${formatUtcPlus3(boundary)} UTC+3`,
+    '',
+    `Change: ${direction}`,
+    `OI change: ${winner.delta > 0 ? '+' : ''}${formatUsd(winner.delta)} USD`,
+    `Previous OI: ${formatUsd(winner.previousOi)} USD`,
+    `Current OI: ${formatUsd(winner.currentOi)} USD`,
+    '',
+    `➡️ NEXT Polymarket ${timeframe}`,
+    market?.url || 'Market not found yet',
+  ].join('\n');
   await sendTelegram(message);
-  console.log(JSON.stringify({ type: `open_interest_${timeframe.toLowerCase()}_alert`, boundary: new Date(boundary).toISOString(), symbol: winner.symbol, direction, delta: winner.delta, previousOi: winner.previousOi, currentOi: winner.currentOi, market: market?.url || null }));
+  console.log(JSON.stringify({
+    type: `open_interest_${timeframe.toLowerCase()}_alert`,
+    boundary: new Date(boundary).toISOString(),
+    symbol: winner.symbol,
+    direction,
+    delta: winner.delta,
+    previousOi: winner.previousOi,
+    currentOi: winner.currentOi,
+    market: market?.url || null,
+  }));
 }
 
 async function main() {
-  console.log('Open Interest monitor started; symbols=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; 5M + 15M; largest absolute OI change; exact boundary scheduling');
+  console.log('Open Interest monitor started; source=Bybit linear tickers; symbols=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; 5M + 15M; largest absolute OI change; exact boundary scheduling');
   const snapshots = new Map();
   let nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
+
   while (true) {
     await sleep(Math.max(0, nextBoundary - Date.now()));
     const boundary = nextBoundary;
     try {
       const currentSnapshot = await fetchOpenInterest();
       snapshots.set(boundary, currentSnapshot);
+
       const previous5m = snapshots.get(boundary - WINDOW_5M);
-      if (previous5m) await sendAlert('5M', previous5m, currentSnapshot, boundary);
-      else console.log(JSON.stringify({ type: 'open_interest_5m_waiting_for_baseline', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
+      if (previous5m) {
+        await sendAlert('5M', previous5m, currentSnapshot, boundary);
+      } else {
+        console.log(JSON.stringify({
+          type: 'open_interest_5m_waiting_for_baseline',
+          boundary: new Date(boundary).toISOString(),
+          symbols: [...currentSnapshot.keys()],
+        }));
+      }
+
       const previous15m = snapshots.get(boundary - WINDOW_15M);
       if (previous15m) await sendAlert('15M', previous15m, currentSnapshot, boundary);
-      for (const key of snapshots.keys()) if (key < boundary - WINDOW_15M) snapshots.delete(key);
-      console.log(JSON.stringify({ type: 'open_interest_cycle', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
-    } catch (error) { console.error(`OPEN INTEREST CYCLE FAILED: ${error.stack || error.message}`); }
+
+      for (const key of snapshots.keys()) {
+        if (key < boundary - WINDOW_15M) snapshots.delete(key);
+      }
+      console.log(JSON.stringify({
+        type: 'open_interest_cycle',
+        boundary: new Date(boundary).toISOString(),
+        symbols: [...currentSnapshot.keys()],
+      }));
+    } catch (error) {
+      console.error(`OPEN INTEREST CYCLE FAILED: ${error.stack || error.message}`);
+    }
+
     nextBoundary += WINDOW_5M;
     if (nextBoundary <= Date.now()) nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
   }
 }
-main().catch(error => { console.error(`OPEN INTEREST MONITOR FAILED: ${error.stack || error.message}`); process.exitCode = 1; });
+
+main().catch(error => {
+  console.error(`OPEN INTEREST MONITOR FAILED: ${error.stack || error.message}`);
+  process.exitCode = 1;
+});
