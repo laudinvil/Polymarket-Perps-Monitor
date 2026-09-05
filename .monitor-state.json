@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-09-05T21:49:48.618Z",
-  "period": "2026-09-05T21:45:00.000Z",
+  "updatedAt": "2026-09-05T21:50:19.847Z",
+  "period": "2026-09-05T21:50:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -127,7 +127,7 @@
       "imbalance": -5,
       "totalLiquidations": 9,
       "lastEvent": "2026-09-05T21:42:50.291Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "ETH",
@@ -138,7 +138,7 @@
       "imbalance": -66,
       "totalLiquidations": 68,
       "lastEvent": "2026-09-05T21:46:35.960Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "SOL",
@@ -149,7 +149,7 @@
       "imbalance": -8,
       "totalLiquidations": 8,
       "lastEvent": "2026-09-05T21:42:48.626Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "XRP",
@@ -160,7 +160,7 @@
       "imbalance": -12,
       "totalLiquidations": 12,
       "lastEvent": "2026-09-05T21:42:48.485Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "DOGE",
@@ -171,7 +171,7 @@
       "imbalance": 18,
       "totalLiquidations": 22,
       "lastEvent": "2026-09-05T21:49:09.093Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "BNB",
@@ -182,7 +182,7 @@
       "imbalance": -1,
       "totalLiquidations": 3,
       "lastEvent": "2026-09-05T21:31:01.000Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "HYPE",
@@ -193,7 +193,7 @@
       "imbalance": -7,
       "totalLiquidations": 7,
       "lastEvent": "2026-09-05T21:39:52.519Z",
-      "period": "2026-09-05T21:45:00.000Z"
+      "period": "2026-09-05T21:50:00.000Z"
     }
   ],
   "liquidationRunning": [
