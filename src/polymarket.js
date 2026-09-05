@@ -6,6 +6,7 @@ const WINDOW_MS_15M = 15 * 60 * 1000;
 function currentFiveMinuteTimestamp(now = Date.now()) { return Math.floor(now / WINDOW_MS) * WINDOW_MS; }
 function nextFiveMinuteTimestamp(now = Date.now()) { return currentFiveMinuteTimestamp(now) + WINDOW_MS; }
 function currentFifteenMinuteTimestamp(now = Date.now()) { return Math.floor(now / WINDOW_MS_15M) * WINDOW_MS_15M; }
+function nextFifteenMinuteTimestamp(now = Date.now()) { return currentFifteenMinuteTimestamp(now) + WINDOW_MS_15M; }
 
 async function getJson(url) { const response = await fetch(url, { headers: { accept: 'application/json' } }); if (!response.ok) return null; return response.json(); }
 
@@ -20,5 +21,6 @@ async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
 async function findCurrentMarket(symbol, now = Date.now()) { return findMarketByEpoch(symbol, Math.floor(currentFiveMinuteTimestamp(now) / 1000), '5m'); }
 async function findCurrentMarket15m(symbol, now = Date.now()) { return findMarketByEpoch(symbol, Math.floor(currentFifteenMinuteTimestamp(now) / 1000), '15m'); }
 async function findNextMarket(symbol, now = Date.now()) { const start = nextFiveMinuteTimestamp(now); for (let i=0;i<6;i+=1) { const market=await findMarketByEpoch(symbol, Math.floor((start+i*WINDOW_MS)/1000), '5m'); if(market)return market; } return null; }
+async function findNextMarket15m(symbol, now = Date.now()) { const start = nextFifteenMinuteTimestamp(now); for (let i=0;i<6;i+=1) { const market=await findMarketByEpoch(symbol, Math.floor((start+i*WINDOW_MS_15M)/1000), '15m'); if(market)return market; } return null; }
 
-module.exports = { findCurrentMarket, findCurrentMarket15m, findNextMarket, currentFiveMinuteTimestamp, nextFiveMinuteTimestamp, currentFifteenMinuteTimestamp };
+module.exports = { findCurrentMarket, findCurrentMarket15m, findNextMarket, findNextMarket15m, currentFiveMinuteTimestamp, nextFiveMinuteTimestamp, currentFifteenMinuteTimestamp, nextFifteenMinuteTimestamp };
