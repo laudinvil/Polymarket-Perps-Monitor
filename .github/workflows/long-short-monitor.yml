@@ -2,6 +2,13 @@ name: Long Short Monitor
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/long-short-monitor.js'
+      - 'src/telegram.js'
+      - '.github/workflows/long-short-monitor.yml'
 
 permissions:
   contents: write
