@@ -273,8 +273,7 @@ async function sendCrossingAlert(crossing) {
 
   const emoji = crossing.after < 0 ? '🔴' : '🟢';
   const message = [
-    `${emoji} LIQUIDATION FLIP`,
-    '',
+    emoji,
     `${crossing.symbol} · ${crossing.timeframe.toUpperCase()} · ${formatUtcPlus3(crossing.ts)} UTC+3`,
     '',
     `Previous imbalance: ${formatUsd(crossing.before)}`,
