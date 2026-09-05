@@ -14,12 +14,17 @@ const sentClusters = new Set();
 const previousPrices = new Map();
 const armedSymbols = new Set();
 const rearmConditions = new Map();
+const alertedBuckets = new Map();
 let stateSha = null;
 let lastAlertAt = 0;
 
 function formatPrice(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'N/A';
   return Number(Number(value).toPrecision(12)).toString();
+}
+
+function currentBucket() {
+  return Math.floor(Date.now() / (5 * 60 * 1000));
 }
 
 function githubRequest(method, body = null) {
@@ -54,7 +59,7 @@ function githubRequest(method, body = null) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-function migrateRearmConditions(state) {
+function migrateRearmConditions() {
   const sentBySymbol = new Map();
   for (const key of sentClusters) {
     const parts = String(key).split(':');
@@ -64,14 +69,12 @@ function migrateRearmConditions(state) {
     if (!SYMBOLS.includes(symbol) || !Number.isFinite(price)) continue;
     sentBySymbol.set(symbol, price);
   }
-
   for (const [symbol, price] of sentBySymbol) {
     if (rearmConditions.has(symbol) || armedSymbols.has(symbol)) continue;
     const previousPrice = previousPrices.get(symbol);
     if (!Number.isFinite(previousPrice) || previousPrice === price) continue;
     const direction = previousPrice < price ? 'below' : 'above';
     rearmConditions.set(symbol, { price, direction });
-    console.log(JSON.stringify({ type: 'legacy_state_migrated', symbol, resetLevel: price, direction, previousPrice }));
   }
 }
 
@@ -92,8 +95,12 @@ async function loadState() {
         rearmConditions.set(symbol, { price: Number(condition.price), direction: condition.direction });
       }
     }
+    for (const [symbol, bucket] of Object.entries(state.alertedBuckets || {})) {
+      const n = Number(bucket);
+      if (Number.isFinite(n)) alertedBuckets.set(symbol, n);
+    }
     lastAlertAt = Number(state.lastAlertAt) || 0;
-    migrateRearmConditions(state);
+    migrateRearmConditions();
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -106,20 +113,19 @@ async function saveState() {
     previousPrices: Object.fromEntries(previousPrices),
     armedSymbols: [...armedSymbols],
     rearmConditions: Object.fromEntries(rearmConditions),
+    alertedBuckets: Object.fromEntries(alertedBuckets),
     lastAlertAt
   }, null, 2)).toString('base64');
-
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const current = await githubRequest('GET');
       const currentSha = current?.sha || stateSha;
-      const body = {
+      const result = await githubRequest('PUT', {
         message: 'Persist long short cluster monitor state',
         content,
         branch: process.env.GITHUB_REF_NAME || 'main',
         ...(currentSha ? { sha: currentSha } : {})
-      };
-      const result = await githubRequest('PUT', body);
+      });
       stateSha = result?.content?.sha || currentSha || stateSha;
       return;
     } catch (error) {
@@ -219,12 +225,10 @@ async function getCoinSnapshot(symbol) {
 
 async function nextMarketUrl(symbol) {
   const intervalSeconds = 5 * 60;
-  const nextBoundaryEpochSeconds =
-    Math.floor(Date.now() / (intervalSeconds * 1000)) * intervalSeconds + intervalSeconds;
+  const nextBoundaryEpochSeconds = Math.floor(Date.now() / (intervalSeconds * 1000)) * intervalSeconds + intervalSeconds;
   const slug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
-  const url = `${POLYMARKET_GAMMA_URL}/${slug}`;
   try {
-    const event = await fetchJson(url);
+    const event = await fetchJson(`${POLYMARKET_GAMMA_URL}/${slug}`);
     if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
     throw new Error('Gamma API returned no event slug');
   } catch (error) {
@@ -237,9 +241,7 @@ function updateRearmState(snapshot) {
   if (snapshot.currentPrice == null || armedSymbols.has(snapshot.symbol)) return;
   const condition = rearmConditions.get(snapshot.symbol);
   if (!condition) return;
-  const canRearm = condition.direction === 'below'
-    ? snapshot.currentPrice < condition.price
-    : snapshot.currentPrice > condition.price;
+  const canRearm = condition.direction === 'below' ? snapshot.currentPrice < condition.price : snapshot.currentPrice > condition.price;
   if (canRearm) {
     armedSymbols.add(snapshot.symbol);
     rearmConditions.delete(snapshot.symbol);
@@ -255,19 +257,12 @@ async function check() {
 
   for (const snapshot of snapshots) updateRearmState(snapshot);
 
+  const bucket = currentBucket();
   const touched = snapshots.filter(snapshot => {
     const cluster = snapshot.nearest;
     if (!cluster || !armedSymbols.has(snapshot.symbol)) return false;
-    const touched = isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
-    if (touched) {
-      console.log(JSON.stringify({
-        type: 'cluster_touch_detected', symbol: snapshot.symbol,
-        previousPrice: snapshot.previousPrice, currentPrice: snapshot.currentPrice,
-        clusterPrice: cluster.price, direction: approachDirection(snapshot.previousPrice, snapshot.currentPrice, cluster.price),
-        distancePct: cluster.distancePct, clusterKey: cluster.clusterKey
-      }));
-    }
-    return touched;
+    if (alertedBuckets.get(snapshot.symbol) === bucket) return false;
+    return isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
   });
 
   for (const snapshot of snapshots) {
@@ -275,14 +270,6 @@ async function check() {
   }
 
   if (touched.length === 0) {
-    const diagnostics = snapshots.map(snapshot => ({
-      symbol: snapshot.symbol, currentPrice: snapshot.currentPrice ?? null,
-      clusterPrice: snapshot.nearest?.price ?? null,
-      distance: snapshot.nearest && snapshot.currentPrice != null ? Math.abs(snapshot.nearest.price - snapshot.currentPrice) : null,
-      distancePct: snapshot.nearest?.distancePct ?? null, side: snapshot.nearest?.side ?? null,
-      armed: armedSymbols.has(snapshot.symbol), rearmCondition: rearmConditions.get(snapshot.symbol) ?? null
-    }));
-    console.log(JSON.stringify({ type: 'cluster_waiting_for_touch', coins: diagnostics }));
     await saveState();
     return;
   }
@@ -290,23 +277,20 @@ async function check() {
   touched.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
   const winner = touched[0];
   const cluster = winner.nearest;
-  if (sentClusters.has(cluster.clusterKey)) {
-    console.log(JSON.stringify({ type: 'cluster_duplicate', symbol: winner.symbol, cluster: cluster.clusterKey }));
+  if (alertedBuckets.get(winner.symbol) === bucket) {
     await saveState();
     return;
   }
   if (Date.now() - lastAlertAt < ALERT_COOLDOWN_MS) {
-    console.log(JSON.stringify({ type: 'cluster_cooldown', remainingMs: ALERT_COOLDOWN_MS - (Date.now() - lastAlertAt), symbol: winner.symbol, clusterPrice: cluster.price }));
     await saveState();
     return;
   }
 
   sentClusters.add(cluster.clusterKey);
+  alertedBuckets.set(winner.symbol, bucket);
   armedSymbols.delete(winner.symbol);
   const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
-  const rearmDirection = direction === 'СНИЗУ ВВЕРХ' ? 'below' :
-    direction === 'СВЕРХУ ВНИЗ' ? 'above' :
-    (winner.previousPrice != null && winner.previousPrice < cluster.price ? 'below' : 'above');
+  const rearmDirection = direction === 'СНИЗУ ВВЕРХ' ? 'below' : direction === 'СВЕРХУ ВНИЗ' ? 'above' : (winner.previousPrice != null && winner.previousPrice < cluster.price ? 'below' : 'above');
   rearmConditions.set(winner.symbol, { price: cluster.price, direction: rearmDirection });
   lastAlertAt = Date.now();
   await saveState();
@@ -323,22 +307,18 @@ async function check() {
   ].join('\n');
   try { await sendTelegramMessage(message); }
   catch (error) { console.warn(`TELEGRAM SEND FAILED: ${error.message}`); }
-  console.log(JSON.stringify({
-    type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel,
-    previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice,
-    direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey,
-    rearmCondition: rearmConditions.get(winner.symbol)
-  }));
+  console.log(JSON.stringify({ type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel, previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice, direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey, bucket, rearmCondition: rearmConditions.get(winner.symbol) }));
 }
 
 async function main() {
   await loadState();
+  const bucket = currentBucket();
   for (const symbol of SYMBOLS) {
-    if (!armedSymbols.has(symbol) && !rearmConditions.has(symbol) && ![...sentClusters].some(key => key.startsWith(`${symbol}:`))) {
+    if (alertedBuckets.get(symbol) !== bucket && !armedSymbols.has(symbol) && !rearmConditions.has(symbol) && ![...sentClusters].some(key => key.startsWith(`${symbol}:`))) {
       armedSymbols.add(symbol);
     }
   }
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on exact touch/cross; one alert per price move per coin; rearm only after crossing back through last alerted level; max 1 alert per 5 minutes; no duplicates`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; max 1 alert per coin per 5M bucket; rearm state persisted`);
   while (true) {
     try { await check(); }
     catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
