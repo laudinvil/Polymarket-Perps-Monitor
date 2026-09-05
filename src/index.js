@@ -4,10 +4,9 @@ const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WI
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
-// 5M LIQUIDATION LEADER: all supported coins, minimum 2 liquidations.
+// 5M LIQUIDATION LEADER: all supported coins, no minimum liquidation threshold.
 // Alerts are generated only at exact 5M boundaries for the bucket that just closed.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const MIN_LIQUIDATIONS = 2;
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
@@ -107,13 +106,13 @@ async function checkOnce(boundary) {
     const row = rows.get(symbol) || { long: 0, short: 0, total: 0 };
     return { symbol, ...row };
   }).filter(row =>
-    row.total >= MIN_LIQUIDATIONS &&
+    row.total > 0 &&
     ((row.long > 0 && row.short === MAX_OPPOSITE_LIQUIDATIONS) ||
      (row.short > 0 && row.long === MAX_OPPOSITE_LIQUIDATIONS))
   ).sort((a, b) => b.total - a.total || Math.max(b.long, b.short) - Math.max(a.long, a.short));
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'total_liquidations_at_least_2_and_exactly_one_side_zero', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'at_least_one_liquidation_and_exactly_one_side_zero', alertSent: false }));
     return;
   }
 
@@ -140,7 +139,7 @@ async function checkOnce(boundary) {
     await sendTelegramMessage(message);
     sentAlerts.add(alertKey);
     sentAny = true;
-    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'total_liquidations_at_least_2_and_exactly_one_side_zero', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'at_least_one_liquidation_and_exactly_one_side_zero', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
   }
 
   if (sentAny) await saveState();
@@ -157,7 +156,7 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; minimum=${MIN_LIQUIDATIONS}; opposite=0; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no minimum; opposite=0; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
     const now = Date.now();
