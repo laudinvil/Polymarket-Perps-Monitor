@@ -5,11 +5,10 @@ const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION LEADER: all supported coins.
-// LONG must be exactly 1 with SHORT 0; SHORT may be 1 or more with LONG 0.
+// LONG or SHORT must reach at least 2, with the opposite side at 0.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
-const REQUIRED_LONG_LIQUIDATIONS = 1;
-const MIN_SHORT_LIQUIDATIONS = 1;
+const MIN_LIQUIDATIONS = 2;
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
@@ -115,18 +114,18 @@ async function checkOnce(boundary) {
     const row = rows.get(symbol) || { long: 0, short: 0, total: 0 };
     return { symbol, ...row };
   }).filter(row =>
-    (row.long === REQUIRED_LONG_LIQUIDATIONS && row.short === MAX_OPPOSITE_LIQUIDATIONS) ||
-    (row.short >= MIN_SHORT_LIQUIDATIONS && row.long === MAX_OPPOSITE_LIQUIDATIONS)
+    ((row.long >= MIN_LIQUIDATIONS && row.short === MAX_OPPOSITE_LIQUIDATIONS) ||
+    (row.short >= MIN_LIQUIDATIONS && row.long === MAX_OPPOSITE_LIQUIDATIONS))
   );
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG>=2_or_SHORT>=2_with_opposite_0', alertSent: false }));
     return;
   }
 
   let sentAny = false;
   for (const candidate of candidates) {
-    const winnerSide = candidate.long === REQUIRED_LONG_LIQUIDATIONS ? 'long' : 'short';
+    const winnerSide = candidate.long >= MIN_LIQUIDATIONS ? 'long' : 'short';
     const winnerCount = winnerSide === 'long' ? candidate.long : candidate.short;
     const alertKey = `5m:${closedBucket}:${candidate.symbol}:${winnerSide}`;
     const lastPeriod = lastAlertPeriodBySymbol.get(candidate.symbol);
@@ -156,7 +155,7 @@ async function checkOnce(boundary) {
     sentAlerts.add(alertKey);
     lastAlertPeriodBySymbol.set(candidate.symbol, closedBucket);
     sentAny = true;
-    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG>=2_or_SHORT>=2_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
   }
 
   if (sentAny) await saveState();
@@ -173,7 +172,7 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG=1; SHORT>=1; opposite=0; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG>=2; SHORT>=2; opposite=0; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
     const now = Date.now();
