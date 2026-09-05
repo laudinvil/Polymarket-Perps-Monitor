@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T22:24:28.869Z",
+  "updatedAt": "2026-09-05T22:24:59.915Z",
   "period": "2026-09-05T22:20:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -131,13 +131,13 @@
     },
     {
       "symbol": "ETH",
-      "longUsd": 456.81402,
+      "longUsd": 459.29560000000004,
       "shortUsd": 2860.5357099999997,
-      "cumulativeLongEvents": 3,
+      "cumulativeLongEvents": 4,
       "cumulativeShortEvents": 71,
-      "imbalanceUsd": -2403.72169,
-      "totalLiquidations": 74,
-      "lastEvent": "2026-09-05T22:22:47.064Z",
+      "imbalanceUsd": -2401.2401099999997,
+      "totalLiquidations": 75,
+      "lastEvent": "2026-09-05T22:24:26.000Z",
       "period": "2026-09-05T22:20:00.000Z"
     },
     {
@@ -210,13 +210,13 @@
     },
     {
       "symbol": "ETH",
-      "imbalanceUsd": -2403.72169,
-      "longUsd": 456.81402,
+      "imbalanceUsd": -2401.2401099999997,
+      "longUsd": 459.29560000000004,
       "shortUsd": 2860.5357099999997,
-      "longEvents": 3,
+      "longEvents": 4,
       "shortEvents": 71,
-      "events": 74,
-      "lastTs": 1788646967064,
+      "events": 75,
+      "lastTs": 1788647066000,
       "establishedSign": -1
     },
     {
