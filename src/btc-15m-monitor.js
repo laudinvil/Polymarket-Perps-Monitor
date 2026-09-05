@@ -4,7 +4,6 @@ const { findCurrentMarket15m } = require('./polymarket');
 
 const SYMBOL = 'BTC';
 const WINDOW_MS_15M = 15 * 60 * 1000;
-const MIN_LIQUIDATIONS_15M = 75;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
 let lastAlertBucket15m = null;
@@ -38,13 +37,12 @@ async function check15mOnce(boundary) {
   }
 
   processedBuckets15m.add(bucketKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_btc_bucket', closedBucket: new Date(closedBucket).toISOString(), bucketLabelUtcPlus3: formatUtcPlus3(closedBucket), longCount, shortCount, total: longCount + shortCount, minThreshold: MIN_LIQUIDATIONS_15M, consecutiveAlertBlocked: lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc_bucket', closedBucket: new Date(closedBucket).toISOString(), bucketLabelUtcPlus3: formatUtcPlus3(closedBucket), longCount, shortCount, total: longCount + shortCount, condition: 'exactly_one_side_zero_and_other_side_positive', consecutiveAlertBlocked: lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M }));
 
-  const best = Math.max(longCount, shortCount);
-  if (best < MIN_LIQUIDATIONS_15M || longCount === shortCount) return;
+  const side = longCount > 0 && shortCount === 0 ? 'long' : shortCount > 0 && longCount === 0 ? 'short' : null;
+  if (!side) return;
   if (lastAlertBucket15m !== null && closedBucket === lastAlertBucket15m + WINDOW_MS_15M) return;
 
-  const side = longCount > shortCount ? 'long' : 'short';
   const count = side === 'long' ? longCount : shortCount;
   const alertKey = bucketKey;
   if (sentAlerts15m.has(alertKey)) return;
@@ -65,13 +63,13 @@ async function check15mOnce(boundary) {
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
   lastAlertBucket15m = closedBucket;
-  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, min: MIN_LIQUIDATIONS_15M, consecutiveAlertBlocked: false, alertSent: true, nextMarket: market?.url || null, delayMs: Date.now()-currentBucket }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_btc', closedBucket: new Date(closedBucket).toISOString(), longCount, shortCount, leader: side, leaderCount: count, condition: 'exactly_one_side_zero_and_other_side_positive', consecutiveAlertBlocked: false, alertSent: true, nextMarket: market?.url || null, delayMs: Date.now()-currentBucket }));
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function main15m() {
-  console.log(`BTC 15M liquidation monitor started; min=${MIN_LIQUIDATIONS_15M}; exact boundary scheduling; consecutive alerts blocked`);
+  console.log('BTC 15M liquidation monitor started; no liquidation-count threshold; exactly one side must be zero; consecutive alerts blocked');
   while (true) {
     const now = Date.now();
     const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
