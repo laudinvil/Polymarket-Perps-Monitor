@@ -125,7 +125,9 @@ async function checkOnce() {
     // Different symbols, or a direction flip, may generate additional alerts.
     if (sentAlerts.has(alertKey)) continue;
 
-    const currentMarket = await findCurrentMarket(candidate.symbol, currentBucket + WINDOW_MS_5M);
+    // Alert for the current 5M interval must link to that same 5M market,
+    // not the following interval.
+    const currentMarket = await findCurrentMarket(candidate.symbol, currentBucket);
     const directionEmoji = winnerSide === 'long' ? '🔴' : '🟢';
     const message = [
       `${directionEmoji} LIQUIDATION LEADER`,
