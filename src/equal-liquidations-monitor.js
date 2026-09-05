@@ -78,13 +78,13 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-function countEqual(feeds, closedBucket, windowMs) {
-  const matches = [];
-  for (const symbol of SYMBOLS) {
+function countSides(feeds, closedBucket, windowMs) {
+  return SYMBOLS.map(symbol => {
     const events = feeds.get(symbol) || [];
     const seen = new Set();
     let long = 0;
     let short = 0;
+    let valid = 0;
     for (const event of events) {
       const ts = normalizeTs(event.ts);
       if (!ts || normalizeSymbol(event.symbol) !== symbol || bucketStart(ts, windowMs) !== closedBucket) continue;
@@ -93,12 +93,16 @@ function countEqual(feeds, closedBucket, windowMs) {
       const key = eventKey(event);
       if (seen.has(key)) continue;
       seen.add(key);
+      valid += 1;
       if (side === 'long') long += 1;
       else short += 1;
     }
-    if (long === short && long > 0) matches.push({ symbol, long, short, total: long + short });
-  }
-  return matches;
+    return { symbol, long, short, total: valid };
+  });
+}
+
+function countEqual(rows) {
+  return rows.filter(row => row.long === row.short && row.long > 0);
 }
 
 async function alertFor(matches, timeframe, currentBucket, closedBucket) {
@@ -134,16 +138,20 @@ async function main() {
   const feeds = await fetchAllFeeds();
   let changed = false;
 
+  const rows5 = countSides(feeds, closed5, FIVE_MS);
+  console.log(JSON.stringify({ type: 'liquidation_diagnostics_5m', bucket: new Date(closed5).toISOString(), symbols: rows5 }));
   const key5 = `5m:${closed5}`;
   if (!sent[key5]) {
-    const matches5 = countEqual(feeds, closed5, FIVE_MS);
+    const matches5 = countEqual(rows5);
     console.log(JSON.stringify({ type: 'equal_liquidations_5m', bucket: new Date(closed5).toISOString(), matches: matches5 }));
     if (matches5.length) { await alertFor(matches5, '5M', current5, closed5); sent[key5] = true; changed = true; }
   }
 
+  const rows15 = countSides(feeds, closed15, FIFTEEN_MS);
+  console.log(JSON.stringify({ type: 'liquidation_diagnostics_15m', bucket: new Date(closed15).toISOString(), symbols: rows15 }));
   const key15 = `15m:${closed15}`;
   if (!sent[key15]) {
-    const matches15 = countEqual(feeds, closed15, FIFTEEN_MS);
+    const matches15 = countEqual(rows15);
     console.log(JSON.stringify({ type: 'equal_liquidations_15m', bucket: new Date(closed15).toISOString(), matches: matches15 }));
     if (matches15.length) { await alertFor(matches15, '15M', current15, closed15); sent[key15] = true; changed = true; }
   }
