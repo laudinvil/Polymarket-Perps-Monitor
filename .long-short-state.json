@@ -10,23 +10,13 @@
     "XRP:long_liquidated:1.4020000000000001"
   ],
   "previousPrices": {
-    "BTC": 79640.4,
-    "ETH": 2454.13,
-    "SOL": 102.28,
-    "XRP": 1.4027,
-    "DOGE": 0.08598,
-    "BNB": 750.4,
-    "HYPE": 84.88
+    "BTC": 79640.3,
+    "ETH": 2454.12,
+    "SOL": 102.29,
+    "XRP": 1.4028,
+    "DOGE": 0.08599,
+    "BNB": 751.2,
+    "HYPE": 84.93
   },
-  "armedSymbols": [
-    "BTC",
-    "HYPE",
-    "ETH",
-    "SOL",
-    "XRP",
-    "DOGE",
-    "BNB"
-  ],
-  "rearmConditions": {},
   "lastAlertAt": 1788608022592
 }
