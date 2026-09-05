@@ -1,10 +1,10 @@
 const https = require('https');
 const { sendTelegramMessage } = require('./telegram');
+const { findNextMarket } = require('./polymarket');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const PRICE_URL = 'https://marginpad.io/api/v1/price';
 const CLUSTERS_URL = 'https://marginpad.io/api/v1/clusters';
-const POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com/events/slug';
 const POLL_MS = 30 * 1000;
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 const STATE_PATH = '.long-short-state.json';
@@ -254,27 +254,17 @@ async function getCoinSnapshot(symbol) {
 }
 
 async function nextMarketUrl(symbol) {
-  const intervalSeconds = 5 * 60;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const currentBoundary = Math.floor(nowSeconds / intervalSeconds) * intervalSeconds;
-  const nextBoundaryEpochSeconds = currentBoundary + intervalSeconds;
+  const market = await findNextMarket(symbol, Date.now());
+  const slug = String(market?.slug || '').trim().toLowerCase();
+  const expectedPrefix = `${symbol.toLowerCase()}-updown-5m-`;
 
-  // The slug MUST contain the full Unix timestamp in seconds (10 digits),
-  // not a truncated millisecond/second value. Resolve it through Gamma and
-  // never fall back to an unverified URL.
-  if (!Number.isInteger(nextBoundaryEpochSeconds) || nextBoundaryEpochSeconds < 1000000000) {
-    throw new Error(`Invalid Polymarket 5M timestamp: ${nextBoundaryEpochSeconds}`);
+  // Only send a link returned by the shared Polymarket resolver. It searches
+  // actual 5M markets and verifies the complete Unix timestamp in the slug.
+  if (!slug || !slug.startsWith(expectedPrefix) || !/^\d{10}$/.test(slug.slice(expectedPrefix.length))) {
+    throw new Error(`Invalid Polymarket 5M market for ${symbol}: ${market?.slug || 'missing slug'}`);
   }
 
-  const expectedSlug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
-  const event = await fetchJson(`${POLYMARKET_GAMMA_URL}/${expectedSlug}`);
-  const resolvedSlug = String(event?.slug || '').trim().toLowerCase();
-
-  if (!resolvedSlug || resolvedSlug !== expectedSlug) {
-    throw new Error(`Polymarket returned unexpected 5M slug: ${event?.slug || 'missing slug'} (expected ${expectedSlug})`);
-  }
-
-  return `https://polymarket.com/event/${resolvedSlug}`;
+  return `https://polymarket.com/event/${slug}`;
 }
 
 async function check() {
@@ -312,8 +302,6 @@ async function check() {
     return;
   }
 
-  // Resolve and validate the NEXT Polymarket market BEFORE reserving the alert.
-  // If Polymarket does not confirm the exact next market, no Telegram alert is sent.
   let polymarketUrl;
   try {
     polymarketUrl = await nextMarketUrl(winner.symbol);
@@ -374,7 +362,7 @@ async function check() {
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC cluster+5M dedupe; state persisted in GitHub`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC cluster+5M dedupe; shared Polymarket resolver; state persisted in GitHub`);
   while (true) {
     try { await check(); }
     catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
