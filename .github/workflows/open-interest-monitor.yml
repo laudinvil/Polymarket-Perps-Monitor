@@ -29,6 +29,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OI_PROXY_URL: ${{ secrets.OI_PROXY_URL }}
+          OI_PROXY_TOKEN: ${{ secrets.OI_PROXY_TOKEN }}
         run: node src/open-interest-monitor.js 2>&1 | tee open-interest-monitor.log
 
       - name: Upload Open Interest log
