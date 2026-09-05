@@ -5,6 +5,7 @@ const DEFAULT_SYMBOLS = ['BTC'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 15000;
 const WINDOW_MS = 5 * 60 * 1000;
+const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
 
 let fallbackCache = { fetchedAt: 0, eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -29,7 +30,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 
     const merged = new Map(liveFeedCache.events);
     for (const event of events) merged.set(eventKey(event), event);
-    const cutoff = Date.now() - 20 * 60 * 1000;
+    const cutoff = Date.now() - FEED_RETENTION_MS;
     for (const [key, event] of merged) {
       const ts = normalizeTs(event.ts);
       if (!ts || ts < cutoff) merged.delete(key);
@@ -77,4 +78,4 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Dat
 
 function aggregateEvents(events, symbols=DEFAULT_SYMBOLS, now=Date.now()) { const allowed=new Set(symbols.map(normalizeSymbol)); const current=bucketStart(now); const rows=new Map(); for(const event of events||[]){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol);if(!ts||!allowed.has(symbol))continue;const bucket=bucketStart(ts);if(bucket>=current)continue;const key=`${bucket}:${symbol}`;if(!rows.has(key))rows.set(key,{bucket,symbol,events:0,longEvents:0,shortEvents:0});const row=rows.get(key);const side=String(event.side||'').toLowerCase();if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}return [...rows.values()].sort((a,b)=>b.events-a.events); }
 function selectWinner(rows,bucket){return rows.filter(row=>row.bucket===bucket).sort((a,b)=>b.events-a.events)[0]||null;}
-module.exports={FEED_URL,LIVE_URL,DEFAULT_SYMBOLS,POLL_MS,FALLBACK_REFRESH_MS,WINDOW_MS,bucketStart,normalizeTs,normalizeSymbol,eventKey,extractEvents,fetchFeed,fetchSymbolFeed,aggregateEvents,selectWinner};
+module.exports={FEED_URL,LIVE_URL,DEFAULT_SYMBOLS,POLL_MS,FALLBACK_REFRESH_MS,WINDOW_MS,FEED_RETENTION_MS,bucketStart,normalizeTs,normalizeSymbol,eventKey,extractEvents,fetchFeed,fetchSymbolFeed,aggregateEvents,selectWinner};
