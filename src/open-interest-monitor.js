@@ -3,10 +3,10 @@ const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 const OI_URL = 'https://marginpad.io/api/v1/open-interest';
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
-const POLL_MS = 10 * 1000;
 
-// Separate strategy: this monitor is independent from liquidation monitoring.
-// It scans every symbol returned by MarginPad's open-interest endpoint.
+// Completely separate strategy: this monitor does not use liquidation data or state.
+// At each exact 5m boundary it compares OI snapshots. 15m compares snapshots exactly
+// 15 minutes apart. The winner is the coin with the largest absolute USD change.
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -18,6 +18,10 @@ function bucketStart(ms, windowMs) {
 
 function formatUtcPlus3(ms) {
   return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
+
+function formatUsd(value) {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
 async function fetchOpenInterest() {
@@ -73,88 +77,87 @@ async function sendTelegram(message) {
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
 }
 
-async function send5m(previous, current, boundary) {
+async function sendAlert(timeframe, previous, current, boundary) {
   const winner = largestChange(previous, current);
-  if (!winner) return;
+  if (!winner) {
+    console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString() }));
+    return;
+  }
 
-  const market = await findCurrentMarket(winner.symbol, boundary);
+  const market = timeframe === '5M'
+    ? await findCurrentMarket(winner.symbol, boundary)
+    : await findCurrentMarket15m(winner.symbol, boundary);
+
   const direction = winner.delta > 0 ? 'POSITIVE' : 'NEGATIVE';
   const emoji = winner.delta > 0 ? '🟢' : '🔴';
   const message = [
     `${emoji} OPEN INTEREST LEADER`,
-    `${winner.symbol} · OI · 5M · ${formatUtcPlus3(boundary)} UTC+3`,
+    `${winner.symbol} · OI · ${timeframe} · ${formatUtcPlus3(boundary)} UTC+3`,
     '',
     `Change: ${direction}`,
-    `OI change: ${winner.delta > 0 ? '+' : ''}${winner.delta.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
-    `Previous OI: ${winner.previousOi.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
-    `Current OI: ${winner.currentOi.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
+    `OI change: ${winner.delta > 0 ? '+' : ''}${formatUsd(winner.delta)} USD`,
+    `Previous OI: ${formatUsd(winner.previousOi)} USD`,
+    `Current OI: ${formatUsd(winner.currentOi)} USD`,
     '',
-    '➡️ NEXT Polymarket 5M',
+    `➡️ NEXT Polymarket ${timeframe}`,
     market?.url || 'Market not found yet'
   ].join('\n');
-  await sendTelegram(message);
-  console.log(JSON.stringify({ type: 'open_interest_5m_alert', boundary: new Date(boundary).toISOString(), symbol: winner.symbol, direction, delta: winner.delta, previousOi: winner.previousOi, currentOi: winner.currentOi, market: market?.url || null }));
-}
 
-async function send15m(previous, current, boundary) {
-  const winner = largestChange(previous, current);
-  if (!winner) return;
-
-  const market = await findCurrentMarket15m(winner.symbol, boundary);
-  const direction = winner.delta > 0 ? 'POSITIVE' : 'NEGATIVE';
-  const emoji = winner.delta > 0 ? '🟢' : '🔴';
-  const message = [
-    `${emoji} OPEN INTEREST LEADER`,
-    `${winner.symbol} · OI · 15M · ${formatUtcPlus3(boundary)} UTC+3`,
-    '',
-    `Change: ${direction}`,
-    `OI change: ${winner.delta > 0 ? '+' : ''}${winner.delta.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
-    `Previous OI: ${winner.previousOi.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
-    `Current OI: ${winner.currentOi.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD`,
-    '',
-    '➡️ NEXT Polymarket 15M',
-    market?.url || 'Market not found yet'
-  ].join('\n');
   await sendTelegram(message);
-  console.log(JSON.stringify({ type: 'open_interest_15m_alert', boundary: new Date(boundary).toISOString(), symbol: winner.symbol, direction, delta: winner.delta, previousOi: winner.previousOi, currentOi: winner.currentOi, market: market?.url || null }));
+  console.log(JSON.stringify({
+    type: `open_interest_${timeframe.toLowerCase()}_alert`,
+    boundary: new Date(boundary).toISOString(),
+    symbol: winner.symbol,
+    direction,
+    delta: winner.delta,
+    previousOi: winner.previousOi,
+    currentOi: winner.currentOi,
+    market: market?.url || null
+  }));
 }
 
 async function main() {
   console.log('Open Interest monitor started; separate strategy; 5M + 15M; largest absolute OI change; exact boundary scheduling');
 
-  let previousSnapshot = await fetchOpenInterest();
-  let previousBoundary = bucketStart(Date.now(), WINDOW_5M);
-  console.log(JSON.stringify({ type: 'open_interest_initial_snapshot', boundary: new Date(previousBoundary).toISOString(), symbols: previousSnapshot.size }));
+  const snapshots = new Map();
+  let nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
 
   while (true) {
-    const now = Date.now();
-    const nextBoundary = bucketStart(now, WINDOW_5M) + WINDOW_5M;
     await sleep(Math.max(0, nextBoundary - Date.now()));
+    const boundary = nextBoundary;
 
     try {
       const currentSnapshot = await fetchOpenInterest();
-      const boundary = nextBoundary;
-      const previous5m = previousSnapshot;
-      const previous5mBoundary = previousBoundary;
+      snapshots.set(boundary, currentSnapshot);
 
-      await send5m(previous5m, currentSnapshot, boundary);
-
-      if (Math.floor(boundary / WINDOW_15M) !== Math.floor(previous5mBoundary / WINDOW_15M)) {
-        await send15m(previous5m, currentSnapshot, boundary);
+      // 5M: compare exactly adjacent 5-minute boundary snapshots.
+      const previous5m = snapshots.get(boundary - WINDOW_5M);
+      if (previous5m) {
+        await sendAlert('5M', previous5m, currentSnapshot, boundary);
+      } else {
+        console.log(JSON.stringify({ type: 'open_interest_5m_waiting_for_baseline', boundary: new Date(boundary).toISOString(), symbols: currentSnapshot.size }));
       }
 
-      console.log(JSON.stringify({
-        type: 'open_interest_cycle',
-        boundary: new Date(boundary).toISOString(),
-        symbols: currentSnapshot.size,
-        previousBoundary: new Date(previous5mBoundary).toISOString()
-      }));
+      // 15M: compare exactly 15 minutes apart, never the immediately preceding 5m snapshot.
+      const previous15m = snapshots.get(boundary - WINDOW_15M);
+      if (previous15m) {
+        await sendAlert('15M', previous15m, currentSnapshot, boundary);
+      }
 
-      previousSnapshot = currentSnapshot;
-      previousBoundary = boundary;
+      // Keep only the recent snapshots needed for 15m comparison.
+      for (const key of snapshots.keys()) {
+        if (key < boundary - WINDOW_15M) snapshots.delete(key);
+      }
+
+      console.log(JSON.stringify({ type: 'open_interest_cycle', boundary: new Date(boundary).toISOString(), symbols: currentSnapshot.size }));
     } catch (error) {
       console.error(`OPEN INTEREST CYCLE FAILED: ${error.stack || error.message}`);
     }
+
+    nextBoundary += WINDOW_5M;
+    // If the runner was paused past one or more boundaries, skip stale periods and
+    // wait for the next real boundary instead of generating catch-up alerts.
+    if (nextBoundary <= Date.now()) nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
   }
 }
 
