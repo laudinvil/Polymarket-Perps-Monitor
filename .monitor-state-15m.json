@@ -1,0 +1,11 @@
+{
+  "alerts": [
+    "15m:1788627600000"
+  ],
+  "lastAlertPeriodBySymbol": [
+    {
+      "symbol": "BTC",
+      "period": 1788627600000
+    }
+  ]
+}
