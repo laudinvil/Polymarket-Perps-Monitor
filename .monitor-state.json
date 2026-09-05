@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-09-05T22:14:36.643Z",
-  "period": "2026-09-05T22:10:00.000Z",
+  "updatedAt": "2026-09-05T22:15:07.888Z",
+  "period": "2026-09-05T22:15:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -127,7 +127,7 @@
       "imbalanceUsd": -14717.24178,
       "totalLiquidations": 19,
       "lastEvent": "2026-09-05T22:01:30.000Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "ETH",
@@ -138,7 +138,7 @@
       "imbalanceUsd": -506.0626199999999,
       "totalLiquidations": 71,
       "lastEvent": "2026-09-05T22:09:50.515Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "SOL",
@@ -149,7 +149,7 @@
       "imbalanceUsd": -610.7621,
       "totalLiquidations": 10,
       "lastEvent": "2026-09-05T22:01:30.000Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "XRP",
@@ -160,7 +160,7 @@
       "imbalanceUsd": -7829.239680000001,
       "totalLiquidations": 15,
       "lastEvent": "2026-09-05T22:02:31.120Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "DOGE",
@@ -171,7 +171,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 22,
       "lastEvent": "2026-09-05T21:49:09.093Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "BNB",
@@ -182,7 +182,7 @@
       "imbalanceUsd": -92.55359999999999,
       "totalLiquidations": 4,
       "lastEvent": "2026-09-05T22:06:11.099Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     },
     {
       "symbol": "HYPE",
@@ -193,7 +193,7 @@
       "imbalanceUsd": -15.409619999999999,
       "totalLiquidations": 11,
       "lastEvent": "2026-09-05T22:02:34.719Z",
-      "period": "2026-09-05T22:10:00.000Z"
+      "period": "2026-09-05T22:15:00.000Z"
     }
   ],
   "liquidationRunning": [
