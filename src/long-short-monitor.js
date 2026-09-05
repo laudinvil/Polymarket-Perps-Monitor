@@ -255,15 +255,26 @@ async function getCoinSnapshot(symbol) {
 
 async function nextMarketUrl(symbol) {
   const intervalSeconds = 5 * 60;
-  const nextBoundaryEpochSeconds = Math.floor(Date.now() / (intervalSeconds * 1000)) * intervalSeconds + intervalSeconds;
-  const slug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
-  try {
-    const event = await fetchJson(`${POLYMARKET_GAMMA_URL}/${slug}`);
-    if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
-  } catch (error) {
-    console.warn(`POLYMARKET LINK RESOLVE FAILED: ${symbol}: ${error.message}`);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const currentBoundary = Math.floor(nowSeconds / intervalSeconds) * intervalSeconds;
+  const nextBoundaryEpochSeconds = currentBoundary + intervalSeconds;
+
+  // The slug MUST contain the full Unix timestamp in seconds (10 digits),
+  // not a truncated millisecond/second value. Resolve it through Gamma and
+  // never fall back to an unverified URL.
+  if (!Number.isInteger(nextBoundaryEpochSeconds) || nextBoundaryEpochSeconds < 1000000000) {
+    throw new Error(`Invalid Polymarket 5M timestamp: ${nextBoundaryEpochSeconds}`);
   }
-  return `https://polymarket.com/event/${slug}`;
+
+  const expectedSlug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
+  const event = await fetchJson(`${POLYMARKET_GAMMA_URL}/${expectedSlug}`);
+  const resolvedSlug = String(event?.slug || '').trim().toLowerCase();
+
+  if (!resolvedSlug || resolvedSlug !== expectedSlug) {
+    throw new Error(`Polymarket returned unexpected 5M slug: ${event?.slug || 'missing slug'} (expected ${expectedSlug})`);
+  }
+
+  return `https://polymarket.com/event/${resolvedSlug}`;
 }
 
 async function check() {
@@ -301,6 +312,17 @@ async function check() {
     return;
   }
 
+  // Resolve and validate the NEXT Polymarket market BEFORE reserving the alert.
+  // If Polymarket does not confirm the exact next market, no Telegram alert is sent.
+  let polymarketUrl;
+  try {
+    polymarketUrl = await nextMarketUrl(winner.symbol);
+  } catch (error) {
+    console.warn(`POLYMARKET LINK RESOLVE FAILED: ${winner.symbol}: ${error.message}`);
+    await saveState();
+    return;
+  }
+
   const reserved = await reserveAlertSlot(winner.symbol, bucket, cluster.clusterKey);
   if (!reserved) {
     console.log(JSON.stringify({ type: 'cluster_duplicate_or_reservation_lost', symbol: winner.symbol, cluster: cluster.clusterKey, bucket }));
@@ -313,7 +335,6 @@ async function check() {
   const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
-  const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
     `${emoji} CLUSTER TOUCHED`,
     `${winner.symbol} · 5M`,
