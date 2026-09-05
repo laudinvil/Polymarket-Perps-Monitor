@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:07:24.406Z",
+  "updatedAt": "2026-09-05T21:07:35.440Z",
   "period": "2026-09-05T21:05:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -127,19 +127,19 @@
     {
       "symbol": "ETH",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "shortLiquidations": 1,
+      "imbalance": -1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:07:30.923Z",
       "period": "2026-09-05T21:05:00.000Z"
     },
     {
       "symbol": "SOL",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "shortLiquidations": 1,
+      "imbalance": -1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:07:30.924Z",
       "period": "2026-09-05T21:05:00.000Z"
     },
     {
