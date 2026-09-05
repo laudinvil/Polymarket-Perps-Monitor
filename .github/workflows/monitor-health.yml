@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - '.monitor-state.json'
+      - 'monitor-status.json'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
@@ -34,7 +35,37 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: node src/index.js 2>&1 | tee monitor.log
+        run: |
+          set -o pipefail
+          node src/index.js 2>&1 | tee monitor.log &
+          MONITOR_PID=$!
+
+          # Keep a small live snapshot in the repository every 60 seconds.
+          # This is intentionally separate from .monitor-state.json so the
+          # monitoring state is not rewritten/committed every poll.
+          while kill -0 "$MONITOR_PID" 2>/dev/null; do
+            sleep 60
+            if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
+              break
+            fi
+            {
+              echo "# MarginPad monitor live status"
+              echo
+              echo "Updated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              echo
+              echo '```text'
+              tail -n 80 monitor.log
+              echo '```'
+            } > monitor-status.md
+
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add monitor-status.md
+            git diff --cached --quiet || git commit -m 'Update live monitor status'
+            git push || true
+          done
+
+          wait "$MONITOR_PID"
 
       - name: Upload monitor log
         if: always()
