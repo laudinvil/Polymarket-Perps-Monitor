@@ -124,36 +124,46 @@ function localState() {
 
 async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify(localState(), null, 2)).toString('base64');
-  for (let attempt = 1; attempt <= 4; attempt++) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
     try {
       const current = await githubRequest('GET');
-      const currentSha = current?.sha || stateSha;
+      const remoteState = decodeState(current);
+      const mergedState = {
+        ...remoteState,
+        sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-1000),
+        previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
+        armedSymbols: [...new Set([...(remoteState.armedSymbols || []), ...armedSymbols])],
+        rearmConditions: { ...(remoteState.rearmConditions || {}), ...Object.fromEntries(rearmConditions) },
+        alertedBuckets: { ...(remoteState.alertedBuckets || {}), ...Object.fromEntries(alertedBuckets) },
+        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
+      };
       const result = await githubRequest('PUT', {
         message: 'Persist long short cluster monitor state',
-        content,
+        content: Buffer.from(JSON.stringify(mergedState, null, 2)).toString('base64'),
         branch: process.env.GITHUB_REF_NAME || 'main',
-        ...(currentSha ? { sha: currentSha } : {})
+        ...(current?.sha ? { sha: current.sha } : {})
       });
-      stateSha = result?.content?.sha || currentSha || stateSha;
+      stateSha = result?.content?.sha || current?.sha || stateSha;
       return;
     } catch (error) {
       const isConflict = /GitHub state request failed: 409\b/.test(error.message);
-      if (!isConflict || attempt === 4) {
+      if (!isConflict || attempt === 6) {
         console.warn(`STATE SAVE FAILED: ${error.message}`);
         return;
       }
-      await sleep(250 * attempt);
+      await sleep(200 * attempt);
     }
   }
 }
 
 async function reserveAlertSlot(symbol, bucket) {
   if (!process.env.GITHUB_TOKEN) {
-    return alertedBuckets.get(symbol) !== bucket;
+    if (alertedBuckets.get(symbol) === bucket) return false;
+    alertedBuckets.set(symbol, bucket);
+    return true;
   }
 
-  for (let attempt = 1; attempt <= 6; attempt++) {
+  for (let attempt = 1; attempt <= 8; attempt++) {
     try {
       const current = await githubRequest('GET');
       const remoteState = decodeState(current);
@@ -184,7 +194,7 @@ async function reserveAlertSlot(symbol, bucket) {
       return true;
     } catch (error) {
       const isConflict = /GitHub state request failed: 409\b/.test(error.message);
-      if (!isConflict || attempt === 6) {
+      if (!isConflict || attempt === 8) {
         console.warn(`ALERT SLOT RESERVATION FAILED: ${error.message}`);
         return false;
       }
@@ -367,6 +377,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error(`CLUSTER MONITOR FAILED: ${error.stack || error.message}`);
-  process.exitCode = 1;
+  console.error(error.stack || error.message);
+  process.exit(1);
 });
