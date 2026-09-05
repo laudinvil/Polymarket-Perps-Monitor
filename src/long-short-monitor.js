@@ -79,7 +79,6 @@ async function saveState() {
         branch: process.env.GITHUB_REF_NAME || 'main',
         ...(currentSha ? { sha: currentSha } : {})
       };
-
       const result = await githubRequest('PUT', body);
       stateSha = result?.content?.sha || currentSha || stateSha;
       return;
@@ -134,7 +133,7 @@ function clusterKey(symbol, cluster) {
 }
 
 // Touch means ONLY exact equality or a real crossing between two polls.
-// Being merely close to the cluster (for example 750.3 vs 750) is NOT a touch.
+// Being merely close to the cluster is NOT a touch.
 function isTouch(previousPrice, currentPrice, clusterPrice) {
   if (currentPrice == null || clusterPrice == null) return false;
   if (currentPrice === clusterPrice) return true;
@@ -146,12 +145,14 @@ function isTouch(previousPrice, currentPrice, clusterPrice) {
 
 function approachDirection(previousPrice, currentPrice, clusterPrice) {
   if (previousPrice != null) {
-    if (previousPrice < clusterPrice && currentPrice >= clusterPrice) return 'СНИЗУ ВВЕРХ';
-    if (previousPrice > clusterPrice && currentPrice <= clusterPrice) return 'СВЕРХУ ВНИЗ';
+    if (previousPrice < clusterPrice && currentPrice > clusterPrice) return 'СНИЗУ ВВЕРХ';
+    if (previousPrice > clusterPrice && currentPrice < clusterPrice) return 'СВЕРХУ ВНИЗ';
+    if (currentPrice === clusterPrice) {
+      if (previousPrice < clusterPrice) return 'СНИЗУ ВВЕРХ';
+      if (previousPrice > clusterPrice) return 'СВЕРХУ ВНИЗ';
+    }
   }
-  return currentPrice > clusterPrice ? 'СНИЗУ ВВЕРХ' :
-         currentPrice < clusterPrice ? 'СВЕРХУ ВНИЗ' :
-         'ТОЧНОЕ КАСАНИЕ';
+  return 'ТОЧНОЕ КАСАНИЕ';
 }
 
 async function getCoinSnapshot(symbol) {
@@ -264,8 +265,6 @@ async function check() {
     return;
   }
 
-  // Reserve the alert BEFORE sending Telegram. This prevents two concurrent
-  // workflow instances from both sending the same cluster alert.
   sentClusters.add(cluster.clusterKey);
   lastAlertAt = Date.now();
   await saveState();
@@ -278,6 +277,7 @@ async function check() {
     `${winner.symbol} · 5M`,
     '',
     `Cluster: ${sideLabel}`,
+    `Previous price: ${winner.previousPrice ?? 'N/A'}`,
     `Cluster price: ${cluster.price}`,
     `Current price: ${winner.currentPrice}`,
     `Direction: ${direction}`,
@@ -298,6 +298,7 @@ async function check() {
     type: 'cluster_alert_sent',
     symbol: winner.symbol,
     side: sideLabel,
+    previousPrice: winner.previousPrice,
     clusterPrice: cluster.price,
     currentPrice: winner.currentPrice,
     direction,
