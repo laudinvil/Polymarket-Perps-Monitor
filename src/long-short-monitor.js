@@ -6,7 +6,6 @@ const PRICE_URL = 'https://marginpad.io/api/v1/price';
 const CLUSTERS_URL = 'https://marginpad.io/api/v1/clusters';
 const POLL_MS = 30 * 1000;
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
-const TOUCH_TOLERANCE_PCT = 0.05;
 const STATE_PATH = '.long-short-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 
@@ -138,20 +137,20 @@ function clusterKey(symbol, cluster) {
   return `${symbol}:${cluster.side}:${cluster.price}`;
 }
 
+// A cluster is touched only when the price reaches the exact cluster level
+// or moves through it between two polls. There is NO percentage tolerance.
 function isTouch(previousPrice, currentPrice, clusterPrice) {
-  if (previousPrice == null || currentPrice == null) return false;
+  if (currentPrice == null || clusterPrice == null) return false;
 
-  const tolerance = clusterPrice * (TOUCH_TOLERANCE_PCT / 100);
-  const previousDistance = Math.abs(previousPrice - clusterPrice);
-  const currentDistance = Math.abs(currentPrice - clusterPrice);
+  // Exact price match.
+  if (currentPrice === clusterPrice) return true;
 
-  if (currentDistance <= tolerance) return true;
-
-  const crossed = (previousPrice <= clusterPrice && currentPrice >= clusterPrice) ||
-                  (previousPrice >= clusterPrice && currentPrice <= clusterPrice);
-  if (crossed) return true;
-
-  return previousDistance > tolerance && currentDistance <= tolerance;
+  // The price crossed the cluster level between the previous and current poll.
+  if (previousPrice == null) return false;
+  return (previousPrice < clusterPrice && currentPrice > clusterPrice) ||
+         (previousPrice > clusterPrice && currentPrice < clusterPrice) ||
+         (previousPrice < clusterPrice && currentPrice === clusterPrice) ||
+         (previousPrice > clusterPrice && currentPrice === clusterPrice);
 }
 
 async function getCoinSnapshot(symbol) {
