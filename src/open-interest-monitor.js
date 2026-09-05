@@ -3,10 +3,12 @@ const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 const OI_URL = 'https://marginpad.io/api/v1/open-interest';
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
+const SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE']);
 
 // Completely separate strategy: this monitor does not use liquidation data or state.
-// At each exact 5m boundary it compares OI snapshots. 15m compares snapshots exactly
-// 15 minutes apart. The winner is the coin with the largest absolute USD change.
+// Only the seven configured coins are considered. At each exact 5m boundary it compares
+// adjacent snapshots; 15m compares snapshots exactly 15 minutes apart.
+// The winner is the coin with the largest absolute USD change in OI.
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -45,10 +47,10 @@ async function fetchOpenInterest() {
   for (const row of rows) {
     const symbol = String(row?.symbol || row?.ticker || '').trim().toUpperCase();
     const value = Number(row?.openInterest ?? row?.open_interest ?? row?.oi ?? row?.value);
-    if (!symbol || !Number.isFinite(value)) continue;
+    if (!SYMBOLS.has(symbol) || !Number.isFinite(value)) continue;
     snapshot.set(symbol, value);
   }
-  if (!snapshot.size) throw new Error('MarginPad OI response contained no usable symbols');
+  if (!snapshot.size) throw new Error('MarginPad OI response contained no configured symbols');
   return snapshot;
 }
 
@@ -80,7 +82,7 @@ async function sendTelegram(message) {
 async function sendAlert(timeframe, previous, current, boundary) {
   const winner = largestChange(previous, current);
   if (!winner) {
-    console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString() }));
+    console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString(), symbols: [...SYMBOLS] }));
     return;
   }
 
@@ -117,7 +119,7 @@ async function sendAlert(timeframe, previous, current, boundary) {
 }
 
 async function main() {
-  console.log('Open Interest monitor started; separate strategy; 5M + 15M; largest absolute OI change; exact boundary scheduling');
+  console.log('Open Interest monitor started; symbols=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; 5M + 15M; largest absolute OI change; exact boundary scheduling');
 
   const snapshots = new Map();
   let nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
@@ -130,33 +132,28 @@ async function main() {
       const currentSnapshot = await fetchOpenInterest();
       snapshots.set(boundary, currentSnapshot);
 
-      // 5M: compare exactly adjacent 5-minute boundary snapshots.
       const previous5m = snapshots.get(boundary - WINDOW_5M);
       if (previous5m) {
         await sendAlert('5M', previous5m, currentSnapshot, boundary);
       } else {
-        console.log(JSON.stringify({ type: 'open_interest_5m_waiting_for_baseline', boundary: new Date(boundary).toISOString(), symbols: currentSnapshot.size }));
+        console.log(JSON.stringify({ type: 'open_interest_5m_waiting_for_baseline', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
       }
 
-      // 15M: compare exactly 15 minutes apart, never the immediately preceding 5m snapshot.
       const previous15m = snapshots.get(boundary - WINDOW_15M);
       if (previous15m) {
         await sendAlert('15M', previous15m, currentSnapshot, boundary);
       }
 
-      // Keep only the recent snapshots needed for 15m comparison.
       for (const key of snapshots.keys()) {
         if (key < boundary - WINDOW_15M) snapshots.delete(key);
       }
 
-      console.log(JSON.stringify({ type: 'open_interest_cycle', boundary: new Date(boundary).toISOString(), symbols: currentSnapshot.size }));
+      console.log(JSON.stringify({ type: 'open_interest_cycle', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
     } catch (error) {
       console.error(`OPEN INTEREST CYCLE FAILED: ${error.stack || error.message}`);
     }
 
     nextBoundary += WINDOW_5M;
-    // If the runner was paused past one or more boundaries, skip stale periods and
-    // wait for the next real boundary instead of generating catch-up alerts.
     if (nextBoundary <= Date.now()) nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
   }
 }
