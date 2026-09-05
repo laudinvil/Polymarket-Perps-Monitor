@@ -4,6 +4,7 @@ const { sendTelegramMessage } = require('./telegram');
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const PRICE_URL = 'https://marginpad.io/api/v1/price';
 const CLUSTERS_URL = 'https://marginpad.io/api/v1/clusters';
+const POLYMARKET_GAMMA_URL = 'https://gamma-api.polymarket.com/events/slug';
 const POLL_MS = 30 * 1000;
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 const STATE_PATH = '.long-short-state.json';
@@ -185,10 +186,26 @@ async function getCoinSnapshot(symbol) {
   };
 }
 
-function nextMarketUrl(symbol) {
+// Polymarket 5m event slugs use the UTC start timestamp in seconds.
+// Resolve the exact next event through Gamma API instead of constructing an
+// unchecked URL. This prevents malformed/nonexistent event links in alerts.
+async function nextMarketUrl(symbol) {
+  const intervalSeconds = 5 * 60;
   const nextBoundaryEpochSeconds =
-    Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60) + (5 * 60);
-  return `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
+    Math.floor(Date.now() / (intervalSeconds * 1000)) * intervalSeconds + intervalSeconds;
+  const slug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
+  const url = `${POLYMARKET_GAMMA_URL}/${slug}`;
+
+  try {
+    const event = await fetchJson(url);
+    if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
+    throw new Error('Gamma API returned no event slug');
+  } catch (error) {
+    console.warn(`POLYMARKET LINK RESOLVE FAILED: ${symbol}: ${error.message}`);
+    // The deterministic slug is still the documented fallback, but only after
+    // the live Gamma lookup fails.
+    return `https://polymarket.com/event/${slug}`;
+  }
 }
 
 async function check() {
@@ -272,6 +289,7 @@ async function check() {
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
+  const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
     `${emoji} CLUSTER TOUCHED`,
     `${winner.symbol} · 5M`,
@@ -285,7 +303,7 @@ async function check() {
     `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
     '',
     '➡️ NEXT Polymarket 5M',
-    nextMarketUrl(winner.symbol)
+    polymarketUrl
   ].join('\n');
 
   try {
@@ -303,6 +321,7 @@ async function check() {
     currentPrice: winner.currentPrice,
     direction,
     distancePct: cluster.distancePct,
+    polymarketUrl,
     clusterKey: cluster.clusterKey
   }));
 }
