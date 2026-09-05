@@ -144,6 +144,16 @@ function isTouch(previousPrice, currentPrice, clusterPrice) {
          (previousPrice > clusterPrice && currentPrice < clusterPrice);
 }
 
+function approachDirection(previousPrice, currentPrice, clusterPrice) {
+  if (previousPrice != null) {
+    if (previousPrice < clusterPrice && currentPrice >= clusterPrice) return 'СНИЗУ ВВЕРХ';
+    if (previousPrice > clusterPrice && currentPrice <= clusterPrice) return 'СВЕРХУ ВНИЗ';
+  }
+  return currentPrice > clusterPrice ? 'СНИЗУ ВВЕРХ' :
+         currentPrice < clusterPrice ? 'СВЕРХУ ВНИЗ' :
+         'ТОЧНОЕ КАСАНИЕ';
+}
+
 async function getCoinSnapshot(symbol) {
   const [priceData, clusterData] = await Promise.all([
     fetchJson(`${PRICE_URL}?symbol=${encodeURIComponent(symbol)}`),
@@ -201,6 +211,7 @@ async function check() {
         previousPrice: snapshot.previousPrice,
         currentPrice: snapshot.currentPrice,
         clusterPrice: cluster.price,
+        direction: approachDirection(snapshot.previousPrice, snapshot.currentPrice, cluster.price),
         distancePct: cluster.distancePct,
         clusterKey: cluster.clusterKey
       }));
@@ -261,6 +272,7 @@ async function check() {
 
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
+  const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
   const message = [
     `${emoji} CLUSTER TOUCHED`,
     `${winner.symbol} · 5M`,
@@ -268,6 +280,7 @@ async function check() {
     `Cluster: ${sideLabel}`,
     `Cluster price: ${cluster.price}`,
     `Current price: ${winner.currentPrice}`,
+    `Direction: ${direction}`,
     `Distance: ${cluster.distancePct.toFixed(2)}%`,
     `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
     '',
@@ -287,6 +300,7 @@ async function check() {
     side: sideLabel,
     clusterPrice: cluster.price,
     currentPrice: winner.currentPrice,
+    direction,
     distancePct: cluster.distancePct,
     clusterKey: cluster.clusterKey
   }));
