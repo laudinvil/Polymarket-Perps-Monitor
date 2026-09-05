@@ -118,8 +118,10 @@ function normalizeCluster(raw) {
   return { price, estNotional, side };
 }
 
+// Identity of a cluster must NOT depend on changing volume/notional.
+// The same price/side cluster can receive updated volume on every API poll.
 function clusterKey(symbol, cluster) {
-  return `${symbol}:${cluster.side}:${cluster.price}:${cluster.estNotional}`;
+  return `${symbol}:${cluster.side}:${cluster.price}`;
 }
 
 function isTouch(previousPrice, currentPrice, clusterPrice) {
@@ -129,15 +131,12 @@ function isTouch(previousPrice, currentPrice, clusterPrice) {
   const previousDistance = Math.abs(previousPrice - clusterPrice);
   const currentDistance = Math.abs(currentPrice - clusterPrice);
 
-  // Price is currently on the cluster.
   if (currentDistance <= tolerance) return true;
 
-  // Price crossed the cluster between two polls.
   const crossed = (previousPrice <= clusterPrice && currentPrice >= clusterPrice) ||
                   (previousPrice >= clusterPrice && currentPrice <= clusterPrice);
   if (crossed) return true;
 
-  // Price moved into the tolerance band between polls.
   return previousDistance > tolerance && currentDistance <= tolerance;
 }
 
@@ -153,8 +152,6 @@ async function getCoinSnapshot(symbol) {
     return { symbol, currentPrice, previousPrice: previousPrices.get(symbol) ?? null, clusters, nearest: null };
   }
 
-  // Ignore clusters that have already produced an alert. The next target is
-  // always the nearest remaining cluster to the current price.
   const available = clusters
     .map(cluster => ({
       ...cluster,
@@ -189,8 +186,6 @@ async function check() {
     }
   }));
 
-  // Update price history even when no alert is possible. This makes the next
-  // poll able to detect a cluster crossing.
   for (const snapshot of snapshots) {
     if (snapshot.currentPrice != null) previousPrices.set(snapshot.symbol, snapshot.currentPrice);
   }
@@ -221,8 +216,6 @@ async function check() {
     return;
   }
 
-  // If several clusters are touched in the same poll, alert only for the
-  // globally nearest one. The others remain available for the next poll.
   touched.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
   const winner = touched[0];
   const cluster = winner.nearest;
