@@ -69,8 +69,6 @@ async function saveState() {
     lastAlertAt
   }, null, 2)).toString('base64');
 
-  // Refresh the file SHA immediately before every write. A long-running
-  // monitor can otherwise keep a stale SHA for hours and receive GitHub 409.
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const current = await githubRequest('GET');
@@ -131,26 +129,19 @@ function normalizeCluster(raw) {
   return { price, estNotional, side };
 }
 
-// Identity of a cluster must NOT depend on changing volume/notional.
-// The same price/side cluster can receive updated volume on every API poll.
 function clusterKey(symbol, cluster) {
   return `${symbol}:${cluster.side}:${cluster.price}`;
 }
 
-// A cluster is touched only when the price reaches the exact cluster level
-// or moves through it between two polls. There is NO percentage tolerance.
+// Touch means ONLY exact equality or a real crossing between two polls.
+// Being merely close to the cluster (for example 750.3 vs 750) is NOT a touch.
 function isTouch(previousPrice, currentPrice, clusterPrice) {
   if (currentPrice == null || clusterPrice == null) return false;
-
-  // Exact price match.
   if (currentPrice === clusterPrice) return true;
-
-  // The price crossed the cluster level between the previous and current poll.
   if (previousPrice == null) return false;
+
   return (previousPrice < clusterPrice && currentPrice > clusterPrice) ||
-         (previousPrice > clusterPrice && currentPrice < clusterPrice) ||
-         (previousPrice < clusterPrice && currentPrice === clusterPrice) ||
-         (previousPrice > clusterPrice && currentPrice === clusterPrice);
+         (previousPrice > clusterPrice && currentPrice < clusterPrice);
 }
 
 async function getCoinSnapshot(symbol) {
@@ -184,9 +175,6 @@ async function getCoinSnapshot(symbol) {
 }
 
 function nextMarketUrl(symbol) {
-  // Polymarket recurring 5m event slugs use the START timestamp of the NEXT
-  // 5-minute window in Unix seconds (10 digits), not milliseconds and not a
-  // millisecond value divided a second time.
   const nextBoundaryEpochSeconds =
     Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60) + (5 * 60);
   return `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
@@ -202,15 +190,27 @@ async function check() {
     }
   }));
 
-  for (const snapshot of snapshots) {
-    if (snapshot.currentPrice != null) previousPrices.set(snapshot.symbol, snapshot.currentPrice);
-  }
-
   const touched = snapshots.filter(snapshot => {
     const cluster = snapshot.nearest;
     if (!cluster) return false;
-    return isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
+    const touched = isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
+    if (touched) {
+      console.log(JSON.stringify({
+        type: 'cluster_touch_detected',
+        symbol: snapshot.symbol,
+        previousPrice: snapshot.previousPrice,
+        currentPrice: snapshot.currentPrice,
+        clusterPrice: cluster.price,
+        distancePct: cluster.distancePct,
+        clusterKey: cluster.clusterKey
+      }));
+    }
+    return touched;
   });
+
+  for (const snapshot of snapshots) {
+    if (snapshot.currentPrice != null) previousPrices.set(snapshot.symbol, snapshot.currentPrice);
+  }
 
   if (touched.length === 0) {
     const nearest = snapshots
@@ -253,6 +253,12 @@ async function check() {
     return;
   }
 
+  // Reserve the alert BEFORE sending Telegram. This prevents two concurrent
+  // workflow instances from both sending the same cluster alert.
+  sentClusters.add(cluster.clusterKey);
+  lastAlertAt = Date.now();
+  await saveState();
+
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const message = [
@@ -269,10 +275,11 @@ async function check() {
     nextMarketUrl(winner.symbol)
   ].join('\n');
 
-  await sendTelegramMessage(message);
-  sentClusters.add(cluster.clusterKey);
-  lastAlertAt = Date.now();
-  await saveState();
+  try {
+    await sendTelegramMessage(message);
+  } catch (error) {
+    console.warn(`TELEGRAM SEND FAILED: ${error.message}`);
+  }
 
   console.log(JSON.stringify({
     type: 'cluster_alert_sent',
@@ -287,7 +294,7 @@ async function check() {
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on price touch; next unprocessed cluster after each alert; max 1 alert per 5 minutes; no duplicates`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on exact touch/cross; next unprocessed cluster after each alert; max 1 alert per 5 minutes; no duplicates`);
 
   while (true) {
     try {
