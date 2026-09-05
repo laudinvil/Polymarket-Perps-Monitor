@@ -1,0 +1,28 @@
+name: MarginPad Clusters Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Run clusters diagnostic
+        run: node src/clusters-diagnostic.js 2>&1 | tee clusters-diagnostic.log
+
+      - name: Upload clusters log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clusters-diagnostic-${{ github.run_id }}
+          path: clusters-diagnostic.log
+          retention-days: 1
