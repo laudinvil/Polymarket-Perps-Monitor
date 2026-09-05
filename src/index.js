@@ -88,15 +88,16 @@ async function loadState() {
       for (const item of old) {
         const symbol = normalizeSymbol(item.symbol);
         if (!map.has(symbol)) continue;
+        const imbalanceUsd = Number(item.imbalanceUsd) || 0;
         map.set(symbol, {
           ...emptySymbolState(),
-          imbalanceUsd: Number(item.imbalanceUsd) || 0,
+          imbalanceUsd,
           longUsd: Number(item.longUsd) || 0,
           shortUsd: Number(item.shortUsd) || 0,
           longEvents: Number(item.longEvents) || 0,
           shortEvents: Number(item.shortEvents) || 0,
           events: Number(item.events) || 0,
-          establishedSign: Number(item.establishedSign) || 0,
+          establishedSign: imbalanceUsd > 0 ? 1 : imbalanceUsd < 0 ? -1 : 0,
           lastBucket: null,
         });
       }
@@ -272,7 +273,7 @@ async function sendCrossingAlert(crossing) {
 
   const emoji = crossing.after < 0 ? '🔴' : '🟢';
   const message = [
-    `${emoji} LIQUIDATION IMBALANCE FLIP`,
+    `${emoji} LIQUIDATION FLIP`,
     `${crossing.symbol} · ${crossing.timeframe.toUpperCase()} · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
     `Previous imbalance: ${formatUsd(crossing.before)}`,
     `New imbalance: ${formatUsd(crossing.after)}`,
@@ -345,6 +346,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error(error.stack || error.message);
-  process.exit(1);
+  console.error(error);
+  process.exitCode = 1;
 });
