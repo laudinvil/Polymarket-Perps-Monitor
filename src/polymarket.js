@@ -7,6 +7,15 @@ const TIMEFRAMES = {
   '4h': 4 * 60 * 60 * 1000,
   '1d': 24 * 60 * 60 * 1000,
 };
+const LONG_ASSET_SLUG = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  SOL: 'solana',
+  XRP: 'xrp',
+  DOGE: 'dogecoin',
+  BNB: 'bnb',
+  HYPE: 'hyperliquid',
+};
 
 function bucketStart(now = Date.now(), timeframe = '5m') {
   return Math.floor(now / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe];
@@ -43,30 +52,24 @@ function easternParts(epoch) {
     hour: 'numeric',
     hour12: true,
   }).formatToParts(new Date(epoch));
-  const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return map;
+  return Object.fromEntries(parts.map(part => [part.type, part.value]));
 }
 
-function dailySlug(symbol, epoch) {
+function longTimeframeSlug(symbol, epoch, timeframe) {
+  const asset = LONG_ASSET_SLUG[symbol] || symbol.toLowerCase();
   const p = easternParts(epoch);
-  return `${symbol.toLowerCase()}-up-or-down-on-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}`;
-}
-
-function hourlySlug(symbol, epoch) {
-  const p = easternParts(epoch);
-  const hour = Number(p.hour);
-  const ampm = p.dayPeriod.toLowerCase();
-  return `bitcoin-up-or-down-${p.month.toLowerCase()}-${Number(p.day)}-${hour}${ampm}-et`.replace(/^bitcoin/, symbol.toLowerCase());
+  if (timeframe === '1d') return `${asset}-up-or-down-on-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}`;
+  if (timeframe === '1h') {
+    return `${asset}-up-or-down-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}-${Number(p.hour)}${p.dayPeriod.toLowerCase()}-et`;
+  }
+  return null;
 }
 
 async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
-  const asset = String(symbol || '').trim().toLowerCase();
+  const asset = String(symbol || '').trim().toUpperCase();
   if (!asset) return null;
-
-  if (timeframe === '1h') return findMarketBySlug(hourlySlug(asset, epoch));
-  if (timeframe === '1d') return findMarketBySlug(dailySlug(asset, epoch));
-
-  const slug = `${asset}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
+  if (timeframe === '1h' || timeframe === '1d') return findMarketBySlug(longTimeframeSlug(asset, epoch, timeframe));
+  const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
   return findMarketBySlug(slug);
 }
 
@@ -79,10 +82,4 @@ async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
   return null;
 }
 
-module.exports = {
-  TIMEFRAMES,
-  bucketStart,
-  nextBucketStart,
-  findMarketByEpoch,
-  findNextMarket,
-};
+module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, findMarketByEpoch, findNextMarket };
