@@ -14,6 +14,7 @@ const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const sentAlerts = new Set();
+const lastAlertPeriodBySymbol = new Map();
 let stateSha = null;
 
 function githubRequest(method, body = null) {
@@ -44,6 +45,9 @@ async function loadState() {
     stateSha = data.sha || null;
     const state = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
     for (const key of state.alerts || []) sentAlerts.add(key);
+    for (const entry of state.lastAlertPeriodBySymbol || []) {
+      if (entry && entry.symbol && Number.isFinite(entry.period)) lastAlertPeriodBySymbol.set(normalizeSymbol(entry.symbol), Number(entry.period));
+    }
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -51,7 +55,10 @@ async function loadState() {
 
 async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify({ alerts: [...sentAlerts].slice(-500) }, null, 2)).toString('base64');
+  const content = Buffer.from(JSON.stringify({
+    alerts: [...sentAlerts].slice(-500),
+    lastAlertPeriodBySymbol: [...lastAlertPeriodBySymbol.entries()].map(([symbol, period]) => ({ symbol, period })).slice(-100),
+  }, null, 2)).toString('base64');
   const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
   if (stateSha) body.sha = stateSha;
   try {
@@ -122,6 +129,14 @@ async function checkOnce(boundary) {
     const winnerSide = candidate.long === REQUIRED_LONG_LIQUIDATIONS ? 'long' : 'short';
     const winnerCount = winnerSide === 'long' ? candidate.long : candidate.short;
     const alertKey = `5m:${closedBucket}:${candidate.symbol}:${winnerSide}`;
+    const lastPeriod = lastAlertPeriodBySymbol.get(candidate.symbol);
+
+    // Do not repeat the same coin in the immediately following 5M period.
+    // After one skipped period, the coin is eligible again.
+    if (lastPeriod != null && closedBucket - lastPeriod === WINDOW_MS_5M) {
+      console.log(JSON.stringify({ type: 'liquidation_5m_duplicate_coin_blocked', symbol: candidate.symbol, previousAlertPeriod: new Date(lastPeriod).toISOString(), closedBucket: new Date(closedBucket).toISOString() }));
+      continue;
+    }
     if (sentAlerts.has(alertKey)) continue;
 
     const currentMarket = await findCurrentMarket(candidate.symbol, currentBucket);
@@ -139,8 +154,9 @@ async function checkOnce(boundary) {
 
     await sendTelegramMessage(message);
     sentAlerts.add(alertKey);
+    lastAlertPeriodBySymbol.set(candidate.symbol, closedBucket);
     sentAny = true;
-    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
   }
 
   if (sentAny) await saveState();
@@ -157,7 +173,7 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG=1; SHORT>=1; opposite=0; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG=1; SHORT>=1; opposite=0; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
     const now = Date.now();
