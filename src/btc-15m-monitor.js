@@ -5,9 +5,6 @@ const { findCurrentMarket15m } = require('./polymarket');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_15M = 15 * 60 * 1000;
-const REQUIRED_LONG_LIQUIDATIONS = 1;
-const MIN_SHORT_LIQUIDATIONS = 1;
-const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const STATE_PATH = '.monitor-state-15m.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const processedBuckets15m = new Set();
@@ -111,29 +108,24 @@ async function check15mOnce(boundary) {
   const candidates = SYMBOLS.map(symbol => {
     const row = rows.get(symbol) || { longCount: 0, shortCount: 0, total: 0 };
     return { symbol, ...row };
-  }).filter(row =>
-    (row.longCount === REQUIRED_LONG_LIQUIDATIONS && row.shortCount === MAX_OPPOSITE_LIQUIDATIONS) ||
-    (row.shortCount >= MIN_SHORT_LIQUIDATIONS && row.longCount === MAX_OPPOSITE_LIQUIDATIONS)
-  );
+  }).filter(row => row.total > 0).sort((a, b) => b.total - a.total);
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_15m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_15m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'maximum_total_liquidations', alertSent: false }));
     return;
   }
 
-  const winner = candidates.sort((a, b) => b.total - a.total)[0];
-  const winnerSide = winner.longCount === REQUIRED_LONG_LIQUIDATIONS ? 'long' : 'short';
+  const winner = candidates[0];
+  const winnerSide = winner.longCount >= winner.shortCount ? 'long' : 'short';
   const winnerCount = winnerSide === 'long' ? winner.longCount : winner.shortCount;
   const alertKey = `15m:${closedBucket}`;
-  const lastPeriod = lastAlertPeriodBySymbol15m.get(winner.symbol);
+  if (sentAlerts15m.has(alertKey)) return;
 
-  // Block the same coin only in the immediately following 15M period.
-  // It becomes eligible again after one skipped period.
+  const lastPeriod = lastAlertPeriodBySymbol15m.get(winner.symbol);
   if (lastPeriod != null && closedBucket - lastPeriod === WINDOW_MS_15M) {
     console.log(JSON.stringify({ type: 'liquidation_15m_duplicate_coin_blocked', symbol: winner.symbol, previousAlertPeriod: new Date(lastPeriod).toISOString(), closedBucket: new Date(closedBucket).toISOString() }));
     return;
   }
-  if (sentAlerts15m.has(alertKey)) return;
 
   const market = await findCurrentMarket15m(winner.symbol, currentBucket);
   const emoji = winnerSide === 'long' ? '🔴' : '🟢';
@@ -152,12 +144,12 @@ async function check15mOnce(boundary) {
   sentAlerts15m.add(alertKey);
   lastAlertPeriodBySymbol15m.set(winner.symbol, closedBucket);
   await saveState15m();
-  console.log(JSON.stringify({ type: 'liquidation_15m_direction_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_maximum_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, liquidations: winner.total, condition: 'maximum_total_liquidations; no_same_coin_in_previous_period', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
 }
 
 async function main15m() {
   await loadState15m();
-  console.log(`15M liquidation direction-leader monitor started; symbols=${SYMBOLS.join(',')}; LONG=1; SHORT>=1; opposite=0; no same coin in previous period`);
+  console.log(`15M liquidation maximum monitor started; symbols=${SYMBOLS.join(',')}; maximum total liquidations per closed period; no same coin in previous period`);
   while (true) {
     const now = Date.now();
     const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
