@@ -10,7 +10,8 @@
     "XRP:long_liquidated:1.4020000000000001",
     "BNB:long_liquidated:750",
     "BNB:long_liquidated:746",
-    "BNB:short_liquidated:754"
+    "BNB:short_liquidated:754",
+    "BNB:short_liquidated:756"
   ],
   "previousPrices": {
     "BTC": 79667.7,
@@ -21,7 +22,7 @@
     "BNB": 756.8,
     "HYPE": 85.06
   },
-  "lastAlertAt": 1788610899880,
+  "lastAlertAt": 1788611319379,
   "armedSymbols": [],
   "rearmConditions": {
     "ETH": {
