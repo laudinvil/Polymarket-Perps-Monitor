@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:48:45.787Z",
+  "updatedAt": "2026-09-05T21:49:17.434Z",
   "period": "2026-09-05T21:45:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -114,7 +114,8 @@
     "5m:1788640200000:DOGE:1788640350280:1",
     "5m:1788640200000:SOL:1788640381424:2",
     "5m:BTC:1788643651149:-1",
-    "5m:BNB:1788643861000:-1"
+    "5m:BNB:1788643861000:-1",
+    "5m:DOGE:1788644946561:17"
   ],
   "liquidation5m": [
     {
@@ -163,13 +164,13 @@
     },
     {
       "symbol": "DOGE",
-      "longLiquidations": 1,
+      "longLiquidations": 17,
       "shortLiquidations": 0,
-      "cumulativeLongEvents": 3,
+      "cumulativeLongEvents": 19,
       "cumulativeShortEvents": 2,
-      "imbalance": 1,
-      "totalLiquidations": 5,
-      "lastEvent": "2026-09-05T21:48:25.178Z",
+      "imbalance": 17,
+      "totalLiquidations": 21,
+      "lastEvent": "2026-09-05T21:49:06.561Z",
       "period": "2026-09-05T21:45:00.000Z"
     },
     {
@@ -242,14 +243,14 @@
     },
     {
       "symbol": "DOGE",
-      "imbalance": 1,
-      "longStrength": 1,
+      "imbalance": 17,
+      "longStrength": 17,
       "shortStrength": 0,
-      "longEvents": 3,
+      "longEvents": 19,
       "shortEvents": 2,
-      "events": 5,
-      "lastTs": 1788644905178,
-      "previousSign": -1
+      "events": 21,
+      "lastTs": 1788644946561,
+      "previousSign": 1
     },
     {
       "symbol": "BNB",
