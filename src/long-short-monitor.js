@@ -20,8 +20,6 @@ const { sendTelegramMessage } = require('./telegram');
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
-const MIN_LEADER_COUNT = 10;
-const MIN_DOMINANCE_RATIO = 3;
 const STATE_PATH = '.long-short-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const sentAlerts = new Set();
@@ -99,14 +97,14 @@ async function checkPeriod(boundary, windowMs, timeframe) {
     const leader = side === 'long' ? row.long : row.short;
     const opposite = side === 'long' ? row.short : row.long;
     const ratio = leader / Math.max(opposite, 1);
-    if (leader >= MIN_LEADER_COUNT && ratio >= MIN_DOMINANCE_RATIO) candidates.push({ symbol, side, leader, opposite, ratio, long: row.long, short: row.short });
+    candidates.push({ symbol, side, leader, opposite, ratio, long: row.long, short: row.short });
   }
   candidates.sort((a, b) => b.leader - a.leader || b.ratio - a.ratio);
   const winner = candidates[0] || null;
   sentAlerts.add(`processed:${bucketKey}`);
 
   if (!winner) {
-    console.log(JSON.stringify({ type: 'long_short_no_alert', timeframe, closedBucket: new Date(closedBucket).toISOString(), minLeaderCount: MIN_LEADER_COUNT, minDominanceRatio: MIN_DOMINANCE_RATIO, candidates: [] }));
+    console.log(JSON.stringify({ type: 'long_short_no_alert', timeframe, closedBucket: new Date(closedBucket).toISOString(), candidates: [] }));
     await saveState();
     return;
   }
@@ -137,7 +135,7 @@ async function checkPeriod(boundary, windowMs, timeframe) {
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT monitor started; symbols=${SYMBOLS.join(',')}; minLeader=${MIN_LEADER_COUNT}; minRatio=${MIN_DOMINANCE_RATIO}; exact 5m/15m boundaries`);
+  console.log(`LONG/SHORT monitor started; symbols=${SYMBOLS.join(',')}; no minimum leader count or dominance ratio; exact 5m/15m boundaries`);
   while (true) {
     const now = Date.now();
     const next5 = getBoundary(now, WINDOW_5M) + WINDOW_5M;
