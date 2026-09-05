@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:27:04.790Z",
+  "updatedAt": "2026-09-05T21:27:16.026Z",
   "period": "2026-09-05T21:25:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -129,34 +129,34 @@
     {
       "symbol": "ETH",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
-      "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
-      "period": "2026-09-05T21:25:00.000Z"
-    },
-    {
-      "symbol": "SOL",
-      "longLiquidations": 0,
       "shortLiquidations": 1,
       "cumulativeLongEvents": 0,
       "cumulativeShortEvents": 1,
       "imbalance": -1,
       "totalLiquidations": 1,
-      "lastEvent": "2026-09-05T21:26:14.580Z",
+      "lastEvent": "2026-09-05T21:27:15.287Z",
+      "period": "2026-09-05T21:25:00.000Z"
+    },
+    {
+      "symbol": "SOL",
+      "longLiquidations": 0,
+      "shortLiquidations": 3,
+      "cumulativeLongEvents": 0,
+      "cumulativeShortEvents": 3,
+      "imbalance": -3,
+      "totalLiquidations": 3,
+      "lastEvent": "2026-09-05T21:27:15.286Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
       "symbol": "XRP",
       "longLiquidations": 0,
-      "shortLiquidations": 4,
+      "shortLiquidations": 5,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 4,
-      "imbalance": -4,
-      "totalLiquidations": 4,
-      "lastEvent": "2026-09-05T21:26:27.539Z",
+      "cumulativeShortEvents": 5,
+      "imbalance": -5,
+      "totalLiquidations": 5,
+      "lastEvent": "2026-09-05T21:27:15.287Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
@@ -207,35 +207,35 @@
     },
     {
       "symbol": "ETH",
-      "imbalance": 0,
-      "longStrength": 0,
-      "shortStrength": 0,
-      "longEvents": 0,
-      "shortEvents": 0,
-      "events": 0,
-      "lastTs": null,
-      "previousSign": 0
-    },
-    {
-      "symbol": "SOL",
       "imbalance": -1,
       "longStrength": 0,
       "shortStrength": 1,
       "longEvents": 0,
       "shortEvents": 1,
       "events": 1,
-      "lastTs": 1788643574580,
+      "lastTs": 1788643635287,
+      "previousSign": -1
+    },
+    {
+      "symbol": "SOL",
+      "imbalance": -3,
+      "longStrength": 0,
+      "shortStrength": 3,
+      "longEvents": 0,
+      "shortEvents": 3,
+      "events": 3,
+      "lastTs": 1788643635286,
       "previousSign": -1
     },
     {
       "symbol": "XRP",
-      "imbalance": -4,
+      "imbalance": -5,
       "longStrength": 0,
-      "shortStrength": 4,
+      "shortStrength": 5,
       "longEvents": 0,
-      "shortEvents": 4,
-      "events": 4,
-      "lastTs": 1788643587539,
+      "shortEvents": 5,
+      "events": 5,
+      "lastTs": 1788643635287,
       "previousSign": -1
     },
     {
