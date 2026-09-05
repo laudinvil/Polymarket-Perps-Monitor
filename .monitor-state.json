@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T22:05:46.859Z",
+  "updatedAt": "2026-09-05T22:06:17.894Z",
   "period": "2026-09-05T22:05:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -176,12 +176,12 @@
     {
       "symbol": "BNB",
       "longUsd": 0,
-      "shortUsd": 0,
+      "shortUsd": 92.55359999999999,
       "cumulativeLongEvents": 1,
-      "cumulativeShortEvents": 2,
-      "imbalanceUsd": 0,
-      "totalLiquidations": 3,
-      "lastEvent": "2026-09-05T21:31:01.000Z",
+      "cumulativeShortEvents": 3,
+      "imbalanceUsd": -92.55359999999999,
+      "totalLiquidations": 4,
+      "lastEvent": "2026-09-05T22:06:11.099Z",
       "period": "2026-09-05T22:05:00.000Z"
     },
     {
@@ -254,14 +254,14 @@
     },
     {
       "symbol": "BNB",
-      "imbalanceUsd": 0,
+      "imbalanceUsd": -92.55359999999999,
       "longUsd": 0,
-      "shortUsd": 0,
+      "shortUsd": 92.55359999999999,
       "longEvents": 1,
-      "shortEvents": 2,
-      "events": 3,
-      "lastTs": 1788643861000,
-      "establishedSign": 0
+      "shortEvents": 3,
+      "events": 4,
+      "lastTs": 1788645971099,
+      "establishedSign": -1
     },
     {
       "symbol": "HYPE",
