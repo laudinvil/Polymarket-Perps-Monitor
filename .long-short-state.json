@@ -9,7 +9,7 @@
     "BNB:short_liquidated:752"
   ],
   "previousPrices": {
-    "BTC": 79637.7,
+    "BTC": 79637.6,
     "ETH": 2454.04,
     "SOL": 102.29,
     "XRP": 1.4031,
@@ -17,5 +17,10 @@
     "BNB": 751.6,
     "HYPE": 84.79
   },
+  "armedSymbols": [
+    "BTC",
+    "HYPE"
+  ],
+  "rearmConditions": {},
   "lastAlertAt": 1788606649808
 }
