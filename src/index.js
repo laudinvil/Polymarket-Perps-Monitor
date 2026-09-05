@@ -1,5 +1,4 @@
 const https = require('https');
-const { spawn } = require('child_process');
 const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WINDOW_MS } = require('./liquidation-monitor');
 const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
@@ -154,17 +153,8 @@ async function checkOnce(activeBucket) {
   console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longCount: crossing.long, shortCount: crossing.short, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(activeBucket).toISOString(), condition: 'LONG_MINUS_SHORT_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
 }
 
-function start15m() {
-  const child = spawn(process.execPath, ['src/btc-15m-monitor.js'], { env: process.env, stdio: 'inherit' });
-  child.on('exit', (code, signal) => {
-    console.error(`15M monitor exited code=${code} signal=${signal}; restarting`);
-    setTimeout(start15m, 5000);
-  });
-}
-
 async function main() {
   await loadState();
-  start15m();
   console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; active-period LONG minus SHORT sign change; one alert per period; poll=${POLL_MS}ms`);
 
   while (true) {
