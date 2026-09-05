@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T22:02:04.979Z",
+  "updatedAt": "2026-09-05T22:02:36.458Z",
   "period": "2026-09-05T22:00:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -154,12 +154,12 @@
     {
       "symbol": "XRP",
       "longUsd": 0,
-      "shortUsd": 701.15274,
+      "shortUsd": 4265.19621,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 13,
-      "imbalanceUsd": -701.15274,
-      "totalLiquidations": 13,
-      "lastEvent": "2026-09-05T22:00:02.051Z",
+      "cumulativeShortEvents": 14,
+      "imbalanceUsd": -4265.19621,
+      "totalLiquidations": 14,
+      "lastEvent": "2026-09-05T22:02:31.120Z",
       "period": "2026-09-05T22:00:00.000Z"
     },
     {
@@ -187,12 +187,12 @@
     {
       "symbol": "HYPE",
       "longUsd": 0,
-      "shortUsd": 0,
+      "shortUsd": 7.704809999999999,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 9,
-      "imbalanceUsd": 0,
-      "totalLiquidations": 9,
-      "lastEvent": "2026-09-05T21:51:27.415Z",
+      "cumulativeShortEvents": 10,
+      "imbalanceUsd": -7.704809999999999,
+      "totalLiquidations": 10,
+      "lastEvent": "2026-09-05T22:02:34.719Z",
       "period": "2026-09-05T22:00:00.000Z"
     }
   ],
@@ -232,13 +232,13 @@
     },
     {
       "symbol": "XRP",
-      "imbalanceUsd": -701.15274,
+      "imbalanceUsd": -4265.19621,
       "longUsd": 0,
-      "shortUsd": 701.15274,
+      "shortUsd": 4265.19621,
       "longEvents": 0,
-      "shortEvents": 13,
-      "events": 13,
-      "lastTs": 1788645602051,
+      "shortEvents": 14,
+      "events": 14,
+      "lastTs": 1788645751120,
       "establishedSign": -1
     },
     {
@@ -265,13 +265,13 @@
     },
     {
       "symbol": "HYPE",
-      "imbalanceUsd": 0,
+      "imbalanceUsd": -7.704809999999999,
       "longUsd": 0,
-      "shortUsd": 0,
+      "shortUsd": 7.704809999999999,
       "longEvents": 0,
-      "shortEvents": 9,
-      "events": 9,
-      "lastTs": 1788645087415,
+      "shortEvents": 10,
+      "events": 10,
+      "lastTs": 1788645754719,
       "establishedSign": -1
     }
   ]
