@@ -4,12 +4,11 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION IMBALANCE:
-// MarginPad sends raw liquidation events in successive updates. We add each NEW
-// event once to a running signed balance for the active period:
-//   LONG liquidation  => +notional
-//   SHORT liquidation => -notional
-// The alert is based on the RUNNING BALANCE crossing zero, not on event count
-// and not on calculating one isolated batch as an alert.
+// MarginPad sends raw liquidation events in successive updates. We count each
+// NEW liquidation event once in a running signed COUNT for the active period:
+//   LONG liquidation  => +1
+//   SHORT liquidation => -1
+// The alert is based on the RUNNING COUNT crossing zero.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_5M = WINDOW_MS;
 const POLL_MS = 10000;
@@ -18,7 +17,6 @@ const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSIT
 const sentAlerts = new Set();
 const seenEvents = new Set();
 const runningImbalance = new Map();
-const periodEvents = new Map();
 let stateSha = null;
 let activePeriod = null;
 
@@ -69,17 +67,8 @@ async function saveState() {
 }
 
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
-function formatUsd(value) { return `$${Math.round(value).toLocaleString('en-US')}`; }
-function formatSignedUsd(value) { return `${value >= 0 ? '+' : '-'}${formatUsd(Math.abs(value))}`; }
+function formatSignedCount(value) { return `${value >= 0 ? '+' : ''}${value}`; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-function eventNotional(event) {
-  const value = Number(event.notional);
-  if (Number.isFinite(value) && value >= 0) return value;
-  const price = Number(event.price);
-  const qty = Number(event.qty);
-  return Number.isFinite(price) && Number.isFinite(qty) ? Math.abs(price * qty) : 0;
-}
 
 function eventSideSign(event) {
   const side = String(event.side || '').toLowerCase();
@@ -92,8 +81,6 @@ function resetPeriod(period) {
   if (activePeriod === period) return;
   activePeriod = period;
   runningImbalance.clear();
-  periodEvents.clear();
-  // event keys are only needed for the currently relevant MarginPad feed window.
   seenEvents.clear();
 }
 
@@ -108,8 +95,8 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
     let state = runningImbalance.get(normalizedSymbol) || {
       imbalance: 0,
-      longVolume: 0,
-      shortVolume: 0,
+      longCount: 0,
+      shortCount: 0,
       events: 0,
       lastTs: null,
       previousSign: 0,
@@ -126,13 +113,10 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       if (seenEvents.has(`${activeBucket}:${key}`)) continue;
       seenEvents.add(`${activeBucket}:${key}`);
 
-      const notional = eventNotional(event);
-      if (!(notional > 0)) continue;
-
       const before = state.imbalance;
-      if (sign > 0) state.longVolume += notional;
-      else state.shortVolume += notional;
-      state.imbalance += sign * notional;
+      if (sign > 0) state.longCount += 1;
+      else state.shortCount += 1;
+      state.imbalance += sign;
       state.events += 1;
       state.lastTs = ts;
 
@@ -142,8 +126,8 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
           symbol: normalizedSymbol,
           before,
           after: state.imbalance,
-          longVolume: state.longVolume,
-          shortVolume: state.shortVolume,
+          longCount: state.longCount,
+          shortCount: state.shortCount,
           ts,
           period: activeBucket,
         });
@@ -159,13 +143,13 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
 function diagnostics(activeBucket) {
   return symbols.map(symbol => {
-    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longVolume: 0, shortVolume: 0, events: 0, lastTs: null };
+    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longCount: 0, shortCount: 0, events: 0, lastTs: null };
     return {
       symbol: normalizeSymbol(symbol),
-      longVolume: state.longVolume,
-      shortVolume: state.shortVolume,
+      longLiquidations: state.longCount,
+      shortLiquidations: state.shortCount,
       imbalance: state.imbalance,
-      events: state.events,
+      totalLiquidations: state.events,
       lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null,
       period: new Date(activeBucket).toISOString(),
     };
@@ -203,10 +187,10 @@ async function checkOnce(activeBucket) {
     const message = [
       `${emoji} LIQUIDATION IMBALANCE FLIP`,
       `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
-      `Previous imbalance: ${formatSignedUsd(crossing.before)}`,
-      `New imbalance: ${formatSignedUsd(crossing.after)}`,
-      `Long cumulative: ${formatUsd(crossing.longVolume)}`,
-      `Short cumulative: ${formatUsd(crossing.shortVolume)}`,
+      `Previous imbalance: ${formatSignedCount(crossing.before)} liquidations`,
+      `New imbalance: ${formatSignedCount(crossing.after)} liquidations`,
+      `Long liquidations: ${crossing.longCount}`,
+      `Short liquidations: ${crossing.shortCount}`,
       '',
       '➡️ NEXT Polymarket 5M',
       nextMarket?.url || 'Market not found yet',
@@ -221,11 +205,11 @@ async function checkOnce(activeBucket) {
       symbol: crossing.symbol,
       previousImbalance: crossing.before,
       newImbalance: crossing.after,
-      longVolume: crossing.longVolume,
-      shortVolume: crossing.shortVolume,
+      longLiquidations: crossing.longCount,
+      shortLiquidations: crossing.shortCount,
       crossingTs: new Date(crossing.ts).toISOString(),
       period: new Date(activeBucket).toISOString(),
-      condition: 'RUNNING_SIGNED_LIQUIDATION_NOTIONAL_CROSS_ZERO',
+      condition: 'RUNNING_SIGNED_LIQUIDATION_COUNT_CROSS_ZERO',
       alertSent: true,
       nextMarket: nextMarket?.url || null,
     }));
@@ -236,7 +220,7 @@ async function checkOnce(activeBucket) {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; raw MarginPad events are accumulated once; LONG=+notional, SHORT=-notional; alert on running sign flip; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; raw MarginPad events are counted once; LONG=+1, SHORT=-1; alert on running sign flip; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
