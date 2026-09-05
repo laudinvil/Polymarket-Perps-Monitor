@@ -5,10 +5,10 @@ const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION LEADER: all supported coins.
-// LONG or SHORT must reach at least 2, with the opposite side at 0.
+// LONG or SHORT must reach at least 3, with the opposite side at 0.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
-const MIN_LIQUIDATIONS = 2;
+const MIN_LIQUIDATIONS = 3;
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
@@ -119,7 +119,7 @@ async function checkOnce(boundary) {
   );
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG>=2_or_SHORT>=2_with_opposite_0', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'LONG>=3_or_SHORT>=3_with_opposite_0', alertSent: false }));
     return;
   }
 
@@ -155,7 +155,7 @@ async function checkOnce(boundary) {
     sentAlerts.add(alertKey);
     lastAlertPeriodBySymbol.set(candidate.symbol, closedBucket);
     sentAny = true;
-    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG>=2_or_SHORT>=2_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'LONG>=3_or_SHORT>=3_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
   }
 
   if (sentAny) await saveState();
@@ -172,7 +172,7 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG>=2; SHORT>=2; opposite=0; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; LONG>=3; SHORT>=3; opposite=0; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
     const now = Date.now();
