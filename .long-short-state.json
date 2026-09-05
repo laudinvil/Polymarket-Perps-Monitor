@@ -14,9 +14,19 @@
     "ETH": 2454.12,
     "SOL": 102.29,
     "XRP": 1.4028,
-    "DOGE": 0.08599,
+    "DOGE": 0.086,
     "BNB": 751.2,
     "HYPE": 84.93
   },
+  "armedSymbols": [
+    "BTC",
+    "HYPE",
+    "ETH",
+    "SOL",
+    "XRP",
+    "DOGE",
+    "BNB"
+  ],
+  "rearmConditions": {},
   "lastAlertAt": 1788608022592
 }
