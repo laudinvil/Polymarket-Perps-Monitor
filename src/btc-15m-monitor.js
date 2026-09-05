@@ -1,15 +1,14 @@
 const https = require('https');
 const { fetchSymbolFeed, normalizeTs, normalizeSymbol, eventKey } = require('./liquidation-monitor');
 const { sendTelegramMessage } = require('./telegram');
-const { findCurrentMarket15m } = require('./polymarket');
+const { findNextMarket15m } = require('./polymarket');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_15M = 15 * 60 * 1000;
+const POLL_MS = 10000;
 const STATE_PATH = '.monitor-state-15m.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
-const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
-const lastAlertPeriodBySymbol15m = new Map();
 let stateSha15m = null;
 
 function githubRequest(method, body = null) {
@@ -40,9 +39,6 @@ async function loadState15m() {
     stateSha15m = data.sha || null;
     const state = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
     for (const key of state.alerts || []) sentAlerts15m.add(key);
-    for (const entry of state.lastAlertPeriodBySymbol || []) {
-      if (entry?.symbol && Number.isFinite(entry.period)) lastAlertPeriodBySymbol15m.set(normalizeSymbol(entry.symbol), Number(entry.period));
-    }
   } catch (error) {
     console.warn(`15M STATE LOAD FAILED: ${error.message}`);
   }
@@ -50,10 +46,7 @@ async function loadState15m() {
 
 async function saveState15m() {
   if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify({
-    alerts: [...sentAlerts15m].slice(-500),
-    lastAlertPeriodBySymbol: [...lastAlertPeriodBySymbol15m.entries()].map(([symbol, period]) => ({ symbol, period })).slice(-100),
-  }, null, 2)).toString('base64');
+  const content = Buffer.from(JSON.stringify({ alerts: [...sentAlerts15m].slice(-500) }, null, 2)).toString('base64');
   const body = { message: 'Persist 15M monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
   if (stateSha15m) body.sha = stateSha15m;
   try {
@@ -68,95 +61,87 @@ function bucketStart15m(ts) { return Math.floor(Number(ts) / WINDOW_MS_15M) * WI
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function check15mOnce(boundary) {
-  const currentBucket = boundary;
-  const closedBucket = currentBucket - WINDOW_MS_15M;
-  const bucketKey = `15m:${closedBucket}`;
-  if (processedBuckets15m.has(bucketKey)) return;
-
-  const results = await Promise.all(SYMBOLS.map(async symbol => {
-    try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
-    catch (error) { console.warn(`MarginPad 15m ${symbol}: ${error.message}`); return [symbol, []]; }
-  }));
-
-  const rows = new Map();
-  const diagnostics = [];
-  for (const [requestedSymbol, events] of results) {
+function findFirstZeroCrossing(eventsBySymbol, closedBucket) {
+  let first = null;
+  for (const [symbol, events] of eventsBySymbol.entries()) {
+    const ordered = events.slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
     let longCount = 0;
     let shortCount = 0;
-    let bucketEvents = 0;
+    let previousSign = 0;
     const seen = new Set();
-    for (const event of events) {
+
+    for (const event of ordered) {
       const ts = normalizeTs(event.ts);
-      if (!ts || bucketStart15m(ts) !== closedBucket || normalizeSymbol(event.symbol) !== requestedSymbol) continue;
+      if (!ts || bucketStart15m(ts) !== closedBucket || normalizeSymbol(event.symbol) !== symbol) continue;
       const side = String(event.side || '').toLowerCase();
       if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
       const key = eventKey(event);
       if (seen.has(key)) continue;
       seen.add(key);
-      bucketEvents++;
       if (side.includes('long') || side === 'buy') longCount++;
       else shortCount++;
+
+      const difference = longCount - shortCount;
+      const sign = difference > 0 ? 1 : difference < 0 ? -1 : 0;
+      if (previousSign !== 0 && sign !== 0 && sign !== previousSign) {
+        const candidate = { symbol: normalizeSymbol(symbol), longCount, shortCount, difference, ts };
+        if (!first || ts < first.ts) first = candidate;
+        break;
+      }
+      if (sign !== 0) previousSign = sign;
     }
-    rows.set(requestedSymbol, { longCount, shortCount, total: bucketEvents });
-    diagnostics.push({ symbol: requestedSymbol, received: Array.isArray(events) ? events.length : 0, closed15m: bucketEvents, long: longCount, short: shortCount });
   }
+  return first;
+}
 
-  processedBuckets15m.add(bucketKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_feed_diagnostics', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbols: diagnostics }));
+async function check15mOnce(currentBucket) {
+  const results = await Promise.all(SYMBOLS.map(async symbol => {
+    try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
+    catch (error) { console.warn(`MarginPad 15m ${symbol}: ${error.message}`); return [symbol, []]; }
+  }));
 
-  const candidates = SYMBOLS.flatMap(symbol => {
-    const row = rows.get(symbol) || { longCount: 0, shortCount: 0, total: 0 };
-    return [
-      { symbol, side: 'long', count: row.longCount, longCount: row.longCount, shortCount: row.shortCount, total: row.total },
-      { symbol, side: 'short', count: row.shortCount, longCount: row.longCount, shortCount: row.shortCount, total: row.total },
-    ];
-  }).filter(row => row.count > 0).sort((a, b) => b.count - a.count);
+  const closedBucket = currentBucket;
+  const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
+  const crossing = findFirstZeroCrossing(eventsBySymbol, closedBucket);
 
-  if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_15m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'maximum_side_liquidations', alertSent: false }));
-    return;
-  }
+  console.log(JSON.stringify({
+    type: 'liquidation_15m_zero_crossing_check',
+    period: new Date(closedBucket).toISOString(),
+    crossing: crossing ? { symbol: crossing.symbol, long: crossing.longCount, short: crossing.shortCount, difference: crossing.difference, ts: new Date(crossing.ts).toISOString() } : null,
+  }));
 
-  const winner = candidates[0];
+  if (!crossing) return;
+
   const alertKey = `15m:${closedBucket}`;
   if (sentAlerts15m.has(alertKey)) return;
 
-  const lastPeriod = lastAlertPeriodBySymbol15m.get(winner.symbol);
-  if (lastPeriod != null && closedBucket - lastPeriod === WINDOW_MS_15M) {
-    console.log(JSON.stringify({ type: 'liquidation_15m_duplicate_coin_blocked', symbol: winner.symbol, previousAlertPeriod: new Date(lastPeriod).toISOString(), closedBucket: new Date(closedBucket).toISOString() }));
-    return;
-  }
-
-  const market = await findCurrentMarket15m(winner.symbol, currentBucket);
-  const emoji = winner.side === 'long' ? '🔴' : '🟢';
+  const nextMarket = await findNextMarket15m(crossing.symbol, Date.now());
+  const emoji = crossing.difference > 0 ? '🔴' : '🟢';
   const message = [
-    `${emoji} LIQUIDATION LEADER`,
-    `${winner.symbol} · 15M · ${formatUtcPlus3(closedBucket)} UTC+3`, '',
-    `Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidation${winner.count === 1 ? '' : 's'}`,
-    `Long: ${winner.longCount} · Short: ${winner.shortCount}`,
-    `Total: ${winner.total}`,
+    `${emoji} LIQUIDATION IMBALANCE FLIP`,
+    `${crossing.symbol} · 15M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
+    `Long: ${crossing.longCount} · Short: ${crossing.shortCount}`,
+    `Difference: ${crossing.difference > 0 ? '+' : ''}${crossing.difference}`,
     '',
     '➡️ NEXT Polymarket 15M',
-    market?.url || 'Market not found yet',
+    nextMarket?.url || 'Market not found yet',
   ].join('\n');
 
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
-  lastAlertPeriodBySymbol15m.set(winner.symbol, closedBucket);
   await saveState15m();
-  console.log(JSON.stringify({ type: 'liquidation_15m_maximum_side_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winner.side, leaderCount: winner.count, longCount: winner.longCount, shortCount: winner.shortCount, liquidations: winner.total, condition: 'maximum_single_side_liquidations; no_same_coin_in_previous_period', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
+  console.log(JSON.stringify({ type: 'liquidation_15m_zero_crossing_alert', symbol: crossing.symbol, longCount: crossing.longCount, shortCount: crossing.shortCount, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(closedBucket).toISOString(), condition: 'LONG_MINUS_SHORT_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
 }
 
 async function main15m() {
   await loadState15m();
-  console.log(`15M liquidation side maximum monitor started; symbols=${SYMBOLS.join(',')}; maximum LONG or SHORT liquidation count per closed period; no same coin in previous period`);
+  console.log(`15M liquidation zero-crossing monitor started; symbols=${SYMBOLS.join(',')}; alert on LONG minus SHORT sign change; one alert per period; poll=${POLL_MS}ms`);
   while (true) {
     const now = Date.now();
-    const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
-    await sleep(Math.max(0, nextBoundary - Date.now()));
-    try { await check15mOnce(nextBoundary); }
+    const currentBucket = bucketStart15m(now);
+    try { await check15mOnce(currentBucket); }
     catch (error) { console.error(`15M liquidation monitor failed: ${error.stack || error.message}`); }
+    await sleep(POLL_MS);
   }
 }
 
