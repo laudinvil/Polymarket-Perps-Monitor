@@ -2,7 +2,7 @@ name: Open Interest Monitor
 
 on:
   schedule:
-    - cron: '6 0,6,12,18 * * *'
+    - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -12,7 +12,8 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    # Use GitHub's full 360-minute job window so the 6-hour schedule does not intentionally leave a 5-minute gap.
+    timeout-minutes: 360
     permissions:
       contents: read
     steps:
