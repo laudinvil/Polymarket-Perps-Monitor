@@ -1,18 +1,13 @@
 name: MarginPad Auto Monitor
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '.monitor-state.json'
-      - 'monitor-status.md'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -40,9 +35,6 @@ jobs:
           node src/index.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
 
-          # Keep a small live snapshot in the repository every 60 seconds.
-          # This is intentionally separate from .monitor-state.json so the
-          # monitoring state is not rewritten/committed every poll.
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 60
             if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
