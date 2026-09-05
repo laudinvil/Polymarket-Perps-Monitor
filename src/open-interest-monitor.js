@@ -1,8 +1,9 @@
 const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 
-// Bybit is blocked from the GitHub Actions runner's region. Use OKX public
-// perpetual-swap OI instead. One request covers all 7 configured symbols.
-const OI_URL = 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP,DOGE-USDT-SWAP,BNB-USDT-SWAP,HYPE-USDT-SWAP';
+// OKX public OI endpoint: instType=SWAP returns perpetual swaps; filter the
+// seven configured USDT contracts locally. Do not send a comma-separated
+// instId list because OKX expects a single instrument ID when instId is used.
+const OI_URL = 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP';
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE']);
