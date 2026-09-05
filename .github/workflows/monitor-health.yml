@@ -1,13 +1,18 @@
 name: MarginPad Auto Monitor
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.monitor-state.json'
+      - 'monitor-status.md'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
@@ -54,7 +59,7 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add monitor-status.md
             git diff --cached --quiet || git commit -m 'Update live monitor status'
-            git push || true
+            git push origin HEAD:monitor-status --force || true
           done
 
           wait "$MONITOR_PID"
