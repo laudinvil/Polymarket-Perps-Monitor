@@ -69,17 +69,31 @@ async function saveState() {
     previousPrices: Object.fromEntries(previousPrices),
     lastAlertAt
   }, null, 2)).toString('base64');
-  const body = {
-    message: 'Persist long short cluster monitor state',
-    content,
-    branch: process.env.GITHUB_REF_NAME || 'main'
-  };
-  if (stateSha) body.sha = stateSha;
-  try {
-    const result = await githubRequest('PUT', body);
-    stateSha = result?.content?.sha || stateSha;
-  } catch (error) {
-    console.warn(`STATE SAVE FAILED: ${error.message}`);
+
+  // Refresh the file SHA immediately before every write. A long-running
+  // monitor can otherwise keep a stale SHA for hours and receive GitHub 409.
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const current = await githubRequest('GET');
+      const currentSha = current?.sha || stateSha;
+      const body = {
+        message: 'Persist long short cluster monitor state',
+        content,
+        branch: process.env.GITHUB_REF_NAME || 'main',
+        ...(currentSha ? { sha: currentSha } : {})
+      };
+
+      const result = await githubRequest('PUT', body);
+      stateSha = result?.content?.sha || currentSha || stateSha;
+      return;
+    } catch (error) {
+      const isConflict = /GitHub state request failed: 409\b/.test(error.message);
+      if (!isConflict || attempt === 4) {
+        console.warn(`STATE SAVE FAILED: ${error.message}`);
+        return;
+      }
+      await sleep(250 * attempt);
+    }
   }
 }
 
