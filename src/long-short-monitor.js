@@ -12,10 +12,7 @@ const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSIT
 
 const sentClusters = new Set();
 const previousPrices = new Map();
-const armedSymbols = new Set();
-const rearmConditions = new Map();
 const alertedBuckets = new Map();
-let stateSha = null;
 let lastAlertAt = 0;
 
 function formatPrice(value) {
@@ -64,62 +61,24 @@ function decodeState(data) {
   return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
 }
 
-function migrateRearmConditions() {
-  const sentBySymbol = new Map();
-  for (const key of sentClusters) {
-    const parts = String(key).split(':');
-    if (parts.length < 3) continue;
-    const symbol = parts[0];
-    const price = Number(parts[parts.length - 1]);
-    if (!SYMBOLS.includes(symbol) || !Number.isFinite(price)) continue;
-    sentBySymbol.set(symbol, price);
-  }
-  for (const [symbol, price] of sentBySymbol) {
-    if (rearmConditions.has(symbol) || armedSymbols.has(symbol)) continue;
-    const previousPrice = previousPrices.get(symbol);
-    if (!Number.isFinite(previousPrice) || previousPrice === price) continue;
-    const direction = previousPrice < price ? 'below' : 'above';
-    rearmConditions.set(symbol, { price, direction });
-  }
-}
-
 async function loadState() {
   try {
     const data = await githubRequest('GET');
     if (!data?.content) return;
-    stateSha = data.sha || null;
     const state = decodeState(data);
     for (const key of state.sentClusters || []) sentClusters.add(key);
     for (const [symbol, price] of Object.entries(state.previousPrices || {})) {
       const n = Number(price);
       if (Number.isFinite(n)) previousPrices.set(symbol, n);
     }
-    for (const symbol of state.armedSymbols || []) armedSymbols.add(symbol);
-    for (const [symbol, condition] of Object.entries(state.rearmConditions || {})) {
-      if (condition && Number.isFinite(Number(condition.price)) && (condition.direction === 'below' || condition.direction === 'above')) {
-        rearmConditions.set(symbol, { price: Number(condition.price), direction: condition.direction });
-      }
-    }
     for (const [symbol, bucket] of Object.entries(state.alertedBuckets || {})) {
       const n = Number(bucket);
       if (Number.isFinite(n)) alertedBuckets.set(symbol, n);
     }
     lastAlertAt = Number(state.lastAlertAt) || 0;
-    migrateRearmConditions();
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
-}
-
-function localState() {
-  return {
-    sentClusters: [...sentClusters].slice(-1000),
-    previousPrices: Object.fromEntries(previousPrices),
-    armedSymbols: [...armedSymbols],
-    rearmConditions: Object.fromEntries(rearmConditions),
-    alertedBuckets: Object.fromEntries(alertedBuckets),
-    lastAlertAt
-  };
 }
 
 async function saveState() {
@@ -130,20 +89,17 @@ async function saveState() {
       const remoteState = decodeState(current);
       const mergedState = {
         ...remoteState,
-        sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-1000),
+        sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-2000),
         previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
-        armedSymbols: [...new Set([...(remoteState.armedSymbols || []), ...armedSymbols])],
-        rearmConditions: { ...(remoteState.rearmConditions || {}), ...Object.fromEntries(rearmConditions) },
         alertedBuckets: { ...(remoteState.alertedBuckets || {}), ...Object.fromEntries(alertedBuckets) },
         lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
       };
-      const result = await githubRequest('PUT', {
+      await githubRequest('PUT', {
         message: 'Persist long short cluster monitor state',
         content: Buffer.from(JSON.stringify(mergedState, null, 2)).toString('base64'),
         branch: process.env.GITHUB_REF_NAME || 'main',
         ...(current?.sha ? { sha: current.sha } : {})
       });
-      stateSha = result?.content?.sha || current?.sha || stateSha;
       return;
     } catch (error) {
       const isConflict = /GitHub state request failed: 409\b/.test(error.message);
@@ -156,49 +112,57 @@ async function saveState() {
   }
 }
 
-async function reserveAlertSlot(symbol, bucket) {
+// Atomically reserves BOTH the 5M slot and the exact cluster key before Telegram is called.
+// This closes the race where two monitor instances could both pass the local sentClusters check.
+async function reserveAlertSlot(symbol, bucket, clusterKey) {
   if (!process.env.GITHUB_TOKEN) {
-    if (alertedBuckets.get(symbol) === bucket) return false;
+    if (alertedBuckets.get(symbol) === bucket || sentClusters.has(clusterKey)) return false;
     alertedBuckets.set(symbol, bucket);
+    sentClusters.add(clusterKey);
     return true;
   }
 
-  for (let attempt = 1; attempt <= 8; attempt++) {
+  for (let attempt = 1; attempt <= 10; attempt++) {
     try {
       const current = await githubRequest('GET');
       const remoteState = decodeState(current);
+      const remoteClusters = new Set(remoteState.sentClusters || []);
       const remoteBuckets = { ...(remoteState.alertedBuckets || {}) };
-      if (Number(remoteBuckets[symbol]) === bucket) {
+
+      if (remoteClusters.has(clusterKey) || Number(remoteBuckets[symbol]) === bucket) {
+        sentClusters.add(clusterKey);
         alertedBuckets.set(symbol, bucket);
         return false;
       }
 
+      remoteClusters.add(clusterKey);
       remoteBuckets[symbol] = bucket;
+
       const mergedState = {
         ...remoteState,
-        sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-1000),
+        sentClusters: [...remoteClusters].slice(-2000),
         previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
-        armedSymbols: [...new Set([...(remoteState.armedSymbols || []), ...armedSymbols])],
-        rearmConditions: { ...(remoteState.rearmConditions || {}), ...Object.fromEntries(rearmConditions) },
         alertedBuckets: remoteBuckets,
         lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
       };
 
       await githubRequest('PUT', {
-        message: `Reserve ${symbol} cluster alert for 5M bucket ${bucket}`,
+        message: `Reserve ${symbol} cluster alert ${clusterKey}`,
         content: Buffer.from(JSON.stringify(mergedState, null, 2)).toString('base64'),
         branch: process.env.GITHUB_REF_NAME || 'main',
         ...(current?.sha ? { sha: current.sha } : {})
       });
+
+      sentClusters.add(clusterKey);
       alertedBuckets.set(symbol, bucket);
       return true;
     } catch (error) {
       const isConflict = /GitHub state request failed: 409\b/.test(error.message);
-      if (!isConflict || attempt === 8) {
+      if (!isConflict || attempt === 10) {
         console.warn(`ALERT SLOT RESERVATION FAILED: ${error.message}`);
         return false;
       }
-      await sleep(200 * attempt);
+      await sleep(250 * attempt);
     }
   }
   return false;
@@ -269,8 +233,9 @@ async function getCoinSnapshot(symbol) {
   const currentPrice = extractPrice(priceData);
   const clusters = extractClusters(clusterData).map(normalizeCluster).filter(Boolean);
   if (currentPrice == null || clusters.length === 0) {
-    return { symbol, currentPrice, previousPrice: previousPrices.get(symbol) ?? null, clusters, nearest: null };
+    return { symbol, currentPrice, previousPrice: previousPrices.get(symbol) ?? null, nearest: null };
   }
+
   const available = clusters
     .map(cluster => ({
       ...cluster,
@@ -279,11 +244,11 @@ async function getCoinSnapshot(symbol) {
     }))
     .filter(cluster => !sentClusters.has(cluster.clusterKey))
     .sort((a, b) => a.distancePct - b.distancePct);
+
   return {
     symbol,
     currentPrice,
     previousPrice: previousPrices.get(symbol) ?? null,
-    clusters,
     nearest: available[0] || null
   };
 }
@@ -295,18 +260,20 @@ async function nextMarketUrl(symbol) {
   try {
     const event = await fetchJson(`${POLYMARKET_GAMMA_URL}/${slug}`);
     if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
-    throw new Error('Gamma API returned no event slug');
   } catch (error) {
     console.warn(`POLYMARKET LINK RESOLVE FAILED: ${symbol}: ${error.message}`);
-    return `https://polymarket.com/event/${slug}`;
   }
+  return `https://polymarket.com/event/${slug}`;
 }
 
 async function check() {
   const bucket = currentBucket();
   const snapshots = await Promise.all(SYMBOLS.map(async symbol => {
     try { return await getCoinSnapshot(symbol); }
-    catch (error) { console.warn(`${symbol}: ${error.message}`); return { symbol, nearest: null }; }
+    catch (error) {
+      console.warn(`${symbol}: ${error.message}`);
+      return { symbol, nearest: null };
+    }
   }));
 
   const touched = snapshots.filter(snapshot => {
@@ -334,13 +301,12 @@ async function check() {
     return;
   }
 
-  const reserved = await reserveAlertSlot(winner.symbol, bucket);
+  const reserved = await reserveAlertSlot(winner.symbol, bucket, cluster.clusterKey);
   if (!reserved) {
     console.log(JSON.stringify({ type: 'cluster_duplicate_or_reservation_lost', symbol: winner.symbol, cluster: cluster.clusterKey, bucket }));
     return;
   }
 
-  sentClusters.add(cluster.clusterKey);
   lastAlertAt = Date.now();
   await saveState();
 
@@ -349,26 +315,45 @@ async function check() {
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
-    `${emoji} CLUSTER TOUCHED`, `${winner.symbol} · 5M`, '', `Cluster: ${sideLabel}`,
-    `Previous price: ${formatPrice(winner.previousPrice)}`, `Cluster price: ${formatPrice(cluster.price)}`,
-    `Current price: ${formatPrice(winner.currentPrice)}`, `Direction: ${direction}`,
-    `Distance: ${cluster.distancePct.toFixed(2)}%`, `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
-    '', '➡️ NEXT Polymarket 5M', polymarketUrl
+    `${emoji} CLUSTER TOUCHED`,
+    `${winner.symbol} · 5M`,
+    '',
+    `Cluster: ${sideLabel}`,
+    `Previous price: ${formatPrice(winner.previousPrice)}`,
+    `Cluster price: ${formatPrice(cluster.price)}`,
+    `Current price: ${formatPrice(winner.currentPrice)}`,
+    `Direction: ${direction}`,
+    `Distance: ${cluster.distancePct.toFixed(2)}%`,
+    `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
+    '',
+    '➡️ NEXT Polymarket 5M',
+    polymarketUrl
   ].join('\n');
 
-  try { await sendTelegramMessage(message); }
-  catch (error) { console.warn(`TELEGRAM SEND FAILED: ${error.message}`); }
+  try {
+    await sendTelegramMessage(message);
+  } catch (error) {
+    console.warn(`TELEGRAM SEND FAILED: ${error.message}`);
+  }
 
   console.log(JSON.stringify({
-    type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel,
-    previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice,
-    direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey, bucket
+    type: 'cluster_alert_sent',
+    symbol: winner.symbol,
+    side: sideLabel,
+    previousPrice: winner.previousPrice,
+    clusterPrice: cluster.price,
+    currentPrice: winner.currentPrice,
+    direction,
+    distancePct: cluster.distancePct,
+    polymarketUrl,
+    clusterKey: cluster.clusterKey,
+    bucket
   }));
 }
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC max 1 alert per coin per 5M bucket; state persisted in GitHub`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC cluster+5M dedupe; state persisted in GitHub`);
   while (true) {
     try { await check(); }
     catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
