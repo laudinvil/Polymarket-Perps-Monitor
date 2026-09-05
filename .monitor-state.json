@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T22:23:26.504Z",
+  "updatedAt": "2026-09-05T22:23:57.747Z",
   "period": "2026-09-05T22:20:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -153,13 +153,13 @@
     },
     {
       "symbol": "XRP",
-      "longUsd": 0,
+      "longUsd": 9.8518,
       "shortUsd": 7921.332780000001,
-      "cumulativeLongEvents": 0,
+      "cumulativeLongEvents": 1,
       "cumulativeShortEvents": 16,
-      "imbalanceUsd": -7921.332780000001,
-      "totalLiquidations": 16,
-      "lastEvent": "2026-09-05T22:17:35.497Z",
+      "imbalanceUsd": -7911.48098,
+      "totalLiquidations": 17,
+      "lastEvent": "2026-09-05T22:23:32.234Z",
       "period": "2026-09-05T22:20:00.000Z"
     },
     {
@@ -232,13 +232,13 @@
     },
     {
       "symbol": "XRP",
-      "imbalanceUsd": -7921.332780000001,
-      "longUsd": 0,
+      "imbalanceUsd": -7911.48098,
+      "longUsd": 9.8518,
       "shortUsd": 7921.332780000001,
-      "longEvents": 0,
+      "longEvents": 1,
       "shortEvents": 16,
-      "events": 16,
-      "lastTs": 1788646655497,
+      "events": 17,
+      "lastTs": 1788647012234,
       "establishedSign": -1
     },
     {
