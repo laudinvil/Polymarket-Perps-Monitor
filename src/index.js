@@ -35,7 +35,22 @@ async function checkOnce(boundary){
   const currentBucket=boundary, closedBucket=currentBucket-WINDOW_MS_5M, bucketKey=`5m:${closedBucket}`;
   if(processedBuckets.has(bucketKey))return;
   const results=await Promise.all(symbols.map(async symbol=>{try{return [symbol,await fetchSymbolFeed(symbol,fetch)];}catch(error){console.warn(`MarginPad live ${symbol}: ${error.message}`);return [symbol,[]];}}));
+  const diagnostics=[];
   const allowed=new Set(symbols.map(normalizeSymbol)), rows=new Map(), seen=new Set();
+  for(const [requestedSymbol,events] of results){
+    const normalizedRequested=normalizeSymbol(requestedSymbol);
+    let totalValid=0, bucketValid=0, longBucket=0, shortBucket=0;
+    for(const event of events){
+      const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol),side=String(event.side||'').toLowerCase();
+      if(!ts||!allowed.has(symbol)||!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;
+      totalValid++;
+      if(bucketStart(ts)!==closedBucket)continue;
+      bucketValid++;
+      if(side.includes('long')||side==='buy')longBucket++;else shortBucket++;
+    }
+    diagnostics.push({symbol:normalizedRequested,received:Array.isArray(events)?events.length:0,validLiquidations:totalValid,closed5m:bucketValid,long:longBucket,short:shortBucket,oldestTs:Array.isArray(events)&&events.length?normalizeTs(events[events.length-1]?.ts):null,newestTs:Array.isArray(events)&&events.length?normalizeTs(events[0]?.ts):null});
+  }
+  console.log(JSON.stringify({type:'liquidation_5m_feed_diagnostics',boundary:new Date(currentBucket).toISOString(),closedBucket:new Date(closedBucket).toISOString(),symbols:diagnostics}));
   for(const [,events] of results)for(const event of events){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol),side=String(event.side||'').toLowerCase();if(!ts||bucketStart(ts)!==closedBucket||!allowed.has(symbol))continue;if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;const key=eventKey(event);if(seen.has(key))continue;seen.add(key);if(!rows.has(symbol))rows.set(symbol,{events:0,longEvents:0,shortEvents:0});const row=rows.get(symbol);row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}
   processedBuckets.add(bucketKey);
   const longCandidates=[...rows.entries()].map(([symbol,row])=>({symbol,count:row.longEvents,opposite:row.shortEvents,total:row.events})).filter(c=>c.count>=MIN_LIQUIDATIONS&&c.count<=MAX_LIQUIDATIONS&&c.opposite<=MAX_OPPOSITE_LIQUIDATIONS).sort((a,b)=>b.count-a.count||b.total-a.total);
