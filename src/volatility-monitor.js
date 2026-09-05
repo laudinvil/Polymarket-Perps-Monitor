@@ -3,9 +3,10 @@ const { sendTelegramMessage } = require('./telegram');
 
 const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'DOGE/USD', 'BNB/USD', 'HYPE/USD'];
 const LABELS = new Map(SYMBOLS.map(symbol => [symbol, symbol.split('/')[0]]));
-const INTERVAL = '5min';
+const INTERVAL = '15min';
 const ATR_PERIOD = 14;
 const OUTPUT_SIZE = ATR_PERIOD + 1;
+const PERIOD_MS = 15 * 60 * 1000;
 const STATE_PATH = '.volatility-state.json';
 const GITHUB_API = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 
@@ -78,6 +79,7 @@ async function fetchBatch() {
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   const json = await response.json();
   if (!response.ok) throw new Error(`Twelve Data HTTP ${response.status}: ${JSON.stringify(json)}`);
+  if (json?.status === 'error') throw new Error(`Twelve Data error: ${JSON.stringify(json)}`);
   return json;
 }
 
@@ -88,17 +90,18 @@ function calculateNatr(values) {
     close: Number(row.close),
     datetime: row.datetime
   })).filter(row => Number.isFinite(row.high) && Number.isFinite(row.low) && Number.isFinite(row.close) && row.close > 0);
-  if (rows.length < ATR_PERIOD + 1) return null;
+  if (rows.length < ATR_PERIOD) return null;
+
   const trs = rows.map((row, i) => {
     if (i === 0) return row.high - row.low;
     const prevClose = rows[i - 1].close;
     return Math.max(row.high - row.low, Math.abs(row.high - prevClose), Math.abs(row.low - prevClose));
   });
+
   const last = rows.length - 1;
   const start = last - ATR_PERIOD + 1;
   const atr = trs.slice(start, last + 1).reduce((sum, value) => sum + value, 0) / ATR_PERIOD;
-  const natr = (atr / rows[last].close) * 100;
-  return { natr, close: rows[last].close, datetime: rows[last].datetime };
+  return { natr: (atr / rows[last].close) * 100, close: rows[last].close, datetime: rows[last].datetime };
 }
 
 async function getMetrics() {
@@ -113,9 +116,8 @@ async function getMetrics() {
 
 async function main() {
   const state = await loadState();
-  const now = Date.now();
-  const currentBucket = Math.floor(now / 300000) * 300000;
-  const closedBucket = currentBucket - 300000;
+  const currentBucket = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
+  const closedBucket = currentBucket - PERIOD_MS;
   const bucketKey = new Date(closedBucket).toISOString();
 
   if (state.lastBucket === bucketKey) {
@@ -123,19 +125,19 @@ async function main() {
     return;
   }
 
-  // Give Twelve Data a few seconds after the 5-minute boundary so the latest bar is finalized.
   await sleep(8000);
   const metrics = await getMetrics();
   const valid = metrics.filter(item => Number.isFinite(item.natr)).sort((a, b) => b.natr - a.natr);
   if (!valid.length) throw new Error(`No valid NATR values: ${JSON.stringify(metrics)}`);
 
   const winner = valid[0];
+  // At the boundary, currentBucket is the newly opened 15m period: this is the market we want.
   const nextMarket = await findNextMarket(winner.symbol.split('/')[0], currentBucket);
   const time = new Date(closedBucket).toISOString().slice(11, 16);
   const message = [
     '🔥 VOLATILITY LEADER',
     '',
-    `${LABELS.get(winner.symbol)} · 5M · ${time} UTC`,
+    `${LABELS.get(winner.symbol)} · 15M · ${time} UTC`,
     '',
     `NATR(14): ${winner.natr.toFixed(2)}%`,
     `Price: ${winner.close}`,
@@ -143,13 +145,13 @@ async function main() {
     '📊 7 COINS',
     ...valid.map(item => `${LABELS.get(item.symbol)}: ${item.natr.toFixed(2)}%`),
     '',
-    '➡️ NEXT Polymarket 5M',
+    '➡️ CURRENT Polymarket 15M',
     nextMarket?.url || 'Market not found yet'
   ].join('\n');
 
   await sendTelegramMessage(message);
   const newSha = await saveState(bucketKey, state.sha);
-  console.log(JSON.stringify({ type: 'volatility_5m_alert', bucket: bucketKey, winner: LABELS.get(winner.symbol), natr: winner.natr, nextMarket: nextMarket?.url || null, stateSha: newSha }));
+  console.log(JSON.stringify({ type: 'volatility_15m_alert', bucket: bucketKey, winner: LABELS.get(winner.symbol), natr: winner.natr, nextMarket: nextMarket?.url || null, stateSha: newSha }));
 }
 
 main().catch(error => {
