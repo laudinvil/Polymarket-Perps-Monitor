@@ -1,28 +1,12 @@
-# Polymarket Perps Composite Monitor
+# Polymarket Perps Monitor
 
-The project no longer sends BBO / Order Book alerts.
+The project contains separate monitoring strategies for MarginPad and Polymarket.
 
-## Signal engine
+## MarginPad strategies
 
-It combines public Perps market data:
+- liquidation leader monitoring;
+- separate LONG / SHORT direction-leader monitoring for 5-minute and 15-minute periods.
 
-- price change over 5 minutes;
-- traded volume and a rolling 5-minute baseline;
-- open-interest change over 5 minutes;
-- funding rate;
-- a 4-factor score for `LONGS ENTERING` / `SHORTS ENTERING`.
+The LONG / SHORT strategy uses only MarginPad events whose `side` explicitly identifies `long` or `short`. It does not mix those events with `buy` / `sell`.
 
-Default signal requires at least 3 of 4 factors:
-
-- price move: 1.5% / 5m;
-- OI change: 5% / 5m;
-- funding: +0.03% for long / -0.03% for short;
-- volume: 3x rolling baseline.
-
-The engine waits for at least 3 previous 5-minute volume buckets before generating signals, which avoids startup false positives.
-
-## Next stage
-
-Add a second layer that matches a Perps signal to a live Polymarket prediction market (for example BTC/ETH short-term Up/Down markets) and sends one combined Telegram alert with both prices and links.
-
-The Perps API is currently experimental in the official SDK, so the implementation keeps the data parser tolerant to API field-name changes.
+Alerts are sent to Telegram and include the corresponding live Polymarket Up/Down market link when available.
