@@ -165,10 +165,6 @@ function nextBoundary(now) {
   }));
 }
 
-function boundaryKey(now) {
-  return FRAMEWORKS.map(timeframe => `${timeframe}:${bucketStart(now, timeframe)}`).join('|');
-}
-
 function formatUtcPlus3(ms) {
   return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16);
 }
@@ -299,13 +295,15 @@ async function fetchAllEvents() {
   return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
 }
 
-async function processBoundary(now) {
-  const boundary = boundaryKey(now);
-  console.log(`TIMEFRAME BOUNDARY REACHED; MarginPad fetch once; ${boundary}`);
+async function processBoundary(now, previousBoundaryNow) {
+  const dueTimeframes = FRAMEWORKS.filter(timeframe => bucketStart(now, timeframe) !== bucketStart(previousBoundaryNow, timeframe));
+  if (!dueTimeframes.length) return;
+
+  console.log(`TIMEFRAME BOUNDARY REACHED; MarginPad fetch once; due=${dueTimeframes.join(',')}`);
   const eventsBySymbol = await fetchAllEvents();
   const allCrossings = [];
 
-  for (const timeframe of FRAMEWORKS) {
+  for (const timeframe of dueTimeframes) {
     const current = bucketStart(now, timeframe);
     const completed = current - TIMEFRAMES[timeframe];
     allCrossings.push(...applyCompletedBucket(timeframe, eventsBySymbol, completed));
@@ -327,7 +325,7 @@ async function main() {
   ensureState();
   console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; MarginPad queried only at timeframe boundaries; no periodic polling`);
 
-  let lastBoundaryKey = boundaryKey(Date.now());
+  let lastBoundaryNow = Date.now();
   while (true) {
     const now = Date.now();
     const next = nextBoundary(now);
@@ -336,21 +334,17 @@ async function main() {
     await sleep(waitMs);
 
     const boundaryNow = Date.now();
-    const key = boundaryKey(boundaryNow);
-    if (key === lastBoundaryKey) {
-      await sleep(1000);
-      continue;
-    }
-
     try {
-      await processBoundary(boundaryNow);
-      lastBoundaryKey = key;
+      await processBoundary(boundaryNow, lastBoundaryNow);
+      lastBoundaryNow = boundaryNow;
     } catch (error) {
       console.error(`BOUNDARY PROCESS FAILED: ${error.stack || error.message}`);
-      // Do not advance lastBoundaryKey on failure: retry at the next loop without inventing a successful boundary.
       await sleep(5000);
     }
   }
 }
 
-main().catch(error => { console.error(`MONITOR FAILED: ${error.stack || error.message}`); process.exitCode = 1; });
+main().catch(error => {
+  console.error(error.stack || error.message);
+  process.exit(1);
+});
