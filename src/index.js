@@ -5,7 +5,7 @@ const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION LEADER: all supported coins, no liquidation-count threshold.
-// Multiple alerts are allowed inside the same 5M interval: one per symbol+direction.
+// Alerts are generated only at exact 5M boundaries for the bucket that just closed.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const WINDOW_MS_5M = WINDOW_MS;
@@ -63,9 +63,9 @@ async function saveState() {
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function checkOnce() {
-  const now = Date.now();
-  const currentBucket = bucketStart(now);
+async function checkOnce(boundary) {
+  const currentBucket = boundary;
+  const closedBucket = currentBucket - WINDOW_MS_5M;
   const results = await Promise.all(symbols.map(async symbol => {
     try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
     catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
@@ -87,7 +87,7 @@ async function checkOnce() {
       const symbol = normalizeSymbol(event.symbol);
       const side = String(event.side || '').toLowerCase();
       if (!ts || !allowed.has(symbol) || !(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-      if (bucketStart(ts) !== currentBucket) continue;
+      if (bucketStart(ts) !== closedBucket) continue;
       const key = eventKey(event);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -97,10 +97,10 @@ async function checkOnce() {
     }
 
     rows.set(normalizedRequested, { long: longBucket, short: shortBucket, total: bucketValid });
-    diagnostics.push({ symbol: normalizedRequested, received: Array.isArray(events) ? events.length : 0, current5m: bucketValid, long: longBucket, short: shortBucket });
+    diagnostics.push({ symbol: normalizedRequested, received: Array.isArray(events) ? events.length : 0, closed5m: bucketValid, long: longBucket, short: shortBucket });
   }
 
-  console.log(JSON.stringify({ type: 'liquidation_5m_feed_diagnostics', currentBucket: new Date(currentBucket).toISOString(), symbols: diagnostics }));
+  console.log(JSON.stringify({ type: 'liquidation_5m_feed_diagnostics', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbols: diagnostics }));
 
   const candidates = symbols.map(normalizeSymbol).map(symbol => {
     const row = rows.get(symbol) || { long: 0, short: 0, total: 0 };
@@ -111,7 +111,7 @@ async function checkOnce() {
   ).sort((a, b) => b.total - a.total || Math.max(b.long, b.short) - Math.max(a.long, a.short));
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', currentBucket: new Date(currentBucket).toISOString(), condition: 'exactly_one_side_zero_and_other_side_positive', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'exactly_one_side_zero_and_other_side_positive', alertSent: false }));
     return;
   }
 
@@ -119,19 +119,15 @@ async function checkOnce() {
   for (const candidate of candidates) {
     const winnerSide = candidate.long > 0 ? 'long' : 'short';
     const winnerCount = winnerSide === 'long' ? candidate.long : candidate.short;
-    const alertKey = `5m:${currentBucket}:${candidate.symbol}:${winnerSide}`;
-
-    // Same symbol+direction may alert only once during this 5M interval.
-    // Different symbols, or a direction flip, may generate additional alerts.
+    const alertKey = `5m:${closedBucket}:${candidate.symbol}:${winnerSide}`;
     if (sentAlerts.has(alertKey)) continue;
 
-    // Alert for the current 5M interval must link to that same 5M market,
-    // not the following interval.
+    // At the boundary, the closed period is reported and the link points to the new/current period.
     const currentMarket = await findCurrentMarket(candidate.symbol, currentBucket);
     const directionEmoji = winnerSide === 'long' ? '🔴' : '🟢';
     const message = [
       `${directionEmoji} LIQUIDATION LEADER`,
-      `${candidate.symbol} · 5M · ${formatUtcPlus3(currentBucket)} UTC+3`, '',
+      `${candidate.symbol} · 5M · ${formatUtcPlus3(closedBucket)} UTC+3`, '',
       `Leader: ${winnerSide.toUpperCase()} · ${winnerCount} liquidations`,
       `Long: ${candidate.long} · Short: ${candidate.short}`,
       `Total: ${candidate.total}`,
@@ -143,20 +139,7 @@ async function checkOnce() {
     await sendTelegramMessage(message);
     sentAlerts.add(alertKey);
     sentAny = true;
-    console.log(JSON.stringify({
-      type: 'liquidation_5m_direction_winner',
-      currentBucket: new Date(currentBucket).toISOString(),
-      symbol: candidate.symbol,
-      leaderSide: winnerSide,
-      leaderCount: winnerCount,
-      liquidations: candidate.total,
-      longCount: candidate.long,
-      shortCount: candidate.short,
-      condition: 'exactly_one_side_zero_and_other_side_positive',
-      alertSent: true,
-      nextMarket: currentMarket?.url || null,
-      delayMs: Date.now() - currentBucket,
-    }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_direction_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: candidate.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: candidate.total, longCount: candidate.long, shortCount: candidate.short, condition: 'exactly_one_side_zero_and_other_side_positive', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
   }
 
   if (sentAny) await saveState();
@@ -173,12 +156,14 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no count thresholds; opposite=0; multiple alerts per 5M interval; polling=20s; exact boundary scheduling; 15M all symbols enabled`);
+  console.log(`5M liquidation direction-leader monitor started; symbols=${symbols.join(',')}; no count thresholds; opposite=0; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
-    try { await checkOnce(); }
+    const now = Date.now();
+    const nextBoundary = bucketStart(now) + WINDOW_MS_5M;
+    await sleep(Math.max(0, nextBoundary - Date.now()));
+    try { await checkOnce(nextBoundary); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
-    await sleep(20_000);
   }
 }
 
