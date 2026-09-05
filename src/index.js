@@ -4,7 +4,7 @@ const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WI
 const { findCurrentMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
-// 5M LIQUIDATION LEADER: coin with the highest total liquidations in the closed period.
+// 5M LIQUIDATION LEADER: highest liquidation count on either side (LONG or SHORT).
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_5M = WINDOW_MS;
 const STATE_PATH = '.monitor-state.json';
@@ -107,19 +107,20 @@ async function checkOnce(boundary) {
 
   console.log(JSON.stringify({ type: 'liquidation_5m_feed_diagnostics', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbols: diagnostics }));
 
-  const candidates = symbols.map(normalizeSymbol).map(symbol => {
-    const row = rows.get(symbol) || { long: 0, short: 0, total: 0 };
-    return { symbol, ...row };
-  }).filter(row => row.total > 0).sort((a, b) => b.total - a.total);
+  const candidates = symbols.flatMap(symbol => {
+    const row = rows.get(normalizeSymbol(symbol)) || { long: 0, short: 0, total: 0 };
+    return [
+      { symbol: normalizeSymbol(symbol), side: 'long', count: row.long, long: row.long, short: row.short, total: row.total },
+      { symbol: normalizeSymbol(symbol), side: 'short', count: row.short, long: row.long, short: row.short, total: row.total },
+    ];
+  }).filter(row => row.count > 0).sort((a, b) => b.count - a.count);
 
   if (!candidates.length) {
-    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'maximum_total_liquidations', alertSent: false }));
+    console.log(JSON.stringify({ type: 'liquidation_5m_no_alert', closedBucket: new Date(closedBucket).toISOString(), condition: 'maximum_side_liquidations', alertSent: false }));
     return;
   }
 
   const winner = candidates[0];
-  const winnerSide = winner.long >= winner.short ? 'long' : 'short';
-  const winnerCount = winnerSide === 'long' ? winner.long : winner.short;
   const alertKey = `5m:${closedBucket}`;
   if (sentAlerts.has(alertKey)) return;
 
@@ -130,11 +131,11 @@ async function checkOnce(boundary) {
   }
 
   const currentMarket = await findCurrentMarket(winner.symbol, currentBucket);
-  const directionEmoji = winnerSide === 'long' ? '🔴' : '🟢';
+  const directionEmoji = winner.side === 'long' ? '🔴' : '🟢';
   const message = [
     `${directionEmoji} LIQUIDATION LEADER`,
     `${winner.symbol} · 5M · ${formatUtcPlus3(closedBucket)} UTC+3`, '',
-    `Leader: ${winnerSide.toUpperCase()} · ${winnerCount} liquidation${winnerCount === 1 ? '' : 's'}`,
+    `Leader: ${winner.side.toUpperCase()} · ${winner.count} liquidation${winner.count === 1 ? '' : 's'}`,
     `Long: ${winner.long} · Short: ${winner.short}`,
     `Total: ${winner.total}`,
     '',
@@ -146,7 +147,7 @@ async function checkOnce(boundary) {
   sentAlerts.add(alertKey);
   lastAlertPeriodBySymbol.set(winner.symbol, closedBucket);
   await saveState();
-  console.log(JSON.stringify({ type: 'liquidation_5m_maximum_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, liquidations: winner.total, longCount: winner.long, shortCount: winner.short, condition: 'maximum_total_liquidations; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
+  console.log(JSON.stringify({ type: 'liquidation_5m_maximum_side_winner', boundary: new Date(currentBucket).toISOString(), closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winner.side, leaderCount: winner.count, liquidations: winner.total, longCount: winner.long, shortCount: winner.short, condition: 'maximum_single_side_liquidations; no_same_coin_in_previous_period', alertSent: true, nextMarket: currentMarket?.url || null, delayMs: Date.now() - currentBucket }));
 }
 
 function start15m() {
@@ -160,7 +161,7 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation maximum monitor started; symbols=${symbols.join(',')}; maximum total liquidations per closed period; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
+  console.log(`5M liquidation side maximum monitor started; symbols=${symbols.join(',')}; maximum LONG or SHORT liquidation count per closed period; no same coin in previous period; boundary-only alerts; exact closed-bucket evaluation; 15M all symbols enabled`);
 
   while (true) {
     const now = Date.now();
