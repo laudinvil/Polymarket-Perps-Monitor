@@ -1,165 +1,23 @@
 const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
-
-// OKX public OI endpoint. Resolve the exact live USDT SWAP instrument IDs
-// first, then query OI for each configured symbol individually.
-const INSTRUMENTS_URL = 'https://www.okx.com/api/v5/public/instruments?instType=SWAP';
-const OI_URL = 'https://www.okx.com/api/v5/public/open-interest';
-const WINDOW_5M = 5 * 60 * 1000;
-const WINDOW_15M = 15 * 60 * 1000;
-const SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE']);
-
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-function bucketStart(ms, windowMs) { return Math.floor(ms / windowMs) * windowMs; }
-function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
-function formatPct(value) { return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`; }
-function formatUsd(value) { return value.toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-
-function baseSymbol(instId) {
-  const match = String(instId || '').toUpperCase().match(/^([A-Z0-9]+)-USDT-SWAP$/);
-  return match ? match[1] : '';
-}
-
-async function getJson(url, label) {
-  const response = await fetch(url, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(10000),
-  });
-  const text = await response.text();
-  let json;
-  try { json = JSON.parse(text); } catch {
-    throw new Error(`${label} returned non-JSON response: ${text.slice(0, 300)}`);
-  }
-  if (!response.ok) throw new Error(`${label} HTTP ${response.status}: ${text.slice(0, 300)}`);
-  if (json?.code !== '0') throw new Error(`${label} code ${json?.code}: ${json?.msg || 'unknown error'}`);
-  return json;
-}
-
-async function fetchOpenInterest() {
-  const instrumentsJson = await getJson(INSTRUMENTS_URL, 'OKX instruments');
-  const instruments = Array.isArray(instrumentsJson?.data) ? instrumentsJson.data : [];
-  const ids = new Map();
-
-  for (const row of instruments) {
-    const symbol = baseSymbol(row?.instId);
-    if (!SYMBOLS.has(symbol)) continue;
-    if (row?.state !== 'live') continue;
-    ids.set(symbol, row.instId);
-  }
-
-  const missingInstruments = [...SYMBOLS].filter(symbol => !ids.has(symbol));
-  if (missingInstruments.length) {
-    const available = instruments.map(row => row?.instId).filter(Boolean).filter(id => SYMBOLS.has(baseSymbol(id)));
-    throw new Error(`OKX instruments missing configured symbols: ${missingInstruments.join(',')}; matching IDs=${available.join(',')}`);
-  }
-
-  const entries = [...ids.entries()];
-  const results = await Promise.all(entries.map(async ([symbol, instId]) => {
-    const json = await getJson(`${OI_URL}?instType=SWAP&instId=${encodeURIComponent(instId)}`, `OKX OI ${symbol}`);
-    const row = json?.data?.[0];
-    const value = Number(row?.oiUsd);
-    if (!Number.isFinite(value)) throw new Error(`OKX OI ${symbol} returned invalid oiUsd for ${instId}: ${JSON.stringify(row)}`);
-    return [symbol, value];
-  }));
-
-  const snapshot = new Map(results);
-  console.log(`OI snapshot received from OKX: ${[...snapshot.keys()].join(',')}`);
-  return snapshot;
-}
-
-function largestChange(previous, current) {
-  const candidates = [];
-  for (const [symbol, currentOi] of current) {
-    const previousOi = previous.get(symbol);
-    if (!Number.isFinite(previousOi) || previousOi === 0) continue;
-    const delta = currentOi - previousOi;
-    const pct = (delta / previousOi) * 100;
-    if (!Number.isFinite(pct) || pct === 0) continue;
-    candidates.push({ symbol, previousOi, currentOi, delta, pct, absPct: Math.abs(pct) });
-  }
-  candidates.sort((a, b) => b.absPct - a.absPct);
-  return candidates[0] || null;
-}
-
-async function sendTelegram(message) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) throw new Error('Telegram secrets are missing');
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: false }),
-  });
-  if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
-}
-
-async function sendAlert(timeframe, previous, current, boundary) {
-  const winner = largestChange(previous, current);
-  if (!winner) {
-    return console.log(JSON.stringify({ type: `open_interest_${timeframe}_no_change`, boundary: new Date(boundary).toISOString() }));
-  }
-  const market = timeframe === '5M'
-    ? await findCurrentMarket(winner.symbol, boundary)
-    : await findCurrentMarket15m(winner.symbol, boundary);
-  const direction = winner.pct > 0 ? 'POSITIVE' : 'NEGATIVE';
-  const emoji = winner.pct > 0 ? '🟢' : '🔴';
-  const message = [
-    `${emoji} OPEN INTEREST LEADER`,
-    `${winner.symbol} · OI · ${timeframe} · ${formatUtcPlus3(boundary)} UTC+3`,
-    '',
-    `Change: ${direction}`,
-    `OI change: ${formatPct(winner.pct)}`,
-    `OI delta: ${winner.delta > 0 ? '+' : ''}${formatUsd(winner.delta)} USD`,
-    `Previous OI: ${formatUsd(winner.previousOi)} USD`,
-    `Current OI: ${formatUsd(winner.currentOi)} USD`,
-    '',
-    `➡️ NEXT Polymarket ${timeframe}`,
-    market?.url || 'Market not found yet',
-  ].join('\n');
-  await sendTelegram(message);
-  console.log(JSON.stringify({
-    type: `open_interest_${timeframe.toLowerCase()}_alert`,
-    boundary: new Date(boundary).toISOString(),
-    symbol: winner.symbol,
-    direction,
-    pct: winner.pct,
-    delta: winner.delta,
-    previousOi: winner.previousOi,
-    currentOi: winner.currentOi,
-    market: market?.url || null,
-  }));
-}
-
-async function main() {
-  console.log('Open Interest monitor started; source=OKX USDT perpetual swaps; symbols=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; 5M + 15M; largest absolute OI percentage change; exact boundary scheduling');
-  const snapshots = new Map();
-  let nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
-
-  while (true) {
-    await sleep(Math.max(0, nextBoundary - Date.now()));
-    const boundary = nextBoundary;
-    try {
-      const currentSnapshot = await fetchOpenInterest();
-      snapshots.set(boundary, currentSnapshot);
-
-      const previous5m = snapshots.get(boundary - WINDOW_5M);
-      if (previous5m) await sendAlert('5M', previous5m, currentSnapshot, boundary);
-      else console.log(JSON.stringify({ type: 'open_interest_5m_waiting_for_baseline', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
-
-      const previous15m = snapshots.get(boundary - WINDOW_15M);
-      if (previous15m) await sendAlert('15M', previous15m, currentSnapshot, boundary);
-
-      for (const key of snapshots.keys()) if (key < boundary - WINDOW_15M) snapshots.delete(key);
-      console.log(JSON.stringify({ type: 'open_interest_cycle', boundary: new Date(boundary).toISOString(), symbols: [...currentSnapshot.keys()] }));
-    } catch (error) {
-      console.error(`OPEN INTEREST CYCLE FAILED: ${error.stack || error.message}`);
-    }
-
-    nextBoundary += WINDOW_5M;
-    if (nextBoundary <= Date.now()) nextBoundary = bucketStart(Date.now(), WINDOW_5M) + WINDOW_5M;
-  }
-}
-
-main().catch(error => {
-  console.error(`OPEN INTEREST MONITOR FAILED: ${error.stack || error.message}`);
-  process.exitCode = 1;
-});
+const WINDOW_5M=5*60*1000, WINDOW_15M=15*60*1000;
+const SYMBOLS=['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
+const EXCHANGES=['Binance','Bybit','OKX','Gate','Bitget','MEXC','Hyperliquid'];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const bucket=ms=>Math.floor(ms/WINDOW_5M)*WINDOW_5M;
+const fmtPct=v=>`${v>=0?'+':''}${v.toFixed(2)}%`;
+const fmtUsd=v=>v.toLocaleString('en-US',{maximumFractionDigits:0});
+const fmtTime=ms=>new Date(ms+3*60*60*1000).toISOString().slice(11,16);
+async function json(url,label,opt={}){const r=await fetch(url,{headers:{accept:'application/json',...(opt.headers||{})},method:opt.method||'GET',body:opt.body,signal:AbortSignal.timeout(10000)});const t=await r.text();let j;try{j=JSON.parse(t)}catch{throw Error(`${label} returned non-JSON response: ${t.slice(0,200)}`)}if(!r.ok)throw Error(`${label} HTTP ${r.status}: ${t.slice(0,200)}`);return j}
+async function binance(s){const [o,p]=await Promise.all([json(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${s}USDT`,`Binance OI ${s}`),json(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${s}USDT`,`Binance mark ${s}`)]);return Number(o.openInterest)*Number(p.markPrice)}
+async function bybit(s){const j=await json(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${s}USDT`,`Bybit OI ${s}`);return Number(j?.result?.list?.[0]?.openInterestValue)}
+async function okx(s){const j=await json('https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId='+s+'-USDT-SWAP',`OKX OI ${s}`);if(j?.code!=='0')throw Error(`OKX ${j?.msg||j?.code}`);return Number(j?.data?.[0]?.oiUsd)}
+async function gate(s){const j=await json(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${s}_USDT`,`Gate OI ${s}`);const a=Array.isArray(j)?j:j?.data||[];const x=a[a.length-1];return Number(x?.open_interest_usd)}
+async function bitget(s){const [o,t]=await Promise.all([json(`https://api.bitget.com/api/v2/mix/market/open-interest?symbol=${s}USDT&productType=USDT-FUTURES`,`Bitget OI ${s}`),json(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${s}USDT&productType=USDT-FUTURES`,`Bitget ticker ${s}`)]);if(o?.code!=='00000')throw Error(`Bitget OI ${o?.msg||o?.code}`);if(t?.code!=='00000')throw Error(`Bitget ticker ${t?.msg||t?.code}`);return Number(o?.data?.openInterestList?.[0]?.size)*Number(t?.data?.[0]?.markPrice??t?.data?.[0]?.lastPr)}
+async function mexc(s){const j=await json(`https://contract.mexc.com/api/v1/contract/ticker?symbol=${s}_USDT`,`MEXC OI ${s}`);return Number(j?.data?.holdVol)*Number(j?.data?.fairPrice??j?.data?.lastPrice)}
+async function hyper(){const j=await json('https://api.hyperliquid.xyz/info','Hyperliquid',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'metaAndAssetCtxs'})});const u=j?.[0]?.universe||[],c=j?.[1]||[],m=new Map();for(let i=0;i<u.length;i++){const s=u[i]?.name;if(SYMBOLS.includes(s)){const v=Number(c[i]?.openInterest)*Number(c[i]?.markPx);if(Number.isFinite(v))m.set(s,v)}}if(m.size!==SYMBOLS.length)throw Error(`Hyperliquid missing: ${SYMBOLS.filter(s=>!m.has(s)).join(',')}`);return m}
+async function aggregate(){const h=await hyper(),out=new Map();for(const s of SYMBOLS){const v=await Promise.all([binance(s),bybit(s),okx(s),gate(s),bitget(s),mexc(s)]);const x={Binance:v[0],Bybit:v[1],OKX:v[2],Gate:v[3],Bitget:v[4],MEXC:v[5],Hyperliquid:h.get(s)};if(Object.values(x).some(v=>!Number.isFinite(v)||v<0))throw Error(`Invalid exchange OI for ${s}: ${JSON.stringify(x)}`);out.set(s,Object.values(x).reduce((a,b)=>a+b,0));console.log(JSON.stringify({type:'open_interest_exchange_breakdown',symbol:s,usd:x,aggregatedUsd:out.get(s)}))}console.log(`Aggregated OI snapshot received: ${[...out.keys()].join(',')}`);return out}
+function winner(p,c){let w=null;for(const s of SYMBOLS){const a=p.get(s),b=c.get(s);if(!Number.isFinite(a)||!Number.isFinite(b)||a===0)continue;const d=b-a,q=d/a*100;if(!Number.isFinite(q)||q===0)continue;const x={symbol:s,previousOi:a,currentOi:b,delta:d,pct:q};if(!w||Math.abs(q)>Math.abs(w.pct))w=x}return w}
+async function telegram(text){const t=process.env.TELEGRAM_BOT_TOKEN,id=process.env.TELEGRAM_CHAT_ID;if(!t||!id)throw Error('Telegram secrets are missing');const r=await fetch(`https://api.telegram.org/bot${t}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:id,text,disable_web_page_preview:false})});if(!r.ok)throw Error(`Telegram HTTP ${r.status}`)}
+async function alert(tf,p,c,b){const w=winner(p,c);if(!w)return console.log(JSON.stringify({type:`open_interest_${tf}_no_change`,boundary:new Date(b).toISOString()}));const market=tf==='5M'?await findCurrentMarket(w.symbol,b):await findCurrentMarket15m(w.symbol,b);const pos=w.pct>0;const msg=[`${pos?'🟢':'🔴'} AGGREGATED OPEN INTEREST LEADER`,`${w.symbol} · OI · ${tf} · ${fmtTime(b)} UTC+3`,'',`Change: ${pos?'POSITIVE':'NEGATIVE'}`,`Aggregated OI change: ${fmtPct(w.pct)}`,`OI delta: ${w.delta>=0?'+':''}${fmtUsd(w.delta)} USD`,`Previous aggregated OI: ${fmtUsd(w.previousOi)} USD`,`Current aggregated OI: ${fmtUsd(w.currentOi)} USD`,'',`➡️ NEXT Polymarket ${tf}`,market?.url||'Market not found yet'].join('\n');await telegram(msg);console.log(JSON.stringify({type:`open_interest_${tf.toLowerCase()}_alert`,boundary:new Date(b).toISOString(),symbol:w.symbol,pct:w.pct,delta:w.delta,previousOi:w.previousOi,currentOi:w.currentOi,market:market?.url||null}))}
+async function main(){console.log(`Open Interest monitor started; source=AGGREGATED ${EXCHANGES.join(' + ')}; symbols=${SYMBOLS.join(',')}; 5M + 15M; largest absolute aggregated OI percentage change; exact boundary scheduling`);const snaps=new Map();let next=bucket(Date.now())+WINDOW_5M;while(true){await sleep(Math.max(0,next-Date.now()));const b=next;try{const cur=await aggregate();snaps.set(b,cur);const p5=snaps.get(b-WINDOW_5M);if(p5)await alert('5M',p5,cur,b);else console.log(JSON.stringify({type:'open_interest_5m_waiting_for_baseline',boundary:new Date(b).toISOString(),symbols:[...cur.keys()]}));const p15=snaps.get(b-WINDOW_15M);if(p15)await alert('15M',p15,cur,b);for(const k of snaps.keys())if(k<b-WINDOW_15M)snaps.delete(k);console.log(JSON.stringify({type:'open_interest_cycle',boundary:new Date(b).toISOString(),symbols:[...cur.keys()]}))}catch(e){console.error(`OPEN INTEREST CYCLE FAILED: ${e.stack||e.message}`)}next+=WINDOW_5M;if(next<=Date.now())next=bucket(Date.now())+WINDOW_5M}}
+main().catch(e=>{console.error(`OPEN INTEREST MONITOR FAILED: ${e.stack||e.message}`);process.exitCode=1})
