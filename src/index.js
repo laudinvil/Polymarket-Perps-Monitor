@@ -5,7 +5,7 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION IMBALANCE: per coin, monitor cumulative LONG minus SHORT liquidations.
-// Alert immediately when the sign crosses zero. Maximum one alert per 5M period.
+// Alert immediately when the sign crosses zero during the active period. Maximum one alert per period.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_5M = WINDOW_MS;
 const POLL_MS = 10000;
@@ -63,7 +63,7 @@ async function saveState() {
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-function findFirstZeroCrossing(eventsBySymbol, closedBucket) {
+function findFirstZeroCrossing(eventsBySymbol, activeBucket) {
   let first = null;
   for (const [symbol, events] of eventsBySymbol.entries()) {
     const ordered = events.slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
@@ -74,7 +74,7 @@ function findFirstZeroCrossing(eventsBySymbol, closedBucket) {
 
     for (const event of ordered) {
       const ts = normalizeTs(event.ts);
-      if (!ts || bucketStart(ts) !== closedBucket) continue;
+      if (!ts || bucketStart(ts) !== activeBucket) continue;
       const side = String(event.side || '').toLowerCase();
       if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
       const key = eventKey(event);
@@ -96,27 +96,24 @@ function findFirstZeroCrossing(eventsBySymbol, closedBucket) {
   return first;
 }
 
-async function checkOnce(boundary) {
-  const currentBucket = boundary;
-  const closedBucket = currentBucket - WINDOW_MS_5M;
+async function checkOnce(activeBucket) {
   const results = await Promise.all(symbols.map(async symbol => {
     try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
     catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
   }));
 
   const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
-  const crossing = findFirstZeroCrossing(eventsBySymbol, closedBucket);
+  const crossing = findFirstZeroCrossing(eventsBySymbol, activeBucket);
 
   console.log(JSON.stringify({
     type: 'liquidation_5m_zero_crossing_check',
-    boundary: new Date(currentBucket).toISOString(),
-    period: new Date(closedBucket).toISOString(),
+    period: new Date(activeBucket).toISOString(),
     crossing: crossing ? { symbol: crossing.symbol, long: crossing.long, short: crossing.short, difference: crossing.difference, ts: new Date(crossing.ts).toISOString() } : null,
   }));
 
   if (!crossing) return;
 
-  const alertKey = `5m:${closedBucket}`;
+  const alertKey = `5m:${activeBucket}`;
   if (sentAlerts.has(alertKey)) return;
 
   const nextMarket = await findNextMarket(crossing.symbol, Date.now());
@@ -134,7 +131,7 @@ async function checkOnce(boundary) {
   await sendTelegramMessage(message);
   sentAlerts.add(alertKey);
   await saveState();
-  console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longCount: crossing.long, shortCount: crossing.short, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(closedBucket).toISOString(), condition: 'LONG_MINUS_SHORT_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
+  console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longCount: crossing.long, shortCount: crossing.short, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(activeBucket).toISOString(), condition: 'LONG_MINUS_SHORT_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
 }
 
 function start15m() {
@@ -148,12 +145,11 @@ function start15m() {
 async function main() {
   await loadState();
   start15m();
-  console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; alert on LONG minus SHORT sign change; one alert per period; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; active-period LONG minus SHORT sign change; one alert per period; poll=${POLL_MS}ms`);
 
   while (true) {
-    const now = Date.now();
-    const currentBucket = bucketStart(now);
-    try { await checkOnce(currentBucket); }
+    const activeBucket = bucketStart(Date.now());
+    try { await checkOnce(activeBucket); }
     catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
     await sleep(POLL_MS);
   }
