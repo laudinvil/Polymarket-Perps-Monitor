@@ -1,9 +1,9 @@
-name: 5M Volatility Monitor
+name: 15M Volatility Monitor
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/15 * * * *'
 
 permissions:
   contents: write
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Run 5M volatility monitor
+      - name: Run 15M volatility monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
