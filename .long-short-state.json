@@ -5,13 +5,13 @@
     "DOGE:short_liquidated:0.08600000000000001"
   ],
   "previousPrices": {
-    "BTC": 79630,
+    "BTC": 79636.1,
     "ETH": 2458.51,
-    "SOL": 102.55,
-    "XRP": 1.4075,
-    "DOGE": 0.08609,
-    "BNB": 747.7,
-    "HYPE": 84.85
+    "SOL": 102.54,
+    "XRP": 1.4069,
+    "DOGE": 0.08606,
+    "BNB": 747,
+    "HYPE": 84.86
   },
   "lastAlertAt": 1788602293011
 }
