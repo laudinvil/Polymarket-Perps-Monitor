@@ -57,7 +57,14 @@ async function loadState() {
 
 async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify({ alerts: [...sentAlerts].slice(-500) }, null, 2)).toString('base64');
+  const stats = activePeriod === null ? [] : diagnostics(activePeriod);
+  const statePayload = {
+    updatedAt: new Date().toISOString(),
+    period: activePeriod === null ? null : new Date(activePeriod).toISOString(),
+    alerts: [...sentAlerts].slice(-500),
+    liquidation5m: stats,
+  };
+  const content = Buffer.from(JSON.stringify(statePayload, null, 2)).toString('base64');
   const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
   if (stateSha) body.sha = stateSha;
   try {
