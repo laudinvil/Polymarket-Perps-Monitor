@@ -4,13 +4,15 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION IMBALANCE:
-// MarginPad sends raw liquidation events in successive updates. We count each
-// NEW liquidation event once in a running signed COUNT for the active period:
-//   LONG liquidation  => +1
-//   SHORT liquidation => -1
-// The alert is based on the RUNNING COUNT crossing zero.
+// Each poll is a raw MarginPad update containing NEW liquidation events.
+// We aggregate the number of NEW LONG/SHORT liquidations from that update,
+// then add the deltas to the running totals for the current 5M period:
+//   LONG  => +count
+//   SHORT => -count
+// The alert is only emitted when the already-established running sign flips
+// from positive to negative or negative to positive. Hitting exactly zero does
+// not reset the established sign.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const WINDOW_MS_5M = WINDOW_MS;
 const POLL_MS = 10000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
@@ -102,6 +104,13 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       previousSign: 0,
     };
 
+    // Aggregate ONE poll/update first. Do not evaluate crossings while walking
+    // individual events: a first snapshot containing both sides must not create
+    // a false alert such as +0 -> -1. The comparison is update-to-update.
+    let updateLong = 0;
+    let updateShort = 0;
+    let updateLastTs = null;
+
     for (const event of events) {
       const ts = normalizeTs(event.ts);
       if (!ts || bucketStart(ts) !== activeBucket) continue;
@@ -109,33 +118,62 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       const sign = eventSideSign(event);
       if (sign === 0) continue;
 
-      const key = eventKey(event);
-      if (seenEvents.has(`${activeBucket}:${key}`)) continue;
-      seenEvents.add(`${activeBucket}:${key}`);
+      const key = `${activeBucket}:${eventKey(event)}`;
+      if (seenEvents.has(key)) continue;
+      seenEvents.add(key);
 
-      const before = state.imbalance;
-      if (sign > 0) state.longCount += 1;
-      else state.shortCount += 1;
-      state.imbalance += sign;
-      state.events += 1;
-      state.lastTs = ts;
-
-      const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
-      if (state.previousSign !== 0 && newSign !== 0 && newSign !== state.previousSign) {
-        changes.push({
-          symbol: normalizedSymbol,
-          before,
-          after: state.imbalance,
-          longCount: state.longCount,
-          shortCount: state.shortCount,
-          ts,
-          period: activeBucket,
-        });
-      }
-      if (newSign !== 0) state.previousSign = newSign;
+      if (sign > 0) updateLong += 1;
+      else updateShort += 1;
+      if (!updateLastTs || ts > updateLastTs) updateLastTs = ts;
     }
 
+    if (updateLong === 0 && updateShort === 0) {
+      runningImbalance.set(normalizedSymbol, state);
+      continue;
+    }
+
+    const before = state.imbalance;
+    const oldSign = state.previousSign;
+    const delta = updateLong - updateShort;
+
+    state.longCount += updateLong;
+    state.shortCount += updateShort;
+    state.events += updateLong + updateShort;
+    state.imbalance += delta;
+    state.lastTs = updateLastTs;
+
+    const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
+
+    // Only a genuine flip of an already-established sign creates an alert.
+    // Passing through zero preserves the old sign until a later non-zero update.
+    if (oldSign !== 0 && newSign !== 0 && newSign !== oldSign) {
+      changes.push({
+        symbol: normalizedSymbol,
+        before,
+        after: state.imbalance,
+        longCount: state.longCount,
+        shortCount: state.shortCount,
+        updateLong,
+        updateShort,
+        ts: updateLastTs,
+        period: activeBucket,
+      });
+    }
+
+    if (newSign !== 0) state.previousSign = newSign;
     runningImbalance.set(normalizedSymbol, state);
+
+    console.log(JSON.stringify({
+      type: 'liquidation_5m_update',
+      symbol: normalizedSymbol,
+      updateLong,
+      updateShort,
+      delta,
+      runningImbalance: state.imbalance,
+      cumulativeLong: state.longCount,
+      cumulativeShort: state.shortCount,
+      period: new Date(activeBucket).toISOString(),
+    }));
   }
 
   return changes;
@@ -170,8 +208,6 @@ async function checkOnce(activeBucket) {
   console.log(JSON.stringify({ type: 'liquidation_5m_running_imbalance', coins: diagnostics(activeBucket) }));
 
   for (const crossing of crossings.sort((a, b) => a.ts - b.ts)) {
-    // A crossing is identified by the exact event that caused it. This prevents
-    // the same raw MarginPad data from producing the same alert repeatedly.
     const alertKey = `5m:${activeBucket}:${crossing.symbol}:${crossing.ts}:${crossing.after}`;
     if (sentAlerts.has(alertKey)) continue;
 
@@ -189,6 +225,7 @@ async function checkOnce(activeBucket) {
       `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
       `Previous imbalance: ${formatSignedCount(crossing.before)} liquidations`,
       `New imbalance: ${formatSignedCount(crossing.after)} liquidations`,
+      `Update: +${crossing.updateLong} LONG · -${crossing.updateShort} SHORT`,
       `Long liquidations: ${crossing.longCount}`,
       `Short liquidations: ${crossing.shortCount}`,
       '',
@@ -205,6 +242,8 @@ async function checkOnce(activeBucket) {
       symbol: crossing.symbol,
       previousImbalance: crossing.before,
       newImbalance: crossing.after,
+      updateLong: crossing.updateLong,
+      updateShort: crossing.updateShort,
       longLiquidations: crossing.longCount,
       shortLiquidations: crossing.shortCount,
       crossingTs: new Date(crossing.ts).toISOString(),
@@ -220,7 +259,7 @@ async function checkOnce(activeBucket) {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; raw MarginPad events are counted once; LONG=+1, SHORT=-1; alert on running sign flip; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; each poll aggregates NEW LONG/SHORT liquidation counts; cumulative within 5M; alert only on established sign flip; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
