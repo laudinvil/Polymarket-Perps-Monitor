@@ -17,6 +17,11 @@ const rearmConditions = new Map();
 let stateSha = null;
 let lastAlertAt = 0;
 
+function formatPrice(value) {
+  if (value == null || !Number.isFinite(Number(value))) return 'N/A';
+  return Number(Number(value).toPrecision(12)).toString();
+}
+
 function githubRequest(method, body = null) {
   return new Promise((resolve, reject) => {
     const token = process.env.GITHUB_TOKEN;
@@ -50,8 +55,6 @@ function githubRequest(method, body = null) {
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function migrateRearmConditions(state) {
-  // Backward compatibility: older state files stored only sentClusters/previousPrices.
-  // Reconstruct a blocking level from the newest valid alerted cluster for each symbol.
   const sentBySymbol = new Map();
   for (const key of sentClusters) {
     const parts = String(key).split(':');
@@ -68,13 +71,7 @@ function migrateRearmConditions(state) {
     if (!Number.isFinite(previousPrice) || previousPrice === price) continue;
     const direction = previousPrice < price ? 'below' : 'above';
     rearmConditions.set(symbol, { price, direction });
-    console.log(JSON.stringify({
-      type: 'legacy_state_migrated',
-      symbol,
-      resetLevel: price,
-      direction,
-      previousPrice
-    }));
+    console.log(JSON.stringify({ type: 'legacy_state_migrated', symbol, resetLevel: price, direction, previousPrice }));
   }
 }
 
@@ -246,13 +243,7 @@ function updateRearmState(snapshot) {
   if (canRearm) {
     armedSymbols.add(snapshot.symbol);
     rearmConditions.delete(snapshot.symbol);
-    console.log(JSON.stringify({
-      type: 'symbol_rearmed',
-      symbol: snapshot.symbol,
-      resetLevel: condition.price,
-      direction: condition.direction,
-      currentPrice: snapshot.currentPrice
-    }));
+    console.log(JSON.stringify({ type: 'symbol_rearmed', symbol: snapshot.symbol, resetLevel: condition.price, direction: condition.direction, currentPrice: snapshot.currentPrice }));
   }
 }
 
@@ -325,8 +316,8 @@ async function check() {
   const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
     `${emoji} CLUSTER TOUCHED`, `${winner.symbol} · 5M`, '', `Cluster: ${sideLabel}`,
-    `Previous price: ${winner.previousPrice ?? 'N/A'}`, `Cluster price: ${cluster.price}`,
-    `Current price: ${winner.currentPrice}`, `Direction: ${direction}`,
+    `Previous price: ${formatPrice(winner.previousPrice)}`, `Cluster price: ${formatPrice(cluster.price)}`,
+    `Current price: ${formatPrice(winner.currentPrice)}`, `Direction: ${direction}`,
     `Distance: ${cluster.distancePct.toFixed(2)}%`, `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
     '', '➡️ NEXT Polymarket 5M', polymarketUrl
   ].join('\n');
