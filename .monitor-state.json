@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:26:20.884Z",
+  "updatedAt": "2026-09-05T21:26:31.725Z",
   "period": "2026-09-05T21:25:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -151,12 +151,12 @@
     {
       "symbol": "XRP",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
+      "shortLiquidations": 4,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "cumulativeShortEvents": 4,
+      "imbalance": -4,
+      "totalLiquidations": 4,
+      "lastEvent": "2026-09-05T21:26:27.539Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
@@ -229,14 +229,14 @@
     },
     {
       "symbol": "XRP",
-      "imbalance": 0,
+      "imbalance": -4,
       "longStrength": 0,
-      "shortStrength": 0,
+      "shortStrength": 4,
       "longEvents": 0,
-      "shortEvents": 0,
-      "events": 0,
-      "lastTs": null,
-      "previousSign": 0
+      "shortEvents": 4,
+      "events": 4,
+      "lastTs": 1788643587539,
+      "previousSign": -1
     },
     {
       "symbol": "DOGE",
