@@ -2,13 +2,14 @@ const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 const WINDOW_5M=5*60*1000, WINDOW_15M=15*60*1000;
 const SYMBOLS=['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
 const EXCHANGES=['Binance','Bybit','OKX','Gate','Bitget','MEXC','Hyperliquid'];
+const BINANCE_FUTURES_BASES=['https://fapi.binance.com/fapi/v1','https://fapi1.binance.com/fapi/v1','https://fapi2.binance.com/fapi/v1','https://fapi3.binance.com/fapi/v1','https://fapi4.binance.com/fapi/v1'];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const bucket=ms=>Math.floor(ms/WINDOW_5M)*WINDOW_5M;
 const fmtPct=v=>`${v>=0?'+':''}${v.toFixed(2)}%`;
 const fmtUsd=v=>v.toLocaleString('en-US',{maximumFractionDigits:0});
 const fmtTime=ms=>new Date(ms+3*60*60*1000).toISOString().slice(11,16);
 async function json(url,label,opt={}){const r=await fetch(url,{headers:{accept:'application/json',...(opt.headers||{})},method:opt.method||'GET',body:opt.body,signal:AbortSignal.timeout(10000)});const t=await r.text();let j;try{j=JSON.parse(t)}catch{throw Error(`${label} returned non-JSON response: ${t.slice(0,200)}`)}if(!r.ok)throw Error(`${label} HTTP ${r.status}: ${t.slice(0,200)}`);return j}
-async function binance(s){const [o,p]=await Promise.all([json(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${s}USDT`,`Binance OI ${s}`),json(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${s}USDT`,`Binance mark ${s}`)]);return Number(o.openInterest)*Number(p.markPrice)}
+async function binance(s){let lastError;for(const base of BINANCE_FUTURES_BASES){try{const [o,p]=await Promise.all([json(`${base}/openInterest?symbol=${s}USDT`,`Binance OI ${s} ${base}`),json(`${base}/premiumIndex?symbol=${s}USDT`,`Binance mark ${s} ${base}`)]);const value=Number(o?.openInterest)*Number(p?.markPrice);if(!Number.isFinite(value)||value<=0)throw Error(`Binance invalid OI for ${s} via ${base}`);console.log(`Binance OI ${s}: using ${base}`);return value}catch(e){lastError=e;console.log(`Binance endpoint failed for ${s}: ${base} -> ${e.message}`)}}throw Error(`Binance all Futures endpoints failed for ${s}: ${lastError?.message||'unknown error'}`)}
 async function bybit(s){const j=await json(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${s}USDT`,`Bybit OI ${s}`);return Number(j?.result?.list?.[0]?.openInterestValue)}
 async function okx(s){const j=await json('https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId='+s+'-USDT-SWAP',`OKX OI ${s}`);if(j?.code!=='0')throw Error(`OKX ${j?.msg||j?.code}`);return Number(j?.data?.[0]?.oiUsd)}
 async function gate(s){const j=await json(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${s}_USDT`,`Gate OI ${s}`);const a=Array.isArray(j)?j:j?.data||[];const x=a[a.length-1];return Number(x?.open_interest_usd)}
