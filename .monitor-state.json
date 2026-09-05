@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T22:02:36.458Z",
+  "updatedAt": "2026-09-05T22:03:11.052Z",
   "period": "2026-09-05T22:00:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -154,11 +154,11 @@
     {
       "symbol": "XRP",
       "longUsd": 0,
-      "shortUsd": 4265.19621,
+      "shortUsd": 7829.239680000001,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 14,
-      "imbalanceUsd": -4265.19621,
-      "totalLiquidations": 14,
+      "cumulativeShortEvents": 15,
+      "imbalanceUsd": -7829.239680000001,
+      "totalLiquidations": 15,
       "lastEvent": "2026-09-05T22:02:31.120Z",
       "period": "2026-09-05T22:00:00.000Z"
     },
@@ -187,11 +187,11 @@
     {
       "symbol": "HYPE",
       "longUsd": 0,
-      "shortUsd": 7.704809999999999,
+      "shortUsd": 15.409619999999999,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 10,
-      "imbalanceUsd": -7.704809999999999,
-      "totalLiquidations": 10,
+      "cumulativeShortEvents": 11,
+      "imbalanceUsd": -15.409619999999999,
+      "totalLiquidations": 11,
       "lastEvent": "2026-09-05T22:02:34.719Z",
       "period": "2026-09-05T22:00:00.000Z"
     }
@@ -232,12 +232,12 @@
     },
     {
       "symbol": "XRP",
-      "imbalanceUsd": -4265.19621,
+      "imbalanceUsd": -7829.239680000001,
       "longUsd": 0,
-      "shortUsd": 4265.19621,
+      "shortUsd": 7829.239680000001,
       "longEvents": 0,
-      "shortEvents": 14,
-      "events": 14,
+      "shortEvents": 15,
+      "events": 15,
       "lastTs": 1788645751120,
       "establishedSign": -1
     },
@@ -265,12 +265,12 @@
     },
     {
       "symbol": "HYPE",
-      "imbalanceUsd": -7.704809999999999,
+      "imbalanceUsd": -15.409619999999999,
       "longUsd": 0,
-      "shortUsd": 7.704809999999999,
+      "shortUsd": 15.409619999999999,
       "longEvents": 0,
-      "shortEvents": 10,
-      "events": 10,
+      "shortEvents": 11,
+      "events": 11,
       "lastTs": 1788645754719,
       "establishedSign": -1
     }
