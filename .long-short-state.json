@@ -12,37 +12,13 @@
     "BNB:long_liquidated:746"
   ],
   "previousPrices": {
-    "BTC": 79664.7,
-    "ETH": 2455.32,
-    "SOL": 102.37,
-    "XRP": 1.4047,
+    "BTC": 79664.8,
+    "ETH": 2455.31,
+    "SOL": 102.38,
+    "XRP": 1.4048,
     "DOGE": 0.08621,
     "BNB": 753.4,
-    "HYPE": 84.79
+    "HYPE": 84.81
   },
-  "armedSymbols": [],
-  "rearmConditions": {
-    "ETH": {
-      "price": 2460,
-      "direction": "below"
-    },
-    "DOGE": {
-      "price": 0.08600000000000001,
-      "direction": "below"
-    },
-    "SOL": {
-      "price": 102.5,
-      "direction": "below"
-    },
-    "BNB": {
-      "price": 746,
-      "direction": "above"
-    },
-    "XRP": {
-      "price": 1.4020000000000001,
-      "direction": "above"
-    }
-  },
-  "alertedBuckets": {},
   "lastAlertAt": 1788608821423
 }
