@@ -44,15 +44,22 @@ async function loadState() {
     for (const key of state.alerts || []) sentAlerts.add(key);
     for (const item of state.liquidationRunning || []) {
       if (!item?.symbol) continue;
+      const imbalance = Number(item.imbalance) || 0;
+      const storedEstablishedSign = Number(item.establishedSign);
+      const legacySign = Number(item.previousSign) || 0;
+      const establishedSign = Number.isFinite(storedEstablishedSign)
+        ? storedEstablishedSign
+        : (Math.abs(imbalance) >= MIN_FLIP_IMBALANCE ? (imbalance > 0 ? 1 : -1) : 0);
       runningImbalance.set(normalizeSymbol(item.symbol), {
-        imbalance: Number(item.imbalance) || 0,
+        imbalance,
         longStrength: Number(item.longStrength) || 0,
         shortStrength: Number(item.shortStrength) || 0,
         longEvents: Number(item.longEvents) || 0,
         shortEvents: Number(item.shortEvents) || 0,
         events: Number(item.events) || 0,
         lastTs: item.lastTs ? Number(item.lastTs) : null,
-        previousSign: Number(item.previousSign) || 0,
+        establishedSign,
+        previousSign: legacySign,
       });
     }
   } catch (error) {
@@ -69,8 +76,8 @@ async function saveState() {
     alerts: [...sentAlerts].slice(-500),
     liquidation5m: stats,
     liquidationRunning: symbols.map(symbol => {
-      const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, previousSign: 0 };
-      return { symbol: normalizeSymbol(symbol), imbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, longEvents: state.longEvents, shortEvents: state.shortEvents, events: state.events, lastTs: state.lastTs, previousSign: state.previousSign };
+      const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0, previousSign: 0 };
+      return { symbol: normalizeSymbol(symbol), imbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, longEvents: state.longEvents, shortEvents: state.shortEvents, events: state.events, lastTs: state.lastTs, establishedSign: state.establishedSign || 0, previousSign: state.previousSign || 0 };
     }),
   };
   const content = Buffer.from(JSON.stringify(statePayload, null, 2)).toString('base64');
@@ -102,7 +109,7 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
   for (const symbol of symbols) {
     const normalizedSymbol = normalizeSymbol(symbol);
     const events = (eventsBySymbol.get(normalizedSymbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let state = runningImbalance.get(normalizedSymbol) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, previousSign: 0 };
+    let state = runningImbalance.get(normalizedSymbol) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0, previousSign: 0 };
     let updateLong = 0;
     let updateShort = 0;
     let updateLastTs = null;
@@ -126,7 +133,7 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
     }
 
     const before = state.imbalance;
-    const oldEstablishedSign = state.previousSign;
+    const oldEstablishedSign = state.establishedSign || 0;
     state.imbalance += updateLong - updateShort;
     state.longEvents += updateLong;
     state.shortEvents += updateShort;
@@ -143,10 +150,10 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       changes.push({ symbol: normalizedSymbol, before, after: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, longEvents: state.longEvents, shortEvents: state.shortEvents, updateLong, updateShort, ts: updateLastTs, period: activeBucket });
     }
 
-    if (reachedThreshold) state.previousSign = newSign;
+    if (reachedThreshold) state.establishedSign = newSign;
     runningImbalance.set(normalizedSymbol, state);
 
-    console.log(JSON.stringify({ type: 'liquidation_running_update', symbol: normalizedSymbol, updateLong, updateShort, runningImbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, previousEstablishedSign: state.previousSign, minFlipImbalance: MIN_FLIP_IMBALANCE, period: new Date(activeBucket).toISOString() }));
+    console.log(JSON.stringify({ type: 'liquidation_running_update', symbol: normalizedSymbol, updateLong, updateShort, runningImbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, establishedSign: state.establishedSign || 0, minFlipImbalance: MIN_FLIP_IMBALANCE, period: new Date(activeBucket).toISOString() }));
   }
   return changes;
 }
