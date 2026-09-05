@@ -47,6 +47,37 @@ function githubRequest(method, body = null) {
   });
 }
 
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function migrateRearmConditions(state) {
+  // Backward compatibility: older state files stored only sentClusters/previousPrices.
+  // Reconstruct a blocking level from the newest valid alerted cluster for each symbol.
+  const sentBySymbol = new Map();
+  for (const key of sentClusters) {
+    const parts = String(key).split(':');
+    if (parts.length < 3) continue;
+    const symbol = parts[0];
+    const price = Number(parts[parts.length - 1]);
+    if (!SYMBOLS.includes(symbol) || !Number.isFinite(price)) continue;
+    sentBySymbol.set(symbol, price);
+  }
+
+  for (const [symbol, price] of sentBySymbol) {
+    if (rearmConditions.has(symbol) || armedSymbols.has(symbol)) continue;
+    const previousPrice = previousPrices.get(symbol);
+    if (!Number.isFinite(previousPrice) || previousPrice === price) continue;
+    const direction = previousPrice < price ? 'below' : 'above';
+    rearmConditions.set(symbol, { price, direction });
+    console.log(JSON.stringify({
+      type: 'legacy_state_migrated',
+      symbol,
+      resetLevel: price,
+      direction,
+      previousPrice
+    }));
+  }
+}
+
 async function loadState() {
   try {
     const data = await githubRequest('GET');
@@ -65,6 +96,7 @@ async function loadState() {
       }
     }
     lastAlertAt = Number(state.lastAlertAt) || 0;
+    migrateRearmConditions(state);
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -104,8 +136,6 @@ async function saveState() {
   }
 }
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
 async function fetchJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
@@ -143,12 +173,10 @@ function clusterKey(symbol, cluster) {
   return `${symbol}:${cluster.side}:${cluster.price}`;
 }
 
-// Touch means ONLY exact equality or a real crossing between two polls.
 function isTouch(previousPrice, currentPrice, clusterPrice) {
   if (currentPrice == null || clusterPrice == null) return false;
   if (currentPrice === clusterPrice) return true;
   if (previousPrice == null) return false;
-
   return (previousPrice < clusterPrice && currentPrice > clusterPrice) ||
          (previousPrice > clusterPrice && currentPrice < clusterPrice);
 }
@@ -170,13 +198,11 @@ async function getCoinSnapshot(symbol) {
     fetchJson(`${PRICE_URL}?symbol=${encodeURIComponent(symbol)}`),
     fetchJson(`${CLUSTERS_URL}?symbol=${encodeURIComponent(symbol)}`)
   ]);
-
   const currentPrice = extractPrice(priceData);
   const clusters = extractClusters(clusterData).map(normalizeCluster).filter(Boolean);
   if (currentPrice == null || clusters.length === 0) {
     return { symbol, currentPrice, previousPrice: previousPrices.get(symbol) ?? null, clusters, nearest: null };
   }
-
   const available = clusters
     .map(cluster => ({
       ...cluster,
@@ -185,7 +211,6 @@ async function getCoinSnapshot(symbol) {
     }))
     .filter(cluster => !sentClusters.has(cluster.clusterKey))
     .sort((a, b) => a.distancePct - b.distancePct);
-
   return {
     symbol,
     currentPrice,
@@ -201,7 +226,6 @@ async function nextMarketUrl(symbol) {
     Math.floor(Date.now() / (intervalSeconds * 1000)) * intervalSeconds + intervalSeconds;
   const slug = `${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
   const url = `${POLYMARKET_GAMMA_URL}/${slug}`;
-
   try {
     const event = await fetchJson(url);
     if (event?.slug) return `https://polymarket.com/event/${event.slug}`;
@@ -216,11 +240,9 @@ function updateRearmState(snapshot) {
   if (snapshot.currentPrice == null || armedSymbols.has(snapshot.symbol)) return;
   const condition = rearmConditions.get(snapshot.symbol);
   if (!condition) return;
-
   const canRearm = condition.direction === 'below'
     ? snapshot.currentPrice < condition.price
     : snapshot.currentPrice > condition.price;
-
   if (canRearm) {
     armedSymbols.add(snapshot.symbol);
     rearmConditions.delete(snapshot.symbol);
@@ -236,33 +258,22 @@ function updateRearmState(snapshot) {
 
 async function check() {
   const snapshots = await Promise.all(SYMBOLS.map(async symbol => {
-    try {
-      return await getCoinSnapshot(symbol);
-    } catch (error) {
-      console.warn(`${symbol}: ${error.message}`);
-      return { symbol, nearest: null };
-    }
+    try { return await getCoinSnapshot(symbol); }
+    catch (error) { console.warn(`${symbol}: ${error.message}`); return { symbol, nearest: null }; }
   }));
 
-  // Re-arm only after price has crossed back through the LAST alerted level.
-  // This blocks all adjacent clusters while price continues in the same direction.
   for (const snapshot of snapshots) updateRearmState(snapshot);
 
   const touched = snapshots.filter(snapshot => {
     const cluster = snapshot.nearest;
     if (!cluster || !armedSymbols.has(snapshot.symbol)) return false;
-
     const touched = isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
     if (touched) {
       console.log(JSON.stringify({
-        type: 'cluster_touch_detected',
-        symbol: snapshot.symbol,
-        previousPrice: snapshot.previousPrice,
-        currentPrice: snapshot.currentPrice,
-        clusterPrice: cluster.price,
-        direction: approachDirection(snapshot.previousPrice, snapshot.currentPrice, cluster.price),
-        distancePct: cluster.distancePct,
-        clusterKey: cluster.clusterKey
+        type: 'cluster_touch_detected', symbol: snapshot.symbol,
+        previousPrice: snapshot.previousPrice, currentPrice: snapshot.currentPrice,
+        clusterPrice: cluster.price, direction: approachDirection(snapshot.previousPrice, snapshot.currentPrice, cluster.price),
+        distancePct: cluster.distancePct, clusterKey: cluster.clusterKey
       }));
     }
     return touched;
@@ -274,16 +285,11 @@ async function check() {
 
   if (touched.length === 0) {
     const diagnostics = snapshots.map(snapshot => ({
-      symbol: snapshot.symbol,
-      currentPrice: snapshot.currentPrice ?? null,
+      symbol: snapshot.symbol, currentPrice: snapshot.currentPrice ?? null,
       clusterPrice: snapshot.nearest?.price ?? null,
-      distance: snapshot.nearest && snapshot.currentPrice != null
-        ? Math.abs(snapshot.nearest.price - snapshot.currentPrice)
-        : null,
-      distancePct: snapshot.nearest?.distancePct ?? null,
-      side: snapshot.nearest?.side ?? null,
-      armed: armedSymbols.has(snapshot.symbol),
-      rearmCondition: rearmConditions.get(snapshot.symbol) ?? null
+      distance: snapshot.nearest && snapshot.currentPrice != null ? Math.abs(snapshot.nearest.price - snapshot.currentPrice) : null,
+      distancePct: snapshot.nearest?.distancePct ?? null, side: snapshot.nearest?.side ?? null,
+      armed: armedSymbols.has(snapshot.symbol), rearmCondition: rearmConditions.get(snapshot.symbol) ?? null
     }));
     console.log(JSON.stringify({ type: 'cluster_waiting_for_touch', coins: diagnostics }));
     await saveState();
@@ -293,33 +299,24 @@ async function check() {
   touched.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
   const winner = touched[0];
   const cluster = winner.nearest;
-
   if (sentClusters.has(cluster.clusterKey)) {
     console.log(JSON.stringify({ type: 'cluster_duplicate', symbol: winner.symbol, cluster: cluster.clusterKey }));
     await saveState();
     return;
   }
-
   if (Date.now() - lastAlertAt < ALERT_COOLDOWN_MS) {
-    console.log(JSON.stringify({
-      type: 'cluster_cooldown',
-      remainingMs: ALERT_COOLDOWN_MS - (Date.now() - lastAlertAt),
-      symbol: winner.symbol,
-      clusterPrice: cluster.price
-    }));
+    console.log(JSON.stringify({ type: 'cluster_cooldown', remainingMs: ALERT_COOLDOWN_MS - (Date.now() - lastAlertAt), symbol: winner.symbol, clusterPrice: cluster.price }));
     await saveState();
     return;
   }
 
   sentClusters.add(cluster.clusterKey);
   armedSymbols.delete(winner.symbol);
-
   const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
   const rearmDirection = direction === 'СНИЗУ ВВЕРХ' ? 'below' :
     direction === 'СВЕРХУ ВНИЗ' ? 'above' :
     (winner.previousPrice != null && winner.previousPrice < cluster.price ? 'below' : 'above');
   rearmConditions.set(winner.symbol, { price: cluster.price, direction: rearmDirection });
-
   lastAlertAt = Date.now();
   await saveState();
 
@@ -327,38 +324,18 @@ async function check() {
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
-    `${emoji} CLUSTER TOUCHED`,
-    `${winner.symbol} · 5M`,
-    '',
-    `Cluster: ${sideLabel}`,
-    `Previous price: ${winner.previousPrice ?? 'N/A'}`,
-    `Cluster price: ${cluster.price}`,
-    `Current price: ${winner.currentPrice}`,
-    `Direction: ${direction}`,
-    `Distance: ${cluster.distancePct.toFixed(2)}%`,
-    `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
-    '',
-    '➡️ NEXT Polymarket 5M',
-    polymarketUrl
+    `${emoji} CLUSTER TOUCHED`, `${winner.symbol} · 5M`, '', `Cluster: ${sideLabel}`,
+    `Previous price: ${winner.previousPrice ?? 'N/A'}`, `Cluster price: ${cluster.price}`,
+    `Current price: ${winner.currentPrice}`, `Direction: ${direction}`,
+    `Distance: ${cluster.distancePct.toFixed(2)}%`, `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
+    '', '➡️ NEXT Polymarket 5M', polymarketUrl
   ].join('\n');
-
-  try {
-    await sendTelegramMessage(message);
-  } catch (error) {
-    console.warn(`TELEGRAM SEND FAILED: ${error.message}`);
-  }
-
+  try { await sendTelegramMessage(message); }
+  catch (error) { console.warn(`TELEGRAM SEND FAILED: ${error.message}`); }
   console.log(JSON.stringify({
-    type: 'cluster_alert_sent',
-    symbol: winner.symbol,
-    side: sideLabel,
-    previousPrice: winner.previousPrice,
-    clusterPrice: cluster.price,
-    currentPrice: winner.currentPrice,
-    direction,
-    distancePct: cluster.distancePct,
-    polymarketUrl,
-    clusterKey: cluster.clusterKey,
+    type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel,
+    previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice,
+    direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey,
     rearmCondition: rearmConditions.get(winner.symbol)
   }));
 }
@@ -371,13 +348,9 @@ async function main() {
     }
   }
   console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on exact touch/cross; one alert per price move per coin; rearm only after crossing back through last alerted level; max 1 alert per 5 minutes; no duplicates`);
-
   while (true) {
-    try {
-      await check();
-    } catch (error) {
-      console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`);
-    }
+    try { await check(); }
+    catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
     await sleep(POLL_MS);
   }
 }
