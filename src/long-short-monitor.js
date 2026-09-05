@@ -6,9 +6,12 @@ const PRICE_URL = 'https://marginpad.io/api/v1/price';
 const CLUSTERS_URL = 'https://marginpad.io/api/v1/clusters';
 const POLL_MS = 30 * 1000;
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+const TOUCH_TOLERANCE_PCT = 0.05;
 const STATE_PATH = '.long-short-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
+
 const sentClusters = new Set();
+const previousPrices = new Map();
 let stateSha = null;
 let lastAlertAt = 0;
 
@@ -49,6 +52,10 @@ async function loadState() {
     stateSha = data.sha || null;
     const state = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
     for (const key of state.sentClusters || []) sentClusters.add(key);
+    for (const [symbol, price] of Object.entries(state.previousPrices || {})) {
+      const n = Number(price);
+      if (Number.isFinite(n)) previousPrices.set(symbol, n);
+    }
     lastAlertAt = Number(state.lastAlertAt) || 0;
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
@@ -59,6 +66,7 @@ async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
   const content = Buffer.from(JSON.stringify({
     sentClusters: [...sentClusters].slice(-1000),
+    previousPrices: Object.fromEntries(previousPrices),
     lastAlertAt
   }, null, 2)).toString('base64');
   const body = {
@@ -110,20 +118,59 @@ function normalizeCluster(raw) {
   return { price, estNotional, side };
 }
 
+function clusterKey(symbol, cluster) {
+  return `${symbol}:${cluster.side}:${cluster.price}:${cluster.estNotional}`;
+}
+
+function isTouch(previousPrice, currentPrice, clusterPrice) {
+  if (previousPrice == null || currentPrice == null) return false;
+
+  const tolerance = clusterPrice * (TOUCH_TOLERANCE_PCT / 100);
+  const previousDistance = Math.abs(previousPrice - clusterPrice);
+  const currentDistance = Math.abs(currentPrice - clusterPrice);
+
+  // Price is currently on the cluster.
+  if (currentDistance <= tolerance) return true;
+
+  // Price crossed the cluster between two polls.
+  const crossed = (previousPrice <= clusterPrice && currentPrice >= clusterPrice) ||
+                  (previousPrice >= clusterPrice && currentPrice <= clusterPrice);
+  if (crossed) return true;
+
+  // Price moved into the tolerance band between polls.
+  return previousDistance > tolerance && currentDistance <= tolerance;
+}
+
 async function getCoinSnapshot(symbol) {
   const [priceData, clusterData] = await Promise.all([
     fetchJson(`${PRICE_URL}?symbol=${encodeURIComponent(symbol)}`),
     fetchJson(`${CLUSTERS_URL}?symbol=${encodeURIComponent(symbol)}`)
   ]);
+
   const currentPrice = extractPrice(priceData);
   const clusters = extractClusters(clusterData).map(normalizeCluster).filter(Boolean);
-  if (currentPrice == null || clusters.length === 0) return { symbol, currentPrice, clusters, nearest: null };
+  if (currentPrice == null || clusters.length === 0) {
+    return { symbol, currentPrice, previousPrice: previousPrices.get(symbol) ?? null, clusters, nearest: null };
+  }
 
-  clusters.sort((a, b) => Math.abs(a.price - currentPrice) - Math.abs(b.price - currentPrice));
-  const nearest = clusters[0];
-  const distancePct = Math.abs(nearest.price - currentPrice) / currentPrice * 100;
-  const clusterKey = `${symbol}:${nearest.side}:${nearest.price}:${nearest.estNotional}`;
-  return { symbol, currentPrice, clusters, nearest: { ...nearest, distancePct, clusterKey } };
+  // Ignore clusters that have already produced an alert. The next target is
+  // always the nearest remaining cluster to the current price.
+  const available = clusters
+    .map(cluster => ({
+      ...cluster,
+      clusterKey: clusterKey(symbol, cluster),
+      distancePct: Math.abs(cluster.price - currentPrice) / currentPrice * 100
+    }))
+    .filter(cluster => !sentClusters.has(cluster.clusterKey))
+    .sort((a, b) => a.distancePct - b.distancePct);
+
+  return {
+    symbol,
+    currentPrice,
+    previousPrice: previousPrices.get(symbol) ?? null,
+    clusters,
+    nearest: available[0] || null
+  };
 }
 
 function nextMarketUrl(symbol) {
@@ -142,35 +189,69 @@ async function check() {
     }
   }));
 
-  const candidates = snapshots.filter(x => x.nearest);
-  if (candidates.length === 0) {
-    console.log(JSON.stringify({ type: 'cluster_no_data' }));
+  // Update price history even when no alert is possible. This makes the next
+  // poll able to detect a cluster crossing.
+  for (const snapshot of snapshots) {
+    if (snapshot.currentPrice != null) previousPrices.set(snapshot.symbol, snapshot.currentPrice);
+  }
+
+  const touched = snapshots.filter(snapshot => {
+    const cluster = snapshot.nearest;
+    if (!cluster) return false;
+    return isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
+  });
+
+  if (touched.length === 0) {
+    const nearest = snapshots
+      .filter(x => x.nearest)
+      .sort((a, b) => a.nearest.distancePct - b.nearest.distancePct)[0];
+    if (nearest) {
+      console.log(JSON.stringify({
+        type: 'cluster_waiting_for_touch',
+        symbol: nearest.symbol,
+        clusterPrice: nearest.nearest.price,
+        currentPrice: nearest.currentPrice,
+        distancePct: nearest.nearest.distancePct,
+        clusterKey: nearest.nearest.clusterKey
+      }));
+    } else {
+      console.log(JSON.stringify({ type: 'cluster_no_data' }));
+    }
+    await saveState();
     return;
   }
 
-  // The alert is for the globally nearest cluster among all seven coins.
-  candidates.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
-  const winner = candidates[0];
+  // If several clusters are touched in the same poll, alert only for the
+  // globally nearest one. The others remain available for the next poll.
+  touched.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
+  const winner = touched[0];
   const cluster = winner.nearest;
 
   if (sentClusters.has(cluster.clusterKey)) {
     console.log(JSON.stringify({ type: 'cluster_duplicate', symbol: winner.symbol, cluster: cluster.clusterKey }));
+    await saveState();
     return;
   }
 
   if (Date.now() - lastAlertAt < ALERT_COOLDOWN_MS) {
-    console.log(JSON.stringify({ type: 'cluster_cooldown', remainingMs: ALERT_COOLDOWN_MS - (Date.now() - lastAlertAt), symbol: winner.symbol }));
+    console.log(JSON.stringify({
+      type: 'cluster_cooldown',
+      remainingMs: ALERT_COOLDOWN_MS - (Date.now() - lastAlertAt),
+      symbol: winner.symbol,
+      clusterPrice: cluster.price
+    }));
+    await saveState();
     return;
   }
 
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const message = [
-    `${emoji} NEAREST CLUSTER`,
+    `${emoji} CLUSTER TOUCHED`,
     `${winner.symbol} · 5M`,
     '',
     `Cluster: ${sideLabel}`,
-    `Cluster price: ${cluster.price}`, 
+    `Cluster price: ${cluster.price}`,
     `Current price: ${winner.currentPrice}`,
     `Distance: ${cluster.distancePct.toFixed(2)}%`,
     `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
@@ -197,7 +278,7 @@ async function check() {
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; nearest cluster; max 1 alert per 5 minutes; no duplicates`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on price touch; next unprocessed cluster after each alert; max 1 alert per 5 minutes; no duplicates`);
 
   while (true) {
     try {
