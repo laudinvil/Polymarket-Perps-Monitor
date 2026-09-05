@@ -90,7 +90,9 @@
     "5m:1788629400000:BNB:short",
     "5m:1788629400000:HYPE:short",
     "5m:1788630600000:XRP:short",
-    "5m:1788630600000:DOGE:short"
+    "5m:1788630600000:DOGE:short",
+    "5m:1788631200000:ETH:short",
+    "5m:1788631200000:SOL:short"
   ],
   "lastAlertPeriodBySymbol": [
     {
@@ -99,7 +101,7 @@
     },
     {
       "symbol": "ETH",
-      "period": 1788629400000
+      "period": 1788631200000
     },
     {
       "symbol": "XRP",
@@ -119,7 +121,7 @@
     },
     {
       "symbol": "SOL",
-      "period": 1788629400000
+      "period": 1788631200000
     }
   ]
 }
