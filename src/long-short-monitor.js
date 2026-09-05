@@ -13,6 +13,7 @@ const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSIT
 const sentClusters = new Set();
 const previousPrices = new Map();
 const armedSymbols = new Set();
+const rearmConditions = new Map();
 let stateSha = null;
 let lastAlertAt = 0;
 
@@ -58,6 +59,11 @@ async function loadState() {
       if (Number.isFinite(n)) previousPrices.set(symbol, n);
     }
     for (const symbol of state.armedSymbols || []) armedSymbols.add(symbol);
+    for (const [symbol, condition] of Object.entries(state.rearmConditions || {})) {
+      if (condition && Number.isFinite(Number(condition.price)) && (condition.direction === 'below' || condition.direction === 'above')) {
+        rearmConditions.set(symbol, { price: Number(condition.price), direction: condition.direction });
+      }
+    }
     lastAlertAt = Number(state.lastAlertAt) || 0;
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
@@ -70,6 +76,7 @@ async function saveState() {
     sentClusters: [...sentClusters].slice(-1000),
     previousPrices: Object.fromEntries(previousPrices),
     armedSymbols: [...armedSymbols],
+    rearmConditions: Object.fromEntries(rearmConditions),
     lastAlertAt
   }, null, 2)).toString('base64');
 
@@ -205,6 +212,28 @@ async function nextMarketUrl(symbol) {
   }
 }
 
+function updateRearmState(snapshot) {
+  if (snapshot.currentPrice == null || armedSymbols.has(snapshot.symbol)) return;
+  const condition = rearmConditions.get(snapshot.symbol);
+  if (!condition) return;
+
+  const canRearm = condition.direction === 'below'
+    ? snapshot.currentPrice < condition.price
+    : snapshot.currentPrice > condition.price;
+
+  if (canRearm) {
+    armedSymbols.add(snapshot.symbol);
+    rearmConditions.delete(snapshot.symbol);
+    console.log(JSON.stringify({
+      type: 'symbol_rearmed',
+      symbol: snapshot.symbol,
+      resetLevel: condition.price,
+      direction: condition.direction,
+      currentPrice: snapshot.currentPrice
+    }));
+  }
+}
+
 async function check() {
   const snapshots = await Promise.all(SYMBOLS.map(async symbol => {
     try {
@@ -215,14 +244,13 @@ async function check() {
     }
   }));
 
+  // Re-arm only after price has crossed back through the LAST alerted level.
+  // This blocks all adjacent clusters while price continues in the same direction.
+  for (const snapshot of snapshots) updateRearmState(snapshot);
+
   const touched = snapshots.filter(snapshot => {
     const cluster = snapshot.nearest;
-    if (!cluster) return false;
-
-    // A symbol is eligible for a new alert only after it has first moved
-    // away from the last alert level. This prevents a chain of alerts from
-    // adjacent clusters while price keeps travelling through the same move.
-    if (!armedSymbols.has(snapshot.symbol)) return false;
+    if (!cluster || !armedSymbols.has(snapshot.symbol)) return false;
 
     const touched = isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
     if (touched) {
@@ -240,27 +268,8 @@ async function check() {
     return touched;
   });
 
-  // Re-arm a symbol only when price is clearly away from its last processed
-  // cluster. The exact last cluster price is stored in the sentClusters set,
-  // so any movement of at least one price tick away is enough to re-arm.
   for (const snapshot of snapshots) {
     if (snapshot.currentPrice != null) previousPrices.set(snapshot.symbol, snapshot.currentPrice);
-
-    if (!armedSymbols.has(snapshot.symbol) && snapshot.currentPrice != null) {
-      const hasAnySentClusterForSymbol = [...sentClusters].some(key => key.startsWith(`${snapshot.symbol}:`));
-      if (!hasAnySentClusterForSymbol) {
-        armedSymbols.add(snapshot.symbol);
-      } else {
-        const sentForSymbol = [...sentClusters]
-          .filter(key => key.startsWith(`${snapshot.symbol}:`))
-          .map(key => Number(key.split(':').pop()))
-          .filter(Number.isFinite);
-        const nearestSentDistance = sentForSymbol.length
-          ? Math.min(...sentForSymbol.map(price => Math.abs(price - snapshot.currentPrice)))
-          : Infinity;
-        if (nearestSentDistance > 0) armedSymbols.add(snapshot.symbol);
-      }
-    }
   }
 
   if (touched.length === 0) {
@@ -273,7 +282,8 @@ async function check() {
         : null,
       distancePct: snapshot.nearest?.distancePct ?? null,
       side: snapshot.nearest?.side ?? null,
-      armed: armedSymbols.has(snapshot.symbol)
+      armed: armedSymbols.has(snapshot.symbol),
+      rearmCondition: rearmConditions.get(snapshot.symbol) ?? null
     }));
     console.log(JSON.stringify({ type: 'cluster_waiting_for_touch', coins: diagnostics }));
     await saveState();
@@ -303,12 +313,18 @@ async function check() {
 
   sentClusters.add(cluster.clusterKey);
   armedSymbols.delete(winner.symbol);
+
+  const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
+  const rearmDirection = direction === 'СНИЗУ ВВЕРХ' ? 'below' :
+    direction === 'СВЕРХУ ВНИЗ' ? 'above' :
+    (winner.previousPrice != null && winner.previousPrice < cluster.price ? 'below' : 'above');
+  rearmConditions.set(winner.symbol, { price: cluster.price, direction: rearmDirection });
+
   lastAlertAt = Date.now();
   await saveState();
 
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
-  const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
   const polymarketUrl = await nextMarketUrl(winner.symbol);
   const message = [
     `${emoji} CLUSTER TOUCHED`,
@@ -342,18 +358,19 @@ async function check() {
     direction,
     distancePct: cluster.distancePct,
     polymarketUrl,
-    clusterKey: cluster.clusterKey
+    clusterKey: cluster.clusterKey,
+    rearmCondition: rearmConditions.get(winner.symbol)
   }));
 }
 
 async function main() {
   await loadState();
   for (const symbol of SYMBOLS) {
-    if (!armedSymbols.has(symbol) && ![...sentClusters].some(key => key.startsWith(`${symbol}:`))) {
+    if (!armedSymbols.has(symbol) && !rearmConditions.has(symbol) && ![...sentClusters].some(key => key.startsWith(`${symbol}:`))) {
       armedSymbols.add(symbol);
     }
   }
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on exact touch/cross; one alert per price move per coin; max 1 alert per 5 minutes; no duplicates`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; source=${CLUSTERS_URL}; alert ONLY on exact touch/cross; one alert per price move per coin; rearm only after crossing back through last alerted level; max 1 alert per 5 minutes; no duplicates`);
 
   while (true) {
     try {
