@@ -26,8 +26,9 @@
     "BNB": 758.5,
     "HYPE": 84.94
   },
-  "lastAlertAt": 1788612342099,
+  "lastAlertAt": 1788612448034,
   "alertedBuckets": {
-    "XRP": 5962041
+    "XRP": 5962041,
+    "BNB": 5962040
   }
 }
