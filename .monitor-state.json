@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:27:27.146Z",
+  "updatedAt": "2026-09-05T21:27:38.563Z",
   "period": "2026-09-05T21:25:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -112,29 +112,30 @@
     "5m:1788639300000:BTC:1788639496893:1",
     "5m:1788639600000:BTC:1788639657063:-1",
     "5m:1788640200000:DOGE:1788640350280:1",
-    "5m:1788640200000:SOL:1788640381424:2"
+    "5m:1788640200000:SOL:1788640381424:2",
+    "5m:BTC:1788643651149:-1"
   ],
   "liquidation5m": [
     {
       "symbol": "BTC",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
+      "shortLiquidations": 1,
       "cumulativeLongEvents": 1,
-      "cumulativeShortEvents": 1,
-      "imbalance": 0,
-      "totalLiquidations": 2,
-      "lastEvent": "2026-09-05T21:27:17.638Z",
+      "cumulativeShortEvents": 2,
+      "imbalance": -1,
+      "totalLiquidations": 3,
+      "lastEvent": "2026-09-05T21:27:31.149Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
       "symbol": "ETH",
       "longLiquidations": 0,
-      "shortLiquidations": 2,
+      "shortLiquidations": 3,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 2,
-      "imbalance": -2,
-      "totalLiquidations": 2,
-      "lastEvent": "2026-09-05T21:27:17.638Z",
+      "cumulativeShortEvents": 3,
+      "imbalance": -3,
+      "totalLiquidations": 3,
+      "lastEvent": "2026-09-05T21:27:31.149Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
@@ -184,36 +185,36 @@
     {
       "symbol": "HYPE",
       "longLiquidations": 0,
-      "shortLiquidations": 1,
+      "shortLiquidations": 2,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 1,
-      "imbalance": -1,
-      "totalLiquidations": 1,
-      "lastEvent": "2026-09-05T21:26:09.392Z",
+      "cumulativeShortEvents": 2,
+      "imbalance": -2,
+      "totalLiquidations": 2,
+      "lastEvent": "2026-09-05T21:27:36.577Z",
       "period": "2026-09-05T21:25:00.000Z"
     }
   ],
   "liquidationRunning": [
     {
       "symbol": "BTC",
-      "imbalance": 0,
+      "imbalance": -1,
       "longStrength": 0,
-      "shortStrength": 0,
+      "shortStrength": 1,
       "longEvents": 1,
-      "shortEvents": 1,
-      "events": 2,
-      "lastTs": 1788643637638,
-      "previousSign": 1
+      "shortEvents": 2,
+      "events": 3,
+      "lastTs": 1788643651149,
+      "previousSign": -1
     },
     {
       "symbol": "ETH",
-      "imbalance": -2,
+      "imbalance": -3,
       "longStrength": 0,
-      "shortStrength": 2,
+      "shortStrength": 3,
       "longEvents": 0,
-      "shortEvents": 2,
-      "events": 2,
-      "lastTs": 1788643637638,
+      "shortEvents": 3,
+      "events": 3,
+      "lastTs": 1788643651149,
       "previousSign": -1
     },
     {
@@ -262,13 +263,13 @@
     },
     {
       "symbol": "HYPE",
-      "imbalance": -1,
+      "imbalance": -2,
       "longStrength": 0,
-      "shortStrength": 1,
+      "shortStrength": 2,
       "longEvents": 0,
-      "shortEvents": 1,
-      "events": 1,
-      "lastTs": 1788643569392,
+      "shortEvents": 2,
+      "events": 2,
+      "lastTs": 1788643656577,
       "previousSign": -1
     }
   ]
