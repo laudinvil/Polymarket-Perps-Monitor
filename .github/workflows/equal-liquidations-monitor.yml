@@ -2,6 +2,9 @@ name: Equal Liquidations Monitor
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/equal-liquidations-monitor.yml'
   schedule:
     - cron: '*/5 * * * *'
 
