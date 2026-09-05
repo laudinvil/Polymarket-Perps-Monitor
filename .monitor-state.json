@@ -82,16 +82,22 @@
     "5m:1788628500000:HYPE:long",
     "5m:1788628800000:BTC:short",
     "5m:1788628800000:ETH:short",
-    "5m:1788629100000:XRP:short"
+    "5m:1788629100000:XRP:short",
+    "5m:1788629400000:BTC:short",
+    "5m:1788629400000:ETH:short",
+    "5m:1788629400000:SOL:short",
+    "5m:1788629400000:DOGE:short",
+    "5m:1788629400000:BNB:short",
+    "5m:1788629400000:HYPE:short"
   ],
   "lastAlertPeriodBySymbol": [
     {
       "symbol": "BTC",
-      "period": 1788628800000
+      "period": 1788629400000
     },
     {
       "symbol": "ETH",
-      "period": 1788628800000
+      "period": 1788629400000
     },
     {
       "symbol": "XRP",
@@ -99,19 +105,19 @@
     },
     {
       "symbol": "DOGE",
-      "period": 1788628500000
+      "period": 1788629400000
     },
     {
       "symbol": "BNB",
-      "period": 1788627900000
+      "period": 1788629400000
     },
     {
       "symbol": "HYPE",
-      "period": 1788628500000
+      "period": 1788629400000
     },
     {
       "symbol": "SOL",
-      "period": 1788628500000
+      "period": 1788629400000
     }
   ]
 }
