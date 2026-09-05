@@ -4,14 +4,11 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION IMBALANCE:
-// Each poll is a raw MarginPad update containing NEW liquidation events.
-// We aggregate the number of NEW LONG/SHORT liquidations from that update,
-// then add the deltas to the running totals for the current 5M period:
-//   LONG  => +count
-//   SHORT => -count
-// The alert is only emitted when the already-established running sign flips
-// from positive to negative or negative to positive. Hitting exactly zero does
-// not reset the established sign.
+// LONG and SHORT are independent positive counters, but every new liquidation
+// strengthens its own side AND reduces the opposite side by the same amount.
+//   LONG event  => LONG +1, SHORT -1 (floored at 0)
+//   SHORT event => SHORT +1, LONG -1 (floored at 0)
+// The signed imbalance is therefore always LONG - SHORT.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 10000;
 const STATE_PATH = '.monitor-state.json';
@@ -113,7 +110,7 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
     // Aggregate ONE poll/update first. Do not evaluate crossings while walking
     // individual events: a first snapshot containing both sides must not create
-    // a false alert such as +0 -> -1. The comparison is update-to-update.
+    // a false alert. The comparison is update-to-update.
     let updateLong = 0;
     let updateShort = 0;
     let updateLastTs = null;
@@ -141,12 +138,14 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
     const before = state.imbalance;
     const oldSign = state.previousSign;
-    const delta = updateLong - updateShort;
 
-    state.longCount += updateLong;
-    state.shortCount += updateShort;
+    // Symmetric counters:
+    // LONG event  => LONG +1 and SHORT -1
+    // SHORT event => SHORT +1 and LONG -1
+    state.longCount = Math.max(0, state.longCount + updateLong - updateShort);
+    state.shortCount = Math.max(0, state.shortCount + updateShort - updateLong);
     state.events += updateLong + updateShort;
-    state.imbalance += delta;
+    state.imbalance = state.longCount - state.shortCount;
     state.lastTs = updateLastTs;
 
     const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
@@ -175,7 +174,8 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       symbol: normalizedSymbol,
       updateLong,
       updateShort,
-      delta,
+      longDelta: updateLong - updateShort,
+      shortDelta: updateShort - updateLong,
       runningImbalance: state.imbalance,
       cumulativeLong: state.longCount,
       cumulativeShort: state.shortCount,
@@ -226,13 +226,13 @@ async function checkOnce(activeBucket) {
       continue;
     }
 
-    const emoji = crossing.after > 0 ? '🔴' : '🟢';
+    const emoji = crossing.after < 0 ? '🔴' : '🟢';
     const message = [
       `${emoji} LIQUIDATION IMBALANCE FLIP`,
       `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
       `Previous imbalance: ${formatSignedCount(crossing.before)} liquidations`,
       `New imbalance: ${formatSignedCount(crossing.after)} liquidations`,
-      `Update: +${crossing.updateLong} LONG · -${crossing.updateShort} SHORT`,
+      `Update: +${crossing.updateLong} LONG · +${crossing.updateShort} SHORT`,
       `Long liquidations: ${crossing.longCount}`,
       `Short liquidations: ${crossing.shortCount}`,
       '',
@@ -266,7 +266,7 @@ async function checkOnce(activeBucket) {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; each poll aggregates NEW LONG/SHORT liquidation counts; cumulative within 5M; alert only on established sign flip; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; LONG/SHORT counters are symmetric (+own side, -opposite side); cumulative within 5M; alert only on established sign flip; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
