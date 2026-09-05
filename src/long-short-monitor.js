@@ -171,9 +171,12 @@ async function getCoinSnapshot(symbol) {
 }
 
 function nextMarketUrl(symbol) {
-  const boundary = Math.floor(Date.now() / (5 * 60 * 1000)) * 5 * 60 + 5 * 60;
-  const epoch = Math.floor(boundary / 1000);
-  return `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${epoch}`;
+  // Polymarket recurring 5m event slugs use the START timestamp of the NEXT
+  // 5-minute window in Unix seconds (10 digits), not milliseconds and not a
+  // millisecond value divided a second time.
+  const nextBoundaryEpochSeconds =
+    Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60) + (5 * 60);
+  return `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${nextBoundaryEpochSeconds}`;
 }
 
 async function check() {
