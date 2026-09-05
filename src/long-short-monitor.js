@@ -59,6 +59,11 @@ function githubRequest(method, body = null) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+function decodeState(data) {
+  if (!data?.content) return {};
+  return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+}
+
 function migrateRearmConditions() {
   const sentBySymbol = new Map();
   for (const key of sentClusters) {
@@ -83,7 +88,7 @@ async function loadState() {
     const data = await githubRequest('GET');
     if (!data?.content) return;
     stateSha = data.sha || null;
-    const state = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+    const state = decodeState(data);
     for (const key of state.sentClusters || []) sentClusters.add(key);
     for (const [symbol, price] of Object.entries(state.previousPrices || {})) {
       const n = Number(price);
@@ -106,16 +111,20 @@ async function loadState() {
   }
 }
 
-async function saveState() {
-  if (!process.env.GITHUB_TOKEN) return;
-  const content = Buffer.from(JSON.stringify({
+function localState() {
+  return {
     sentClusters: [...sentClusters].slice(-1000),
     previousPrices: Object.fromEntries(previousPrices),
     armedSymbols: [...armedSymbols],
     rearmConditions: Object.fromEntries(rearmConditions),
     alertedBuckets: Object.fromEntries(alertedBuckets),
     lastAlertAt
-  }, null, 2)).toString('base64');
+  };
+}
+
+async function saveState() {
+  if (!process.env.GITHUB_TOKEN) return;
+  const content = Buffer.from(JSON.stringify(localState(), null, 2)).toString('base64');
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const current = await githubRequest('GET');
@@ -137,6 +146,52 @@ async function saveState() {
       await sleep(250 * attempt);
     }
   }
+}
+
+async function reserveAlertSlot(symbol, bucket) {
+  if (!process.env.GITHUB_TOKEN) {
+    return alertedBuckets.get(symbol) !== bucket;
+  }
+
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const current = await githubRequest('GET');
+      const remoteState = decodeState(current);
+      const remoteBuckets = { ...(remoteState.alertedBuckets || {}) };
+      if (Number(remoteBuckets[symbol]) === bucket) {
+        alertedBuckets.set(symbol, bucket);
+        return false;
+      }
+
+      remoteBuckets[symbol] = bucket;
+      const mergedState = {
+        ...remoteState,
+        sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-1000),
+        previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
+        armedSymbols: [...new Set([...(remoteState.armedSymbols || []), ...armedSymbols])],
+        rearmConditions: { ...(remoteState.rearmConditions || {}), ...Object.fromEntries(rearmConditions) },
+        alertedBuckets: remoteBuckets,
+        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
+      };
+
+      await githubRequest('PUT', {
+        message: `Reserve ${symbol} cluster alert for 5M bucket ${bucket}`,
+        content: Buffer.from(JSON.stringify(mergedState, null, 2)).toString('base64'),
+        branch: process.env.GITHUB_REF_NAME || 'main',
+        ...(current?.sha ? { sha: current.sha } : {})
+      });
+      alertedBuckets.set(symbol, bucket);
+      return true;
+    } catch (error) {
+      const isConflict = /GitHub state request failed: 409\b/.test(error.message);
+      if (!isConflict || attempt === 6) {
+        console.warn(`ALERT SLOT RESERVATION FAILED: ${error.message}`);
+        return false;
+      }
+      await sleep(200 * attempt);
+    }
+  }
+  return false;
 }
 
 async function fetchJson(url) {
@@ -237,30 +292,16 @@ async function nextMarketUrl(symbol) {
   }
 }
 
-function updateRearmState(snapshot) {
-  if (snapshot.currentPrice == null || armedSymbols.has(snapshot.symbol)) return;
-  const condition = rearmConditions.get(snapshot.symbol);
-  if (!condition) return;
-  const canRearm = condition.direction === 'below' ? snapshot.currentPrice < condition.price : snapshot.currentPrice > condition.price;
-  if (canRearm) {
-    armedSymbols.add(snapshot.symbol);
-    rearmConditions.delete(snapshot.symbol);
-    console.log(JSON.stringify({ type: 'symbol_rearmed', symbol: snapshot.symbol, resetLevel: condition.price, direction: condition.direction, currentPrice: snapshot.currentPrice }));
-  }
-}
-
 async function check() {
+  const bucket = currentBucket();
   const snapshots = await Promise.all(SYMBOLS.map(async symbol => {
     try { return await getCoinSnapshot(symbol); }
     catch (error) { console.warn(`${symbol}: ${error.message}`); return { symbol, nearest: null }; }
   }));
 
-  for (const snapshot of snapshots) updateRearmState(snapshot);
-
-  const bucket = currentBucket();
   const touched = snapshots.filter(snapshot => {
     const cluster = snapshot.nearest;
-    if (!cluster || !armedSymbols.has(snapshot.symbol)) return false;
+    if (!cluster) return false;
     if (alertedBuckets.get(snapshot.symbol) === bucket) return false;
     return isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
   });
@@ -277,24 +318,23 @@ async function check() {
   touched.sort((a, b) => a.nearest.distancePct - b.nearest.distancePct);
   const winner = touched[0];
   const cluster = winner.nearest;
-  if (alertedBuckets.get(winner.symbol) === bucket) {
-    await saveState();
-    return;
-  }
+
   if (Date.now() - lastAlertAt < ALERT_COOLDOWN_MS) {
     await saveState();
     return;
   }
 
+  const reserved = await reserveAlertSlot(winner.symbol, bucket);
+  if (!reserved) {
+    console.log(JSON.stringify({ type: 'cluster_duplicate_or_reservation_lost', symbol: winner.symbol, cluster: cluster.clusterKey, bucket }));
+    return;
+  }
+
   sentClusters.add(cluster.clusterKey);
-  alertedBuckets.set(winner.symbol, bucket);
-  armedSymbols.delete(winner.symbol);
-  const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
-  const rearmDirection = direction === 'СНИЗУ ВВЕРХ' ? 'below' : direction === 'СВЕРХУ ВНИЗ' ? 'above' : (winner.previousPrice != null && winner.previousPrice < cluster.price ? 'below' : 'above');
-  rearmConditions.set(winner.symbol, { price: cluster.price, direction: rearmDirection });
   lastAlertAt = Date.now();
   await saveState();
 
+  const direction = approachDirection(winner.previousPrice, winner.currentPrice, cluster.price);
   const sideLabel = cluster.side === 'long_liquidated' ? 'LONG' : 'SHORT';
   const emoji = sideLabel === 'LONG' ? '🟢' : '🔴';
   const polymarketUrl = await nextMarketUrl(winner.symbol);
@@ -305,20 +345,20 @@ async function check() {
     `Distance: ${cluster.distancePct.toFixed(2)}%`, `Estimated volume: $${Math.round(cluster.estNotional).toLocaleString('en-US')}`,
     '', '➡️ NEXT Polymarket 5M', polymarketUrl
   ].join('\n');
+
   try { await sendTelegramMessage(message); }
   catch (error) { console.warn(`TELEGRAM SEND FAILED: ${error.message}`); }
-  console.log(JSON.stringify({ type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel, previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice, direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey, bucket, rearmCondition: rearmConditions.get(winner.symbol) }));
+
+  console.log(JSON.stringify({
+    type: 'cluster_alert_sent', symbol: winner.symbol, side: sideLabel,
+    previousPrice: winner.previousPrice, clusterPrice: cluster.price, currentPrice: winner.currentPrice,
+    direction, distancePct: cluster.distancePct, polymarketUrl, clusterKey: cluster.clusterKey, bucket
+  }));
 }
 
 async function main() {
   await loadState();
-  const bucket = currentBucket();
-  for (const symbol of SYMBOLS) {
-    if (alertedBuckets.get(symbol) !== bucket && !armedSymbols.has(symbol) && !rearmConditions.has(symbol) && ![...sentClusters].some(key => key.startsWith(`${symbol}:`))) {
-      armedSymbols.add(symbol);
-    }
-  }
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; max 1 alert per coin per 5M bucket; rearm state persisted`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC max 1 alert per coin per 5M bucket; state persisted in GitHub`);
   while (true) {
     try { await check(); }
     catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
