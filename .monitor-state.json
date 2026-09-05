@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:51:53.650Z",
+  "updatedAt": "2026-09-05T21:52:12.728Z",
   "period": "2026-09-05T21:50:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -121,11 +121,11 @@
     {
       "symbol": "BTC",
       "longLiquidations": 0,
-      "shortLiquidations": 6,
+      "shortLiquidations": 7,
       "cumulativeLongEvents": 2,
-      "cumulativeShortEvents": 8,
-      "imbalance": -6,
-      "totalLiquidations": 10,
+      "cumulativeShortEvents": 9,
+      "imbalance": -7,
+      "totalLiquidations": 11,
       "lastEvent": "2026-09-05T21:51:27.437Z",
       "period": "2026-09-05T21:50:00.000Z"
     },
@@ -187,11 +187,11 @@
     {
       "symbol": "HYPE",
       "longLiquidations": 0,
-      "shortLiquidations": 8,
+      "shortLiquidations": 9,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 8,
-      "imbalance": -8,
-      "totalLiquidations": 8,
+      "cumulativeShortEvents": 9,
+      "imbalance": -9,
+      "totalLiquidations": 9,
       "lastEvent": "2026-09-05T21:51:27.415Z",
       "period": "2026-09-05T21:50:00.000Z"
     }
@@ -199,13 +199,14 @@
   "liquidationRunning": [
     {
       "symbol": "BTC",
-      "imbalance": -6,
+      "imbalance": -7,
       "longStrength": 0,
-      "shortStrength": 6,
+      "shortStrength": 7,
       "longEvents": 2,
-      "shortEvents": 8,
-      "events": 10,
+      "shortEvents": 9,
+      "events": 11,
       "lastTs": 1788645087437,
+      "establishedSign": -1,
       "previousSign": -1
     },
     {
@@ -217,6 +218,7 @@
       "shortEvents": 67,
       "events": 68,
       "lastTs": 1788644795960,
+      "establishedSign": -1,
       "previousSign": -1
     },
     {
@@ -228,6 +230,7 @@
       "shortEvents": 8,
       "events": 8,
       "lastTs": 1788644568626,
+      "establishedSign": -1,
       "previousSign": -1
     },
     {
@@ -239,6 +242,7 @@
       "shortEvents": 12,
       "events": 12,
       "lastTs": 1788644568485,
+      "establishedSign": -1,
       "previousSign": -1
     },
     {
@@ -250,6 +254,7 @@
       "shortEvents": 2,
       "events": 22,
       "lastTs": 1788644949093,
+      "establishedSign": 1,
       "previousSign": 1
     },
     {
@@ -261,17 +266,19 @@
       "shortEvents": 2,
       "events": 3,
       "lastTs": 1788643861000,
+      "establishedSign": 0,
       "previousSign": -1
     },
     {
       "symbol": "HYPE",
-      "imbalance": -8,
+      "imbalance": -9,
       "longStrength": 0,
-      "shortStrength": 8,
+      "shortStrength": 9,
       "longEvents": 0,
-      "shortEvents": 8,
-      "events": 8,
+      "shortEvents": 9,
+      "events": 9,
       "lastTs": 1788645087415,
+      "establishedSign": -1,
       "previousSign": -1
     }
   ]
