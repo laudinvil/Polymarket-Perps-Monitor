@@ -4,11 +4,12 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 // 5M LIQUIDATION IMBALANCE:
-// LONG and SHORT are independent positive counters, but every new liquidation
-// strengthens its own side AND reduces the opposite side by the same amount.
-//   LONG event  => LONG +1, SHORT -1 (floored at 0)
-//   SHORT event => SHORT +1, LONG -1 (floored at 0)
-// The signed imbalance is therefore always LONG - SHORT.
+// Keep ONE true signed running balance inside each 5M period.
+// LONG liquidation  => balance +1
+// SHORT liquidation => balance -1
+// This guarantees that opposite-side liquidations always reduce the current
+// side and can eventually cross through zero. For display, the two sides are
+// exposed as positive strengths derived from the signed balance.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 10000;
 const STATE_PATH = '.monitor-state.json';
@@ -101,8 +102,10 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
     let state = runningImbalance.get(normalizedSymbol) || {
       imbalance: 0,
-      longCount: 0,
-      shortCount: 0,
+      longStrength: 0,
+      shortStrength: 0,
+      longEvents: 0,
+      shortEvents: 0,
       events: 0,
       lastTs: null,
       previousSign: 0,
@@ -139,26 +142,32 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
     const before = state.imbalance;
     const oldSign = state.previousSign;
 
-    // Symmetric counters:
-    // LONG event  => LONG +1 and SHORT -1
-    // SHORT event => SHORT +1 and LONG -1
-    state.longCount = Math.max(0, state.longCount + updateLong - updateShort);
-    state.shortCount = Math.max(0, state.shortCount + updateShort - updateLong);
+    // The signed balance is the source of truth. Opposite liquidations always
+    // subtract from the current side; there is no artificial floor at zero.
+    state.imbalance += updateLong - updateShort;
+    state.longEvents += updateLong;
+    state.shortEvents += updateShort;
     state.events += updateLong + updateShort;
-    state.imbalance = state.longCount - state.shortCount;
     state.lastTs = updateLastTs;
+
+    // Positive values for the currently dominant side. The opposing side is
+    // zero until the balance actually crosses zero.
+    state.longStrength = Math.max(0, state.imbalance);
+    state.shortStrength = Math.max(0, -state.imbalance);
 
     const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
 
-    // Only a genuine flip of an already-established sign creates an alert.
-    // Passing through zero preserves the old sign until a later non-zero update.
+    // Genuine flip: + -> - or - -> +. Passing through zero does not alert;
+    // the alert fires on the first non-zero update on the other side.
     if (oldSign !== 0 && newSign !== 0 && newSign !== oldSign) {
       changes.push({
         symbol: normalizedSymbol,
         before,
         after: state.imbalance,
-        longCount: state.longCount,
-        shortCount: state.shortCount,
+        longStrength: state.longStrength,
+        shortStrength: state.shortStrength,
+        longEvents: state.longEvents,
+        shortEvents: state.shortEvents,
         updateLong,
         updateShort,
         ts: updateLastTs,
@@ -174,11 +183,13 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
       symbol: normalizedSymbol,
       updateLong,
       updateShort,
-      longDelta: updateLong - updateShort,
-      shortDelta: updateShort - updateLong,
+      longDelta: updateLong,
+      shortDelta: updateShort,
       runningImbalance: state.imbalance,
-      cumulativeLong: state.longCount,
-      cumulativeShort: state.shortCount,
+      longStrength: state.longStrength,
+      shortStrength: state.shortStrength,
+      cumulativeLongEvents: state.longEvents,
+      cumulativeShortEvents: state.shortEvents,
       period: new Date(activeBucket).toISOString(),
     }));
   }
@@ -188,11 +199,13 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
 
 function diagnostics(activeBucket) {
   return symbols.map(symbol => {
-    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longCount: 0, shortCount: 0, events: 0, lastTs: null };
+    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null };
     return {
       symbol: normalizeSymbol(symbol),
-      longLiquidations: state.longCount,
-      shortLiquidations: state.shortCount,
+      longLiquidations: state.longStrength,
+      shortLiquidations: state.shortStrength,
+      cumulativeLongEvents: state.longEvents,
+      cumulativeShortEvents: state.shortEvents,
       imbalance: state.imbalance,
       totalLiquidations: state.events,
       lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null,
@@ -233,8 +246,10 @@ async function checkOnce(activeBucket) {
       `Previous imbalance: ${formatSignedCount(crossing.before)} liquidations`,
       `New imbalance: ${formatSignedCount(crossing.after)} liquidations`,
       `Update: +${crossing.updateLong} LONG · +${crossing.updateShort} SHORT`,
-      `Long liquidations: ${crossing.longCount}`,
-      `Short liquidations: ${crossing.shortCount}`,
+      `Long strength: ${crossing.longStrength}`,
+      `Short strength: ${crossing.shortStrength}`,
+      `Cumulative LONG events: ${crossing.longEvents}`,
+      `Cumulative SHORT events: ${crossing.shortEvents}`,
       '',
       '➡️ NEXT Polymarket 5M',
       nextMarket?.url || 'Market not found yet',
@@ -251,8 +266,10 @@ async function checkOnce(activeBucket) {
       newImbalance: crossing.after,
       updateLong: crossing.updateLong,
       updateShort: crossing.updateShort,
-      longLiquidations: crossing.longCount,
-      shortLiquidations: crossing.shortCount,
+      longStrength: crossing.longStrength,
+      shortStrength: crossing.shortStrength,
+      cumulativeLongEvents: crossing.longEvents,
+      cumulativeShortEvents: crossing.shortEvents,
       crossingTs: new Date(crossing.ts).toISOString(),
       period: new Date(activeBucket).toISOString(),
       condition: 'RUNNING_SIGNED_LIQUIDATION_COUNT_CROSS_ZERO',
@@ -266,7 +283,7 @@ async function checkOnce(activeBucket) {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; LONG/SHORT counters are symmetric (+own side, -opposite side); cumulative within 5M; alert only on established sign flip; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; signed balance with positive LONG/SHORT strength display; cumulative events preserved; alert only on established sign flip; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
