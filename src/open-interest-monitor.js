@@ -1,9 +1,9 @@
 const { findCurrentMarket, findCurrentMarket15m } = require('./polymarket');
 
-// OKX public OI endpoint: instType=SWAP returns perpetual swaps; filter the
-// seven configured USDT contracts locally. Do not send a comma-separated
-// instId list because OKX expects a single instrument ID when instId is used.
-const OI_URL = 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP';
+// OKX public OI endpoint. Resolve the exact live USDT SWAP instrument IDs
+// first, then query OI for each configured symbol individually.
+const INSTRUMENTS_URL = 'https://www.okx.com/api/v5/public/instruments?instType=SWAP';
+const OI_URL = 'https://www.okx.com/api/v5/public/open-interest';
 const WINDOW_5M = 5 * 60 * 1000;
 const WINDOW_15M = 15 * 60 * 1000;
 const SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE']);
@@ -14,40 +14,54 @@ function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOStri
 function formatPct(value) { return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`; }
 function formatUsd(value) { return value.toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 
-function normalizeSymbol(value) {
-  const raw = String(value ?? '').trim().toUpperCase();
-  if (SYMBOLS.has(raw)) return raw;
-  const base = raw.replace(/[-_/]/g, '').replace(/USDT$/, '').replace(/USD$/, '').replace(/SWAP$/, '');
-  return SYMBOLS.has(base) ? base : '';
+function baseSymbol(instId) {
+  const match = String(instId || '').toUpperCase().match(/^([A-Z0-9]+)-USDT-SWAP$/);
+  return match ? match[1] : '';
 }
 
-async function fetchOpenInterest() {
-  const response = await fetch(OI_URL, {
+async function getJson(url, label) {
+  const response = await fetch(url, {
     headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });
   const text = await response.text();
   let json;
   try { json = JSON.parse(text); } catch {
-    throw new Error(`OKX OI returned non-JSON response: ${text.slice(0, 300)}`);
+    throw new Error(`${label} returned non-JSON response: ${text.slice(0, 300)}`);
   }
-  if (!response.ok) throw new Error(`OKX OI HTTP ${response.status}: ${text.slice(0, 300)}`);
-  if (json?.code !== '0') throw new Error(`OKX OI code ${json?.code}: ${json?.msg || 'unknown error'}`);
+  if (!response.ok) throw new Error(`${label} HTTP ${response.status}: ${text.slice(0, 300)}`);
+  if (json?.code !== '0') throw new Error(`${label} code ${json?.code}: ${json?.msg || 'unknown error'}`);
+  return json;
+}
 
-  const rows = json?.data;
-  if (!Array.isArray(rows)) throw new Error(`OKX OI response has no data array: ${JSON.stringify(json).slice(0, 500)}`);
+async function fetchOpenInterest() {
+  const instrumentsJson = await getJson(INSTRUMENTS_URL, 'OKX instruments');
+  const instruments = Array.isArray(instrumentsJson?.data) ? instrumentsJson.data : [];
+  const ids = new Map();
 
-  const snapshot = new Map();
-  for (const row of rows) {
-    const symbol = normalizeSymbol(row?.instId);
+  for (const row of instruments) {
+    const symbol = baseSymbol(row?.instId);
+    if (!SYMBOLS.has(symbol)) continue;
+    if (row?.state !== 'live') continue;
+    ids.set(symbol, row.instId);
+  }
+
+  const missingInstruments = [...SYMBOLS].filter(symbol => !ids.has(symbol));
+  if (missingInstruments.length) {
+    const available = instruments.map(row => row?.instId).filter(Boolean).filter(id => SYMBOLS.has(baseSymbol(id)));
+    throw new Error(`OKX instruments missing configured symbols: ${missingInstruments.join(',')}; matching IDs=${available.join(',')}`);
+  }
+
+  const entries = [...ids.entries()];
+  const results = await Promise.all(entries.map(async ([symbol, instId]) => {
+    const json = await getJson(`${OI_URL}?instType=SWAP&instId=${encodeURIComponent(instId)}`, `OKX OI ${symbol}`);
+    const row = json?.data?.[0];
     const value = Number(row?.oiUsd);
-    if (!symbol || !Number.isFinite(value)) continue;
-    snapshot.set(symbol, value);
-  }
+    if (!Number.isFinite(value)) throw new Error(`OKX OI ${symbol} returned invalid oiUsd for ${instId}: ${JSON.stringify(row)}`);
+    return [symbol, value];
+  }));
 
-  const missing = [...SYMBOLS].filter(symbol => !snapshot.has(symbol));
-  if (missing.length) throw new Error(`OKX OI missing configured symbols: ${missing.join(',')}; received=${[...snapshot.keys()].join(',')}`);
-
+  const snapshot = new Map(results);
   console.log(`OI snapshot received from OKX: ${[...snapshot.keys()].join(',')}`);
   return snapshot;
 }
