@@ -202,8 +202,6 @@ async function nextMarketUrl(symbol) {
     throw new Error('Gamma API returned no event slug');
   } catch (error) {
     console.warn(`POLYMARKET LINK RESOLVE FAILED: ${symbol}: ${error.message}`);
-    // The deterministic slug is still the documented fallback, but only after
-    // the live Gamma lookup fails.
     return `https://polymarket.com/event/${slug}`;
   }
 }
@@ -242,21 +240,27 @@ async function check() {
   }
 
   if (touched.length === 0) {
-    const nearest = snapshots
-      .filter(x => x.nearest)
-      .sort((a, b) => a.nearest.distancePct - b.nearest.distancePct)[0];
-    if (nearest) {
-      console.log(JSON.stringify({
-        type: 'cluster_waiting_for_touch',
-        symbol: nearest.symbol,
-        clusterPrice: nearest.nearest.price,
-        currentPrice: nearest.currentPrice,
-        distancePct: nearest.nearest.distancePct,
-        clusterKey: nearest.nearest.clusterKey
-      }));
-    } else {
-      console.log(JSON.stringify({ type: 'cluster_no_data' }));
-    }
+    const diagnostics = snapshots.map(snapshot => {
+      if (!snapshot.nearest || snapshot.currentPrice == null) {
+        return {
+          symbol: snapshot.symbol,
+          currentPrice: snapshot.currentPrice ?? null,
+          clusterPrice: null,
+          distance: null,
+          distancePct: null,
+          side: null
+        };
+      }
+      return {
+        symbol: snapshot.symbol,
+        currentPrice: snapshot.currentPrice,
+        clusterPrice: snapshot.nearest.price,
+        distance: Math.abs(snapshot.nearest.price - snapshot.currentPrice),
+        distancePct: snapshot.nearest.distancePct,
+        side: snapshot.nearest.side
+      };
+    });
+    console.log(JSON.stringify({ type: 'cluster_waiting_for_touch', coins: diagnostics }));
     await saveState();
     return;
   }
