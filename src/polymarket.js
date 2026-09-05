@@ -1,26 +1,88 @@
 const GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
 const MARKET_BASE_URL = 'https://polymarket.com/event';
-const WINDOW_MS = 5 * 60 * 1000;
-const WINDOW_MS_15M = 15 * 60 * 1000;
+const TIMEFRAMES = {
+  '5m': 5 * 60 * 1000,
+  '15m': 15 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+  '1d': 24 * 60 * 60 * 1000,
+};
 
-function currentFiveMinuteTimestamp(now = Date.now()) { return Math.floor(now / WINDOW_MS) * WINDOW_MS; }
-function nextFiveMinuteTimestamp(now = Date.now()) { return currentFiveMinuteTimestamp(now) + WINDOW_MS; }
-function currentFifteenMinuteTimestamp(now = Date.now()) { return Math.floor(now / WINDOW_MS_15M) * WINDOW_MS_15M; }
-function nextFifteenMinuteTimestamp(now = Date.now()) { return currentFifteenMinuteTimestamp(now) + WINDOW_MS_15M; }
-
-async function getJson(url) { const response = await fetch(url, { headers: { accept: 'application/json' } }); if (!response.ok) return null; return response.json(); }
-
-async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
-  const asset = String(symbol || '').trim().toLowerCase(); if (!asset) return null;
-  const slug = `${asset}-updown-${timeframe}-${epoch}`;
-  const market = await getJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
-  if (!market || market.slug !== slug) return null;
-  return { slug, url: `${MARKET_BASE_URL}/${slug}`, question: market.question || null, startDate: market.startDate || market.startDateIso || null, endDate: market.endDate || market.endDateIso || null };
+function bucketStart(now = Date.now(), timeframe = '5m') {
+  return Math.floor(now / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe];
 }
 
-async function findCurrentMarket(symbol, now = Date.now()) { return findMarketByEpoch(symbol, Math.floor(currentFiveMinuteTimestamp(now) / 1000), '5m'); }
-async function findCurrentMarket15m(symbol, now = Date.now()) { return findMarketByEpoch(symbol, Math.floor(currentFifteenMinuteTimestamp(now) / 1000), '15m'); }
-async function findNextMarket(symbol, now = Date.now()) { const start = nextFiveMinuteTimestamp(now); for (let i=0;i<6;i+=1) { const market=await findMarketByEpoch(symbol, Math.floor((start+i*WINDOW_MS)/1000), '5m'); if(market)return market; } return null; }
-async function findNextMarket15m(symbol, now = Date.now()) { const start = nextFifteenMinuteTimestamp(now); for (let i=0;i<6;i+=1) { const market=await findMarketByEpoch(symbol, Math.floor((start+i*WINDOW_MS_15M)/1000), '15m'); if(market)return market; } return null; }
+function nextBucketStart(now = Date.now(), timeframe = '5m') {
+  return bucketStart(now, timeframe) + TIMEFRAMES[timeframe];
+}
 
-module.exports = { findCurrentMarket, findCurrentMarket15m, findNextMarket, findNextMarket15m, currentFiveMinuteTimestamp, nextFiveMinuteTimestamp, currentFifteenMinuteTimestamp, nextFifteenMinuteTimestamp };
+async function getJson(url) {
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function findMarketBySlug(slug) {
+  const market = await getJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
+  if (!market || market.slug !== slug) return null;
+  return {
+    slug,
+    url: `${MARKET_BASE_URL}/${slug}`,
+    question: market.question || null,
+    startDate: market.startDate || market.startDateIso || null,
+    endDate: market.endDate || market.endDateIso || null,
+  };
+}
+
+function easternParts(epoch) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    hour12: true,
+  }).formatToParts(new Date(epoch));
+  const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return map;
+}
+
+function dailySlug(symbol, epoch) {
+  const p = easternParts(epoch);
+  return `${symbol.toLowerCase()}-up-or-down-on-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}`;
+}
+
+function hourlySlug(symbol, epoch) {
+  const p = easternParts(epoch);
+  const hour = Number(p.hour);
+  const ampm = p.dayPeriod.toLowerCase();
+  return `bitcoin-up-or-down-${p.month.toLowerCase()}-${Number(p.day)}-${hour}${ampm}-et`.replace(/^bitcoin/, symbol.toLowerCase());
+}
+
+async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
+  const asset = String(symbol || '').trim().toLowerCase();
+  if (!asset) return null;
+
+  if (timeframe === '1h') return findMarketBySlug(hourlySlug(asset, epoch));
+  if (timeframe === '1d') return findMarketBySlug(dailySlug(asset, epoch));
+
+  const slug = `${asset}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
+  return findMarketBySlug(slug);
+}
+
+async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
+  const start = nextBucketStart(now, timeframe);
+  for (let i = 0; i < 12; i += 1) {
+    const market = await findMarketByEpoch(symbol, start + i * TIMEFRAMES[timeframe], timeframe);
+    if (market) return market;
+  }
+  return null;
+}
+
+module.exports = {
+  TIMEFRAMES,
+  bucketStart,
+  nextBucketStart,
+  findMarketByEpoch,
+  findNextMarket,
+};
