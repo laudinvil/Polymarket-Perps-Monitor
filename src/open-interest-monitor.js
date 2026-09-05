@@ -26,31 +26,108 @@ function formatUsd(value) {
   return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function normalizeSymbol(value) {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (SYMBOLS.has(raw)) return raw;
+
+  // Accept common exchange/API variants such as BTCUSDT, BTC-USDT and BTC/USDT.
+  const base = raw
+    .replace(/[-_/]/g, '')
+    .replace(/USDT$/, '')
+    .replace(/USD$/, '');
+  return SYMBOLS.has(base) ? base : '';
+}
+
+function numericOi(row) {
+  if (typeof row === 'number' || typeof row === 'string') {
+    const value = Number(row);
+    return Number.isFinite(value) ? value : NaN;
+  }
+
+  if (!row || typeof row !== 'object') return NaN;
+
+  // MarginPad documents OI as USD. Support the documented/common field variants
+  // so a harmless API field-name change cannot make the monitor silently blind.
+  const fields = [
+    'openInterestUsd',
+    'open_interest_usd',
+    'openInterestUSD',
+    'oiUsd',
+    'oi_usd',
+    'valueUsd',
+    'value_usd',
+    'notionalUsd',
+    'notional_usd',
+    'openInterest',
+    'open_interest',
+    'oi',
+    'value',
+  ];
+
+  for (const field of fields) {
+    if (row[field] === undefined || row[field] === null) continue;
+    const value = Number(row[field]);
+    if (Number.isFinite(value)) return value;
+  }
+
+  return NaN;
+}
+
+function collectRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+
+  if (Array.isArray(payload.rows)) return payload.rows;
+  if (Array.isArray(payload.openInterest)) return payload.openInterest;
+  if (Array.isArray(payload.open_interest)) return payload.open_interest;
+  if (Array.isArray(payload.items)) return payload.items;
+
+  // Some APIs return a symbol-keyed object instead of rows, e.g.
+  // { BTC: {...}, ETH: {...} } or { BTC: 123456789, ETH: 987654321 }.
+  return Object.entries(payload).map(([symbol, value]) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return { symbol, ...value };
+    }
+    return { symbol, value };
+  });
+}
+
 async function fetchOpenInterest() {
-  const response = await fetch(OI_URL, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`MarginPad OI HTTP ${response.status}`);
-  const json = await response.json();
+  const response = await fetch(OI_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
+  const text = await response.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error(`MarginPad OI returned non-JSON response: ${text.slice(0, 200)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`MarginPad OI HTTP ${response.status}: ${json?.error?.message || text.slice(0, 200)}`);
+  }
   if (json?.ok === false) throw new Error(json?.error?.message || 'MarginPad OI returned an error');
 
   const payload = json?.data ?? json;
-  const rows = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.rows)
-      ? payload.rows
-      : Array.isArray(payload?.openInterest)
-        ? payload.openInterest
-        : Array.isArray(payload?.items)
-          ? payload.items
-          : [];
-
+  const rows = collectRows(payload);
   const snapshot = new Map();
+
   for (const row of rows) {
-    const symbol = String(row?.symbol || row?.ticker || '').trim().toUpperCase();
-    const value = Number(row?.openInterest ?? row?.open_interest ?? row?.oi ?? row?.value);
-    if (!SYMBOLS.has(symbol) || !Number.isFinite(value)) continue;
+    const symbol = normalizeSymbol(row?.symbol || row?.ticker || row?.base || row?.asset);
+    const value = numericOi(row);
+    if (!symbol || !Number.isFinite(value)) continue;
     snapshot.set(symbol, value);
   }
-  if (!snapshot.size) throw new Error('MarginPad OI response contained no configured symbols');
+
+  if (!snapshot.size) {
+    const sampleKeys = rows.slice(0, 3).map(row =>
+      row && typeof row === 'object' ? Object.keys(row).slice(0, 12) : typeof row
+    );
+    throw new Error(`MarginPad OI response contained no configured symbols; rows=${rows.length}; sampleKeys=${JSON.stringify(sampleKeys)}`);
+  }
+
   return snapshot;
 }
 
