@@ -6,13 +6,13 @@
     "SOL:short_liquidated:102.5"
   ],
   "previousPrices": {
-    "BTC": 79631.7,
-    "ETH": 2458.11,
-    "SOL": 102.54,
-    "XRP": 1.4077,
-    "DOGE": 0.08612,
-    "BNB": 748.2,
-    "HYPE": 84.8
+    "BTC": 79631.6,
+    "ETH": 2458.1,
+    "SOL": 102.47,
+    "XRP": 1.4064,
+    "DOGE": 0.08604,
+    "BNB": 748.1,
+    "HYPE": 84.78
   },
-  "lastAlertAt": 1788602752625
+  "lastAlertAt": 1788602751520
 }
