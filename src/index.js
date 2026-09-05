@@ -1,24 +1,44 @@
 const https = require('https');
-const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey } = require('./liquidation-monitor');
-const { findNextMarket } = require('./polymarket');
+const { fetchSymbolFeed, normalizeTs, normalizeSymbol, eventKey } = require('./liquidation-monitor');
+const { TIMEFRAMES, findNextMarket, findMarketByEpoch } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 30000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
+const FRAMEWORKS = ['5m', '15m', '1h', '4h', '1d'];
 const sentAlerts = new Set();
-const seenEvents = new Set();
-const runningImbalance = new Map();
+const timeframeState = new Map();
 let stateSha = null;
-let activePeriod = null;
+
+function emptySymbolState() {
+  return { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, establishedSign: 0, lastBucket: null };
+}
+
+function ensureState() {
+  for (const timeframe of FRAMEWORKS) {
+    if (!timeframeState.has(timeframe)) timeframeState.set(timeframe, new Map());
+    const map = timeframeState.get(timeframe);
+    for (const symbol of symbols) if (!map.has(symbol)) map.set(symbol, emptySymbolState());
+  }
+}
 
 function githubRequest(method, body = null) {
   return new Promise((resolve, reject) => {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return reject(new Error('GITHUB_TOKEN is not available'));
     const data = body ? JSON.stringify(body) : null;
-    const request = https.request(STATE_API_URL, { method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'marginpad-monitor', ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) } }, response => {
+    const request = https.request(STATE_API_URL, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'marginpad-multi-timeframe-monitor',
+        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+      },
+    }, response => {
       let text = '';
       response.on('data', chunk => { text += chunk; });
       response.on('end', () => {
@@ -35,28 +55,53 @@ function githubRequest(method, body = null) {
 }
 
 async function loadState() {
+  ensureState();
   try {
     const data = await githubRequest('GET');
     if (!data || !data.content) return;
     stateSha = data.sha || null;
     const state = JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
     for (const key of state.alerts || []) sentAlerts.add(key);
-    for (const item of state.liquidationRunning || []) {
-      if (!item?.symbol) continue;
-      const imbalanceUsd = Number(item.imbalanceUsd);
-      const longUsd = Number(item.longUsd);
-      const shortUsd = Number(item.shortUsd);
-      const establishedSign = Number(item.establishedSign) || 0;
-      runningImbalance.set(normalizeSymbol(item.symbol), {
-        imbalanceUsd: Number.isFinite(imbalanceUsd) ? imbalanceUsd : 0,
-        longUsd: Number.isFinite(longUsd) ? longUsd : 0,
-        shortUsd: Number.isFinite(shortUsd) ? shortUsd : 0,
-        longEvents: Number(item.longEvents) || 0,
-        shortEvents: Number(item.shortEvents) || 0,
-        events: Number(item.events) || 0,
-        lastTs: item.lastTs ? Number(item.lastTs) : null,
-        establishedSign,
-      });
+
+    if (state.liquidationTimeframes) {
+      for (const timeframe of FRAMEWORKS) {
+        const items = state.liquidationTimeframes[timeframe] || [];
+        const map = timeframeState.get(timeframe);
+        for (const item of items) {
+          const symbol = normalizeSymbol(item.symbol);
+          if (!map.has(symbol)) continue;
+          const base = emptySymbolState();
+          map.set(symbol, {
+            imbalanceUsd: Number.isFinite(Number(item.imbalanceUsd)) ? Number(item.imbalanceUsd) : base.imbalanceUsd,
+            longUsd: Number.isFinite(Number(item.longUsd)) ? Number(item.longUsd) : base.longUsd,
+            shortUsd: Number.isFinite(Number(item.shortUsd)) ? Number(item.shortUsd) : base.shortUsd,
+            longEvents: Number(item.longEvents) || 0,
+            shortEvents: Number(item.shortEvents) || 0,
+            events: Number(item.events) || 0,
+            establishedSign: Number(item.establishedSign) || 0,
+            lastBucket: item.lastBucket ? Number(item.lastBucket) : null,
+          });
+        }
+      }
+    } else {
+      // Migrate the previous 5m USD state into the new 5m bucket state only.
+      const old = state.liquidationRunning || [];
+      const map = timeframeState.get('5m');
+      for (const item of old) {
+        const symbol = normalizeSymbol(item.symbol);
+        if (!map.has(symbol)) continue;
+        map.set(symbol, {
+          ...emptySymbolState(),
+          imbalanceUsd: Number(item.imbalanceUsd) || 0,
+          longUsd: Number(item.longUsd) || 0,
+          shortUsd: Number(item.shortUsd) || 0,
+          longEvents: Number(item.longEvents) || 0,
+          shortEvents: Number(item.shortEvents) || 0,
+          events: Number(item.events) || 0,
+          establishedSign: Number(item.establishedSign) || 0,
+          lastBucket: null,
+        });
+      }
     }
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
@@ -65,19 +110,23 @@ async function loadState() {
 
 async function saveState() {
   if (!process.env.GITHUB_TOKEN) return;
-  const stats = activePeriod === null ? [] : diagnostics(activePeriod);
-  const statePayload = {
+  const liquidationTimeframes = {};
+  for (const timeframe of FRAMEWORKS) {
+    liquidationTimeframes[timeframe] = symbols.map(symbol => {
+      const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState();
+      return { symbol, ...state };
+    });
+  }
+  const payload = {
     updatedAt: new Date().toISOString(),
-    period: activePeriod === null ? null : new Date(activePeriod).toISOString(),
-    alerts: [...sentAlerts].slice(-500),
-    liquidation5m: stats,
-    liquidationRunning: symbols.map(symbol => {
-      const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0 };
-      return { symbol: normalizeSymbol(symbol), imbalanceUsd: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, events: state.events, lastTs: state.lastTs, establishedSign: state.establishedSign || 0 };
-    }),
+    alerts: [...sentAlerts].slice(-1000),
+    liquidationTimeframes,
   };
-  const content = Buffer.from(JSON.stringify(statePayload, null, 2)).toString('base64');
-  const body = { message: 'Persist monitor state', content, branch: process.env.GITHUB_REF_NAME || 'main' };
+  const body = {
+    message: 'Persist multi-timeframe liquidation state',
+    content: Buffer.from(JSON.stringify(payload, null, 2)).toString('base64'),
+    branch: process.env.GITHUB_REF_NAME || 'main',
+  };
   if (stateSha) body.sha = stateSha;
   try {
     const result = await githubRequest('PUT', body);
@@ -87,10 +136,41 @@ async function saveState() {
   }
 }
 
-function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
-function formatUsd(value) { return `${value < 0 ? '-' : '+'}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function formatAbsoluteUsd(value) { return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function utcBucketStart(now, timeframe) {
+  const size = TIMEFRAMES[timeframe];
+  return Math.floor(now / size) * size;
+}
+
+function dailyBucketStart(now) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(new Date(now));
+  const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+  const localNoonUtcGuess = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), 12, 0, 0);
+  const offsetPart = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'shortOffset' })
+    .formatToParts(new Date(localNoonUtcGuess)).find(x => x.type === 'timeZoneName')?.value || 'GMT-4';
+  const match = offsetPart.match(/GMT([+-])(\d+)(?::(\d+))?/);
+  const offsetMinutes = match ? (Number(match[2]) * 60 + Number(match[3] || 0)) * (match[1] === '+' ? 1 : -1) : -240;
+  let start = localNoonUtcGuess - offsetMinutes * 60 * 1000;
+  if (now < start) start -= TIMEFRAMES['1d'];
+  return start;
+}
+
+function bucketStart(now, timeframe) {
+  return timeframe === '1d' ? dailyBucketStart(now) : utcBucketStart(now, timeframe);
+}
+
+function formatUtcPlus3(ms) {
+  return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16);
+}
+
+function formatUsd(value) {
+  return `${value < 0 ? '-' : '+'}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatAbsoluteUsd(value) {
+  return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 function eventSideSign(event) {
   const side = String(event.side || '').toLowerCase();
@@ -104,119 +184,145 @@ function eventNotionalUsd(event) {
   if (Number.isFinite(direct) && direct > 0) return direct;
   const price = Number(event.price);
   const qty = Number(event.qty ?? event.quantity ?? event.amount ?? event.size);
-  if (Number.isFinite(price) && Number.isFinite(qty) && price > 0 && qty > 0) return price * qty;
-  return 0;
+  return Number.isFinite(price) && Number.isFinite(qty) && price > 0 && qty > 0 ? price * qty : 0;
 }
 
-function resetPeriod(period) { activePeriod = period; }
-
-function applyNewRawEvents(eventsBySymbol, activeBucket) {
-  const changes = [];
+function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
+  const map = timeframeState.get(timeframe);
+  const crossings = [];
   for (const symbol of symbols) {
-    const normalizedSymbol = normalizeSymbol(symbol);
-    const events = (eventsBySymbol.get(normalizedSymbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let state = runningImbalance.get(normalizedSymbol) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0 };
-    let updateLongUsd = 0;
-    let updateShortUsd = 0;
-    let updateLongEvents = 0;
-    let updateShortEvents = 0;
-    let updateLastTs = null;
+    const state = map.get(symbol) || emptySymbolState();
+    if (state.lastBucket !== null && completedBucket <= state.lastBucket) continue;
 
-    for (const event of events) {
+    let longUsd = 0;
+    let shortUsd = 0;
+    let longEvents = 0;
+    let shortEvents = 0;
+    let lastTs = null;
+
+    for (const event of eventsBySymbol.get(symbol) || []) {
       const ts = normalizeTs(event.ts);
-      if (!ts || bucketStart(ts) !== activeBucket) continue;
+      if (!ts || bucketStart(ts, timeframe) !== completedBucket) continue;
       const sign = eventSideSign(event);
-      const notionalUsd = eventNotionalUsd(event);
-      if (sign === 0 || notionalUsd <= 0) continue;
-      const key = `${activeBucket}:${eventKey(event)}`;
-      if (seenEvents.has(key)) continue;
-      seenEvents.add(key);
-      if (sign > 0) { updateLongUsd += notionalUsd; updateLongEvents += 1; }
-      else { updateShortUsd += notionalUsd; updateShortEvents += 1; }
-      if (!updateLastTs || ts > updateLastTs) updateLastTs = ts;
-    }
-
-    if (updateLongEvents === 0 && updateShortEvents === 0) {
-      runningImbalance.set(normalizedSymbol, state);
-      continue;
+      const usd = eventNotionalUsd(event);
+      if (!sign || usd <= 0) continue;
+      if (sign > 0) { longUsd += usd; longEvents += 1; }
+      else { shortUsd += usd; shortEvents += 1; }
+      if (!lastTs || ts > lastTs) lastTs = ts;
     }
 
     const before = state.imbalanceUsd;
-    const oldEstablishedSign = state.establishedSign || 0;
-    state.imbalanceUsd += updateLongUsd - updateShortUsd;
-    state.longUsd += updateLongUsd;
-    state.shortUsd += updateShortUsd;
-    state.longEvents += updateLongEvents;
-    state.shortEvents += updateShortEvents;
-    state.events += updateLongEvents + updateShortEvents;
-    state.lastTs = updateLastTs;
+    const oldSign = state.establishedSign || 0;
+    state.imbalanceUsd += longUsd - shortUsd;
+    state.longUsd += longUsd;
+    state.shortUsd += shortUsd;
+    state.longEvents += longEvents;
+    state.shortEvents += shortEvents;
+    state.events += longEvents + shortEvents;
+    state.lastBucket = completedBucket;
 
     const newSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
-    const isZeroCrossing = oldEstablishedSign !== 0 && newSign !== 0 && newSign !== oldEstablishedSign;
-
-    if (isZeroCrossing) {
-      changes.push({ symbol: normalizedSymbol, before, after: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, updateLongUsd, updateShortUsd, updateLongEvents, updateShortEvents, ts: updateLastTs, period: activeBucket });
+    if (oldSign !== 0 && newSign !== 0 && newSign !== oldSign) {
+      crossings.push({
+        timeframe,
+        symbol,
+        before,
+        after: state.imbalanceUsd,
+        updateLongUsd: longUsd,
+        updateShortUsd: shortUsd,
+        updateLongEvents: longEvents,
+        updateShortEvents: shortEvents,
+        longUsd: state.longUsd,
+        shortUsd: state.shortUsd,
+        longEvents: state.longEvents,
+        shortEvents: state.shortEvents,
+        ts: lastTs || completedBucket + TIMEFRAMES[timeframe],
+        period: completedBucket,
+      });
     }
-
     if (newSign !== 0) state.establishedSign = newSign;
-    runningImbalance.set(normalizedSymbol, state);
+    map.set(symbol, state);
 
-    console.log(JSON.stringify({ type: 'liquidation_running_update', symbol: normalizedSymbol, updateLongUsd, updateShortUsd, runningImbalanceUsd: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, establishedSign: state.establishedSign || 0, period: new Date(activeBucket).toISOString() }));
+    console.log(JSON.stringify({
+      type: 'liquidation_timeframe_bucket',
+      timeframe,
+      symbol,
+      bucket: new Date(completedBucket).toISOString(),
+      updateLongUsd: longUsd,
+      updateShortUsd: shortUsd,
+      imbalanceUsd: state.imbalanceUsd,
+      longUsd: state.longUsd,
+      shortUsd: state.shortUsd,
+      establishedSign: state.establishedSign,
+    }));
   }
-  return changes;
+  return crossings;
 }
 
-function diagnostics(activeBucket) {
-  return symbols.map(symbol => {
-    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null };
-    return { symbol: normalizeSymbol(symbol), longUsd: state.longUsd, shortUsd: state.shortUsd, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, imbalanceUsd: state.imbalanceUsd, totalLiquidations: state.events, lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null, period: new Date(activeBucket).toISOString() };
-  });
+async function sendCrossingAlert(crossing) {
+  const alertKey = `${crossing.timeframe}:${crossing.symbol}:${crossing.period}:${crossing.after}`;
+  if (sentAlerts.has(alertKey)) return;
+  const nextMarket = await findMarketByEpoch(crossing.symbol, crossing.period + TIMEFRAMES[crossing.timeframe], crossing.timeframe);
+  if (!nextMarket) throw new Error(`No next ${crossing.timeframe} Polymarket market for ${crossing.symbol}`);
+
+  const emoji = crossing.after < 0 ? '🔴' : '🟢';
+  const message = [
+    `${emoji} LIQUIDATION IMBALANCE FLIP`,
+    `${crossing.symbol} · ${crossing.timeframe.toUpperCase()} · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
+    `Previous imbalance: ${formatUsd(crossing.before)}`,
+    `New imbalance: ${formatUsd(crossing.after)}`,
+    `Update: +${formatAbsoluteUsd(crossing.updateLongUsd)} LONG · -${formatAbsoluteUsd(crossing.updateShortUsd)} SHORT`,
+    `Long total: ${formatAbsoluteUsd(crossing.longUsd)}`,
+    `Short total: ${formatAbsoluteUsd(crossing.shortUsd)}`,
+    `Cumulative LONG events: ${crossing.longEvents}`,
+    `Cumulative SHORT events: ${crossing.shortEvents}`,
+    '', `➡️ NEXT Polymarket ${crossing.timeframe.toUpperCase()}`, nextMarket.url,
+  ].join('\n');
+  await sendTelegramMessage(message);
+  sentAlerts.add(alertKey);
 }
 
-async function checkOnce(activeBucket) {
-  resetPeriod(activeBucket);
+async function fetchAllEvents() {
   const results = await Promise.all(symbols.map(async symbol => {
     try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
     catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
   }));
-  const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
-  const crossings = applyNewRawEvents(eventsBySymbol, activeBucket);
-  console.log(JSON.stringify({ type: 'liquidation_running_imbalance_usd', coins: diagnostics(activeBucket) }));
+  return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
+}
 
-  for (const crossing of crossings.sort((a, b) => a.ts - b.ts)) {
-    const alertKey = `5m:${crossing.symbol}:${crossing.ts}:${crossing.after}`;
-    if (sentAlerts.has(alertKey)) continue;
-    let nextMarket;
-    try { nextMarket = await findNextMarket(crossing.symbol, Date.now()); }
-    catch (error) { console.warn(`POLYMARKET LINK RESOLVE FAILED: ${crossing.symbol}: ${error.message}`); continue; }
-    const emoji = crossing.after < 0 ? '🔴' : '🟢';
-    const message = [
-      `${emoji} LIQUIDATION IMBALANCE FLIP`,
-      `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
-      `Previous imbalance: ${formatUsd(crossing.before)}`,
-      `New imbalance: ${formatUsd(crossing.after)}`,
-      `Update: +${formatAbsoluteUsd(crossing.updateLongUsd)} LONG · -${formatAbsoluteUsd(crossing.updateShortUsd)} SHORT`,
-      `Long total: ${formatAbsoluteUsd(crossing.longUsd)}`,
-      `Short total: ${formatAbsoluteUsd(crossing.shortUsd)}`,
-      `Cumulative LONG events: ${crossing.longEvents}`,
-      `Cumulative SHORT events: ${crossing.shortEvents}`,
-      '', '➡️ NEXT Polymarket 5M', nextMarket?.url || 'Market not found yet',
-    ].join('\n');
-    await sendTelegramMessage(message);
-    sentAlerts.add(alertKey);
-    await saveState();
+async function processBoundaries(eventsBySymbol, now) {
+  const allCrossings = [];
+  for (const timeframe of FRAMEWORKS) {
+    const current = bucketStart(now, timeframe);
+    const completed = current - TIMEFRAMES[timeframe];
+    allCrossings.push(...applyCompletedBucket(timeframe, eventsBySymbol, completed));
   }
-  if (crossings.length === 0) await saveState();
+  for (const crossing of allCrossings.sort((a, b) => a.ts - b.ts)) {
+    try { await sendCrossingAlert(crossing); }
+    catch (error) { console.warn(`POLYMARKET LINK/TELEGRAM FAILED ${crossing.timeframe} ${crossing.symbol}: ${error.message}`); }
+  }
+  if (allCrossings.length) await saveState();
 }
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running monitor started; symbols=${symbols.join(',')}; cumulative USD balance preserved; alert on every zero crossing; poll=${POLL_MS}ms`);
+  ensureState();
+  console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; boundary-only zero crossing; poll=${POLL_MS}ms`);
+  let lastPollBucket = null;
   while (true) {
-    const activeBucket = bucketStart(Date.now());
-    try { await checkOnce(activeBucket); }
-    catch (error) { console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`); }
-    await sleep(POLL_MS);
+    const now = Date.now();
+    try {
+      const eventsBySymbol = await fetchAllEvents();
+      const boundaryKey = FRAMEWORKS.map(tf => `${tf}:${bucketStart(now, tf)}`).join('|');
+      if (boundaryKey !== lastPollBucket) {
+        await processBoundaries(eventsBySymbol, now);
+        lastPollBucket = boundaryKey;
+      }
+      await saveState();
+    } catch (error) {
+      console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
 
