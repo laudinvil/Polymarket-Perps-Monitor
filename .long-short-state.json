@@ -15,14 +15,13 @@
     "XRP:short_liquidated:1.41"
   ],
   "previousPrices": {
-    "BTC": 79703,
-    "ETH": 2457.96,
-    "SOL": 102.79,
-    "XRP": 1.4134,
-    "DOGE": 0.08726,
-    "BNB": 757.5,
-    "HYPE": 84.96
+    "BTC": 79713.7,
+    "ETH": 2458.28,
+    "SOL": 102.87,
+    "XRP": 1.4145,
+    "DOGE": 0.08732,
+    "BNB": 757.3,
+    "HYPE": 84.97
   },
-  "lastAlertAt": 1788611701100,
-  "alertedBuckets": {}
+  "lastAlertAt": 1788611701100
 }
