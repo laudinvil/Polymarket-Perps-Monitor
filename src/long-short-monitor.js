@@ -14,6 +14,7 @@ const sentClusters = new Set();
 const previousPrices = new Map();
 const alertedBuckets = new Map();
 let lastAlertAt = 0;
+let lastAlertSymbol = null;
 
 function formatPrice(value) {
   if (value == null || !Number.isFinite(Number(value))) return 'N/A';
@@ -76,6 +77,7 @@ async function loadState() {
       if (Number.isFinite(n)) alertedBuckets.set(symbol, n);
     }
     lastAlertAt = Number(state.lastAlertAt) || 0;
+    lastAlertSymbol = state.lastAlertSymbol || null;
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -92,7 +94,8 @@ async function saveState() {
         sentClusters: [...new Set([...(remoteState.sentClusters || []), ...sentClusters])].slice(-2000),
         previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
         alertedBuckets: { ...(remoteState.alertedBuckets || {}), ...Object.fromEntries(alertedBuckets) },
-        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
+        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt),
+        lastAlertSymbol: lastAlertSymbol || remoteState.lastAlertSymbol || null
       };
       await githubRequest('PUT', {
         message: 'Persist long short cluster monitor state',
@@ -112,13 +115,12 @@ async function saveState() {
   }
 }
 
-// Atomically reserves BOTH the 5M slot and the exact cluster key before Telegram is called.
-// This closes the race where two monitor instances could both pass the local sentClusters check.
 async function reserveAlertSlot(symbol, bucket, clusterKey) {
   if (!process.env.GITHUB_TOKEN) {
-    if (alertedBuckets.get(symbol) === bucket || sentClusters.has(clusterKey)) return false;
+    if (alertedBuckets.get(symbol) === bucket || sentClusters.has(clusterKey) || lastAlertSymbol === symbol) return false;
     alertedBuckets.set(symbol, bucket);
     sentClusters.add(clusterKey);
+    lastAlertSymbol = symbol;
     return true;
   }
 
@@ -128,22 +130,24 @@ async function reserveAlertSlot(symbol, bucket, clusterKey) {
       const remoteState = decodeState(current);
       const remoteClusters = new Set(remoteState.sentClusters || []);
       const remoteBuckets = { ...(remoteState.alertedBuckets || {}) };
+      const remoteLastSymbol = remoteState.lastAlertSymbol || null;
 
-      if (remoteClusters.has(clusterKey) || Number(remoteBuckets[symbol]) === bucket) {
+      if (remoteClusters.has(clusterKey) || Number(remoteBuckets[symbol]) === bucket || remoteLastSymbol === symbol) {
         sentClusters.add(clusterKey);
         alertedBuckets.set(symbol, bucket);
+        lastAlertSymbol = remoteLastSymbol || symbol;
         return false;
       }
 
       remoteClusters.add(clusterKey);
       remoteBuckets[symbol] = bucket;
-
       const mergedState = {
         ...remoteState,
         sentClusters: [...remoteClusters].slice(-2000),
         previousPrices: { ...(remoteState.previousPrices || {}), ...Object.fromEntries(previousPrices) },
         alertedBuckets: remoteBuckets,
-        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt)
+        lastAlertAt: Math.max(Number(remoteState.lastAlertAt) || 0, lastAlertAt),
+        lastAlertSymbol: symbol
       };
 
       await githubRequest('PUT', {
@@ -155,6 +159,7 @@ async function reserveAlertSlot(symbol, bucket, clusterKey) {
 
       sentClusters.add(clusterKey);
       alertedBuckets.set(symbol, bucket);
+      lastAlertSymbol = symbol;
       return true;
     } catch (error) {
       const isConflict = /GitHub state request failed: 409\b/.test(error.message);
@@ -253,20 +258,6 @@ async function getCoinSnapshot(symbol) {
   };
 }
 
-async function nextMarketUrl(symbol) {
-  const market = await findNextMarket(symbol, Date.now());
-  const slug = String(market?.slug || '').trim().toLowerCase();
-  const expectedPrefix = `${symbol.toLowerCase()}-updown-5m-`;
-
-  // Only send a link returned by the shared Polymarket resolver. It searches
-  // actual 5M markets and verifies the complete Unix timestamp in the slug.
-  if (!slug || !slug.startsWith(expectedPrefix) || !/^\d{10}$/.test(slug.slice(expectedPrefix.length))) {
-    throw new Error(`Invalid Polymarket 5M market for ${symbol}: ${market?.slug || 'missing slug'}`);
-  }
-
-  return `https://polymarket.com/event/${slug}`;
-}
-
 async function check() {
   const bucket = currentBucket();
   const snapshots = await Promise.all(SYMBOLS.map(async symbol => {
@@ -281,6 +272,7 @@ async function check() {
     const cluster = snapshot.nearest;
     if (!cluster) return false;
     if (alertedBuckets.get(snapshot.symbol) === bucket) return false;
+    if (lastAlertSymbol === snapshot.symbol) return false;
     return isTouch(snapshot.previousPrice, snapshot.currentPrice, cluster.price);
   });
 
@@ -302,18 +294,25 @@ async function check() {
     return;
   }
 
-  let polymarketUrl;
+  let market;
   try {
-    polymarketUrl = await nextMarketUrl(winner.symbol);
+    market = await findNextMarket(winner.symbol, '5m');
   } catch (error) {
     console.warn(`POLYMARKET LINK RESOLVE FAILED: ${winner.symbol}: ${error.message}`);
     await saveState();
     return;
   }
 
+  const polymarketUrl = market?.url;
+  if (!polymarketUrl) {
+    console.warn(`POLYMARKET LINK RESOLVE FAILED: ${winner.symbol}: no verified market URL`);
+    await saveState();
+    return;
+  }
+
   const reserved = await reserveAlertSlot(winner.symbol, bucket, cluster.clusterKey);
   if (!reserved) {
-    console.log(JSON.stringify({ type: 'cluster_duplicate_or_reservation_lost', symbol: winner.symbol, cluster: cluster.clusterKey, bucket }));
+    console.log(JSON.stringify({ type: 'cluster_duplicate_or_alternation_blocked', symbol: winner.symbol, cluster: cluster.clusterKey, bucket, lastAlertSymbol }));
     return;
   }
 
@@ -356,13 +355,14 @@ async function check() {
     distancePct: cluster.distancePct,
     polymarketUrl,
     clusterKey: cluster.clusterKey,
-    bucket
+    bucket,
+    lastAlertSymbol
   }));
 }
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC cluster+5M dedupe; shared Polymarket resolver; state persisted in GitHub`);
+  console.log(`LONG/SHORT cluster monitor started; symbols=${SYMBOLS.join(',')}; exact touch/cross; ATOMIC dedupe; STRICT ALTERNATING COINS; state persisted in GitHub`);
   while (true) {
     try { await check(); }
     catch (error) { console.error(`CLUSTER CYCLE FAILED: ${error.stack || error.message}`); }
