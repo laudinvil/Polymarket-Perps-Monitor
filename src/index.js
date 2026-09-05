@@ -3,8 +3,8 @@ const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WI
 const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
-// 5M LIQUIDATION IMBALANCE: per coin, monitor cumulative LONG minus SHORT liquidations.
-// Alert immediately when the sign crosses zero during the active period. Maximum one alert per period.
+// 5M LIQUIDATION IMBALANCE: per coin, monitor cumulative LONG liquidation volume minus SHORT liquidation volume.
+// Alert immediately when the notional-volume sign crosses zero during the active period. Maximum one alert per period.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_5M = WINDOW_MS;
 const POLL_MS = 10000;
@@ -60,23 +60,34 @@ async function saveState() {
 }
 
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
+function formatUsd(value) { return `$${Math.round(value).toLocaleString('en-US')}`; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function eventNotional(event) {
+  const value = Number(event.notional);
+  if (Number.isFinite(value) && value >= 0) return value;
+  const price = Number(event.price);
+  const qty = Number(event.qty);
+  return Number.isFinite(price) && Number.isFinite(qty) ? Math.abs(price * qty) : 0;
+}
 
 function summarizeActivePeriod(eventsBySymbol, activeBucket) {
   return symbols.map(symbol => {
     const ordered = (eventsBySymbol.get(symbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let long = 0;
-    let short = 0;
+    let longVolume = 0;
+    let shortVolume = 0;
+    let events = 0;
     let lastTs = null;
     for (const event of ordered) {
       const ts = normalizeTs(event.ts);
       if (!ts || bucketStart(ts) !== activeBucket) continue;
       const side = String(event.side || '').toLowerCase();
       if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-      if (side.includes('long') || side === 'buy') long++; else short++;
+      const notional = eventNotional(event);
+      if (side.includes('long') || side === 'buy') longVolume += notional; else shortVolume += notional;
+      events++;
       lastTs = ts;
     }
-    return { symbol, long, short, difference: long - short, events: long + short, lastEvent: lastTs ? new Date(lastTs).toISOString() : null };
+    return { symbol, longVolume, shortVolume, difference: longVolume - shortVolume, events, lastEvent: lastTs ? new Date(lastTs).toISOString() : null };
   });
 }
 
@@ -84,8 +95,8 @@ function findFirstZeroCrossing(eventsBySymbol, activeBucket) {
   let first = null;
   for (const [symbol, events] of eventsBySymbol.entries()) {
     const ordered = events.slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let long = 0;
-    let short = 0;
+    let longVolume = 0;
+    let shortVolume = 0;
     let previousSign = 0;
     const seen = new Set();
 
@@ -97,13 +108,14 @@ function findFirstZeroCrossing(eventsBySymbol, activeBucket) {
       const key = eventKey(event);
       if (seen.has(key)) continue;
       seen.add(key);
-      if (side.includes('long') || side === 'buy') long++;
-      else short++;
+      const notional = eventNotional(event);
+      if (side.includes('long') || side === 'buy') longVolume += notional;
+      else shortVolume += notional;
 
-      const difference = long - short;
+      const difference = longVolume - shortVolume;
       const sign = difference > 0 ? 1 : difference < 0 ? -1 : 0;
       if (previousSign !== 0 && sign !== 0 && sign !== previousSign) {
-        const candidate = { symbol: normalizeSymbol(symbol), long, short, difference, ts };
+        const candidate = { symbol: normalizeSymbol(symbol), longVolume, shortVolume, difference, ts };
         if (!first || ts < first.ts) first = candidate;
         break;
       }
@@ -127,7 +139,7 @@ async function checkOnce(activeBucket) {
   console.log(JSON.stringify({
     type: 'liquidation_5m_zero_crossing_check',
     period: new Date(activeBucket).toISOString(),
-    crossing: crossing ? { symbol: crossing.symbol, long: crossing.long, short: crossing.short, difference: crossing.difference, ts: new Date(crossing.ts).toISOString() } : null,
+    crossing: crossing ? { symbol: crossing.symbol, longVolume: crossing.longVolume, shortVolume: crossing.shortVolume, difference: crossing.difference, ts: new Date(crossing.ts).toISOString() } : null,
   }));
 
   if (!crossing) return;
@@ -140,8 +152,8 @@ async function checkOnce(activeBucket) {
   const message = [
     `${emoji} LIQUIDATION IMBALANCE FLIP`,
     `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
-    `Long: ${crossing.long} · Short: ${crossing.short}`,
-    `Difference: ${crossing.difference > 0 ? '+' : ''}${crossing.difference}`,
+    `Long: ${formatUsd(crossing.longVolume)} · Short: ${formatUsd(crossing.shortVolume)}`,
+    `Difference: ${crossing.difference >= 0 ? '+' : '-'}${formatUsd(Math.abs(crossing.difference))}`,
     '',
     '➡️ NEXT Polymarket 5M',
     nextMarket?.url || 'Market not found yet',
@@ -150,12 +162,12 @@ async function checkOnce(activeBucket) {
   await sendTelegramMessage(message);
   sentAlerts.add(alertKey);
   await saveState();
-  console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longCount: crossing.long, shortCount: crossing.short, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(activeBucket).toISOString(), condition: 'LONG_MINUS_SHORT_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
+  console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longVolume: crossing.longVolume, shortVolume: crossing.shortVolume, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(activeBucket).toISOString(), condition: 'LONG_NOTIONAL_MINUS_SHORT_NOTIONAL_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
 }
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; active-period LONG minus SHORT sign change; one alert per period; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; active-period LONG notional minus SHORT notional sign change; one alert per period; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
