@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:26:09.704Z",
+  "updatedAt": "2026-09-05T21:26:20.884Z",
   "period": "2026-09-05T21:25:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -117,13 +117,13 @@
   "liquidation5m": [
     {
       "symbol": "BTC",
-      "longLiquidations": 0,
+      "longLiquidations": 1,
       "shortLiquidations": 0,
-      "cumulativeLongEvents": 0,
+      "cumulativeLongEvents": 1,
       "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "imbalance": 1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:26:14.488Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
@@ -140,12 +140,12 @@
     {
       "symbol": "SOL",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
+      "shortLiquidations": 1,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "cumulativeShortEvents": 1,
+      "imbalance": -1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:26:14.580Z",
       "period": "2026-09-05T21:25:00.000Z"
     },
     {
@@ -184,26 +184,26 @@
     {
       "symbol": "HYPE",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
+      "shortLiquidations": 1,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "cumulativeShortEvents": 1,
+      "imbalance": -1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:26:09.392Z",
       "period": "2026-09-05T21:25:00.000Z"
     }
   ],
   "liquidationRunning": [
     {
       "symbol": "BTC",
-      "imbalance": 0,
-      "longStrength": 0,
+      "imbalance": 1,
+      "longStrength": 1,
       "shortStrength": 0,
-      "longEvents": 0,
+      "longEvents": 1,
       "shortEvents": 0,
-      "events": 0,
-      "lastTs": null,
-      "previousSign": 0
+      "events": 1,
+      "lastTs": 1788643574488,
+      "previousSign": 1
     },
     {
       "symbol": "ETH",
@@ -218,14 +218,14 @@
     },
     {
       "symbol": "SOL",
-      "imbalance": 0,
+      "imbalance": -1,
       "longStrength": 0,
-      "shortStrength": 0,
+      "shortStrength": 1,
       "longEvents": 0,
-      "shortEvents": 0,
-      "events": 0,
-      "lastTs": null,
-      "previousSign": 0
+      "shortEvents": 1,
+      "events": 1,
+      "lastTs": 1788643574580,
+      "previousSign": -1
     },
     {
       "symbol": "XRP",
@@ -262,14 +262,14 @@
     },
     {
       "symbol": "HYPE",
-      "imbalance": 0,
+      "imbalance": -1,
       "longStrength": 0,
-      "shortStrength": 0,
+      "shortStrength": 1,
       "longEvents": 0,
-      "shortEvents": 0,
-      "events": 0,
-      "lastTs": null,
-      "previousSign": 0
+      "shortEvents": 1,
+      "events": 1,
+      "lastTs": 1788643569392,
+      "previousSign": -1
     }
   ]
 }
