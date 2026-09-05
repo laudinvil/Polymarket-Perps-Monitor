@@ -9,6 +9,7 @@ const MIN_SHORT_LIQUIDATIONS = 1;
 const MAX_OPPOSITE_LIQUIDATIONS = 0;
 const processedBuckets15m = new Set();
 const sentAlerts15m = new Set();
+const lastAlertPeriodBySymbol15m = new Map();
 
 function bucketStart15m(ts) { return Math.floor(Number(ts) / WINDOW_MS_15M) * WINDOW_MS_15M; }
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
@@ -68,6 +69,14 @@ async function check15mOnce(boundary) {
   const winnerSide = winner.longCount === REQUIRED_LONG_LIQUIDATIONS ? 'long' : 'short';
   const winnerCount = winnerSide === 'long' ? winner.longCount : winner.shortCount;
   const alertKey = `15m:${closedBucket}`;
+  const lastPeriod = lastAlertPeriodBySymbol15m.get(winner.symbol);
+
+  // Do not repeat the same coin in the immediately following 15M period.
+  // After one skipped period, the coin is eligible again.
+  if (lastPeriod != null && closedBucket - lastPeriod === WINDOW_MS_15M) {
+    console.log(JSON.stringify({ type: 'liquidation_15m_duplicate_coin_blocked', symbol: winner.symbol, previousAlertPeriod: new Date(lastPeriod).toISOString(), closedBucket: new Date(closedBucket).toISOString() }));
+    return;
+  }
   if (sentAlerts15m.has(alertKey)) return;
 
   const market = await findCurrentMarket15m(winner.symbol, currentBucket);
@@ -85,13 +94,14 @@ async function check15mOnce(boundary) {
 
   await sendTelegramMessage(message);
   sentAlerts15m.add(alertKey);
-  console.log(JSON.stringify({ type: 'liquidation_15m_direction_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
+  lastAlertPeriodBySymbol15m.set(winner.symbol, closedBucket);
+  console.log(JSON.stringify({ type: 'liquidation_15m_direction_winner', closedBucket: new Date(closedBucket).toISOString(), symbol: winner.symbol, leaderSide: winnerSide, leaderCount: winnerCount, longCount: winner.longCount, shortCount: winner.shortCount, condition: 'LONG_exactly_1_or_SHORT_1_plus_with_opposite_0; no_same_coin_in_previous_period', alertSent: true, nextMarket: market?.url || null, delayMs: Date.now() - currentBucket }));
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function main15m() {
-  console.log(`15M liquidation direction-leader monitor started; symbols=${SYMBOLS.join(',')}; LONG=1; SHORT>=1; opposite=0`);
+  console.log(`15M liquidation direction-leader monitor started; symbols=${SYMBOLS.join(',')}; LONG=1; SHORT>=1; opposite=0; no same coin in previous period`);
   while (true) {
     const now = Date.now();
     const nextBoundary = bucketStart15m(now) + WINDOW_MS_15M;
