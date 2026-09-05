@@ -5,7 +5,6 @@ const { sendTelegramMessage } = require('./telegram');
 
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const POLL_MS = 30000;
-const MIN_FLIP_IMBALANCE = 3;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const sentAlerts = new Set();
@@ -44,22 +43,19 @@ async function loadState() {
     for (const key of state.alerts || []) sentAlerts.add(key);
     for (const item of state.liquidationRunning || []) {
       if (!item?.symbol) continue;
-      const imbalance = Number(item.imbalance) || 0;
-      const storedEstablishedSign = Number(item.establishedSign);
-      const legacySign = Number(item.previousSign) || 0;
-      const establishedSign = Number.isFinite(storedEstablishedSign)
-        ? storedEstablishedSign
-        : (Math.abs(imbalance) >= MIN_FLIP_IMBALANCE ? (imbalance > 0 ? 1 : -1) : 0);
+      const imbalanceUsd = Number(item.imbalanceUsd);
+      const longUsd = Number(item.longUsd);
+      const shortUsd = Number(item.shortUsd);
+      const establishedSign = Number(item.establishedSign) || 0;
       runningImbalance.set(normalizeSymbol(item.symbol), {
-        imbalance,
-        longStrength: Number(item.longStrength) || 0,
-        shortStrength: Number(item.shortStrength) || 0,
+        imbalanceUsd: Number.isFinite(imbalanceUsd) ? imbalanceUsd : 0,
+        longUsd: Number.isFinite(longUsd) ? longUsd : 0,
+        shortUsd: Number.isFinite(shortUsd) ? shortUsd : 0,
         longEvents: Number(item.longEvents) || 0,
         shortEvents: Number(item.shortEvents) || 0,
         events: Number(item.events) || 0,
         lastTs: item.lastTs ? Number(item.lastTs) : null,
         establishedSign,
-        previousSign: legacySign,
       });
     }
   } catch (error) {
@@ -76,8 +72,8 @@ async function saveState() {
     alerts: [...sentAlerts].slice(-500),
     liquidation5m: stats,
     liquidationRunning: symbols.map(symbol => {
-      const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0, previousSign: 0 };
-      return { symbol: normalizeSymbol(symbol), imbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, longEvents: state.longEvents, shortEvents: state.shortEvents, events: state.events, lastTs: state.lastTs, establishedSign: state.establishedSign || 0, previousSign: state.previousSign || 0 };
+      const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0 };
+      return { symbol: normalizeSymbol(symbol), imbalanceUsd: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, events: state.events, lastTs: state.lastTs, establishedSign: state.establishedSign || 0 };
     }),
   };
   const content = Buffer.from(JSON.stringify(statePayload, null, 2)).toString('base64');
@@ -92,13 +88,22 @@ async function saveState() {
 }
 
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
-function formatSignedCount(value) { return `${value >= 0 ? '+' : ''}${value}`; }
+function formatUsd(value) { return `${value < 0 ? '-' : '+'}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function eventSideSign(event) {
   const side = String(event.side || '').toLowerCase();
   if (side.includes('long') || side === 'buy') return 1;
   if (side.includes('short') || side === 'sell') return -1;
+  return 0;
+}
+
+function eventNotionalUsd(event) {
+  const direct = Number(event.notional ?? event.notionalUsd ?? event.usd ?? event.volumeUsd ?? event.valueUsd);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const price = Number(event.price);
+  const qty = Number(event.qty ?? event.quantity ?? event.amount ?? event.size);
+  if (Number.isFinite(price) && Number.isFinite(qty) && price > 0 && qty > 0) return price * qty;
   return 0;
 }
 
@@ -109,59 +114,61 @@ function applyNewRawEvents(eventsBySymbol, activeBucket) {
   for (const symbol of symbols) {
     const normalizedSymbol = normalizeSymbol(symbol);
     const events = (eventsBySymbol.get(normalizedSymbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let state = runningImbalance.get(normalizedSymbol) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0, previousSign: 0 };
-    let updateLong = 0;
-    let updateShort = 0;
+    let state = runningImbalance.get(normalizedSymbol) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null, establishedSign: 0 };
+    let updateLongUsd = 0;
+    let updateShortUsd = 0;
+    let updateLongEvents = 0;
+    let updateShortEvents = 0;
     let updateLastTs = null;
 
     for (const event of events) {
       const ts = normalizeTs(event.ts);
       if (!ts || bucketStart(ts) !== activeBucket) continue;
       const sign = eventSideSign(event);
-      if (sign === 0) continue;
+      const notionalUsd = eventNotionalUsd(event);
+      if (sign === 0 || notionalUsd <= 0) continue;
       const key = `${activeBucket}:${eventKey(event)}`;
       if (seenEvents.has(key)) continue;
       seenEvents.add(key);
-      if (sign > 0) updateLong += 1;
-      else updateShort += 1;
+      if (sign > 0) { updateLongUsd += notionalUsd; updateLongEvents += 1; }
+      else { updateShortUsd += notionalUsd; updateShortEvents += 1; }
       if (!updateLastTs || ts > updateLastTs) updateLastTs = ts;
     }
 
-    if (updateLong === 0 && updateShort === 0) {
+    if (updateLongEvents === 0 && updateShortEvents === 0) {
       runningImbalance.set(normalizedSymbol, state);
       continue;
     }
 
-    const before = state.imbalance;
+    const before = state.imbalanceUsd;
     const oldEstablishedSign = state.establishedSign || 0;
-    state.imbalance += updateLong - updateShort;
-    state.longEvents += updateLong;
-    state.shortEvents += updateShort;
-    state.events += updateLong + updateShort;
+    state.imbalanceUsd += updateLongUsd - updateShortUsd;
+    state.longUsd += updateLongUsd;
+    state.shortUsd += updateShortUsd;
+    state.longEvents += updateLongEvents;
+    state.shortEvents += updateShortEvents;
+    state.events += updateLongEvents + updateShortEvents;
     state.lastTs = updateLastTs;
-    state.longStrength = Math.max(0, state.imbalance);
-    state.shortStrength = Math.max(0, -state.imbalance);
 
-    const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
-    const reachedThreshold = Math.abs(state.imbalance) >= MIN_FLIP_IMBALANCE;
-    const isRealFlip = oldEstablishedSign !== 0 && reachedThreshold && newSign !== oldEstablishedSign;
+    const newSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
+    const isZeroCrossing = oldEstablishedSign !== 0 && newSign !== 0 && newSign !== oldEstablishedSign;
 
-    if (isRealFlip) {
-      changes.push({ symbol: normalizedSymbol, before, after: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, longEvents: state.longEvents, shortEvents: state.shortEvents, updateLong, updateShort, ts: updateLastTs, period: activeBucket });
+    if (isZeroCrossing) {
+      changes.push({ symbol: normalizedSymbol, before, after: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, updateLongUsd, updateShortUsd, updateLongEvents, updateShortEvents, ts: updateLastTs, period: activeBucket });
     }
 
-    if (reachedThreshold) state.establishedSign = newSign;
+    if (newSign !== 0) state.establishedSign = newSign;
     runningImbalance.set(normalizedSymbol, state);
 
-    console.log(JSON.stringify({ type: 'liquidation_running_update', symbol: normalizedSymbol, updateLong, updateShort, runningImbalance: state.imbalance, longStrength: state.longStrength, shortStrength: state.shortStrength, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, establishedSign: state.establishedSign || 0, minFlipImbalance: MIN_FLIP_IMBALANCE, period: new Date(activeBucket).toISOString() }));
+    console.log(JSON.stringify({ type: 'liquidation_running_update', symbol: normalizedSymbol, updateLongUsd, updateShortUsd, runningImbalanceUsd: state.imbalanceUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, establishedSign: state.establishedSign || 0, period: new Date(activeBucket).toISOString() }));
   }
   return changes;
 }
 
 function diagnostics(activeBucket) {
   return symbols.map(symbol => {
-    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longStrength: 0, shortStrength: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null };
-    return { symbol: normalizeSymbol(symbol), longLiquidations: state.longStrength, shortLiquidations: state.shortStrength, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, imbalance: state.imbalance, totalLiquidations: state.events, lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null, period: new Date(activeBucket).toISOString() };
+    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, lastTs: null };
+    return { symbol: normalizeSymbol(symbol), longUsd: state.longUsd, shortUsd: state.shortUsd, cumulativeLongEvents: state.longEvents, cumulativeShortEvents: state.shortEvents, imbalanceUsd: state.imbalanceUsd, totalLiquidations: state.events, lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null, period: new Date(activeBucket).toISOString() };
   });
 }
 
@@ -173,7 +180,7 @@ async function checkOnce(activeBucket) {
   }));
   const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
   const crossings = applyNewRawEvents(eventsBySymbol, activeBucket);
-  console.log(JSON.stringify({ type: 'liquidation_running_imbalance', coins: diagnostics(activeBucket), minFlipImbalance: MIN_FLIP_IMBALANCE }));
+  console.log(JSON.stringify({ type: 'liquidation_running_imbalance_usd', coins: diagnostics(activeBucket) }));
 
   for (const crossing of crossings.sort((a, b) => a.ts - b.ts)) {
     const alertKey = `5m:${crossing.symbol}:${crossing.ts}:${crossing.after}`;
@@ -185,11 +192,11 @@ async function checkOnce(activeBucket) {
     const message = [
       `${emoji} LIQUIDATION IMBALANCE FLIP`,
       `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
-      `Previous imbalance: ${formatSignedCount(crossing.before)} liquidations`,
-      `New imbalance: ${formatSignedCount(crossing.after)} liquidations`,
-      `Update: +${crossing.updateLong} LONG · +${crossing.updateShort} SHORT`,
-      `Long strength: ${crossing.longStrength}`,
-      `Short strength: ${crossing.shortStrength}`,
+      `Previous imbalance: ${formatUsd(crossing.before)}`,
+      `New imbalance: ${formatUsd(crossing.after)}`,
+      `Update: +$${crossing.updateLongUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LONG · +$${crossing.updateShortUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SHORT`,
+      `Long total: $${crossing.longUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Short total: $${crossing.shortUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       `Cumulative LONG events: ${crossing.longEvents}`,
       `Cumulative SHORT events: ${crossing.shortEvents}`,
       '', '➡️ NEXT Polymarket 5M', nextMarket?.url || 'Market not found yet',
@@ -203,7 +210,7 @@ async function checkOnce(activeBucket) {
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation running monitor started; symbols=${symbols.join(',')}; cumulative balance preserved; minimum flip imbalance=${MIN_FLIP_IMBALANCE}; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running monitor started; symbols=${symbols.join(',')}; cumulative USD balance preserved; alert on every zero crossing; poll=${POLL_MS}ms`);
   while (true) {
     const activeBucket = bucketStart(Date.now());
     try { await checkOnce(activeBucket); }
