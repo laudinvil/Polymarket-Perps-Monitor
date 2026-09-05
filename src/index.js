@@ -3,15 +3,24 @@ const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart, eventKey, WI
 const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
-// 5M LIQUIDATION IMBALANCE: per coin, monitor cumulative LONG liquidation volume minus SHORT liquidation volume.
-// Alert immediately when the notional-volume sign crosses zero during the active period. Maximum one alert per period.
+// 5M LIQUIDATION IMBALANCE:
+// MarginPad sends raw liquidation events in successive updates. We add each NEW
+// event once to a running signed balance for the active period:
+//   LONG liquidation  => +notional
+//   SHORT liquidation => -notional
+// The alert is based on the RUNNING BALANCE crossing zero, not on event count
+// and not on calculating one isolated batch as an alert.
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const WINDOW_MS_5M = WINDOW_MS;
 const POLL_MS = 10000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
 const sentAlerts = new Set();
+const seenEvents = new Set();
+const runningImbalance = new Map();
+const periodEvents = new Map();
 let stateSha = null;
+let activePeriod = null;
 
 function githubRequest(method, body = null) {
   return new Promise((resolve, reject) => {
@@ -61,7 +70,9 @@ async function saveState() {
 
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function formatUsd(value) { return `$${Math.round(value).toLocaleString('en-US')}`; }
+function formatSignedUsd(value) { return `${value >= 0 ? '+' : '-'}${formatUsd(Math.abs(value))}`; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
 function eventNotional(event) {
   const value = Number(event.notional);
   if (Number.isFinite(value) && value >= 0) return value;
@@ -70,104 +81,162 @@ function eventNotional(event) {
   return Number.isFinite(price) && Number.isFinite(qty) ? Math.abs(price * qty) : 0;
 }
 
-function summarizeActivePeriod(eventsBySymbol, activeBucket) {
-  return symbols.map(symbol => {
-    const ordered = (eventsBySymbol.get(symbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let longVolume = 0;
-    let shortVolume = 0;
-    let events = 0;
-    let lastTs = null;
-    for (const event of ordered) {
+function eventSideSign(event) {
+  const side = String(event.side || '').toLowerCase();
+  if (side.includes('long') || side === 'buy') return 1;
+  if (side.includes('short') || side === 'sell') return -1;
+  return 0;
+}
+
+function resetPeriod(period) {
+  if (activePeriod === period) return;
+  activePeriod = period;
+  runningImbalance.clear();
+  periodEvents.clear();
+  // event keys are only needed for the currently relevant MarginPad feed window.
+  seenEvents.clear();
+}
+
+function applyNewRawEvents(eventsBySymbol, activeBucket) {
+  const changes = [];
+
+  for (const symbol of symbols) {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    const events = (eventsBySymbol.get(normalizedSymbol) || [])
+      .slice()
+      .sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
+
+    let state = runningImbalance.get(normalizedSymbol) || {
+      imbalance: 0,
+      longVolume: 0,
+      shortVolume: 0,
+      events: 0,
+      lastTs: null,
+      previousSign: 0,
+    };
+
+    for (const event of events) {
       const ts = normalizeTs(event.ts);
       if (!ts || bucketStart(ts) !== activeBucket) continue;
-      const side = String(event.side || '').toLowerCase();
-      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
+
+      const sign = eventSideSign(event);
+      if (sign === 0) continue;
+
+      const key = eventKey(event);
+      if (seenEvents.has(`${activeBucket}:${key}`)) continue;
+      seenEvents.add(`${activeBucket}:${key}`);
+
       const notional = eventNotional(event);
-      if (side.includes('long') || side === 'buy') longVolume += notional; else shortVolume += notional;
-      events++;
-      lastTs = ts;
+      if (!(notional > 0)) continue;
+
+      const before = state.imbalance;
+      if (sign > 0) state.longVolume += notional;
+      else state.shortVolume += notional;
+      state.imbalance += sign * notional;
+      state.events += 1;
+      state.lastTs = ts;
+
+      const newSign = state.imbalance > 0 ? 1 : state.imbalance < 0 ? -1 : 0;
+      if (state.previousSign !== 0 && newSign !== 0 && newSign !== state.previousSign) {
+        changes.push({
+          symbol: normalizedSymbol,
+          before,
+          after: state.imbalance,
+          longVolume: state.longVolume,
+          shortVolume: state.shortVolume,
+          ts,
+          period: activeBucket,
+        });
+      }
+      if (newSign !== 0) state.previousSign = newSign;
     }
-    return { symbol, longVolume, shortVolume, difference: longVolume - shortVolume, events, lastEvent: lastTs ? new Date(lastTs).toISOString() : null };
+
+    runningImbalance.set(normalizedSymbol, state);
+  }
+
+  return changes;
+}
+
+function diagnostics(activeBucket) {
+  return symbols.map(symbol => {
+    const state = runningImbalance.get(normalizeSymbol(symbol)) || { imbalance: 0, longVolume: 0, shortVolume: 0, events: 0, lastTs: null };
+    return {
+      symbol: normalizeSymbol(symbol),
+      longVolume: state.longVolume,
+      shortVolume: state.shortVolume,
+      imbalance: state.imbalance,
+      events: state.events,
+      lastEvent: state.lastTs ? new Date(state.lastTs).toISOString() : null,
+      period: new Date(activeBucket).toISOString(),
+    };
   });
 }
 
-function findFirstZeroCrossing(eventsBySymbol, activeBucket) {
-  let first = null;
-  for (const [symbol, events] of eventsBySymbol.entries()) {
-    const ordered = events.slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-    let longVolume = 0;
-    let shortVolume = 0;
-    let previousSign = 0;
-    const seen = new Set();
-
-    for (const event of ordered) {
-      const ts = normalizeTs(event.ts);
-      if (!ts || bucketStart(ts) !== activeBucket) continue;
-      const side = String(event.side || '').toLowerCase();
-      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
-      const key = eventKey(event);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const notional = eventNotional(event);
-      if (side.includes('long') || side === 'buy') longVolume += notional;
-      else shortVolume += notional;
-
-      const difference = longVolume - shortVolume;
-      const sign = difference > 0 ? 1 : difference < 0 ? -1 : 0;
-      if (previousSign !== 0 && sign !== 0 && sign !== previousSign) {
-        const candidate = { symbol: normalizeSymbol(symbol), longVolume, shortVolume, difference, ts };
-        if (!first || ts < first.ts) first = candidate;
-        break;
-      }
-      if (sign !== 0) previousSign = sign;
-    }
-  }
-  return first;
-}
-
 async function checkOnce(activeBucket) {
+  resetPeriod(activeBucket);
+
   const results = await Promise.all(symbols.map(async symbol => {
     try { return [symbol, await fetchSymbolFeed(symbol, fetch)]; }
     catch (error) { console.warn(`MarginPad live ${symbol}: ${error.message}`); return [symbol, []]; }
   }));
 
   const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
-  const diagnostics = summarizeActivePeriod(eventsBySymbol, activeBucket);
-  console.log(JSON.stringify({ type: 'liquidation_5m_diagnostics', period: new Date(activeBucket).toISOString(), coins: diagnostics }));
-  const crossing = findFirstZeroCrossing(eventsBySymbol, activeBucket);
 
-  console.log(JSON.stringify({
-    type: 'liquidation_5m_zero_crossing_check',
-    period: new Date(activeBucket).toISOString(),
-    crossing: crossing ? { symbol: crossing.symbol, longVolume: crossing.longVolume, shortVolume: crossing.shortVolume, difference: crossing.difference, ts: new Date(crossing.ts).toISOString() } : null,
-  }));
+  const crossings = applyNewRawEvents(eventsBySymbol, activeBucket);
+  console.log(JSON.stringify({ type: 'liquidation_5m_running_imbalance', coins: diagnostics(activeBucket) }));
 
-  if (!crossing) return;
+  for (const crossing of crossings.sort((a, b) => a.ts - b.ts)) {
+    // A crossing is identified by the exact event that caused it. This prevents
+    // the same raw MarginPad data from producing the same alert repeatedly.
+    const alertKey = `5m:${activeBucket}:${crossing.symbol}:${crossing.ts}:${crossing.after}`;
+    if (sentAlerts.has(alertKey)) continue;
 
-  const alertKey = `5m:${activeBucket}`;
-  if (sentAlerts.has(alertKey)) return;
+    let nextMarket;
+    try {
+      nextMarket = await findNextMarket(crossing.symbol, Date.now());
+    } catch (error) {
+      console.warn(`POLYMARKET LINK RESOLVE FAILED: ${crossing.symbol}: ${error.message}`);
+      continue;
+    }
 
-  const nextMarket = await findNextMarket(crossing.symbol, Date.now());
-  const emoji = crossing.difference > 0 ? '🔴' : '🟢';
-  const message = [
-    `${emoji} LIQUIDATION IMBALANCE FLIP`,
-    `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
-    `Long: ${formatUsd(crossing.longVolume)} · Short: ${formatUsd(crossing.shortVolume)}`,
-    `Difference: ${crossing.difference >= 0 ? '+' : '-'}${formatUsd(Math.abs(crossing.difference))}`,
-    '',
-    '➡️ NEXT Polymarket 5M',
-    nextMarket?.url || 'Market not found yet',
-  ].join('\n');
+    const emoji = crossing.after > 0 ? '🔴' : '🟢';
+    const message = [
+      `${emoji} LIQUIDATION IMBALANCE FLIP`,
+      `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
+      `Previous imbalance: ${formatSignedUsd(crossing.before)}`,
+      `New imbalance: ${formatSignedUsd(crossing.after)}`,
+      `Long cumulative: ${formatUsd(crossing.longVolume)}`,
+      `Short cumulative: ${formatUsd(crossing.shortVolume)}`,
+      '',
+      '➡️ NEXT Polymarket 5M',
+      nextMarket?.url || 'Market not found yet',
+    ].join('\n');
 
-  await sendTelegramMessage(message);
-  sentAlerts.add(alertKey);
-  await saveState();
-  console.log(JSON.stringify({ type: 'liquidation_5m_zero_crossing_alert', symbol: crossing.symbol, longVolume: crossing.longVolume, shortVolume: crossing.shortVolume, difference: crossing.difference, crossingTs: new Date(crossing.ts).toISOString(), period: new Date(activeBucket).toISOString(), condition: 'LONG_NOTIONAL_MINUS_SHORT_NOTIONAL_SIGN_CROSS', alertSent: true, nextMarket: nextMarket?.url || null }));
+    await sendTelegramMessage(message);
+    sentAlerts.add(alertKey);
+    await saveState();
+
+    console.log(JSON.stringify({
+      type: 'liquidation_5m_zero_crossing_alert',
+      symbol: crossing.symbol,
+      previousImbalance: crossing.before,
+      newImbalance: crossing.after,
+      longVolume: crossing.longVolume,
+      shortVolume: crossing.shortVolume,
+      crossingTs: new Date(crossing.ts).toISOString(),
+      period: new Date(activeBucket).toISOString(),
+      condition: 'RUNNING_SIGNED_LIQUIDATION_NOTIONAL_CROSS_ZERO',
+      alertSent: true,
+      nextMarket: nextMarket?.url || null,
+    }));
+  }
+
+  if (crossings.length === 0) await saveState();
 }
 
 async function main() {
   await loadState();
-  console.log(`5M liquidation zero-crossing monitor started; symbols=${symbols.join(',')}; active-period LONG notional minus SHORT notional sign change; one alert per period; poll=${POLL_MS}ms`);
+  console.log(`5M liquidation running zero-crossing monitor started; symbols=${symbols.join(',')}; raw MarginPad events are accumulated once; LONG=+notional, SHORT=-notional; alert on running sign flip; poll=${POLL_MS}ms`);
 
   while (true) {
     const activeBucket = bucketStart(Date.now());
