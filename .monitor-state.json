@@ -100,7 +100,8 @@
     "5m:1788633000000:BTC:short",
     "5m:1788633000000:ETH:short",
     "5m:1788633000000:SOL:short",
-    "5m:1788633000000:BNB:short"
+    "5m:1788633000000:BNB:short",
+    "5m:1788633900000"
   ],
   "lastAlertPeriodBySymbol": [
     {
@@ -129,7 +130,7 @@
     },
     {
       "symbol": "SOL",
-      "period": 1788633000000
+      "period": 1788633900000
     }
   ]
 }
