@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:52:43.934Z",
+  "updatedAt": "2026-09-05T21:53:15.193Z",
   "period": "2026-09-05T21:50:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -121,23 +121,23 @@
     {
       "symbol": "BTC",
       "longLiquidations": 0,
-      "shortLiquidations": 7,
+      "shortLiquidations": 11,
       "cumulativeLongEvents": 2,
-      "cumulativeShortEvents": 9,
-      "imbalance": -7,
-      "totalLiquidations": 11,
-      "lastEvent": "2026-09-05T21:51:27.437Z",
+      "cumulativeShortEvents": 13,
+      "imbalance": -11,
+      "totalLiquidations": 15,
+      "lastEvent": "2026-09-05T21:52:56.481Z",
       "period": "2026-09-05T21:50:00.000Z"
     },
     {
       "symbol": "ETH",
       "longLiquidations": 0,
-      "shortLiquidations": 66,
+      "shortLiquidations": 67,
       "cumulativeLongEvents": 1,
-      "cumulativeShortEvents": 67,
-      "imbalance": -66,
-      "totalLiquidations": 68,
-      "lastEvent": "2026-09-05T21:46:35.960Z",
+      "cumulativeShortEvents": 68,
+      "imbalance": -67,
+      "totalLiquidations": 69,
+      "lastEvent": "2026-09-05T21:52:48.143Z",
       "period": "2026-09-05T21:50:00.000Z"
     },
     {
@@ -199,25 +199,25 @@
   "liquidationRunning": [
     {
       "symbol": "BTC",
-      "imbalance": -7,
+      "imbalance": -11,
       "longStrength": 0,
-      "shortStrength": 7,
+      "shortStrength": 11,
       "longEvents": 2,
-      "shortEvents": 9,
-      "events": 11,
-      "lastTs": 1788645087437,
+      "shortEvents": 13,
+      "events": 15,
+      "lastTs": 1788645176481,
       "establishedSign": -1,
       "previousSign": -1
     },
     {
       "symbol": "ETH",
-      "imbalance": -66,
+      "imbalance": -67,
       "longStrength": 0,
-      "shortStrength": 66,
+      "shortStrength": 67,
       "longEvents": 1,
-      "shortEvents": 67,
-      "events": 68,
-      "lastTs": 1788644795960,
+      "shortEvents": 68,
+      "events": 69,
+      "lastTs": 1788645168143,
       "establishedSign": -1,
       "previousSign": -1
     },
