@@ -14,13 +14,39 @@
     "BNB:short_liquidated:756"
   ],
   "previousPrices": {
-    "BTC": 79667.7,
-    "ETH": 2453.92,
-    "SOL": 102.39,
+    "BTC": 79667.6,
+    "ETH": 2455.32,
+    "SOL": 102.4,
     "XRP": 1.4053,
-    "DOGE": 0.0864,
-    "BNB": 757,
-    "HYPE": 85.1
+    "DOGE": 0.08638,
+    "BNB": 756.5,
+    "HYPE": 85.13
   },
-  "lastAlertAt": 1788611348471
+  "lastAlertAt": 1788611348471,
+  "armedSymbols": [],
+  "rearmConditions": {
+    "ETH": {
+      "price": 2460,
+      "direction": "below"
+    },
+    "DOGE": {
+      "price": 0.08600000000000001,
+      "direction": "above"
+    },
+    "SOL": {
+      "price": 102.5,
+      "direction": "below"
+    },
+    "BNB": {
+      "price": 754,
+      "direction": "below"
+    },
+    "XRP": {
+      "price": 1.4020000000000001,
+      "direction": "above"
+    }
+  },
+  "alertedBuckets": {
+    "BNB": 5962037
+  }
 }
