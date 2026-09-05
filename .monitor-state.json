@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-09-05T21:59:29.434Z",
-  "period": "2026-09-05T21:55:00.000Z",
+  "updatedAt": "2026-09-05T22:00:00.613Z",
+  "period": "2026-09-05T22:00:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -127,7 +127,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 15,
       "lastEvent": "2026-09-05T21:52:56.481Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "ETH",
@@ -138,7 +138,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 69,
       "lastEvent": "2026-09-05T21:52:48.143Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "SOL",
@@ -149,7 +149,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 8,
       "lastEvent": "2026-09-05T21:42:48.626Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "XRP",
@@ -160,7 +160,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 12,
       "lastEvent": "2026-09-05T21:42:48.485Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "DOGE",
@@ -171,7 +171,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 22,
       "lastEvent": "2026-09-05T21:49:09.093Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "BNB",
@@ -182,7 +182,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 3,
       "lastEvent": "2026-09-05T21:31:01.000Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     },
     {
       "symbol": "HYPE",
@@ -193,7 +193,7 @@
       "imbalanceUsd": 0,
       "totalLiquidations": 9,
       "lastEvent": "2026-09-05T21:51:27.415Z",
-      "period": "2026-09-05T21:55:00.000Z"
+      "period": "2026-09-05T22:00:00.000Z"
     }
   ],
   "liquidationRunning": [
