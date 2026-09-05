@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:26:00.140Z",
+  "updatedAt": "2026-09-05T21:26:09.704Z",
   "period": "2026-09-05T21:25:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -191,6 +191,85 @@
       "totalLiquidations": 0,
       "lastEvent": null,
       "period": "2026-09-05T21:25:00.000Z"
+    }
+  ],
+  "liquidationRunning": [
+    {
+      "symbol": "BTC",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "ETH",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "SOL",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "XRP",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "DOGE",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "BNB",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
+    },
+    {
+      "symbol": "HYPE",
+      "imbalance": 0,
+      "longStrength": 0,
+      "shortStrength": 0,
+      "longEvents": 0,
+      "shortEvents": 0,
+      "events": 0,
+      "lastTs": null,
+      "previousSign": 0
     }
   ]
 }
