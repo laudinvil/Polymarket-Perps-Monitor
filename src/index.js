@@ -4,7 +4,7 @@ const { findNextMarket } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const POLL_MS = 10000;
+const POLL_MS = 30000;
 const MIN_FLIP_IMBALANCE = 3;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
