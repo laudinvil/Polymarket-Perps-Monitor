@@ -93,7 +93,9 @@ async function checkPeriod(boundary, windowMs, timeframe) {
 
   const candidates = [];
   for (const [symbol, row] of rows) {
-    const side = row.long >= row.short ? 'long' : 'short';
+    // Do not generate an alert when Long and Short are equal.
+    if (row.long === row.short) continue;
+    const side = row.long > row.short ? 'long' : 'short';
     const leader = side === 'long' ? row.long : row.short;
     const opposite = side === 'long' ? row.short : row.long;
     const ratio = leader / Math.max(opposite, 1);
@@ -135,7 +137,7 @@ async function checkPeriod(boundary, windowMs, timeframe) {
 
 async function main() {
   await loadState();
-  console.log(`LONG/SHORT monitor started; symbols=${SYMBOLS.join(',')}; no minimum leader count or dominance ratio; exact 5m/15m boundaries`);
+  console.log(`LONG/SHORT monitor started; symbols=${SYMBOLS.join(',')}; no minimum leader count or dominance ratio; ties are ignored; exact 5m/15m boundaries`);
   while (true) {
     const now = Date.now();
     const next5 = getBoundary(now, WINDOW_5M) + WINDOW_5M;
