@@ -10,12 +10,17 @@
   ],
   "previousPrices": {
     "BTC": 79637.7,
-    "ETH": 2454.05,
-    "SOL": 102.28,
-    "XRP": 1.403,
-    "DOGE": 0.08598,
-    "BNB": 751.7,
-    "HYPE": 84.82
+    "ETH": 2454.04,
+    "SOL": 102.29,
+    "XRP": 1.4029,
+    "DOGE": 0.086,
+    "BNB": 751.6,
+    "HYPE": 84.81
   },
+  "armedSymbols": [
+    "BTC",
+    "HYPE"
+  ],
+  "rearmConditions": {},
   "lastAlertAt": 1788606649808
 }
