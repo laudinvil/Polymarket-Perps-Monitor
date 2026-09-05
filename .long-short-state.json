@@ -1,22 +1,13 @@
 {
-  "alerts": [
-    "processed:5m:1788596400000",
-    "alert:5m:1788596400000",
-    "processed:5m:1788596700000",
-    "processed:15m:1788596100000",
-    "alert:15m:1788596100000",
-    "processed:5m:1788597000000",
-    "processed:5m:1788597300000",
-    "alert:5m:1788597300000",
-    "processed:5m:1788597600000",
-    "processed:15m:1788597000000",
-    "processed:5m:1788597900000",
-    "alert:5m:1788597900000",
-    "processed:5m:1788598200000",
-    "alert:5m:1788598200000",
-    "processed:5m:1788598500000",
-    "alert:5m:1788598500000",
-    "processed:15m:1788597900000",
-    "alert:15m:1788597900000"
-  ]
+  "sentClusters": [],
+  "previousPrices": {
+    "BTC": 79657.3,
+    "ETH": 2460.06,
+    "SOL": 102.57,
+    "XRP": 1.4059,
+    "DOGE": 0.08597,
+    "BNB": 747.3,
+    "HYPE": 84.79
+  },
+  "lastAlertAt": 0
 }
