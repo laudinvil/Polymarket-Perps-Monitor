@@ -89,6 +89,7 @@ async function saveState() {
 
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function formatUsd(value) { return `${value < 0 ? '-' : '+'}$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function formatAbsoluteUsd(value) { return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function eventSideSign(event) {
@@ -194,9 +195,9 @@ async function checkOnce(activeBucket) {
       `${crossing.symbol} · 5M · ${formatUtcPlus3(crossing.ts)} UTC+3`, '',
       `Previous imbalance: ${formatUsd(crossing.before)}`,
       `New imbalance: ${formatUsd(crossing.after)}`,
-      `Update: +$${crossing.updateLongUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LONG · +$${crossing.updateShortUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SHORT`,
-      `Long total: $${crossing.longUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `Short total: $${crossing.shortUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `Update: +${formatAbsoluteUsd(crossing.updateLongUsd)} LONG · -${formatAbsoluteUsd(crossing.updateShortUsd)} SHORT`,
+      `Long total: ${formatAbsoluteUsd(crossing.longUsd)}`,
+      `Short total: ${formatAbsoluteUsd(crossing.shortUsd)}`,
       `Cumulative LONG events: ${crossing.longEvents}`,
       `Cumulative SHORT events: ${crossing.shortEvents}`,
       '', '➡️ NEXT Polymarket 5M', nextMarket?.url || 'Market not found yet',
