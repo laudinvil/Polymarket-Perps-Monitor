@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T21:22:10.363Z",
+  "updatedAt": "2026-09-05T21:22:21.593Z",
   "period": "2026-09-05T21:20:00.000Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
@@ -162,12 +162,12 @@
     {
       "symbol": "DOGE",
       "longLiquidations": 0,
-      "shortLiquidations": 0,
+      "shortLiquidations": 1,
       "cumulativeLongEvents": 0,
-      "cumulativeShortEvents": 0,
-      "imbalance": 0,
-      "totalLiquidations": 0,
-      "lastEvent": null,
+      "cumulativeShortEvents": 1,
+      "imbalance": -1,
+      "totalLiquidations": 1,
+      "lastEvent": "2026-09-05T21:22:07.000Z",
       "period": "2026-09-05T21:20:00.000Z"
     },
     {
