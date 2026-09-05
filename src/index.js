@@ -1,13 +1,13 @@
 const https = require('https');
-const { fetchSymbolFeed, normalizeTs, normalizeSymbol, eventKey } = require('./liquidation-monitor');
-const { TIMEFRAMES, findNextMarket, findMarketByEpoch } = require('./polymarket');
+const { fetchSymbolFeed, normalizeTs, normalizeSymbol } = require('./liquidation-monitor');
+const { TIMEFRAMES, findMarketByEpoch } = require('./polymarket');
 const { sendTelegramMessage } = require('./telegram');
 
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const POLL_MS = 30000;
+const FRAMEWORKS = ['5m', '15m', '1h', '4h', '1d'];
+const BOUNDARY_GRACE_MS = 1500;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
-const FRAMEWORKS = ['5m', '15m', '1h', '4h', '1d'];
 const sentAlerts = new Set();
 const timeframeState = new Map();
 let stateSha = null;
@@ -70,11 +70,10 @@ async function loadState() {
         for (const item of items) {
           const symbol = normalizeSymbol(item.symbol);
           if (!map.has(symbol)) continue;
-          const base = emptySymbolState();
           map.set(symbol, {
-            imbalanceUsd: Number.isFinite(Number(item.imbalanceUsd)) ? Number(item.imbalanceUsd) : base.imbalanceUsd,
-            longUsd: Number.isFinite(Number(item.longUsd)) ? Number(item.longUsd) : base.longUsd,
-            shortUsd: Number.isFinite(Number(item.shortUsd)) ? Number(item.shortUsd) : base.shortUsd,
+            imbalanceUsd: Number.isFinite(Number(item.imbalanceUsd)) ? Number(item.imbalanceUsd) : 0,
+            longUsd: Number.isFinite(Number(item.longUsd)) ? Number(item.longUsd) : 0,
+            shortUsd: Number.isFinite(Number(item.shortUsd)) ? Number(item.shortUsd) : 0,
             longEvents: Number(item.longEvents) || 0,
             shortEvents: Number(item.shortEvents) || 0,
             events: Number(item.events) || 0,
@@ -84,7 +83,6 @@ async function loadState() {
         }
       }
     } else {
-      // Migrate the previous 5m USD state into the new 5m bucket state only.
       const old = state.liquidationRunning || [];
       const map = timeframeState.get('5m');
       for (const item of old) {
@@ -158,6 +156,17 @@ function dailyBucketStart(now) {
 
 function bucketStart(now, timeframe) {
   return timeframe === '1d' ? dailyBucketStart(now) : utcBucketStart(now, timeframe);
+}
+
+function nextBoundary(now) {
+  return Math.min(...FRAMEWORKS.map(timeframe => {
+    const current = bucketStart(now, timeframe);
+    return current + TIMEFRAMES[timeframe];
+  }));
+}
+
+function boundaryKey(now) {
+  return FRAMEWORKS.map(timeframe => `${timeframe}:${bucketStart(now, timeframe)}`).join('|');
 }
 
 function formatUtcPlus3(ms) {
@@ -290,39 +299,57 @@ async function fetchAllEvents() {
   return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
 }
 
-async function processBoundaries(eventsBySymbol, now) {
+async function processBoundary(now) {
+  const boundary = boundaryKey(now);
+  console.log(`TIMEFRAME BOUNDARY REACHED; MarginPad fetch once; ${boundary}`);
+  const eventsBySymbol = await fetchAllEvents();
   const allCrossings = [];
+
   for (const timeframe of FRAMEWORKS) {
     const current = bucketStart(now, timeframe);
     const completed = current - TIMEFRAMES[timeframe];
     allCrossings.push(...applyCompletedBucket(timeframe, eventsBySymbol, completed));
   }
+
   for (const crossing of allCrossings.sort((a, b) => a.ts - b.ts)) {
     try { await sendCrossingAlert(crossing); }
     catch (error) { console.warn(`POLYMARKET LINK/TELEGRAM FAILED ${crossing.timeframe} ${crossing.symbol}: ${error.message}`); }
   }
-  if (allCrossings.length) await saveState();
+  await saveState();
+}
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
 }
 
 async function main() {
   await loadState();
   ensureState();
-  console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; boundary-only zero crossing; poll=${POLL_MS}ms`);
-  let lastPollBucket = null;
+  console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; MarginPad queried only at timeframe boundaries; no periodic polling`);
+
+  let lastBoundaryKey = boundaryKey(Date.now());
   while (true) {
     const now = Date.now();
-    try {
-      const eventsBySymbol = await fetchAllEvents();
-      const boundaryKey = FRAMEWORKS.map(tf => `${tf}:${bucketStart(now, tf)}`).join('|');
-      if (boundaryKey !== lastPollBucket) {
-        await processBoundaries(eventsBySymbol, now);
-        lastPollBucket = boundaryKey;
-      }
-      await saveState();
-    } catch (error) {
-      console.error(`MONITOR CYCLE FAILED: ${error.stack || error.message}`);
+    const next = nextBoundary(now);
+    const waitMs = Math.max(0, next - now + BOUNDARY_GRACE_MS);
+    console.log(`Waiting for next timeframe boundary in ${Math.ceil(waitMs / 1000)}s`);
+    await sleep(waitMs);
+
+    const boundaryNow = Date.now();
+    const key = boundaryKey(boundaryNow);
+    if (key === lastBoundaryKey) {
+      await sleep(1000);
+      continue;
     }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS));
+
+    try {
+      await processBoundary(boundaryNow);
+      lastBoundaryKey = key;
+    } catch (error) {
+      console.error(`BOUNDARY PROCESS FAILED: ${error.stack || error.message}`);
+      // Do not advance lastBoundaryKey on failure: retry at the next loop without inventing a successful boundary.
+      await sleep(5000);
+    }
   }
 }
 
