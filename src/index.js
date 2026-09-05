@@ -63,6 +63,24 @@ async function saveState() {
 function formatUtcPlus3(ms) { return new Date(ms + 3 * 60 * 60 * 1000).toISOString().slice(11, 16); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+function summarizeActivePeriod(eventsBySymbol, activeBucket) {
+  return symbols.map(symbol => {
+    const ordered = (eventsBySymbol.get(symbol) || []).slice().sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
+    let long = 0;
+    let short = 0;
+    let lastTs = null;
+    for (const event of ordered) {
+      const ts = normalizeTs(event.ts);
+      if (!ts || bucketStart(ts) !== activeBucket) continue;
+      const side = String(event.side || '').toLowerCase();
+      if (!(side.includes('long') || side.includes('short') || side === 'buy' || side === 'sell')) continue;
+      if (side.includes('long') || side === 'buy') long++; else short++;
+      lastTs = ts;
+    }
+    return { symbol, long, short, difference: long - short, events: long + short, lastEvent: lastTs ? new Date(lastTs).toISOString() : null };
+  });
+}
+
 function findFirstZeroCrossing(eventsBySymbol, activeBucket) {
   let first = null;
   for (const [symbol, events] of eventsBySymbol.entries()) {
@@ -103,6 +121,8 @@ async function checkOnce(activeBucket) {
   }));
 
   const eventsBySymbol = new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), Array.isArray(events) ? events : []]));
+  const diagnostics = summarizeActivePeriod(eventsBySymbol, activeBucket);
+  console.log(JSON.stringify({ type: 'liquidation_5m_diagnostics', period: new Date(activeBucket).toISOString(), coins: diagnostics }));
   const crossing = findFirstZeroCrossing(eventsBySymbol, activeBucket);
 
   console.log(JSON.stringify({
