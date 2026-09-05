@@ -1,13 +1,15 @@
 {
-  "sentClusters": [],
+  "sentClusters": [
+    "ETH:short_liquidated:2460:8160576.540316159"
+  ],
   "previousPrices": {
     "BTC": 79657.3,
     "ETH": 2460.06,
     "SOL": 102.57,
-    "XRP": 1.4059,
-    "DOGE": 0.08597,
-    "BNB": 747.3,
-    "HYPE": 84.79
+    "XRP": 1.4061,
+    "DOGE": 0.08596,
+    "BNB": 747.8,
+    "HYPE": 84.77
   },
-  "lastAlertAt": 0
+  "lastAlertAt": 1788601659022
 }
