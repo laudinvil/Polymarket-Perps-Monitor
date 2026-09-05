@@ -23,7 +23,7 @@
     "BNB": 756.7,
     "HYPE": 84.94
   },
-  "lastAlertAt": 1788611701100,
+  "lastAlertAt": 1788611736996,
   "armedSymbols": [],
   "rearmConditions": {
     "ETH": {
@@ -48,6 +48,7 @@
     }
   },
   "alertedBuckets": {
-    "XRP": 5962039
+    "XRP": 5962039,
+    "BNB": 5962037
   }
 }
