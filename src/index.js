@@ -9,6 +9,7 @@ const BOUNDARY_GRACE_MS = 1500;
 const REQUEST_TIMEOUT_MS = 15000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;
+const HISTORICAL_URL = 'https://marginpad.io/api/v1/liquidations/recent';
 const sentAlerts = new Set();
 const timeframeState = new Map();
 let stateSha = null;
@@ -69,19 +70,9 @@ async function saveState() {
       console.log(`STATE SAVED ${payload.updatedAt}`);
       return;
     } catch (error) {
-      if (error.statusCode !== 409 || attempt === 3) {
-        console.warn(`STATE SAVE FAILED: ${error.message}`);
-        return;
-      }
-      try {
-        const latest = await githubRequest('GET');
-        stateSha = latest?.sha || null;
-        console.warn(`STATE SAVE CONFLICT; refreshed SHA and retrying (${attempt + 1}/3)`);
-        await sleep(500 * attempt);
-      } catch (refreshError) {
-        console.warn(`STATE SHA REFRESH FAILED: ${refreshError.message}`);
-        return;
-      }
+      if (error.statusCode !== 409 || attempt === 3) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; }
+      try { const latest = await githubRequest('GET'); stateSha = latest?.sha || null; console.warn(`STATE SAVE CONFLICT; refreshed SHA and retrying (${attempt + 1}/3)`); await sleep(500 * attempt); }
+      catch (refreshError) { console.warn(`STATE SHA REFRESH FAILED: ${refreshError.message}`); return; }
     }
   }
 }
@@ -104,6 +95,51 @@ function formatUsd(value) { return `${value < 0 ? '-' : '+'}$${Math.abs(value).t
 function formatAbsoluteUsd(value) { return `$${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function eventSideSign(event) { const side = String(event.side || '').toLowerCase(); if (side.includes('long') || side === 'buy') return 1; if (side.includes('short') || side === 'sell') return -1; return 0; }
 function eventNotionalUsd(event) { const direct = Number(event.notional ?? event.notionalUsd ?? event.usd ?? event.volumeUsd ?? event.valueUsd); if (Number.isFinite(direct) && direct > 0) return direct; const price = Number(event.price); const qty = Number(event.qty ?? event.quantity ?? event.amount ?? event.size); return Number.isFinite(price) && Number.isFinite(qty) && price > 0 && qty > 0 ? price * qty : 0; }
+
+function extractHistoricalBuckets(json) {
+  const root = json?.data ?? json;
+  const candidates = [root?.buckets, root?.histogram, root?.rows, root?.series, Array.isArray(root) ? root : null, json?.buckets, json?.histogram];
+  return candidates.find(Array.isArray) || [];
+}
+function bucketValue(row, names) {
+  for (const name of names) {
+    const value = Number(row?.[name]);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+function historicalRowTs(row) {
+  const raw = row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket;
+  return normalizeTs(raw);
+}
+async function fetchHistoricalEvents(symbol, timeframe) {
+  const minutes = timeframe === '15m' ? 15 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : 1440;
+  const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${minutes}`;
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error(`MarginPad historical HTTP ${response.status}`);
+  const json = await response.json();
+  const rows = extractHistoricalBuckets(json);
+  const events = [];
+  for (const row of rows) {
+    const ts = historicalRowTs(row);
+    if (!ts) continue;
+    const longUsd = bucketValue(row, ['longUsd', 'long_usd', 'long', 'longs', 'longLiquidations']);
+    const shortUsd = bucketValue(row, ['shortUsd', 'short_usd', 'short', 'shorts', 'shortLiquidations']);
+    if (longUsd > 0) events.push({ ts, side: 'long_liquidated', notional: longUsd });
+    if (shortUsd > 0) events.push({ ts, side: 'short_liquidated', notional: shortUsd });
+  }
+  console.log(`HISTORICAL ${timeframe} ${symbol}: buckets=${rows.length} events=${events.length}`);
+  return events;
+}
+
+async function fetchEventsForTimeframe(timeframe) {
+  if (timeframe === '5m') return fetchAllEvents();
+  const results = await Promise.all(symbols.map(async symbol => {
+    try { return [symbol, await fetchHistoricalEvents(symbol, timeframe)]; }
+    catch (error) { console.warn(`MarginPad historical ${timeframe} ${symbol}: ${error.message}`); return [symbol, []]; }
+  }));
+  return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
+}
 
 function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
   const map = timeframeState.get(timeframe); const crossings = [];
@@ -147,9 +183,12 @@ async function fetchAllEvents() {
 async function processBoundary(now, previousBoundaryNow) {
   const dueTimeframes = FRAMEWORKS.filter(timeframe => bucketStart(now, timeframe) !== bucketStart(previousBoundaryNow, timeframe));
   if (!dueTimeframes.length) return;
-  console.log(`TIMEFRAME BOUNDARY REACHED; MarginPad fetch once; due=${dueTimeframes.join(',')}`);
-  const eventsBySymbol = await fetchAllEvents(); const allCrossings = [];
-  for (const timeframe of dueTimeframes) allCrossings.push(...applyCompletedBucket(timeframe, eventsBySymbol, bucketStart(now, timeframe) - TIMEFRAMES[timeframe]));
+  console.log(`TIMEFRAME BOUNDARY REACHED; due=${dueTimeframes.join(',')}`);
+  const allCrossings = [];
+  for (const timeframe of dueTimeframes) {
+    const eventsBySymbol = await fetchEventsForTimeframe(timeframe);
+    allCrossings.push(...applyCompletedBucket(timeframe, eventsBySymbol, bucketStart(now, timeframe) - TIMEFRAMES[timeframe]));
+  }
   for (const crossing of allCrossings.sort((a, b) => a.ts - b.ts)) try { await sendCrossingAlert(crossing); } catch (error) { console.warn(`POLYMARKET LINK/TELEGRAM FAILED ${crossing.timeframe} ${crossing.symbol}: ${error.message}`); }
   await saveState();
 }
@@ -157,7 +196,7 @@ async function processBoundary(now, previousBoundaryNow) {
 async function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, ms))); }
 async function main() {
   await loadState(); ensureState();
-  console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; MarginPad queried only at timeframe boundaries; no periodic polling`);
+  console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; historical API for 15m/1h/4h/1d`);
   let lastBoundaryNow = Date.now();
   while (true) {
     const now = Date.now(); const waitMs = Math.max(0, nextBoundary(now) - now + BOUNDARY_GRACE_MS);
