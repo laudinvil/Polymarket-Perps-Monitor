@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 # Every new monitor run gets its own concurrency group so a stale/queued run
-# cannot block the latest monitor. The latest run explicitly cancels older
-# runs at startup before starting the actual monitor process.
+# cannot block the latest monitor. The newest run cancels only older active
+# runs, preventing queue deadlocks and cancellation races between new runs.
 concurrency:
   group: marginpad-auto-monitor-${{ github.run_id }}
   cancel-in-progress: false
@@ -30,20 +30,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_CREATED_AT: ${{ github.run_started_at }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           echo "Current monitor run: $CURRENT_RUN_ID"
+          echo "Current monitor started at: $CURRENT_CREATED_AT"
+
           runs=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$REPOSITORY/actions/runs?workflow_id=349192156&per_page=50")
 
-          echo "$runs" | jq -r --arg current "$CURRENT_RUN_ID" '
+          echo "$runs" | jq -r --arg current "$CURRENT_RUN_ID" --arg started "$CURRENT_CREATED_AT" '
             .workflow_runs[]
             | select((.id|tostring) != $current)
             | select(.status == "queued" or .status == "in_progress" or .status == "pending")
+            | select((.created_at // "") < $started)
             | .id
           ' | while read -r run_id; do
             [ -z "$run_id" ] && continue
