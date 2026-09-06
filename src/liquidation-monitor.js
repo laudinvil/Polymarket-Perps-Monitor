@@ -14,11 +14,35 @@ let liveFeedPromise = null;
 
 function bucketStart(ts) { const ms = Number(ts); return Math.floor(ms / WINDOW_MS) * WINDOW_MS; }
 function normalizeTs(value) {
-  if (value instanceof Date) return value.getTime();
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const ts = value.getTime();
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+  }
+  if (Array.isArray(value)) return normalizeTs(value[0]);
+  if (typeof value === 'object') {
+    for (const key of ['$date', 'date', 'timestamp', 'ts', 'time', 'value', 'start', 'startTime', 'epoch']) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const ts = normalizeTs(value[key]);
+        if (ts) return ts;
+      }
+    }
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) return normalizeTs(numeric);
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
   const n = Number(value);
-  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
-  if (typeof value === 'string') { const parsed = Date.parse(value); if (Number.isFinite(parsed)) return parsed; }
-  return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1e11) return n * 1000;
+  if (n < 1e14) return n;
+  if (n < 1e17) return n / 1000;
+  return n / 1000000;
 }
 function normalizeSymbol(symbol) { return String(symbol || '').toUpperCase().replace(/USDT$|USD$/i, ''); }
 function eventKey(event) { return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|'); }
