@@ -172,12 +172,24 @@ async function saveState() {
 
 function extractHistoricalBuckets(json) {
   const roots = [json?.data, json];
-  const candidates = ['buckets', 'histogram', 'rows', 'series', 'bars', 'points', 'items'];
-  for (const root of roots) {
-    if (!root) continue;
-    if (Array.isArray(root)) return root;
-    for (const key of candidates) if (Array.isArray(root?.[key])) return root[key];
-    if (Array.isArray(root?.data)) return root.data;
+  const candidates = ['buckets', 'histogram', 'rows', 'series', 'bars', 'points', 'items', 'data'];
+  const seen = new Set();
+  const queue = roots.map(root => ({ value: root, depth: 0 }));
+
+  while (queue.length) {
+    const { value, depth } = queue.shift();
+    if (!value || depth > 3 || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      if (value.some(row => row && typeof row === 'object' && !Array.isArray(row))) return value;
+      continue;
+    }
+    for (const key of candidates) {
+      if (Array.isArray(value[key]) && value[key].length) return value[key];
+    }
+    for (const child of Object.values(value)) {
+      if (child && typeof child === 'object') queue.push({ value: child, depth: depth + 1 });
+    }
   }
   return [];
 }
@@ -186,7 +198,7 @@ function numericValue(value) {
   if (value === null || value === undefined || value === '') return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'object') {
-    for (const key of ['usd', 'value', 'notional', 'amount', 'total', 'volume']) {
+    for (const key of ['usd', 'value', 'notional', 'amount', 'total', 'volume', 'vol']) {
       const n = numericValue(value[key]);
       if (n) return n;
     }
@@ -197,24 +209,48 @@ function numericValue(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function bucketValue(row, names) {
+function bucketValue(row, names, direction) {
   for (const name of names) {
     const value = numericValue(row?.[name]);
     if (value !== 0) return Math.abs(value);
+  }
+
+  if (row && typeof row === 'object') {
+    for (const [key, raw] of Object.entries(row)) {
+      const lower = key.toLowerCase();
+      if (!lower.includes(direction)) continue;
+      if (!/(usd|notional|volume|value|amount|liquid)/i.test(lower) && lower !== direction) continue;
+      const value = numericValue(raw);
+      if (value !== 0) return Math.abs(value);
+    }
   }
   return 0;
 }
 
 function historicalRowTs(row) {
-  const raw = row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket ?? row?.start ?? row?.startTime;
-  return normalizeTs(raw);
+  const aliases = ['ts', 'timestamp', 'time', 't', 'bucket', 'start', 'startTime', 'start_ts', 'startTimeMs', 'bucketStart', 'bucket_start', 'epoch', 'date'];
+  for (const key of aliases) {
+    const raw = row?.[key];
+    const ts = normalizeTs(raw);
+    if (ts) return ts;
+  }
+  if (row && typeof row === 'object') {
+    for (const [key, raw] of Object.entries(row)) {
+      if (!/(time|timestamp|bucket|start|epoch|date|^ts$)/i.test(key)) continue;
+      const ts = normalizeTs(raw);
+      if (ts) return ts;
+    }
+  }
+  return null;
 }
 
 async function fetchHistoricalEvents(symbol, timeframe) {
   const minutes = ({ '15m': 15, '1h': 60, '4h': 240, '1d': 1440 })[timeframe];
   if (!minutes) return { events: [], buckets: new Set() };
 
-  const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${minutes * 2}`;
+  // Request enough history to cover at least two complete target buckets.
+  // The endpoint itself returns its native histogram buckets; we aggregate those into our timeframe below.
+  const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${Math.max(minutes * 2, 60)}`;
   try {
     const json = await new Promise((resolve, reject) => {
       const parsed = new URL(url);
@@ -235,17 +271,26 @@ async function fetchHistoricalEvents(symbol, timeframe) {
     const rows = extractHistoricalBuckets(json);
     const events = [];
     const buckets = new Set();
+    let timestampedRows = 0;
+    let valuedRows = 0;
     for (const row of rows) {
       const ts = historicalRowTs(row);
       if (!ts) continue;
+      timestampedRows++;
       const period = bucketStart(ts, timeframe);
       buckets.add(period);
-      const longUsd = bucketValue(row, ['long_liquidations', 'longLiquidations', 'long_usd', 'longUsd', 'long', 'buy', 'longNotional']);
-      const shortUsd = bucketValue(row, ['short_liquidations', 'shortLiquidations', 'short_usd', 'shortUsd', 'short', 'sell', 'shortNotional']);
-      if (longUsd > 0) events.push({ ts, side: 'long_liquidated', notional: longUsd });
-      if (shortUsd > 0) events.push({ ts, side: 'short_liquidated', notional: shortUsd });
+      const longUsd = bucketValue(row, ['long_liquidations', 'longLiquidations', 'long_usd', 'longUsd', 'long_volume', 'longVolume', 'longNotional', 'long_notional', 'long', 'buy'], 'long');
+      const shortUsd = bucketValue(row, ['short_liquidations', 'shortLiquidations', 'short_usd', 'shortUsd', 'short_volume', 'shortVolume', 'shortNotional', 'short_notional', 'short', 'sell'], 'short');
+      if (longUsd > 0) {
+        events.push({ ts, side: 'long_liquidated', notional: longUsd });
+        valuedRows++;
+      }
+      if (shortUsd > 0) {
+        events.push({ ts, side: 'short_liquidated', notional: shortUsd });
+        valuedRows++;
+      }
     }
-    console.log(`HISTORICAL ${timeframe} ${symbol}: buckets=${buckets.size} events=${events.length}`);
+    console.log(`HISTORICAL ${timeframe} ${symbol}: rows=${rows.length} timestamped=${timestampedRows} buckets=${buckets.size} valued=${valuedRows} events=${events.length}`);
     return { events, buckets };
   } catch (error) {
     console.warn(`HISTORICAL ${timeframe} ${symbol} FAILED: ${error.message}`);
@@ -384,16 +429,14 @@ async function backfillMissingLongerTimeframes(now) {
     if (!symbols.some(symbol => map.get(symbol)?.events === 0)) continue;
     const eventsBySymbol = await fetchEventsForTimeframe(timeframe);
     const currentBucket = bucketStart(now, timeframe);
-    const periodsBySymbol = new Map();
     for (const symbol of symbols) {
       const source = eventsBySymbol.get(symbol) || { events: [], buckets: new Set() };
       const state = map.get(symbol) || emptySymbolState();
       const periods = [...(source.buckets || new Set())].filter(bucket => bucket < currentBucket).sort((a, b) => a - b);
-      periodsBySymbol.set(symbol, periods);
       if (periods.length) {
         for (const period of periods) applyCompletedBucket(timeframe, new Map([[symbol, source]]), period);
       }
-      if (!state.lastBucket && periods.length) console.log(`BACKFILL ${timeframe} ${symbol}: ${periods.length} buckets`);
+      if (state.lastBucket !== null && periods.length) console.log(`BACKFILL ${timeframe} ${symbol}: ${periods.length} buckets`);
     }
   }
 }
