@@ -189,7 +189,7 @@ async function sendCrossingAlert(crossing) {
   if (!(await reserveAlertKey(alertKey))) return;
   const nextMarket = await findMarketByEpoch(crossing.symbol, crossing.period + TIMEFRAMES[crossing.timeframe], crossing.timeframe);
   if (!nextMarket) throw new Error(`No next ${crossing.timeframe} Polymarket market for ${crossing.symbol}`);
-  const isUp = crossing.after > 0;
+  const isUp = crossing.after < 0;
   const message = [`${isUp ? '🟢' : '🔴'} ${crossing.symbol} · ${crossing.timeframe.toUpperCase()} · ${isUp ? 'BUY UP' : 'BUY DOWN'}`, '', `Previous imbalance: ${formatUsd(crossing.before)}`, `New imbalance: ${formatUsd(crossing.after)}`, `+${formatAbsoluteUsd(crossing.updateLongUsd)} LONG · -${formatAbsoluteUsd(crossing.updateShortUsd)} SHORT`, `Long total: ${formatAbsoluteUsd(crossing.longUsd)}`, `Short total: ${formatAbsoluteUsd(crossing.shortUsd)}`, `${crossing.longEvents} LONG events`, `${crossing.shortEvents} SHORT events`, '', `➡️ NEXT Polymarket ${crossing.timeframe.toUpperCase()}`, nextMarket.url].join('\n');
   await sendTelegramMessage(message); console.log(`ALERT SENT ${crossing.timeframe} ${crossing.symbol} ${isUp ? 'BUY UP' : 'BUY DOWN'}`);
 }
