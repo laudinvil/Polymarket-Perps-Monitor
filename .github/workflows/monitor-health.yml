@@ -11,9 +11,11 @@ on:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
+# Never kill a healthy monitor because another main-branch change occurred.
+# New runs wait until the current monitor finishes (normally at the 355-minute timeout).
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
