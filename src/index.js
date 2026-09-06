@@ -118,6 +118,23 @@ function buildStatePayload() {
   };
 }
 
+function migrateAlertKey(key) {
+  if (typeof key !== 'string') return null;
+  if (sentAlerts.has(key)) return key;
+
+  // Current format: timeframe:symbol:period:sign
+  const current = key.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+):(-?1)$/);
+  if (current) return key;
+
+  // Previous liquidation monitor format stored the resulting imbalance instead of its sign.
+  // Example: 5m:ETH:1788700800000:5759.997... -> 5m:ETH:1788700800000:1
+  const legacy = key.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+):(-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)$/i);
+  if (!legacy) return null;
+  const value = Number(legacy[4]);
+  if (!Number.isFinite(value) || value === 0) return null;
+  return `${legacy[1]}:${legacy[2]}:${legacy[3]}:${value > 0 ? 1 : -1}`;
+}
+
 async function loadState() {
   if (!process.env.GITHUB_TOKEN) return;
   try {
@@ -126,7 +143,15 @@ async function loadState() {
     if (!result?.content) return;
     const decoded = Buffer.from(result.content.replace(/\s/g, ''), 'base64').toString('utf8');
     const state = JSON.parse(decoded);
-    for (const key of state.sentAlerts || []) sentAlerts.add(key);
+
+    // Accept both the current sentAlerts field and the older alerts field.
+    // Migrate legacy keys to the stable timeframe:symbol:period:sign format so a
+    // restart or workflow replacement cannot resend an already delivered crossing.
+    for (const key of [...(state.sentAlerts || []), ...(state.alerts || [])]) {
+      const migrated = migrateAlertKey(key);
+      if (migrated) sentAlerts.add(migrated);
+    }
+
     for (const timeframe of FRAMEWORKS) {
       const map = timeframeState.get(timeframe);
       for (const symbol of symbols) {
@@ -134,7 +159,7 @@ async function loadState() {
         if (saved) map.set(symbol, { ...emptySymbolState(), ...saved });
       }
     }
-    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}`);
+    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; dedup keys=${sentAlerts.size}`);
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -248,8 +273,6 @@ async function fetchHistoricalEvents(symbol, timeframe) {
   const minutes = ({ '15m': 15, '1h': 60, '4h': 240, '1d': 1440 })[timeframe];
   if (!minutes) return { events: [], buckets: new Set() };
 
-  // Request enough history to cover at least two complete target buckets.
-  // The endpoint itself returns its native histogram buckets; we aggregate those into our timeframe below.
   const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${Math.max(minutes * 2, 60)}`;
   try {
     const json = await new Promise((resolve, reject) => {
@@ -336,8 +359,6 @@ function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
     const state = map.get(symbol) || emptySymbolState();
     if (state.lastBucket !== null && completedBucket <= state.lastBucket) continue;
 
-    // Never mark a bucket processed when MarginPad did not return that bucket.
-    // This prevents a transient API miss at the boundary from permanently losing the period.
     if (!bucketIsAvailable(source, timeframe, completedBucket)) {
       console.log(`BUCKET NOT AVAILABLE ${timeframe} ${symbol} ${new Date(completedBucket).toISOString()}; keeping lastBucket=${state.lastBucket}`);
       continue;
@@ -376,8 +397,11 @@ function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
 }
 
 async function sendCrossingAlert(crossing) {
-  const alertKey = `${crossing.timeframe}:${crossing.symbol}:${crossing.period}:${crossing.after}`;
-  if (sentAlerts.has(alertKey)) return;
+  const alertKey = `${crossing.timeframe}:${crossing.symbol}:${crossing.period}:${crossing.after > 0 ? 1 : -1}`;
+  if (sentAlerts.has(alertKey)) {
+    console.log(`ALERT DUPLICATE SUPPRESSED ${alertKey}`);
+    return;
+  }
   const nextMarket = await findMarketByEpoch(crossing.symbol, crossing.period + TIMEFRAMES[crossing.timeframe], crossing.timeframe);
   if (!nextMarket) throw new Error(`No next ${crossing.timeframe} Polymarket market for ${crossing.symbol}`);
   const isUp = crossing.after > 0;
