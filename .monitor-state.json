@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-06T09:40:01.998Z",
+  "updatedAt": "2026-09-06T09:45:02.090Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -130,14 +130,14 @@
     "5m": [
       {
         "symbol": "BTC",
-        "imbalanceUsd": -24887.19528,
+        "imbalanceUsd": -25287.66978,
         "longUsd": 956.0541000000001,
-        "shortUsd": 25843.249379999997,
+        "shortUsd": 26243.723879999998,
         "longEvents": 5,
-        "shortEvents": 23,
-        "events": 28,
+        "shortEvents": 24,
+        "events": 29,
         "establishedSign": -1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "ETH",
@@ -148,7 +148,7 @@
         "shortEvents": 83,
         "events": 92,
         "establishedSign": -1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "SOL",
@@ -159,7 +159,7 @@
         "shortEvents": 38,
         "events": 42,
         "establishedSign": -1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "XRP",
@@ -170,7 +170,7 @@
         "shortEvents": 18,
         "events": 27,
         "establishedSign": 1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "DOGE",
@@ -181,7 +181,7 @@
         "shortEvents": 2,
         "events": 39,
         "establishedSign": 1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "BNB",
@@ -192,7 +192,7 @@
         "shortEvents": 5,
         "events": 29,
         "establishedSign": 1,
-        "lastBucket": 1788687300000
+        "lastBucket": 1788687600000
       },
       {
         "symbol": "HYPE",
@@ -209,14 +209,14 @@
     "15m": [
       {
         "symbol": "BTC",
-        "imbalanceUsd": -4573.531599999999,
+        "imbalanceUsd": -9131.7545,
         "longUsd": 876.447,
-        "shortUsd": 5449.9785999999995,
+        "shortUsd": 10008.2015,
         "longEvents": 2,
-        "shortEvents": 3,
-        "events": 5,
+        "shortEvents": 5,
+        "events": 7,
         "establishedSign": -1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "ETH",
@@ -227,7 +227,7 @@
         "shortEvents": 12,
         "events": 17,
         "establishedSign": -1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "SOL",
@@ -238,7 +238,7 @@
         "shortEvents": 26,
         "events": 30,
         "establishedSign": -1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "XRP",
@@ -249,7 +249,7 @@
         "shortEvents": 2,
         "events": 10,
         "establishedSign": 1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "DOGE",
@@ -260,7 +260,7 @@
         "shortEvents": 0,
         "events": 13,
         "establishedSign": 1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "BNB",
@@ -271,7 +271,7 @@
         "shortEvents": 1,
         "events": 19,
         "establishedSign": 1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       },
       {
         "symbol": "HYPE",
@@ -282,7 +282,7 @@
         "shortEvents": 4,
         "events": 6,
         "establishedSign": -1,
-        "lastBucket": 1788686100000
+        "lastBucket": 1788687000000
       }
     ],
     "1h": [
