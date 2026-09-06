@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-06T15:35:02.078Z",
+  "updatedAt": "2026-09-06T15:40:02.188Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -132,14 +132,14 @@
     "5m": [
       {
         "symbol": "BTC",
-        "imbalanceUsd": 226880.98395999998,
-        "longUsd": 273378.89864,
-        "shortUsd": 46497.91468,
-        "longEvents": 17,
-        "shortEvents": 28,
-        "events": 45,
+        "imbalanceUsd": 224172.01195999997,
+        "longUsd": 273458.55164,
+        "shortUsd": 49286.53968,
+        "longEvents": 18,
+        "shortEvents": 30,
+        "events": 48,
         "establishedSign": 1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       },
       {
         "symbol": "ETH",
@@ -150,18 +150,18 @@
         "shortEvents": 89,
         "events": 112,
         "establishedSign": 1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       },
       {
         "symbol": "SOL",
-        "imbalanceUsd": -467497.4898649999,
+        "imbalanceUsd": -469255.9278649999,
         "longUsd": 55711.8341,
-        "shortUsd": 523209.323965,
+        "shortUsd": 524967.761965,
         "longEvents": 11,
-        "shortEvents": 55,
-        "events": 66,
+        "shortEvents": 56,
+        "events": 67,
         "establishedSign": -1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       },
       {
         "symbol": "XRP",
@@ -172,7 +172,7 @@
         "shortEvents": 19,
         "events": 35,
         "establishedSign": 1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       },
       {
         "symbol": "DOGE",
@@ -183,7 +183,7 @@
         "shortEvents": 2,
         "events": 51,
         "establishedSign": 1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       },
       {
         "symbol": "BNB",
@@ -194,7 +194,7 @@
         "shortEvents": 6,
         "events": 45,
         "establishedSign": 1,
-        "lastBucket": 1788708600000
+        "lastBucket": 1788708900000
       }
     ],
     "15m": [
