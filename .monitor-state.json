@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updatedAt": "2026-09-06T13:36:04.396Z",
+  "updatedAt": "2026-09-06T13:40:02.088Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -21,14 +21,14 @@
   "liquidationTimeframes": {
     "5m": {
       "BTC": {
-        "imbalanceUsd": 0,
+        "imbalanceUsd": -159.6476,
         "longUsd": 0,
-        "shortUsd": 0,
+        "shortUsd": 159.6476,
         "longEvents": 0,
-        "shortEvents": 0,
-        "events": 0,
-        "establishedSign": 0,
-        "lastBucket": null
+        "shortEvents": 1,
+        "events": 1,
+        "establishedSign": -1,
+        "lastBucket": 1788701700000
       },
       "ETH": {
         "imbalanceUsd": 0,
