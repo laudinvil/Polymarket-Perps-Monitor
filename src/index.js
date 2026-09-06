@@ -24,7 +24,7 @@ function githubRequest(method, body = null) {
     const request = https.request(STATE_API_URL, { method, timeout: REQUEST_TIMEOUT_MS, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'marginpad-multi-timeframe-monitor', ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) } }, response => {
       let text = '';
       response.on('data', chunk => { text += chunk; });
-      response.on('end', () => { let json = null; try { json = text ? JSON.parse(text) : null; } catch {} if (response.statusCode >= 200 && response.statusCode < 300) return resolve(json); reject(new Error(`GitHub state request failed: ${response.statusCode} ${text}`)); });
+      response.on('end', () => { let json = null; try { json = text ? JSON.parse(text) : null; } catch {} if (response.statusCode >= 200 && response.statusCode < 300) return resolve(json); const error = new Error(`GitHub state request failed: ${response.statusCode} ${text}`); error.statusCode = response.statusCode; error.response = json; reject(error); });
     });
     request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error(`GitHub state request timeout after ${REQUEST_TIMEOUT_MS}ms`)));
     request.on('error', reject);
@@ -47,18 +47,40 @@ async function loadState() {
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 
-async function saveState() {
-  if (!process.env.GITHUB_TOKEN) return;
+function buildStatePayload() {
   const liquidationTimeframes = {};
   for (const timeframe of FRAMEWORKS) liquidationTimeframes[timeframe] = symbols.map(symbol => ({ symbol, ...(timeframeState.get(timeframe).get(symbol) || emptySymbolState()) }));
-  const payload = { updatedAt: new Date().toISOString(), alerts: [...sentAlerts].slice(-1000), liquidationTimeframes };
-  const body = { message: 'Persist multi-timeframe liquidation state', content: Buffer.from(JSON.stringify(payload, null, 2)).toString('base64'), branch: process.env.GITHUB_REF_NAME || 'main' };
-  if (stateSha) body.sha = stateSha;
-  try {
-    const result = await githubRequest('PUT', body);
-    stateSha = result?.content?.sha || stateSha;
-    console.log(`STATE SAVED ${payload.updatedAt}`);
-  } catch (error) { console.warn(`STATE SAVE FAILED: ${error.message}`); }
+  return { updatedAt: new Date().toISOString(), alerts: [...sentAlerts].slice(-1000), liquidationTimeframes };
+}
+
+async function saveState() {
+  if (!process.env.GITHUB_TOKEN) return;
+  const payload = buildStatePayload();
+  const baseBody = { message: 'Persist multi-timeframe liquidation state', content: Buffer.from(JSON.stringify(payload, null, 2)).toString('base64'), branch: process.env.GITHUB_REF_NAME || 'main' };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const body = { ...baseBody };
+    if (stateSha) body.sha = stateSha;
+    try {
+      const result = await githubRequest('PUT', body);
+      stateSha = result?.content?.sha || stateSha;
+      console.log(`STATE SAVED ${payload.updatedAt}`);
+      return;
+    } catch (error) {
+      if (error.statusCode !== 409 || attempt === 3) {
+        console.warn(`STATE SAVE FAILED: ${error.message}`);
+        return;
+      }
+      try {
+        const latest = await githubRequest('GET');
+        stateSha = latest?.sha || null;
+        console.warn(`STATE SAVE CONFLICT; refreshed SHA and retrying (${attempt + 1}/3)`);
+        await sleep(500 * attempt);
+      } catch (refreshError) {
+        console.warn(`STATE SHA REFRESH FAILED: ${refreshError.message}`);
+        return;
+      }
+    }
+  }
 }
 
 function utcBucketStart(now, timeframe) { return Math.floor(now / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe]; }
