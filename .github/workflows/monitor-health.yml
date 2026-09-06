@@ -11,12 +11,11 @@ on:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
-# Every new monitor run gets its own concurrency group so a stale/queued run
-# cannot block the latest monitor. The newest run cancels only older active
-# runs, preventing queue deadlocks and cancellation races between new runs.
+# Keep exactly one monitor run. A newer deployment/run immediately replaces
+# the older one, so a stale in-progress run can never leave the newest run queued.
 concurrency:
-  group: marginpad-auto-monitor-${{ github.run_id }}
-  cancel-in-progress: false
+  group: marginpad-auto-monitor
+  cancel-in-progress: true
 
 jobs:
   monitor:
@@ -26,40 +25,6 @@ jobs:
       contents: write
       actions: write
     steps:
-      - name: Cancel older monitor runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_RUN_ID: ${{ github.run_id }}
-          CURRENT_CREATED_AT: ${{ github.run_started_at }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          echo "Current monitor run: $CURRENT_RUN_ID"
-          echo "Current monitor started at: $CURRENT_CREATED_AT"
-
-          runs=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$REPOSITORY/actions/runs?workflow_id=349192156&per_page=50")
-
-          echo "$runs" | jq -r --arg current "$CURRENT_RUN_ID" --arg started "$CURRENT_CREATED_AT" '
-            .workflow_runs[]
-            | select((.id|tostring) != $current)
-            | select(.status == "queued" or .status == "in_progress" or .status == "pending")
-            | select((.created_at // "") < $started)
-            | .id
-          ' | while read -r run_id; do
-            [ -z "$run_id" ] && continue
-            echo "Cancelling older monitor run $run_id"
-            curl -fsSL -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "X-GitHub-Api-Version: 2026-03-10" \
-              "https://api.github.com/repos/$REPOSITORY/actions/runs/$run_id/cancel" \
-              -o /dev/null
-          done
-
       - name: Checkout
         uses: actions/checkout@v5
 
