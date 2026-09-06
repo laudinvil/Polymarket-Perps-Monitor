@@ -64,12 +64,8 @@ async function saveState() {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const body = { ...baseBody };
     if (stateSha) body.sha = stateSha;
-    try {
-      const result = await githubRequest('PUT', body);
-      stateSha = result?.content?.sha || stateSha;
-      console.log(`STATE SAVED ${payload.updatedAt}`);
-      return;
-    } catch (error) {
+    try { const result = await githubRequest('PUT', body); stateSha = result?.content?.sha || stateSha; console.log(`STATE SAVED ${payload.updatedAt}`); return; }
+    catch (error) {
       if (error.statusCode !== 409 || attempt === 3) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; }
       try { const latest = await githubRequest('GET'); stateSha = latest?.sha || null; console.warn(`STATE SAVE CONFLICT; refreshed SHA and retrying (${attempt + 1}/3)`); await sleep(500 * attempt); }
       catch (refreshError) { console.warn(`STATE SHA REFRESH FAILED: ${refreshError.message}`); return; }
@@ -101,17 +97,8 @@ function extractHistoricalBuckets(json) {
   const candidates = [root?.buckets, root?.histogram, root?.rows, root?.series, Array.isArray(root) ? root : null, json?.buckets, json?.histogram];
   return candidates.find(Array.isArray) || [];
 }
-function bucketValue(row, names) {
-  for (const name of names) {
-    const value = Number(row?.[name]);
-    if (Number.isFinite(value)) return value;
-  }
-  return 0;
-}
-function historicalRowTs(row) {
-  const raw = row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket;
-  return normalizeTs(raw);
-}
+function bucketValue(row, names) { for (const name of names) { const value = Number(row?.[name]); if (Number.isFinite(value)) return value; } return 0; }
+function historicalRowTs(row) { const raw = row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket; return normalizeTs(raw); }
 async function fetchHistoricalEvents(symbol, timeframe) {
   const minutes = timeframe === '15m' ? 15 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : 1440;
   const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${minutes}`;
@@ -121,8 +108,7 @@ async function fetchHistoricalEvents(symbol, timeframe) {
   const rows = extractHistoricalBuckets(json);
   const events = [];
   for (const row of rows) {
-    const ts = historicalRowTs(row);
-    if (!ts) continue;
+    const ts = historicalRowTs(row); if (!ts) continue;
     const longUsd = bucketValue(row, ['longUsd', 'long_usd', 'long', 'longs', 'longLiquidations']);
     const shortUsd = bucketValue(row, ['shortUsd', 'short_usd', 'short', 'shorts', 'shortLiquidations']);
     if (longUsd > 0) events.push({ ts, side: 'long_liquidated', notional: longUsd });
@@ -131,13 +117,9 @@ async function fetchHistoricalEvents(symbol, timeframe) {
   console.log(`HISTORICAL ${timeframe} ${symbol}: buckets=${rows.length} events=${events.length}`);
   return events;
 }
-
 async function fetchEventsForTimeframe(timeframe) {
   if (timeframe === '5m') return fetchAllEvents();
-  const results = await Promise.all(symbols.map(async symbol => {
-    try { return [symbol, await fetchHistoricalEvents(symbol, timeframe)]; }
-    catch (error) { console.warn(`MarginPad historical ${timeframe} ${symbol}: ${error.message}`); return [symbol, []]; }
-  }));
+  const results = await Promise.all(symbols.map(async symbol => { try { return [symbol, await fetchHistoricalEvents(symbol, timeframe)]; } catch (error) { console.warn(`MarginPad historical ${timeframe} ${symbol}: ${error.message}`); return [symbol, []]; } }));
   return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
 }
 
@@ -180,6 +162,25 @@ async function fetchAllEvents() {
   return new Map(results.map(([symbol, events]) => [normalizeSymbol(symbol), events]));
 }
 
+async function backfillMissingLongerTimeframes(now) {
+  for (const timeframe of ['15m', '1h', '4h', '1d']) {
+    const map = timeframeState.get(timeframe);
+    const needsBackfill = symbols.some(symbol => { const s = map.get(symbol); return s && s.events === 0; });
+    if (!needsBackfill) continue;
+    const eventsBySymbol = await fetchEventsForTimeframe(timeframe);
+    const currentBucket = bucketStart(now, timeframe);
+    const completedBucket = currentBucket - TIMEFRAMES[timeframe];
+    for (const symbol of symbols) {
+      const state = map.get(symbol);
+      if (!state || state.events !== 0) continue;
+      const events = eventsBySymbol.get(symbol) || [];
+      const periods = [...new Set(events.map(event => bucketStart(normalizeTs(event.ts), timeframe)).filter(bucket => bucket < currentBucket))].sort((a, b) => a - b);
+      for (const period of periods) applyCompletedBucket(timeframe, eventsBySymbol, period);
+      if (state.lastBucket === null) state.lastBucket = completedBucket;
+    }
+  }
+}
+
 async function processBoundary(now, previousBoundaryNow) {
   const dueTimeframes = FRAMEWORKS.filter(timeframe => bucketStart(now, timeframe) !== bucketStart(previousBoundaryNow, timeframe));
   if (!dueTimeframes.length) return;
@@ -196,6 +197,8 @@ async function processBoundary(now, previousBoundaryNow) {
 async function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, ms))); }
 async function main() {
   await loadState(); ensureState();
+  await backfillMissingLongerTimeframes(Date.now());
+  await saveState();
   console.log(`Multi-timeframe liquidation monitor started; symbols=${symbols.join(',')}; timeframes=${FRAMEWORKS.join(',')}; historical API for 15m/1h/4h/1d`);
   let lastBoundaryNow = Date.now();
   while (true) {
