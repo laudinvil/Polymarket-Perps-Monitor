@@ -7,12 +7,12 @@ on:
       - '.monitor-state.json'
       - 'monitor-status.md'
       - 'monitor-live.log'
+      - 'monitor-history.log'
+      - 'monitor-stats.md'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
-# Keep exactly one monitor run. A newer deployment/run immediately replaces
-# the older one, so a stale in-progress run can never leave the newest run queued.
 concurrency:
   group: marginpad-auto-monitor
   cancel-in-progress: true
@@ -34,6 +34,12 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
+      - name: Restore monitor history
+        run: |
+          git fetch origin monitor-status --depth=1 || true
+          git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
+          touch monitor-history.log
+
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -43,12 +49,58 @@ jobs:
           set -o pipefail
           node src/index.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
+          HISTORY_LINES=0
 
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 300
             if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
               break
             fi
+
+            NEW_LINES=$(wc -l < monitor.log)
+            if [ "$NEW_LINES" -gt "$HISTORY_LINES" ]; then
+              tail -n +$((HISTORY_LINES + 1)) monitor.log >> monitor-history.log
+              HISTORY_LINES=$NEW_LINES
+            fi
+            tail -n 50000 monitor-history.log > monitor-history.tmp
+            mv monitor-history.tmp monitor-history.log
+            tail -n 5000 monitor.log > monitor-live.log
+
+            node - <<'NODE'
+const fs = require('fs');
+const text = fs.existsSync('monitor-history.log') ? fs.readFileSync('monitor-history.log', 'utf8') : '';
+const lines = text.split(/\r?\n/).filter(Boolean);
+const latest = new Map();
+const alerts = [];
+for (const line of lines) {
+  try {
+    const x = JSON.parse(line);
+    if (x.timeframe && x.symbol) latest.set(`${x.timeframe}:${x.symbol}`, x);
+  } catch {}
+  const m = line.match(/^ALERT SENT (5m|15m|1h|4h|1d) ([A-Z]+) (BUY UP|BUY DOWN)$/);
+  if (m) alerts.push({ timeframe:m[1], symbol:m[2], signal:m[3] });
+}
+const frames = ['5m','15m','1h','4h','1d'];
+const symbols = ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
+let out = '# MarginPad monitor statistics\n\n';
+out += `Updated: ${new Date().toISOString()}\n\n`;
+out += `Historical log lines retained: ${lines.length}\n`;
+out += `Alerts recorded: ${alerts.length}\n\n`;
+for (const tf of frames) {
+  out += `## ${tf}\n\n| Symbol | Imbalance | Long | Short | Long events | Short events | Sign |\n|---|---:|---:|---:|---:|---:|---:|\n`;
+  for (const s of symbols) {
+    const x = latest.get(`${tf}:${s}`);
+    if (!x) { out += `| ${s} | — | — | — | — | — | — |\n`; continue; }
+    const usd = n => Number.isFinite(Number(n)) ? `$${Math.round(Math.abs(Number(n))).toLocaleString('en-US')}` : '—';
+    const signed = n => Number.isFinite(Number(n)) ? `${Number(n) >= 0 ? '+' : '-'}$${Math.round(Math.abs(Number(n))).toLocaleString('en-US')}` : '—';
+    out += `| ${s} | ${signed(x.imbalanceUsd)} | ${usd(x.longUsd)} | ${usd(x.shortUsd)} | ${x.longEvents ?? '—'} | ${x.shortEvents ?? '—'} | ${x.establishedSign ?? '—'} |\n`;
+  }
+  out += '\n';
+}
+out += '## Recent alerts\n\n';
+for (const a of alerts.slice(-100).reverse()) out += `- ${a.timeframe} ${a.symbol} ${a.signal}\n`;
+fs.writeFileSync('monitor-stats.md', out);
+NODE
 
             {
               echo "# MarginPad monitor live status"
@@ -62,15 +114,10 @@ jobs:
               echo '```'
             } > monitor-status.md
 
-            # Keep a substantially larger rolling log so 1h/4h/1d boundaries
-            # cannot disappear merely because 5m/15m produce many lines.
-            tail -n 5000 monitor.log > monitor-live.log
-
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add monitor-status.md
-            git add -f monitor-live.log
-            git diff --cached --quiet || git commit -m 'Increase monitor log retention'
+            git add monitor-status.md monitor-live.log monitor-history.log monitor-stats.md
+            git diff --cached --quiet || git commit -m 'Persist monitor history and statistics'
             timeout 15s git push origin HEAD:monitor-status --force || true
           done
 
@@ -84,5 +131,3 @@ jobs:
           path: monitor.log
           if-no-files-found: ignore
           retention-days: 14
-
-# Restart after state preservation seed
