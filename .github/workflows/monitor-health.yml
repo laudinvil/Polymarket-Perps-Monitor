@@ -58,17 +58,19 @@ jobs:
               echo "Status: RUNNING"
               echo
               echo '```text'
-              tail -n 120 monitor.log
+              tail -n 500 monitor.log
               echo '```'
             } > monitor-status.md
 
-            tail -n 500 monitor.log > monitor-live.log
+            # Keep a substantially larger rolling log so 1h/4h/1d boundaries
+            # cannot disappear merely because 5m/15m produce many lines.
+            tail -n 5000 monitor.log > monitor-live.log
 
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add monitor-status.md
             git add -f monitor-live.log
-            git diff --cached --quiet || git commit -m 'Update live monitor logs'
+            git diff --cached --quiet || git commit -m 'Increase monitor log retention'
             timeout 15s git push origin HEAD:monitor-status --force || true
           done
 
