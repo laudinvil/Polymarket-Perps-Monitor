@@ -165,19 +165,11 @@ async function fetchAllEvents() {
 async function backfillMissingLongerTimeframes(now) {
   for (const timeframe of ['15m', '1h', '4h', '1d']) {
     const map = timeframeState.get(timeframe);
-    const needsBackfill = symbols.some(symbol => { const s = map.get(symbol); return s && s.events === 0; });
-    if (!needsBackfill) continue;
+    if (!symbols.some(symbol => map.get(symbol)?.events === 0)) continue;
     const eventsBySymbol = await fetchEventsForTimeframe(timeframe);
     const currentBucket = bucketStart(now, timeframe);
-    const completedBucket = currentBucket - TIMEFRAMES[timeframe];
-    for (const symbol of symbols) {
-      const state = map.get(symbol);
-      if (!state || state.events !== 0) continue;
-      const events = eventsBySymbol.get(symbol) || [];
-      const periods = [...new Set(events.map(event => bucketStart(normalizeTs(event.ts), timeframe)).filter(bucket => bucket < currentBucket))].sort((a, b) => a - b);
-      for (const period of periods) applyCompletedBucket(timeframe, eventsBySymbol, period);
-      if (state.lastBucket === null) state.lastBucket = completedBucket;
-    }
+    const periods = [...new Set([...eventsBySymbol.values()].flatMap(events => events.map(event => bucketStart(normalizeTs(event.ts), timeframe))).filter(bucket => bucket < currentBucket))].sort((a, b) => a - b);
+    for (const period of periods) applyCompletedBucket(timeframe, eventsBySymbol, period);
   }
 }
 
