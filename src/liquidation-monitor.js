@@ -49,66 +49,46 @@ function eventKey(event) { return [event.ts, event.exchange, event.symbol, event
 function extractEvents(json) { if (json && Array.isArray(json.events)) return json.events; if (json && json.data && Array.isArray(json.data.events)) return json.data.events; if (json && Array.isArray(json.data)) return json.data; return null; }
 async function fetchJson(url, fetchImpl = fetch) { const response = await fetchImpl(url, { headers: { accept: 'application/json' } }); if (!response.ok) throw new Error(`MarginPad feed HTTP ${response.status}`); return response.json(); }
 
-// MarginPad /liquidations/recent is a histogram, not a raw event feed.
-// Prefer the documented bucket containers in a deterministic order; do not
-// choose an unrelated array merely because it happens to be longer.
-function historicalRows(json) {
-  const roots = [json?.data, json];
-  const keys = ['buckets', 'histogram', 'rows', 'series', 'bars', 'points', 'items'];
-  for (const root of roots) {
-    if (!root) continue;
-    if (Array.isArray(root)) return root;
-    for (const key of keys) if (Array.isArray(root?.[key])) return root[key];
-    if (Array.isArray(root?.data)) return root.data;
-  }
-  return [];
-}
-function numericField(row, names) {
-  for (const name of names) {
-    const raw = row?.[name];
-    if (raw === null || raw === undefined || raw === '') continue;
-    if (typeof raw === 'object') {
-      for (const nested of ['usd', 'value', 'notional', 'amount', 'total']) {
-        const value = Number(raw?.[nested]);
-        if (Number.isFinite(value)) return value;
-      }
-      continue;
-    }
-    const value = Number(raw);
-    if (Number.isFinite(value)) return value;
-  }
-  return 0;
-}
-function normalizeHistoricalRow(row) {
-  if (Array.isArray(row)) {
-    return { ts: row[0], longUsd: numericField(row, [1]), shortUsd: numericField(row, [2]), ...row };
-  }
-  return {
-    ...row,
-    ts: row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket ?? row?.start ?? row?.startTime,
-    longUsd: numericField(row, ['longUsd', 'long_usd', 'long_liq_usd', 'longLiqUsd', 'longLiquidationUsd', 'longLiquidations', 'longs', 'long', 'long_liquidations', 'long_liquidated', 'long_liq']),
-    shortUsd: numericField(row, ['shortUsd', 'short_usd', 'short_liq_usd', 'shortLiqUsd', 'shortLiquidationUsd', 'shortLiquidations', 'shorts', 'short', 'short_liquidations', 'short_liquidated', 'short_liq'])
-  };
-}
-function normalizeHistoricalJson(json) {
-  const rows = historicalRows(json);
-  if (!rows.length) return json;
-  const normalized = rows.map(normalizeHistoricalRow);
-  return { ...json, data: { ...(json?.data && !Array.isArray(json.data) ? json.data : {}), buckets: normalized } };
+// /liquidations/recent is a price-level histogram, not a timestamped event feed.
+// The monitor needs timestamped historical events, so the compatibility layer
+// converts the documented /liquidations/live events into bucket-like rows.
+function normalizeHistoricalLiveEvents(json) {
+  const events = extractEvents(json) || [];
+  const buckets = events.map(event => {
+    const ts = normalizeTs(event?.ts);
+    const side = String(event?.side || event?.direction || '').toLowerCase();
+    const notional = Number(event?.notional ?? event?.usd ?? event?.value ?? event?.amount);
+    const value = Number.isFinite(notional) ? Math.abs(notional) : 0;
+    return {
+      ...event,
+      ts,
+      longUsd: side.includes('long') ? value : 0,
+      shortUsd: side.includes('short') ? value : 0
+    };
+  }).filter(row => row.ts && (row.longUsd > 0 || row.shortUsd > 0));
+  return { ok: true, data: { buckets }, ts: Date.now() };
 }
 
 function installHistoricalFetchNormalizer() {
   const originalFetch = globalThis.fetch;
   if (typeof originalFetch !== 'function' || originalFetch.__marginpadHistoricalNormalizer) return;
   const wrappedFetch = async (...args) => {
-    const response = await originalFetch(...args);
     const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-    if (!requestUrl || !requestUrl.includes(HISTORICAL_URL) || !response.ok) return response;
-    try {
-      const json = await response.clone().json();
-      const normalized = normalizeHistoricalJson(json);
-      return new Response(JSON.stringify(normalized), { status: response.status, statusText: response.statusText, headers: { 'content-type': 'application/json' } });
-    } catch { return response; }
+    if (requestUrl && requestUrl.includes(HISTORICAL_URL)) {
+      const parsed = new URL(requestUrl);
+      const symbol = parsed.searchParams.get('symbol');
+      const minutes = parsed.searchParams.get('minutes') || '1440';
+      const liveUrl = `${LIVE_URL}?symbol=${encodeURIComponent(symbol || 'BTC')}&limit=400`;
+      const liveResponse = await originalFetch(liveUrl, { headers: { accept: 'application/json' } });
+      if (!liveResponse.ok) return liveResponse;
+      const liveJson = await liveResponse.json();
+      return new Response(JSON.stringify(normalizeHistoricalLiveEvents(liveJson)), {
+        status: liveResponse.status,
+        statusText: liveResponse.statusText,
+        headers: { 'content-type': 'application/json', 'x-marginpad-source': 'liquidations-live', 'x-marginpad-request-minutes': minutes }
+      });
+    }
+    return originalFetch(...args);
   };
   wrappedFetch.__marginpadHistoricalNormalizer = true;
   globalThis.fetch = wrappedFetch;
@@ -133,22 +113,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
   try { return await liveFeedPromise; } finally { liveFeedPromise = null; }
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) { const normalized = normalizeSymbol(symbol); const events = await fetchLiveFeed(fetchImpl); return events.filter(event => normalizeSymbol(event.symbol) === normalized); }
-async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Date.now()) {
-  const feedEvents = await fetchLiveFeed(fetchImpl);
-  const allowed = new Set(symbols.map(normalizeSymbol));
-  const closedBucket = bucketStart(now) - WINDOW_MS;
-  const covered = new Set(feedEvents.map(e => { const s = normalizeSymbol(e.symbol), t = normalizeTs(e.ts); return t && allowed.has(s) && bucketStart(t) === closedBucket ? s : null; }).filter(Boolean));
-  const missing = symbols.filter(s => !covered.has(normalizeSymbol(s)));
-  if (missing.length) {
-    const fresh = Date.now();
-    if (fresh - fallbackCache.fetchedAt >= FALLBACK_REFRESH_MS) {
-      const results = await Promise.all(missing.map(async s => { try { return [s, await fetchSymbolFeed(s, fetchImpl)]; } catch (error) { console.warn(`MarginPad live fallback ${s}: ${error.message}`); return [s, []]; } }));
-      const map = new Map(fallbackCache.eventsBySymbol); for (const [s, e] of results) map.set(normalizeSymbol(s), e); fallbackCache = { fetchedAt: fresh, eventsBySymbol: map };
-    }
-  }
-  const fallback = missing.flatMap(s => fallbackCache.eventsBySymbol.get(normalizeSymbol(s)) || []);
-  const unique = new Map(); for (const e of [...feedEvents, ...fallback]) unique.set(eventKey(e), e); return [...unique.values()];
-}
+async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Date.now()) { const feedEvents = await fetchLiveFeed(fetchImpl); const allowed = new Set(symbols.map(normalizeSymbol)); const closedBucket = bucketStart(now) - WINDOW_MS; const covered = new Set(feedEvents.map(e => { const s = normalizeSymbol(e.symbol), t = normalizeTs(e.ts); return t && allowed.has(s) && bucketStart(t) === closedBucket ? s : null; }).filter(Boolean)); const missing = symbols.filter(s => !covered.has(normalizeSymbol(s))); if (missing.length) { const fresh = Date.now(); if (fresh - fallbackCache.fetchedAt >= FALLBACK_REFRESH_MS) { const results = await Promise.all(missing.map(async s => { try { return [s, await fetchSymbolFeed(s, fetchImpl)]; } catch (error) { console.warn(`MarginPad live fallback ${s}: ${error.message}`); return [s, []]; } })); const map = new Map(fallbackCache.eventsBySymbol); for (const [s, e] of results) map.set(normalizeSymbol(s), e); fallbackCache = { fetchedAt: fresh, eventsBySymbol: map }; } } const fallback = missing.flatMap(s => fallbackCache.eventsBySymbol.get(normalizeSymbol(s)) || []); const unique = new Map(); for (const e of [...feedEvents, ...fallback]) unique.set(eventKey(e), e); return [...unique.values()]; }
 function aggregateEvents(events, symbols=DEFAULT_SYMBOLS, now=Date.now()) { const allowed=new Set(symbols.map(normalizeSymbol)); const current=bucketStart(now); const rows=new Map(); for(const event of events||[]){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol);if(!ts||!allowed.has(symbol))continue;const bucket=bucketStart(ts);if(bucket>=current)continue;const key=`${bucket}:${symbol}`;if(!rows.has(key))rows.set(key,{bucket,symbol,events:0,longEvents:0,shortEvents:0});const row=rows.get(key);const side=String(event.side||'').toLowerCase();if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}return [...rows.values()].sort((a,b)=>b.events-a.events); }
 function selectWinner(rows,bucket){return rows.filter(row=>row.bucket===bucket).sort((a,b)=>b.events-a.events)[0]||null;}
 module.exports={FEED_URL,LIVE_URL,HISTORICAL_URL,DEFAULT_SYMBOLS,POLL_MS,FALLBACK_REFRESH_MS,WINDOW_MS,FEED_RETENTION_MS,bucketStart,normalizeTs,normalizeSymbol,eventKey,extractEvents,fetchFeed,fetchSymbolFeed,aggregateEvents,selectWinner};
