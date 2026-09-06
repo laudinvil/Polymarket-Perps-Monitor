@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-06T14:35:01.937Z",
+  "updatedAt": "2026-09-06T14:40:01.949Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -132,14 +132,14 @@
     "5m": [
       {
         "symbol": "BTC",
-        "imbalanceUsd": 246816.53396,
+        "imbalanceUsd": 227119.49876,
         "longUsd": 273219.90544,
-        "shortUsd": 26403.371479999998,
+        "shortUsd": 46100.40668,
         "longEvents": 16,
-        "shortEvents": 25,
-        "events": 41,
+        "shortEvents": 27,
+        "events": 43,
         "establishedSign": 1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       },
       {
         "symbol": "ETH",
@@ -150,7 +150,7 @@
         "shortEvents": 85,
         "events": 108,
         "establishedSign": 1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       },
       {
         "symbol": "SOL",
@@ -161,18 +161,18 @@
         "shortEvents": 53,
         "events": 64,
         "establishedSign": -1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       },
       {
         "symbol": "XRP",
-        "imbalanceUsd": 151319.0852,
+        "imbalanceUsd": 151271.47452,
         "longUsd": 163373.06363000002,
-        "shortUsd": 12053.978430000001,
+        "shortUsd": 12101.58911,
         "longEvents": 16,
-        "shortEvents": 18,
-        "events": 34,
+        "shortEvents": 19,
+        "events": 35,
         "establishedSign": 1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       },
       {
         "symbol": "DOGE",
@@ -183,7 +183,7 @@
         "shortEvents": 2,
         "events": 51,
         "establishedSign": 1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       },
       {
         "symbol": "BNB",
@@ -194,7 +194,7 @@
         "shortEvents": 6,
         "events": 45,
         "establishedSign": 1,
-        "lastBucket": 1788705000000
+        "lastBucket": 1788705300000
       }
     ],
     "15m": [
