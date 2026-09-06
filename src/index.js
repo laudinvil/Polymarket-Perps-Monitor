@@ -49,7 +49,10 @@ async function loadState() {
 
 function buildStatePayload() {
   const liquidationTimeframes = {};
-  for (const timeframe of FRAMEWORKS) liquidationTimeframes[timeframe] = symbols.map(symbol => ({ symbol, ...(timeframeState.get(timeframe).get(symbol) || emptySymbolState()) }));
+  for (const timeframe of FRAMEWORKS) {
+    const stateSymbols = timeframe === '5m' ? symbols.filter(symbol => symbol !== 'HYPE') : symbols;
+    liquidationTimeframes[timeframe] = stateSymbols.map(symbol => ({ symbol, ...(timeframeState.get(timeframe).get(symbol) || emptySymbolState()) }));
+  }
   return { updatedAt: new Date().toISOString(), alerts: [...sentAlerts].slice(-1000), liquidationTimeframes };
 }
 
