@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updatedAt": "2026-09-06T13:48:39.838Z",
+  "updatedAt": "2026-09-06T13:50:02.441Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -41,14 +41,14 @@
         "lastBucket": null
       },
       "SOL": {
-        "imbalanceUsd": 0,
+        "imbalanceUsd": -2025.6169,
         "longUsd": 0,
-        "shortUsd": 0,
+        "shortUsd": 2025.6169,
         "longEvents": 0,
-        "shortEvents": 0,
-        "events": 0,
-        "establishedSign": 0,
-        "lastBucket": null
+        "shortEvents": 2,
+        "events": 2,
+        "establishedSign": -1,
+        "lastBucket": 1788702300000
       },
       "XRP": {
         "imbalanceUsd": 0,
