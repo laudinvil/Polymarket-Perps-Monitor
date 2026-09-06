@@ -15,7 +15,7 @@ const timeframeState = new Map();
 let stateSha = null;
 
 function emptySymbolState() {
-  return { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, establishedSign: 0, lastBucket: null };
+  return { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, establishedSign: 0, lastBucket: null, buckets: {} };
 }
 for (const timeframe of FRAMEWORKS) timeframeState.set(timeframe, new Map());
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -43,7 +43,7 @@ function buildStatePayload() {
     liquidationTimeframes[timeframe] = {};
     for (const symbol of symbols) liquidationTimeframes[timeframe][symbol] = timeframeState.get(timeframe).get(symbol) || emptySymbolState();
   }
-  return { version: 2, updatedAt: new Date().toISOString(), sentAlerts: [...sentAlerts], liquidationTimeframes };
+  return { version: 3, updatedAt: new Date().toISOString(), sentAlerts: [...sentAlerts], liquidationTimeframes };
 }
 
 function migrateAlertKey(key) {
@@ -69,7 +69,7 @@ async function loadState() {
   try {
     const result = await githubRequest('GET'); stateSha = result?.sha || null; if (!result?.content) return;
     const decoded = Buffer.from(result.content.replace(/\s/g, ''), 'base64').toString('utf8'); const state = JSON.parse(decoded); mergeStateAlerts(state);
-    for (const timeframe of FRAMEWORKS) { const map = timeframeState.get(timeframe); for (const symbol of symbols) { const saved = state.liquidationTimeframes?.[timeframe]?.[symbol]; if (saved) map.set(symbol, { ...emptySymbolState(), ...saved }); } }
+    for (const timeframe of FRAMEWORKS) { const map = timeframeState.get(timeframe); for (const symbol of symbols) { const saved = state.liquidationTimeframes?.[timeframe]?.[symbol]; if (saved) map.set(symbol, { ...emptySymbolState(), ...saved, buckets: saved.buckets && typeof saved.buckets === 'object' ? saved.buckets : {} }); } }
     console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; dedup keys=${sentAlerts.size}`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
@@ -141,8 +141,8 @@ async function fetchHistoricalEvents(symbol, timeframe) {
     const json = await response.json();
     const rows = extractHistoricalBuckets(json); const events = []; const buckets = new Set(); let timestampedRows = 0; let valuedRows = 0;
     for (const row of rows) { const ts = historicalRowTs(row); if (!ts) continue; timestampedRows++; const period = bucketStart(ts, timeframe); buckets.add(period); const longUsd = bucketValue(row, ['long_liquidations', 'longLiquidations', 'long_usd', 'longUsd', 'long_volume', 'longVolume', 'longNotional', 'long_notional', 'long', 'buy'], 'long'); const shortUsd = bucketValue(row, ['short_liquidations', 'shortLiquidations', 'short_usd', 'shortUsd', 'short_volume', 'shortVolume', 'shortNotional', 'short_notional', 'short', 'sell'], 'short'); if (longUsd > 0) { events.push({ ts, side: 'long_liquidated', notional: longUsd }); valuedRows++; } if (shortUsd > 0) { events.push({ ts, side: 'short_liquidated', notional: shortUsd }); valuedRows++; } }
-    console.log(`HISTORICAL ${timeframe} ${symbol}: rows=${rows.length} timestamped=${timestampedRows} buckets=${buckets.size} valued=${valuedRows} events=${events.length}`); return { events, buckets };
-  } catch (error) { console.warn(`HISTORICAL ${timeframe} ${symbol} FAILED: ${error.message}`); return { events: [], buckets: new Set() }; }
+    console.log(`HISTORICAL ${timeframe} ${symbol}: rows=${rows.length} timestamped=${timestampedRows} buckets=${buckets.size} valued=${valuedRows} events=${events.length}`); return { events, buckets, available: true };
+  } catch (error) { console.warn(`HISTORICAL ${timeframe} ${symbol} FAILED: ${error.message}`); return { events: [], buckets: new Set(), available: false }; }
 }
 
 async function fetchEventsForTimeframe(timeframe) {
@@ -152,17 +152,17 @@ async function fetchEventsForTimeframe(timeframe) {
   return result;
 }
 function eventsForBucket(source, timeframe, period) { const events = Array.isArray(source) ? source : source?.events || []; return events.filter(event => bucketStart(normalizeTs(event.ts), timeframe) === period); }
-function bucketIsAvailable(source, timeframe, period) { if (Array.isArray(source)) return eventsForBucket(source, timeframe, period).length > 0; return source?.buckets?.has(period) || eventsForBucket(source, timeframe, period).length > 0; }
+function bucketIsAvailable(source, timeframe, period) { if (Array.isArray(source)) return true; return source?.available === true; }
 
 function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
   const map = timeframeState.get(timeframe); const crossings = [];
   for (const symbol of symbols) {
     if (timeframe === '5m' && symbol === 'HYPE') continue;
-    const source = eventsBySymbol.get(symbol) || []; const state = map.get(symbol) || emptySymbolState(); if (state.lastBucket !== null && completedBucket <= state.lastBucket) continue;
+    const source = eventsBySymbol.get(symbol) || []; const state = map.get(symbol) || emptySymbolState(); state.buckets = state.buckets && typeof state.buckets === 'object' ? state.buckets : {}; const bucketKey = String(completedBucket); if (state.buckets[bucketKey]) { if (state.lastBucket === null || completedBucket > state.lastBucket) state.lastBucket = completedBucket; map.set(symbol, state); continue; } if (state.lastBucket !== null && completedBucket <= state.lastBucket) continue;
     if (!bucketIsAvailable(source, timeframe, completedBucket)) { console.log(`BUCKET NOT AVAILABLE ${timeframe} ${symbol} ${new Date(completedBucket).toISOString()}; keeping lastBucket=${state.lastBucket}`); continue; }
     let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0, lastTs = null;
     for (const event of eventsForBucket(source, timeframe, completedBucket)) { const ts = normalizeTs(event.ts); const sign = eventSideSign(event); const usd = eventNotionalUsd(event); if (!sign || usd <= 0) continue; if (sign > 0) { longUsd += usd; longEvents++; } else { shortUsd += usd; shortEvents++; } if (!lastTs || ts > lastTs) lastTs = ts; }
-    const before = state.imbalanceUsd; const oldSign = state.establishedSign || 0; state.imbalanceUsd += longUsd - shortUsd; state.longUsd += longUsd; state.shortUsd += shortUsd; state.longEvents += longEvents; state.shortEvents += shortEvents; state.events += longEvents + shortEvents; state.lastBucket = completedBucket;
+    const before = state.imbalanceUsd; const oldSign = state.establishedSign || 0; state.imbalanceUsd += longUsd - shortUsd; state.longUsd += longUsd; state.shortUsd += shortUsd; state.longEvents += longEvents; state.shortEvents += shortEvents; state.events += longEvents + shortEvents; state.lastBucket = completedBucket; state.buckets[bucketKey] = { longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents };
     const newSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
     if (oldSign !== 0 && newSign !== 0 && newSign !== oldSign) crossings.push({ timeframe, symbol, before, after: state.imbalanceUsd, updateLongUsd: longUsd, updateShortUsd: shortUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, ts: lastTs || completedBucket + TIMEFRAMES[timeframe], period: completedBucket });
     if (newSign !== 0) state.establishedSign = newSign; map.set(symbol, state); console.log(JSON.stringify({ timeframe, symbol, period: completedBucket, longUsd, shortUsd, imbalanceUsd: state.imbalanceUsd, establishedSign: state.establishedSign, lastBucket: state.lastBucket }));
