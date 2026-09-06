@@ -55,15 +55,21 @@ function numericField(row, names) {
   }
   return 0;
 }
+function normalizeHistoricalRow(row) {
+  if (Array.isArray(row)) {
+    return { ts: row[0], longUsd: numericField(row, [1]), shortUsd: numericField(row, [2]), ...row };
+  }
+  return {
+    ...row,
+    ts: row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket ?? row?.start ?? row?.startTime,
+    longUsd: numericField(row, ['longUsd', 'long_usd', 'long_liq_usd', 'longLiqUsd', 'longLiquidationUsd', 'longLiquidations', 'longs', 'long', 'long_liquidations', 'long_liquidated', 'long_liq']),
+    shortUsd: numericField(row, ['shortUsd', 'short_usd', 'short_liq_usd', 'shortLiqUsd', 'shortLiquidationUsd', 'shortLiquidations', 'shorts', 'short', 'short_liquidations', 'short_liquidated', 'short_liq'])
+  };
+}
 function normalizeHistoricalJson(json) {
   const rows = historicalRows(json);
   if (!rows.length) return json;
-  const normalized = rows.map(row => ({
-    ...row,
-    ts: row?.ts ?? row?.timestamp ?? row?.time ?? row?.t ?? row?.bucket ?? row?.start ?? row?.startTime,
-    longUsd: numericField(row, ['longUsd', 'long_usd', 'long_liq_usd', 'longLiqUsd', 'longLiquidationUsd', 'longLiquidations', 'longs', 'long', 'long_liquidations', 'long_liquidated']),
-    shortUsd: numericField(row, ['shortUsd', 'short_usd', 'short_liq_usd', 'shortLiqUsd', 'shortLiquidationUsd', 'shortLiquidations', 'shorts', 'short', 'short_liquidations', 'short_liquidated'])
-  }));
+  const normalized = rows.map(normalizeHistoricalRow);
   return { ...json, data: { ...(json?.data && !Array.isArray(json.data) ? json.data : {}), buckets: normalized } };
 }
 
