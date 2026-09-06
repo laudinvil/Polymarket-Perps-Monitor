@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - '.monitor-state.json'
       - 'monitor-status.md'
+      - 'monitor-live.log'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
@@ -41,24 +42,29 @@ jobs:
           MONITOR_PID=$!
 
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
-            sleep 60
+            sleep 30
             if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
               break
             fi
+
             {
               echo "# MarginPad monitor live status"
               echo
               echo "Updated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              echo "Run: $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID)"
+              echo "Status: RUNNING"
               echo
               echo '```text'
-              tail -n 80 monitor.log
+              tail -n 120 monitor.log
               echo '```'
             } > monitor-status.md
 
+            tail -n 500 monitor.log > monitor-live.log
+
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add monitor-status.md
-            git diff --cached --quiet || git commit -m 'Update live monitor status'
+            git add monitor-status.md monitor-live.log
+            git diff --cached --quiet || git commit -m 'Update live monitor logs'
             timeout 15s git push origin HEAD:monitor-status --force || true
           done
 
