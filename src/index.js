@@ -105,6 +105,7 @@ function eventNotionalUsd(event) { const direct = Number(event.notional ?? event
 function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
   const map = timeframeState.get(timeframe); const crossings = [];
   for (const symbol of symbols) {
+    if (timeframe === '5m' && symbol === 'HYPE') continue;
     const state = map.get(symbol) || emptySymbolState();
     if (state.lastBucket !== null && completedBucket <= state.lastBucket) continue;
     let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0, lastTs = null;
