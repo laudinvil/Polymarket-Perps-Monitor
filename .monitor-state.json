@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-06T07:15:01.884Z",
+  "updatedAt": "2026-09-06T07:20:01.848Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -129,29 +129,29 @@
         "shortEvents": 19,
         "events": 24,
         "establishedSign": -1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "ETH",
-        "imbalanceUsd": -2401.2401099999997,
+        "imbalanceUsd": -5484.24471,
         "longUsd": 459.29560000000004,
-        "shortUsd": 2860.5357099999997,
+        "shortUsd": 5943.54031,
         "longEvents": 4,
-        "shortEvents": 71,
-        "events": 75,
+        "shortEvents": 72,
+        "events": 76,
         "establishedSign": -1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "SOL",
-        "imbalanceUsd": -366.30650000000014,
+        "imbalanceUsd": -476.60900000000015,
         "longUsd": 1040.3962,
-        "shortUsd": 1406.7027,
+        "shortUsd": 1517.0052,
         "longEvents": 4,
-        "shortEvents": 12,
-        "events": 16,
+        "shortEvents": 13,
+        "events": 17,
         "establishedSign": -1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "XRP",
@@ -162,7 +162,7 @@
         "shortEvents": 16,
         "events": 25,
         "establishedSign": 1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "DOGE",
@@ -173,7 +173,7 @@
         "shortEvents": 2,
         "events": 34,
         "establishedSign": 1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "BNB",
@@ -184,7 +184,7 @@
         "shortEvents": 4,
         "events": 28,
         "establishedSign": 1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       },
       {
         "symbol": "HYPE",
@@ -195,7 +195,7 @@
         "shortEvents": 11,
         "events": 11,
         "establishedSign": -1,
-        "lastBucket": 1788678600000
+        "lastBucket": 1788678900000
       }
     ],
     "15m": [
