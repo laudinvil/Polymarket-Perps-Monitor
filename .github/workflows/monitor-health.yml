@@ -82,3 +82,5 @@ jobs:
           path: monitor.log
           if-no-files-found: ignore
           retention-days: 14
+
+# Restart after state preservation seed
