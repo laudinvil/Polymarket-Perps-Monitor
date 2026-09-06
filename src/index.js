@@ -130,7 +130,21 @@ function extractHistoricalBuckets(json) {
 }
 function numericValue(value) { if (value === null || value === undefined || value === '') return 0; if (typeof value === 'number') return Number.isFinite(value) ? value : 0; if (typeof value === 'object') { for (const key of ['usd', 'value', 'notional', 'amount', 'total', 'volume', 'vol']) { const n = numericValue(value[key]); if (n) return n; } return 0; } const n = Number(String(value).replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : 0; }
 function bucketValue(row, names, direction) { for (const name of names) { const value = numericValue(row?.[name]); if (value !== 0) return Math.abs(value); } if (row && typeof row === 'object') for (const [key, raw] of Object.entries(row)) { const lower = key.toLowerCase(); if (!lower.includes(direction)) continue; if (!/(usd|notional|volume|value|amount|liquid)/i.test(lower) && lower !== direction) continue; const value = numericValue(raw); if (value !== 0) return Math.abs(value); } return 0; }
-function historicalRowTs(row) { const aliases = ['ts', 'timestamp', 'time', 't', 'bucket', 'start', 'startTime', 'start_ts', 'startTimeMs', 'bucketStart', 'bucket_start', 'epoch', 'date']; for (const key of aliases) { const ts = normalizeTs(row?.[key]); if (ts) return ts; } if (row && typeof row === 'object') for (const [key, raw] of Object.entries(row)) { if (!/(time|timestamp|bucket|start|epoch|date|^ts$)/i.test(key)) continue; const ts = normalizeTs(raw); if (ts) return ts; } return null; }
+function normalizeHistoricalTimestamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) { const ts = value.getTime(); return Number.isFinite(ts) && ts > 0 ? ts : null; }
+  if (Array.isArray(value)) return normalizeHistoricalTimestamp(value[0]);
+  if (typeof value === 'object') { for (const key of ['$date', 'date', 'timestamp', 'ts', 'time', 'value', 'start', 'startTime', 'epoch']) if (Object.prototype.hasOwnProperty.call(value, key)) { const ts = normalizeHistoricalTimestamp(value[key]); if (ts) return ts; } return null; }
+  if (typeof value === 'string') { const trimmed = value.trim(); if (!trimmed) return null; const numeric = Number(trimmed); if (Number.isFinite(numeric) && numeric > 0) return normalizeHistoricalTimestamp(numeric); const parsed = Date.parse(trimmed); return Number.isFinite(parsed) && parsed > 0 ? parsed : null; }
+  const n = Number(value); if (!Number.isFinite(n) || n <= 0) return null; if (n < 1e11) return n * 1000; if (n < 1e14) return n; if (n < 1e17) return n / 1000; return n / 1000000;
+}
+function historicalRowTs(row) {
+  if (Array.isArray(row)) return normalizeHistoricalTimestamp(row[0]);
+  const aliases = ['ts', 'timestamp', 'time', 't', 'bucket', 'start', 'startTime', 'start_ts', 'startTimeMs', 'bucketStart', 'bucket_start', 'epoch', 'date'];
+  for (const key of aliases) { const ts = normalizeHistoricalTimestamp(row?.[key]); if (ts) return ts; }
+  if (row && typeof row === 'object') for (const [key, raw] of Object.entries(row)) { if (!/(time|timestamp|bucket|start|epoch|date|^ts$)/i.test(key)) continue; const ts = normalizeHistoricalTimestamp(raw); if (ts) return ts; }
+  return null;
+}
 
 async function fetchHistoricalEvents(symbol, timeframe) {
   const minutes = ({ '15m': 15, '1h': 60, '4h': 240, '1d': 1440 })[timeframe]; if (!minutes) return { events: [], buckets: new Set() };
