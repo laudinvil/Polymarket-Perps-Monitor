@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-06T09:55:02.659Z",
+  "updatedAt": "2026-09-06T10:08:19.558Z",
   "alerts": [
     "2026-09-03T16:15:00.000Z:ETH",
     "2026-09-03T16:25:00.000Z:ETH",
@@ -193,17 +193,6 @@
         "events": 29,
         "establishedSign": 1,
         "lastBucket": 1788688200000
-      },
-      {
-        "symbol": "HYPE",
-        "imbalanceUsd": -659.3090199999999,
-        "longUsd": 285.01496000000003,
-        "shortUsd": 944.32398,
-        "longEvents": 2,
-        "shortEvents": 12,
-        "events": 14,
-        "establishedSign": -1,
-        "lastBucket": 1788682500000
       }
     ],
     "15m": [
