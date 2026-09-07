@@ -32,6 +32,9 @@ const ingest = httpAction(async (ctx, request) => {
       await ctx.runMutation(internal.monitor.saveSnapshot, body.data);
     } else if (body.type === "alert") {
       await ctx.runMutation(internal.monitor.saveAlert, body.data);
+    } else if (body.type === "retention.prune") {
+      const result = await ctx.runMutation(internal.monitor.pruneOldData, {});
+      return Response.json({ ok: true, ...result });
     } else {
       return new Response("Unknown event type", { status: 400 });
     }
