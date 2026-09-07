@@ -68,13 +68,22 @@ jobs:
               break
             fi
 
+            # Heartbeat: a healthy monitor may intentionally wait several minutes
+            # for the next timeframe boundary. Keep monitor.log fresh so the
+            # 4-minute watchdog does not mistake that idle wait for a hang.
+            echo "MONITOR HEARTBEAT: pid=$MONITOR_PID alive=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
             # Watchdog: restart only when monitor.log has been stale for 240 seconds.
-            # Checking every minute keeps the restart comfortably inside one 5m cycle.
+            # The heartbeat above makes this a real process-health check rather than
+            # a false positive during a normal wait for the next 5m boundary.
             if [ -f monitor.log ]; then
               LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
               NOW_TS=$(date +%s)
-              if [ "$LAST_MODIFIED" -gt 0 ] && [ $((NOW_TS - LAST_MODIFIED)) -ge 240 ]; then
-                echo "MONITOR WATCHDOG: stale monitor.log for $((NOW_TS - LAST_MODIFIED))s; restarting monitor"
+              STALE_SECONDS=$((NOW_TS - LAST_MODIFIED))
+              if [ "$LAST_MODIFIED" -gt 0 ] && [ "$STALE_SECONDS" -ge 240 ]; then
+                echo "MONITOR WATCHDOG: stale monitor.log for ${STALE_SECONDS}s; restarting monitor; pid=$MONITOR_PID; last_modified=$(date -u -d "@$LAST_MODIFIED" +'%Y-%m-%dT%H:%M:%SZ')"
+                echo "MONITOR WATCHDOG: last log lines before restart:"
+                tail -n 20 monitor.log || true
                 kill "$MONITOR_PID" 2>/dev/null || true
                 sleep 2
                 pkill -TERM -P "$MONITOR_PID" 2>/dev/null || true
