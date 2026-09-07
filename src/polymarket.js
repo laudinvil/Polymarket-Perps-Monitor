@@ -14,7 +14,7 @@ const LONG_ASSET_SLUG = {
   XRP: 'xrp',
   DOGE: 'dogecoin',
   BNB: 'bnb',
-  HYPE: 'hyperliquid',
+  HYPE: 'hype',
 };
 
 function bucketStart(now = Date.now(), timeframe = '5m') {
@@ -85,8 +85,6 @@ async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
 }
 
 async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
-  // At/after a timeframe boundary, the current bucket is the live market.
-  // Start there instead of skipping directly to the following period.
   const start = bucketStart(now, timeframe);
   for (let i = 0; i < 12; i += 1) {
     const epoch = start + i * TIMEFRAMES[timeframe];
