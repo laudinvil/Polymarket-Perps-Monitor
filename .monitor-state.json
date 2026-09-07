@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updatedAt": "2026-09-07T06:05:02.921Z",
+  "updatedAt": "2026-09-07T06:10:02.908Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -50,7 +50,7 @@
         "shortEvents": 209,
         "events": 456,
         "establishedSign": 1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14635.8384,
@@ -1143,6 +1143,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788761100000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -1154,7 +1161,7 @@
         "shortEvents": 301,
         "events": 478,
         "establishedSign": -1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14271.6462,
@@ -2247,6 +2254,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788761100000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -2258,7 +2272,7 @@
         "shortEvents": 132,
         "events": 291,
         "establishedSign": -1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 9788.911100000001,
@@ -3351,18 +3365,25 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788761100000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
       "XRP": {
-        "imbalanceUsd": 425696.0777399999,
+        "imbalanceUsd": 425639.67373999994,
         "longUsd": 592653.88816,
-        "shortUsd": 166957.81042000002,
+        "shortUsd": 167014.21442000003,
         "longEvents": 140,
-        "shortEvents": 73,
-        "events": 213,
+        "shortEvents": 74,
+        "events": 214,
         "establishedSign": 1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -4455,6 +4476,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788761100000": {
+            "longUsd": 0,
+            "shortUsd": 56.403999999999996,
+            "longEvents": 0,
+            "shortEvents": 1,
+            "events": 1
           }
         }
       },
@@ -4466,7 +4494,7 @@
         "shortEvents": 109,
         "events": 195,
         "establishedSign": -1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -5559,6 +5587,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788761100000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -5570,7 +5605,7 @@
         "shortEvents": 63,
         "events": 89,
         "establishedSign": -1,
-        "lastBucket": 1788760800000,
+        "lastBucket": 1788761100000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -6658,6 +6693,13 @@
             "events": 0
           },
           "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
+          },
+          "1788761100000": {
             "longUsd": 0,
             "shortUsd": 0,
             "longEvents": 0,
