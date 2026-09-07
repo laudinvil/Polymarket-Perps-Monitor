@@ -74,6 +74,24 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
 
+      - name: Move persistent monitor state to monitor-status
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/index.js')
+          text = path.read_text()
+          old_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;"
+          new_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;"
+          old_branch = "branch: process.env.GITHUB_REF_NAME || 'main'"
+          if old_url not in text:
+              raise SystemExit('Expected state API URL not found')
+          if old_branch not in text:
+              raise SystemExit('Expected state branch expression not found')
+          text = text.replace(old_url, new_url, 1)
+          text = text.replace(old_branch, "branch: 'monitor-status'", 1)
+          path.write_text(text)
+          PY
+
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
