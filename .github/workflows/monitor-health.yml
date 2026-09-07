@@ -92,12 +92,20 @@ jobs:
               echo '```'
             } > monitor-status.md
 
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add monitor-status.md monitor-stats.md
-            git add -f monitor-live.log monitor-history.log
-            git diff --cached --quiet || git commit -m 'Persist monitor history and statistics'
-            timeout 15s git push origin HEAD:monitor-status --force || true
+            git fetch origin monitor-status --depth=1 || true
+            rm -rf /tmp/monitor-status-worktree
+            git worktree prune
+            git worktree add --detach /tmp/monitor-status-worktree origin/monitor-status
+            cp monitor-status.md /tmp/monitor-status-worktree/monitor-status.md
+            cp monitor-stats.md /tmp/monitor-status-worktree/monitor-stats.md
+            cp monitor-live.log /tmp/monitor-status-worktree/monitor-live.log
+            cp monitor-history.log /tmp/monitor-status-worktree/monitor-history.log
+            git -C /tmp/monitor-status-worktree config user.name 'github-actions[bot]'
+            git -C /tmp/monitor-status-worktree config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C /tmp/monitor-status-worktree add monitor-status.md monitor-stats.md monitor-live.log monitor-history.log
+            git -C /tmp/monitor-status-worktree diff --cached --quiet || git -C /tmp/monitor-status-worktree commit -m 'Persist monitor history and statistics'
+            git -C /tmp/monitor-status-worktree push origin HEAD:monitor-status || true
+            git worktree remove /tmp/monitor-status-worktree --force || true
           done
 
           if ! wait "$MONITOR_PID"; then
