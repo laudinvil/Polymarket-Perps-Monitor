@@ -35,69 +35,16 @@ jobs:
           git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
           touch monitor-history.log
 
-      - name: Apply monitor runtime configuration
+      - name: Verify monitor source configuration
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('src/index.js')
-          text = path.read_text()
-          disabled = {"5m": ["HYPE"]}
-
-          old_due = 'const due = bucketStart(current - BOUNDARY_GRACE_MS, timeframe) + size;'
-          new_due = 'const due = bucketStart(current, timeframe);'
-          if old_due in text:
-              text = text.replace(old_due, new_due, 1)
-
-          old_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;"
-          new_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;"
-          text = text.replace(old_url, new_url, 1)
-          text = text.replace("branch: process.env.GITHUB_REF_NAME || 'main'", "branch: 'monitor-status'", 1)
-
-          config_line = f"const disabledSymbolsByTimeframe = {disabled!r};".replace("'", '"')
-          config_pattern = r"\nconst disabledSymbolsByTimeframe = .*?;"
-          if re.search(config_pattern, text):
-              text = re.sub(config_pattern, "\n" + config_line, text, count=1)
-          else:
-              marker = "\nconst FRAMEWORKS = ['5m', '15m', '1h', '4h'];"
-              if marker not in text:
-                  raise SystemExit('Expected timeframe configuration marker not found')
-              text = text.replace(marker, marker + "\n" + config_line, 1)
-
-          process_live = """async function processLive(timeframe, boundary) {
-            const period = bucketStart(boundary - 1, timeframe);
-            const disabledSymbols = new Set(disabledSymbolsByTimeframe[timeframe] || []);
-            const activeSymbols = symbols.filter(symbol => !disabledSymbols.has(symbol));
-            await Promise.all(activeSymbols.map(async symbol => {
-              const events = await fetchSymbolFeed(symbol);
-              const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState();
-              let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0;
-              for (const event of events || []) {
-                const ts = normalizeTs(event);
-                if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue;
-                const side = eventSideSign(event), value = eventNotionalUsd(event);
-                if (side > 0) { longUsd += value; longEvents++; }
-                else if (side < 0) { shortUsd += value; shortEvents++; }
-              }
-              const before = state.imbalanceUsd;
-              const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents);
-              if (!next) return;
-              console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket }));
-              const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period);
-              if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents);
-            }));
-          }"""
-          pattern = r"async function processLive\(timeframe, boundary\) \{.*?\}\s*async function main\(\)"
-          replacement = process_live + "\nasync function main()"
-          if not re.search(pattern, text, flags=re.S):
-              raise SystemExit('Expected processLive function not found')
-          text = re.sub(pattern, replacement, text, count=1, flags=re.S)
-
-          path.write_text(text)
-          print('Monitor runtime configuration applied safely and idempotently')
-          print(f'Disabled symbols by timeframe: {disabled}')
-          PY
+          node --check src/index.js
+          grep -F "const disabledSymbolsByTimeframe" src/index.js
+          grep -F "'5m': ['HYPE']" src/index.js
+          grep -F "?ref=monitor-status" src/index.js
+          grep -F "branch: 'monitor-status'" src/index.js
+          grep -F "const due = bucketStart(current, timeframe);" src/index.js
+          grep -F "await Promise.all(activeSymbols.map" src/index.js
+          echo "Monitor source configuration verified"
 
       - name: Continuous MarginPad monitor
         env:
