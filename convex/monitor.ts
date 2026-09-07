@@ -162,3 +162,49 @@ export const latestSnapshots = query({
       .take(args.limit);
   },
 });
+
+export const latestStats = query({
+  args: {
+    timeframe: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      timeframe: v.string(),
+      symbol: v.string(),
+      boundaryTs: v.number(),
+      imbalanceUsd: v.number(),
+      longUsd: v.number(),
+      shortUsd: v.number(),
+      longEvents: v.number(),
+      shortEvents: v.number(),
+      events: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const symbols = ["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"];
+    const rows = [];
+    for (const symbol of symbols) {
+      const row = await ctx.db
+        .query("snapshots")
+        .withIndex("by_timeframe_symbol_boundary", (q) =>
+          q.eq("timeframe", args.timeframe).eq("symbol", symbol),
+        )
+        .order("desc")
+        .take(1);
+      if (row[0]) {
+        rows.push({
+          timeframe: row[0].timeframe,
+          symbol: row[0].symbol,
+          boundaryTs: row[0].boundaryTs,
+          imbalanceUsd: row[0].imbalanceUsd,
+          longUsd: row[0].longUsd,
+          shortUsd: row[0].shortUsd,
+          longEvents: row[0].longEvents,
+          shortEvents: row[0].shortEvents,
+          events: row[0].events,
+        });
+      }
+    }
+    return rows;
+  },
+});
