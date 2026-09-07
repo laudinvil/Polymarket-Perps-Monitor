@@ -65,6 +65,17 @@ function longTimeframeSlug(symbol, epoch, timeframe) {
   return null;
 }
 
+function constructMarketUrl(symbol, epoch, timeframe = '5m') {
+  const asset = String(symbol || '').trim().toUpperCase();
+  if (!asset || !TIMEFRAMES[timeframe]) return null;
+  if (timeframe === '1h' || timeframe === '1d') {
+    const slug = longTimeframeSlug(asset, epoch, timeframe);
+    return slug ? `${MARKET_BASE_URL}/${slug}` : null;
+  }
+  const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
+  return `${MARKET_BASE_URL}/${slug}`;
+}
+
 async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
   const asset = String(symbol || '').trim().toUpperCase();
   if (!asset) return null;
@@ -82,4 +93,4 @@ async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
   return null;
 }
 
-module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, findMarketByEpoch, findNextMarket };
+module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket };
