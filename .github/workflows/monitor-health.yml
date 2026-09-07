@@ -68,6 +68,23 @@ jobs:
               break
             fi
 
+            # Watchdog: if the monitor has not produced output for 10 minutes,
+            # restart it instead of allowing one hung HTTP request to freeze alerts forever.
+            if [ -f monitor.log ]; then
+              LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
+              NOW_TS=$(date +%s)
+              if [ "$LAST_MODIFIED" -gt 0 ] && [ $((NOW_TS - LAST_MODIFIED)) -ge 600 ]; then
+                echo "MONITOR WATCHDOG: stale monitor.log for $((NOW_TS - LAST_MODIFIED))s; restarting monitor"
+                kill "$MONITOR_PID" 2>/dev/null || true
+                sleep 2
+                pkill -TERM -P "$MONITOR_PID" 2>/dev/null || true
+                wait "$MONITOR_PID" 2>/dev/null || true
+                node src/index.js 2>&1 | tee -a monitor.log &
+                MONITOR_PID=$!
+                echo "MONITOR WATCHDOG: restarted monitor pid=$MONITOR_PID"
+              fi
+            fi
+
             NEW_LINES=$(wc -l < monitor.log)
             if [ "$NEW_LINES" -gt "$HISTORY_LINES" ]; then
               tail -n +$((HISTORY_LINES + 1)) monitor.log >> monitor-history.log
