@@ -6,12 +6,13 @@ const lines = text.split(/\r?\n/).filter(Boolean);
 const alerts = [];
 
 for (const line of lines) {
-  const m = line.match(/^ALERT SENT (5m|15m|1h|4h|1d) ([A-Z]+) (BUY UP|BUY DOWN)$/);
+  const m = line.match(/^ALERT SENT (5m|15m|1h|4h) ([A-Z]+) (BUY UP|BUY DOWN)$/);
   if (m) alerts.push({ timeframe: m[1], symbol: m[2], signal: m[3] });
 }
 
-const frames = ['5m', '15m', '1h', '4h', '1d'];
+const frames = ['5m', '15m', '1h', '4h'];
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const disabledSymbolsByTimeframe = { '5m': new Set(['HYPE']), '15m': new Set(), '1h': new Set(), '4h': new Set() };
 const usd = n => Number.isFinite(Number(n)) ? `$${Math.round(Math.abs(Number(n))).toLocaleString('en-US')}` : '—';
 const signed = n => Number.isFinite(Number(n)) ? `${Number(n) >= 0 ? '+' : '-'}$${Math.round(Math.abs(Number(n))).toLocaleString('en-US')}` : '—';
 
@@ -35,27 +36,31 @@ async function loadConvexStats(timeframe) {
   }
 }
 
+function loadFallbackLatest() {
+  const latest = new Map();
+  for (const line of lines) {
+    try {
+      const x = JSON.parse(line);
+      if (x.timeframe && x.symbol && Number.isFinite(Number(x.period))) {
+        const key = `${x.timeframe}:${x.symbol}`;
+        const previous = latest.get(key);
+        if (!previous || Number(x.period) >= Number(previous.period)) latest.set(key, x);
+      }
+    } catch {}
+  }
+  return latest;
+}
+
 async function main() {
-  // Convex is authoritative for current statistics. The local history remains
-  // useful only for the alert list and as a fallback when Convex is unavailable.
+  // Convex is authoritative for current statistics. History is only used for
+  // the alert list and as a fallback if the public Convex endpoint is down.
   const convexByKey = new Map();
   for (const tf of frames) {
     const rows = await loadConvexStats(tf);
     if (!rows) continue;
     for (const row of rows) convexByKey.set(`${tf}:${row.symbol}`, row);
   }
-
-  const fallbackLatest = new Map();
-  for (const line of lines) {
-    try {
-      const x = JSON.parse(line);
-      if (x.timeframe && x.symbol && Number.isFinite(Number(x.period))) {
-        const key = `${x.timeframe}:${x.symbol}`;
-        const previous = fallbackLatest.get(key);
-        if (!previous || Number(x.period) >= Number(previous.period)) fallbackLatest.set(key, x);
-      }
-    } catch {}
-  }
+  const fallbackLatest = loadFallbackLatest();
 
   let out = '# MarginPad monitor statistics\n\n';
   out += `Updated: ${new Date().toISOString()}\n\n`;
@@ -67,6 +72,7 @@ async function main() {
     out += '| Symbol | Imbalance | Long | Short | Long events | Short events | Buckets | Sign |\n';
     out += '|---|---:|---:|---:|---:|---:|---:|---:|\n';
     for (const symbol of symbols) {
+      if (disabledSymbolsByTimeframe[tf].has(symbol)) continue;
       const key = `${tf}:${symbol}`;
       const x = convexByKey.get(key) || fallbackLatest.get(key);
       if (!x) {
@@ -75,15 +81,11 @@ async function main() {
       }
       const longUsd = Math.max(0, Number(x.longUsd) || 0);
       const shortUsd = Math.max(0, Number(x.shortUsd) || 0);
-      const imbalance = Number.isFinite(Number(x.imbalanceUsd))
-        ? Number(x.imbalanceUsd)
-        : shortUsd - longUsd;
+      const imbalance = Number.isFinite(Number(x.imbalanceUsd)) ? Number(x.imbalanceUsd) : shortUsd - longUsd;
       const sign = imbalance > 0 ? 1 : imbalance < 0 ? -1 : 0;
       const longEvents = Number.isFinite(Number(x.longEvents)) ? Math.max(0, Number(x.longEvents)) : 0;
       const shortEvents = Number.isFinite(Number(x.shortEvents)) ? Math.max(0, Number(x.shortEvents)) : 0;
-      const buckets = Array.isArray(x.buckets)
-        ? x.buckets.length
-        : Number.isFinite(Number(x.buckets)) ? Number(x.buckets) : '—';
+      const buckets = Array.isArray(x.buckets) ? x.buckets.length : Number.isFinite(Number(x.buckets)) ? Number(x.buckets) : '—';
       out += `| ${symbol} | ${signed(imbalance)} | ${usd(longUsd)} | ${usd(shortUsd)} | ${longEvents} | ${shortEvents} | ${buckets} | ${sign} |\n`;
     }
     out += '\n';
@@ -91,7 +93,6 @@ async function main() {
 
   out += '## Recent alerts\n\n';
   for (const a of alerts.slice(-100).reverse()) out += `- ${a.timeframe} ${a.symbol} ${a.signal}\n`;
-
   fs.writeFileSync('monitor-stats.md', out);
 }
 
