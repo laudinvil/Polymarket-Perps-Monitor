@@ -28,6 +28,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Apply Short-Long imbalance convention
+        run: |
+          if grep -q 'state\.imbalanceUsd = state\.longUsd - state\.shortUsd;' src/index.js; then
+            sed -i 's/state\.imbalanceUsd = state\.longUsd - state\.shortUsd;/state.imbalanceUsd = state.shortUsd - state.longUsd;/' src/index.js
+            sed -i 's/imbalance rebuilt from Long-Short/imbalance rebuilt from Short-Long/' src/index.js
+          fi
+          if grep -q 'const before = state\.longUsd - state\.shortUsd;' src/index.js; then
+            sed -i 's/const before = state\.longUsd - state\.shortUsd;/const before = state.shortUsd - state.longUsd;/' src/index.js
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/index.js
+          if git diff --cached --quiet; then
+            echo 'No Short-Long source changes required.'
+          else
+            git commit -m 'Fix liquidation imbalance to Short minus Long'
+            git push origin HEAD:main
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
