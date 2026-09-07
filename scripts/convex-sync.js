@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = String(process.env.CONVEX_URL || '').trim().replace(/\/$/, '');
+const configuredUrl = String(process.env.CONVEX_URL || '').trim().replace(/\/$/, '');
+const BASE_URL = configuredUrl.replace(/\.convex\.cloud$/i, '.convex.site');
 const TOKEN = String(process.env.CONVEX_INGEST_TOKEN || '').trim();
 const RUN_ID = Number(process.env.GITHUB_RUN_ID || 0);
 const RUN_NUMBER = String(process.env.GITHUB_RUN_NUMBER || '');
