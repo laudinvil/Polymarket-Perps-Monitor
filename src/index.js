@@ -86,7 +86,7 @@ function normalizeSavedState(saved) {
     state.shortEvents = Number(state.shortEvents) || 0;
     state.events = Number(state.events) || state.longEvents + state.shortEvents;
   }
-  state.imbalanceUsd = state.longUsd - state.shortUsd;
+  state.imbalanceUsd = state.shortUsd - state.longUsd;
   state.establishedSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
   return state;
 }
@@ -97,7 +97,7 @@ async function loadState() {
     const result = await githubRequest('GET'); stateSha = result?.sha || null; if (!result?.content) return;
     const decoded = Buffer.from(result.content.replace(/\s/g, ''), 'base64').toString('utf8'); const state = JSON.parse(decoded); mergeStateAlerts(state);
     for (const timeframe of FRAMEWORKS) { const map = timeframeState.get(timeframe); for (const symbol of symbols) { const saved = state.liquidationTimeframes?.[timeframe]?.[symbol]; if (saved) map.set(symbol, normalizeSavedState(saved)); } }
-    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; dedup keys=${sentAlerts.size}; imbalance rebuilt from Long-Short`);
+    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; dedup keys=${sentAlerts.size}; imbalance rebuilt from Short-Long`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 
@@ -203,7 +203,7 @@ function applyCompletedBucket(timeframe, eventsBySymbol, completedBucket) {
     if (!bucketIsAvailable(source, timeframe, completedBucket)) { console.log(`BUCKET NOT AVAILABLE ${timeframe} ${symbol} ${new Date(completedBucket).toISOString()}; keeping lastBucket=${state.lastBucket}`); continue; }
     let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0, lastTs = null;
     for (const event of eventsForBucket(source, timeframe, completedBucket)) { const ts = normalizeTs(event.ts); const sign = eventSideSign(event); const usd = eventNotionalUsd(event); if (!sign || usd <= 0) continue; if (sign > 0) { longUsd += usd; longEvents++; } else { shortUsd += usd; shortEvents++; } if (!lastTs || ts > lastTs) lastTs = ts; }
-    const before = state.longUsd - state.shortUsd; const oldSign = state.establishedSign || (before > 0 ? 1 : before < 0 ? -1 : 0); state.longUsd += longUsd; state.shortUsd += shortUsd; state.longEvents += longEvents; state.shortEvents += shortEvents; state.events += longEvents + shortEvents; state.lastBucket = completedBucket; state.buckets[bucketKey] = { longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents }; state.imbalanceUsd = state.longUsd - state.shortUsd;
+    const before = state.shortUsd - state.longUsd; const oldSign = state.establishedSign || (before > 0 ? 1 : before < 0 ? -1 : 0); state.longUsd += longUsd; state.shortUsd += shortUsd; state.longEvents += longEvents; state.shortEvents += shortEvents; state.events += longEvents + shortEvents; state.lastBucket = completedBucket; state.buckets[bucketKey] = { longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents }; state.imbalanceUsd = state.shortUsd - state.longUsd;
     const newSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
     if (oldSign !== 0 && newSign !== 0 && newSign !== oldSign) crossings.push({ timeframe, symbol, before, after: state.imbalanceUsd, updateLongUsd: longUsd, updateShortUsd: shortUsd, longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents, ts: lastTs || completedBucket + TIMEFRAMES[timeframe], period: completedBucket });
     if (newSign !== 0) state.establishedSign = newSign; map.set(symbol, state); console.log(JSON.stringify({ timeframe, symbol, period: completedBucket, longUsd, shortUsd, imbalanceUsd: state.imbalanceUsd, establishedSign: state.establishedSign, lastBucket: state.lastBucket }));
