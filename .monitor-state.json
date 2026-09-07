@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updatedAt": "2026-09-07T10:03:25.048Z",
+  "updatedAt": "2026-09-07T10:03:30.199Z",
   "sentAlerts": [
     "15m:BTC:1788774300000:1",
     "15m:ETH:1788774300000:-1",
@@ -2422,14 +2422,14 @@
         }
       },
       "HYPE": {
-        "imbalanceUsd": 7771.377569999998,
-        "longUsd": 5658.855640000001,
+        "imbalanceUsd": -5325.992430000002,
+        "longUsd": 18756.22564,
         "shortUsd": 13430.233209999999,
         "longEvents": 0,
         "shortEvents": 0,
         "events": 0,
-        "establishedSign": 1,
-        "lastBucket": 1788771600000,
+        "establishedSign": -1,
+        "lastBucket": 1788775200000,
         "buckets": {
           "1788696000000": {
             "longUsd": 0,
@@ -2554,6 +2554,12 @@
           "1788771600000": {
             "longUsd": 0,
             "shortUsd": 161.82505,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788775200000": {
+            "longUsd": 13097.369999999999,
+            "shortUsd": 0,
             "longEvents": 0,
             "shortEvents": 0
           }
