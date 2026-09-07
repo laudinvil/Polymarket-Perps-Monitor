@@ -9,7 +9,7 @@ export default defineSchema({
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
     status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
-  }).index("by_run", ["runId"]),
+  }).index("by_run", ["runId"]).index("by_started_at", ["startedAt"]),
 
   snapshots: defineTable({
     runId: v.number(),
@@ -24,7 +24,8 @@ export default defineSchema({
     events: v.number(),
   })
     .index("by_timeframe_symbol_boundary", ["timeframe", "symbol", "boundaryTs"])
-    .index("by_timeframe_boundary", ["timeframe", "boundaryTs"]),
+    .index("by_timeframe_boundary", ["timeframe", "boundaryTs"])
+    .index("by_boundary", ["boundaryTs"]),
 
   alerts: defineTable({
     runId: v.number(),
@@ -35,5 +36,7 @@ export default defineSchema({
     previousImbalanceUsd: v.number(),
     newImbalanceUsd: v.number(),
     sentAt: v.number(),
-  }).index("by_symbol_timeframe_boundary", ["symbol", "timeframe", "boundaryTs"]),
+  })
+    .index("by_symbol_timeframe_boundary", ["symbol", "timeframe", "boundaryTs"])
+    .index("by_sent_at", ["sentAt"]),
 });
