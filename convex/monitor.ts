@@ -90,6 +90,53 @@ export const saveAlert = internalMutation({
   },
 });
 
+export const pruneOldData = internalMutation({
+  args: {},
+  returns: v.object({
+    monitorRuns: v.number(),
+    snapshots: v.number(),
+    alerts: v.number(),
+  }),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let monitorRuns = 0;
+    let snapshots = 0;
+    let alerts = 0;
+
+    const oldRuns = await ctx.db
+      .query("monitorRuns")
+      .withIndex("by_started_at", (q) => q.lt("startedAt", cutoff))
+      .order("asc")
+      .take(500);
+    for (const row of oldRuns) {
+      await ctx.db.delete(row._id);
+      monitorRuns += 1;
+    }
+
+    const oldSnapshots = await ctx.db
+      .query("snapshots")
+      .withIndex("by_boundary", (q) => q.lt("boundaryTs", cutoff))
+      .order("asc")
+      .take(500);
+    for (const row of oldSnapshots) {
+      await ctx.db.delete(row._id);
+      snapshots += 1;
+    }
+
+    const oldAlerts = await ctx.db
+      .query("alerts")
+      .withIndex("by_sent_at", (q) => q.lt("sentAt", cutoff))
+      .order("asc")
+      .take(500);
+    for (const row of oldAlerts) {
+      await ctx.db.delete(row._id);
+      alerts += 1;
+    }
+
+    return { monitorRuns, snapshots, alerts };
+  },
+});
+
 export const latestSnapshots = query({
   args: {
     timeframe: v.string(),
