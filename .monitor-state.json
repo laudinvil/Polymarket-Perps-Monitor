@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updatedAt": "2026-09-07T12:29:00.163Z",
+  "updatedAt": "2026-09-07T12:30:02.302Z",
   "sentAlerts": [
     "15m:BTC:1788774300000:1",
     "15m:ETH:1788774300000:-1",
@@ -34,19 +34,20 @@
     "15m:HYPE:1788777900000:-1",
     "1h:BTC:1788775200000:-1",
     "1h:BNB:1788775200000:-1",
-    "4h:BNB:1788768000000:1"
+    "4h:BNB:1788768000000:1",
+    "5m:ETH:1788783900000:1"
   ],
   "liquidationTimeframes": {
     "5m": {
       "BTC": {
-        "imbalanceUsd": 556.311,
-        "longUsd": 0,
+        "imbalanceUsd": 156.31100000000004,
+        "longUsd": 400,
         "shortUsd": 556.311,
-        "longEvents": 0,
+        "longEvents": 1,
         "shortEvents": 1,
-        "events": 1,
+        "events": 2,
         "establishedSign": 1,
-        "lastBucket": 1788783600000,
+        "lastBucket": 1788783900000,
         "buckets": {
           "1788783000000": {
             "longUsd": 0,
@@ -65,18 +66,24 @@
             "shortUsd": 556.311,
             "longEvents": 0,
             "shortEvents": 1
+          },
+          "1788783900000": {
+            "longUsd": 400,
+            "shortUsd": 0,
+            "longEvents": 1,
+            "shortEvents": 0
           }
         }
       },
       "ETH": {
-        "imbalanceUsd": 0,
+        "imbalanceUsd": 104.64929000000001,
         "longUsd": 0,
-        "shortUsd": 0,
+        "shortUsd": 104.64929000000001,
         "longEvents": 0,
-        "shortEvents": 0,
-        "events": 0,
-        "establishedSign": 0,
-        "lastBucket": 1788783600000,
+        "shortEvents": 2,
+        "events": 2,
+        "establishedSign": 1,
+        "lastBucket": 1788783900000,
         "buckets": {
           "1788783000000": {
             "longUsd": 0,
@@ -95,6 +102,12 @@
             "shortUsd": 0,
             "longEvents": 0,
             "shortEvents": 0
+          },
+          "1788783900000": {
+            "longUsd": 0,
+            "shortUsd": 104.64929000000001,
+            "longEvents": 0,
+            "shortEvents": 2
           }
         }
       },
