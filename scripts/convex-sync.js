@@ -76,27 +76,6 @@ async function sync() {
   }
 }
 
-async function prune() {
-  if (!BASE_URL || !TOKEN) return;
-  try {
-    const response = await fetch(`${BASE_URL}/ingest`, {
-      method: 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ type: 'retention.prune', data: {} }),
-    });
-    if (!response.ok) {
-      let body = '';
-      try { body = (await response.text()).slice(0, 300).replace(/\s+/g, ' '); } catch {}
-      console.warn(`CONVEX retention.prune FAILED: ${response.status}${body ? ` ${body}` : ''}`);
-      return;
-    }
-    const result = await response.json().catch(() => ({}));
-    console.log(`CONVEX retention.prune OK: runs=${result.monitorRuns || 0} snapshots=${result.snapshots || 0} alerts=${result.alerts || 0}`);
-  } catch (error) {
-    console.warn(`CONVEX retention.prune FAILED: ${error.message}`);
-  }
-}
-
 async function finish(status = 'completed') {
   if (!BASE_URL || !TOKEN) return;
   await sync();
@@ -108,6 +87,5 @@ async function finish(status = 'completed') {
   const command = process.argv[2] || 'sync';
   if (command === 'start') await start();
   else if (command === 'finish') await finish(process.argv[3] || 'completed');
-  else if (command === 'prune') await prune();
   else await sync();
 })().catch((error) => { console.error(`CONVEX SYNC FAILED: ${error.message}`); process.exitCode = 0; });
