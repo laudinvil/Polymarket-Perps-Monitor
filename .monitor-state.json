@@ -1,0 +1,2708 @@
+{
+  "version": 4,
+  "updatedAt": "2026-09-07T09:23:40.782Z",
+  "sentAlerts": [],
+  "liquidationTimeframes": {
+    "5m": {
+      "BTC": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "ETH": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "SOL": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "XRP": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "DOGE": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "BNB": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      },
+      "HYPE": {
+        "imbalanceUsd": 0,
+        "longUsd": 0,
+        "shortUsd": 0,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 0,
+        "lastBucket": null,
+        "buckets": {}
+      }
+    },
+    "15m": {
+      "BTC": {
+        "imbalanceUsd": 8743.4095,
+        "longUsd": 476.3424,
+        "shortUsd": 9219.7519,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788772500000,
+        "buckets": {
+          "1788766200000": {
+            "longUsd": 0,
+            "shortUsd": 158.42260000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788767100000": {
+            "longUsd": 0,
+            "shortUsd": 238.05480000000003,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 1509.7495,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788769800000": {
+            "longUsd": 0,
+            "shortUsd": 6916.012799999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788770700000": {
+            "longUsd": 476.3424,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 159.02,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788772500000": {
+            "longUsd": 0,
+            "shortUsd": 238.4922,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "ETH": {
+        "imbalanceUsd": -1754.4992599999996,
+        "longUsd": 6225.00659,
+        "shortUsd": 4470.50733,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788772500000,
+        "buckets": {
+          "1788759900000": {
+            "longUsd": 257.79767,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 20.07328,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788761700000": {
+            "longUsd": 50.066,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788762600000": {
+            "longUsd": 52.4811,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788763500000": {
+            "longUsd": 299.6328,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 4548.00352,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 1017.0255,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 0,
+            "shortUsd": 2485.01,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788767100000": {
+            "longUsd": 0,
+            "shortUsd": 226.38161,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 14.94204,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768900000": {
+            "longUsd": 0,
+            "shortUsd": 137.02644999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788769800000": {
+            "longUsd": 0,
+            "shortUsd": 142.00638,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 1437.5808,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788772500000": {
+            "longUsd": 0,
+            "shortUsd": 7.486770000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "SOL": {
+        "imbalanceUsd": -25468.39270000001,
+        "longUsd": 59956.5309,
+        "shortUsd": 34488.13819999999,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788744600000": {
+            "longUsd": 46.1912,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788745500000": {
+            "longUsd": 2477.5505999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 101.94699999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788747300000": {
+            "longUsd": 0,
+            "shortUsd": 1105.3872,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788748200000": {
+            "longUsd": 0,
+            "shortUsd": 27554.873499999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788749100000": {
+            "longUsd": 10706.614,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 2983.9988999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750900000": {
+            "longUsd": 208.072,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788751800000": {
+            "longUsd": 982.332,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788752700000": {
+            "longUsd": 49.2936,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 4226.018400000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788755400000": {
+            "longUsd": 618.8034,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 2.104,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788758100000": {
+            "longUsd": 0,
+            "shortUsd": 152.32319999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788759000000": {
+            "longUsd": 0,
+            "shortUsd": 2823.6996,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788759900000": {
+            "longUsd": 31230.847599999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 167.60000000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788762600000": {
+            "longUsd": 5026.119,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788763500000": {
+            "longUsd": 0,
+            "shortUsd": 298.3136,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 0,
+            "shortUsd": 1145.9153999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 67.0144,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 0,
+            "shortUsd": 19.8322,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788767100000": {
+            "longUsd": 0,
+            "shortUsd": 125.412,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768900000": {
+            "longUsd": 1062.0248,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788769800000": {
+            "longUsd": 0,
+            "shortUsd": 26.185,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788770700000": {
+            "longUsd": 0,
+            "shortUsd": 115.313,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 1120.8835,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "XRP": {
+        "imbalanceUsd": -73509.87296000001,
+        "longUsd": 88157.51424,
+        "shortUsd": 14647.641280000002,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788772500000,
+        "buckets": {
+          "1788737400000": {
+            "longUsd": 0,
+            "shortUsd": 1675.0511999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788738300000": {
+            "longUsd": 0,
+            "shortUsd": 1.4229,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 67.12784,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788740100000": {
+            "longUsd": 0,
+            "shortUsd": 1123.04814,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741000000": {
+            "longUsd": 34.66508,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741900000": {
+            "longUsd": 161.16850000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 688.30212,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788743700000": {
+            "longUsd": 62.078900000000004,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788744600000": {
+            "longUsd": 5.33026,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788745500000": {
+            "longUsd": 1402.6000000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 39566.939999999995,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788747300000": {
+            "longUsd": 0,
+            "shortUsd": 1009.9662000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788748200000": {
+            "longUsd": 0,
+            "shortUsd": 7199.46279,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788749100000": {
+            "longUsd": 19981.50528,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 99.46128,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750900000": {
+            "longUsd": 9505.965999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788751800000": {
+            "longUsd": 99.46561000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 209.92499999999998,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788754500000": {
+            "longUsd": 0,
+            "shortUsd": 37.06722,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788755400000": {
+            "longUsd": 492.09999999999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788756300000": {
+            "longUsd": 16.72783,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 0,
+            "shortUsd": 1.4076,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788758100000": {
+            "longUsd": 0,
+            "shortUsd": 188.3812,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788759900000": {
+            "longUsd": 12270.2487,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 32.3104,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788762600000": {
+            "longUsd": 549.746,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 1975.14387,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 0,
+            "shortUsd": 231.90200000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788767100000": {
+            "longUsd": 0,
+            "shortUsd": 674.2008,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 2418.92868,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768900000": {
+            "longUsd": 0,
+            "shortUsd": 9.97124,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788769800000": {
+            "longUsd": 0,
+            "shortUsd": 9.703470000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788770700000": {
+            "longUsd": 859.83741,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788772500000": {
+            "longUsd": 143.99200000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "DOGE": {
+        "imbalanceUsd": -98863.79604797401,
+        "longUsd": 123868.56734297401,
+        "shortUsd": 25004.771295000002,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788772500000,
+        "buckets": {
+          "1788705000000": {
+            "longUsd": 0,
+            "shortUsd": 3.5515999999999996,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 2186.29067,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788707700000": {
+            "longUsd": 122.29869,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788709500000": {
+            "longUsd": 0,
+            "shortUsd": 1992.0984999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 30.98244,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788711300000": {
+            "longUsd": 0,
+            "shortUsd": 380.0654,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788712200000": {
+            "longUsd": 0,
+            "shortUsd": 52.728300000000004,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714900000": {
+            "longUsd": 0,
+            "shortUsd": 30.92894,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788715800000": {
+            "longUsd": 0,
+            "shortUsd": 2676.892,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788719400000": {
+            "longUsd": 0,
+            "shortUsd": 1458.7695,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788722100000": {
+            "longUsd": 67.44415000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 138.973,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788725700000": {
+            "longUsd": 0,
+            "shortUsd": 10.796399999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788726600000": {
+            "longUsd": 0,
+            "shortUsd": 22.23494,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788727500000": {
+            "longUsd": 0,
+            "shortUsd": 1809.9312,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 0,
+            "shortUsd": 4510.5,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788729300000": {
+            "longUsd": 0,
+            "shortUsd": 90.45,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788730200000": {
+            "longUsd": 14.42766,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 21.30207,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732900000": {
+            "longUsd": 1907.1582,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788733800000": {
+            "longUsd": 0,
+            "shortUsd": 136.2775,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 12.6728,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788736500000": {
+            "longUsd": 0,
+            "shortUsd": 1453.4401000000003,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788737400000": {
+            "longUsd": 0,
+            "shortUsd": 9.1776,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788738300000": {
+            "longUsd": 0,
+            "shortUsd": 1.8168000000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 9.1785,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788740100000": {
+            "longUsd": 0,
+            "shortUsd": 405.9654,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741000000": {
+            "longUsd": 0,
+            "shortUsd": 9.1785,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 14.08368,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788743700000": {
+            "longUsd": 67.88123999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788744600000": {
+            "longUsd": 89.197,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788745500000": {
+            "longUsd": 8.952499999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 2382.9352,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788747300000": {
+            "longUsd": 0,
+            "shortUsd": 8397.129,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788748200000": {
+            "longUsd": 0,
+            "shortUsd": 169.01481,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788749100000": {
+            "longUsd": 348.4548,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 1406.70848,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750900000": {
+            "longUsd": 6523.82379997402,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788751800000": {
+            "longUsd": 172.47412,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788752700000": {
+            "longUsd": 2956.0914900000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 0,
+            "shortUsd": 140.84752500000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788754500000": {
+            "longUsd": 21.0654,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788755400000": {
+            "longUsd": 78979.004493,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 0,
+            "shortUsd": 33.072160000000004,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788758100000": {
+            "longUsd": 0,
+            "shortUsd": 32.6016,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 66.10433,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788761700000": {
+            "longUsd": 452.46284999999995,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788762600000": {
+            "longUsd": 10356.7309,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 15506.311249999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 263.4687,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 33.44565,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768900000": {
+            "longUsd": 0,
+            "shortUsd": 0.8982,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788769800000": {
+            "longUsd": 0,
+            "shortUsd": 878.2048000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788772500000": {
+            "longUsd": 0,
+            "shortUsd": 6.843800000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "BNB": {
+        "imbalanceUsd": -38007.73097000002,
+        "longUsd": 136588.28773000004,
+        "shortUsd": 98580.55676000002,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788766200000,
+        "buckets": {
+          "1788669000000": {
+            "longUsd": 21362.1704,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788669900000": {
+            "longUsd": 0,
+            "shortUsd": 91.512,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788670800000": {
+            "longUsd": 0,
+            "shortUsd": 122.0848,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788671700000": {
+            "longUsd": 0,
+            "shortUsd": 175.33820000000003,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788672600000": {
+            "longUsd": 0,
+            "shortUsd": 726.7405,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788673500000": {
+            "longUsd": 4019.8224000000005,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788674400000": {
+            "longUsd": 0,
+            "shortUsd": 754.5186,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788675300000": {
+            "longUsd": 7.604900000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788678000000": {
+            "longUsd": 15.1436,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788678900000": {
+            "longUsd": 143.8091,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788679800000": {
+            "longUsd": 0,
+            "shortUsd": 7.568,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788680700000": {
+            "longUsd": 3271.1904000000004,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788681600000": {
+            "longUsd": 0,
+            "shortUsd": 4155.25,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788682500000": {
+            "longUsd": 321.4176,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788683400000": {
+            "longUsd": 45.346199999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788685200000": {
+            "longUsd": 0,
+            "shortUsd": 90.9528,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788687000000": {
+            "longUsd": 0,
+            "shortUsd": 37.904,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788694200000": {
+            "longUsd": 90.8832,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788696900000": {
+            "longUsd": 0,
+            "shortUsd": 7.584099999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788697800000": {
+            "longUsd": 0,
+            "shortUsd": 29436.60544,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788698700000": {
+            "longUsd": 75.50800000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788699600000": {
+            "longUsd": 52.773700000000005,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788700500000": {
+            "longUsd": 77753.98008000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788701400000": {
+            "longUsd": 7.5164,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788702300000": {
+            "longUsd": 3521.1113,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788703200000": {
+            "longUsd": 1982.5445,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788704100000": {
+            "longUsd": 67.03829999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788705000000": {
+            "longUsd": 9730.56975,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 140,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788709500000": {
+            "longUsd": 0,
+            "shortUsd": 4966.3240000000005,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 375.55,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788711300000": {
+            "longUsd": 0,
+            "shortUsd": 1541.3744000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788712200000": {
+            "longUsd": 0,
+            "shortUsd": 666.6189,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714900000": {
+            "longUsd": 0,
+            "shortUsd": 374.405,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788715800000": {
+            "longUsd": 0,
+            "shortUsd": 14.9618,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788718500000": {
+            "longUsd": 59.9656,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788719400000": {
+            "longUsd": 0,
+            "shortUsd": 1365.5278,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788721200000": {
+            "longUsd": 0,
+            "shortUsd": 30.031599999999997,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788725700000": {
+            "longUsd": 0,
+            "shortUsd": 413.149,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788726600000": {
+            "longUsd": 0,
+            "shortUsd": 323.0117,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788727500000": {
+            "longUsd": 0,
+            "shortUsd": 368.5437,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 0,
+            "shortUsd": 2260.29,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788729300000": {
+            "longUsd": 0,
+            "shortUsd": 5083.2406,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788730200000": {
+            "longUsd": 0,
+            "shortUsd": 181.56,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788731100000": {
+            "longUsd": 0,
+            "shortUsd": 5898.5739,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 2251.7400000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 52.7212,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788736500000": {
+            "longUsd": 0,
+            "shortUsd": 67.824,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788737400000": {
+            "longUsd": 0,
+            "shortUsd": 22.6413,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788738300000": {
+            "longUsd": 0,
+            "shortUsd": 7.528,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 226.863,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741000000": {
+            "longUsd": 90.2328,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 344.36060000000003,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788743700000": {
+            "longUsd": 1650.8037,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788744600000": {
+            "longUsd": 1268.3700000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788745500000": {
+            "longUsd": 0,
+            "shortUsd": 7.4689,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 0,
+            "shortUsd": 7.4817,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788747300000": {
+            "longUsd": 0,
+            "shortUsd": 3818.2170000000006,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788748200000": {
+            "longUsd": 0,
+            "shortUsd": 32841.42192,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788749100000": {
+            "longUsd": 1675.9232,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788751800000": {
+            "longUsd": 1317.2,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788752700000": {
+            "longUsd": 924.9656000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 2128.1976,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788755400000": {
+            "longUsd": 954.9567999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 22.4283,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788758100000": {
+            "longUsd": 0,
+            "shortUsd": 276.9672,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788759000000": {
+            "longUsd": 0,
+            "shortUsd": 1035.4692,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788759900000": {
+            "longUsd": 786.5235000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 7.4946,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788762600000": {
+            "longUsd": 0,
+            "shortUsd": 642.2565999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788763500000": {
+            "longUsd": 0,
+            "shortUsd": 96.9813,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 401.2902,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 102.9,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "HYPE": {
+        "imbalanceUsd": -15751.970808900001,
+        "longUsd": 42954.8345036,
+        "shortUsd": 27202.8636947,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788772500000,
+        "buckets": {
+          "1788696900000": {
+            "longUsd": 334.18935,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788697800000": {
+            "longUsd": 482.2818,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788698700000": {
+            "longUsd": 0,
+            "shortUsd": 7284.545679999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788700500000": {
+            "longUsd": 0,
+            "shortUsd": 308.63915,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788701400000": {
+            "longUsd": 0,
+            "shortUsd": 7228.0851985,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788702300000": {
+            "longUsd": 0,
+            "shortUsd": 4796.96919,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788704100000": {
+            "longUsd": 5.295,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788705000000": {
+            "longUsd": 0,
+            "shortUsd": 160.5565962,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788705900000": {
+            "longUsd": 0,
+            "shortUsd": 295.5407,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 0,
+            "shortUsd": 466.622,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788707700000": {
+            "longUsd": 452.88200000000006,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788708600000": {
+            "longUsd": 0,
+            "shortUsd": 54.5218,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788709500000": {
+            "longUsd": 472.09499999999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 3276,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788711300000": {
+            "longUsd": 13204.971000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788712200000": {
+            "longUsd": 453.57633999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788713100000": {
+            "longUsd": 184.96380000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714000000": {
+            "longUsd": 7920.8123995999995,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714900000": {
+            "longUsd": 0,
+            "shortUsd": 1183.17696,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788715800000": {
+            "longUsd": 0,
+            "shortUsd": 4.3925,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788716700000": {
+            "longUsd": 0,
+            "shortUsd": 118.22370000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788717600000": {
+            "longUsd": 0,
+            "shortUsd": 123.03620000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788718500000": {
+            "longUsd": 0,
+            "shortUsd": 493.07973000000004,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788720300000": {
+            "longUsd": 97.96640000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788721200000": {
+            "longUsd": 61.078500000000005,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788722100000": {
+            "longUsd": 0,
+            "shortUsd": 716.3848000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788723000000": {
+            "longUsd": 0,
+            "shortUsd": 7.87401,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788725700000": {
+            "longUsd": 1245.3120000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788726600000": {
+            "longUsd": 0,
+            "shortUsd": 114.205,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788727500000": {
+            "longUsd": 0,
+            "shortUsd": 233.54399999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 0,
+            "shortUsd": 273.3456,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788729300000": {
+            "longUsd": 0,
+            "shortUsd": 272.68323,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788730200000": {
+            "longUsd": 0,
+            "shortUsd": 439.835,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788731100000": {
+            "longUsd": 0,
+            "shortUsd": 323.03408,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 818.559,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 879.4799999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788737400000": {
+            "longUsd": 0,
+            "shortUsd": 222.48060999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788738300000": {
+            "longUsd": 0,
+            "shortUsd": 8.796899999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 687.0318,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788740100000": {
+            "longUsd": 0,
+            "shortUsd": 205.20396,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741000000": {
+            "longUsd": 851.0197999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788741900000": {
+            "longUsd": 2675.99464,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 2215.4195040000004,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788744600000": {
+            "longUsd": 1416.7856,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788745500000": {
+            "longUsd": 103.8084,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788748200000": {
+            "longUsd": 0,
+            "shortUsd": 174.5766,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 707.4386,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750900000": {
+            "longUsd": 1295.28,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788751800000": {
+            "longUsd": 1129.6493699999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788752700000": {
+            "longUsd": 0,
+            "shortUsd": 7.8183,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 1144.066,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788756300000": {
+            "longUsd": 14.538400000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 0,
+            "shortUsd": 13.8384,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788758100000": {
+            "longUsd": 0,
+            "shortUsd": 7.8633,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 9.6217,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788765300000": {
+            "longUsd": 1099.9216000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788766200000": {
+            "longUsd": 1290.93,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 48.257,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788772500000": {
+            "longUsd": 0,
+            "shortUsd": 39.6,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      }
+    },
+    "1h": {
+      "BTC": {
+        "imbalanceUsd": 0.20460000000002765,
+        "longUsd": 476.3424,
+        "shortUsd": 476.547,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788764400000": {
+            "longUsd": 0,
+            "shortUsd": 238.05480000000003,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 476.3424,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 238.4922,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "ETH": {
+        "imbalanceUsd": -181.55571000000003,
+        "longUsd": 557.43047,
+        "shortUsd": 375.87476,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788757200000": {
+            "longUsd": 257.79767,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 299.6328,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 0,
+            "shortUsd": 226.38161,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 142.00638,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 7.486770000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "SOL": {
+        "imbalanceUsd": -43423.187099999996,
+        "longUsd": 45083.1092,
+        "shortUsd": 1659.9220999999998,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788742800000": {
+            "longUsd": 2477.5505999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 10706.614,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 49.2936,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 618.8034,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 31230.847599999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 298.3136,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 0,
+            "shortUsd": 125.412,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 115.313,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 1120.8835,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "XRP": {
+        "imbalanceUsd": -34809.66763,
+        "longUsd": 35485.29133,
+        "shortUsd": 675.6237,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 1.4229,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 161.16850000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 1402.6000000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 19981.50528,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 99.46561000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 16.72783,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 12270.2487,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 549.746,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 0,
+            "shortUsd": 674.2008,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 859.83741,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 143.99200000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "DOGE": {
+        "imbalanceUsd": -83935.68059299998,
+        "longUsd": 92994.57469299999,
+        "shortUsd": 9058.8941,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788703200000": {
+            "longUsd": 0,
+            "shortUsd": 3.5515999999999996,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 0,
+            "shortUsd": 1992.0984999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 52.728300000000004,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714000000": {
+            "longUsd": 0,
+            "shortUsd": 2676.892,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788717600000": {
+            "longUsd": 0,
+            "shortUsd": 1458.7695,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788721200000": {
+            "longUsd": 67.44415000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 1809.9312,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 14.42766,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 0,
+            "shortUsd": 136.2775,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 1.8168000000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 9.1785,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 8.952499999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 348.4548,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 2956.0914900000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 78979.004493,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 0,
+            "shortUsd": 32.6016,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 10356.7309,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 263.4687,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 878.2048000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 6.843800000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "BNB": {
+        "imbalanceUsd": -13997.302150000003,
+        "longUsd": 27549.278050000004,
+        "shortUsd": 13551.975900000001,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788764400000,
+        "buckets": {
+          "1788667200000": {
+            "longUsd": 0,
+            "shortUsd": 91.512,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788670800000": {
+            "longUsd": 4019.8224000000005,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788674400000": {
+            "longUsd": 7.604900000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788678000000": {
+            "longUsd": 3271.1904000000004,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788681600000": {
+            "longUsd": 45.346199999999996,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788685200000": {
+            "longUsd": 0,
+            "shortUsd": 37.904,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788692400000": {
+            "longUsd": 90.8832,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788696000000": {
+            "longUsd": 75.50800000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788699600000": {
+            "longUsd": 3521.1113,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788703200000": {
+            "longUsd": 9730.56975,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 0,
+            "shortUsd": 4966.3240000000005,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 666.6189,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714000000": {
+            "longUsd": 0,
+            "shortUsd": 14.9618,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788717600000": {
+            "longUsd": 0,
+            "shortUsd": 1365.5278,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788721200000": {
+            "longUsd": 0,
+            "shortUsd": 30.031599999999997,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 368.5437,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 0,
+            "shortUsd": 5898.5739,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 2251.7400000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 7.528,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 90.2328,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 0,
+            "shortUsd": 7.4689,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 1675.9232,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 924.9656000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 954.9567999999999,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 786.5235000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 96.9813,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 102.9,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "HYPE": {
+        "imbalanceUsd": 7649.152519999999,
+        "longUsd": 5658.855640000001,
+        "shortUsd": 13308.00816,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788771600000,
+        "buckets": {
+          "1788696000000": {
+            "longUsd": 0,
+            "shortUsd": 7284.545679999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788699600000": {
+            "longUsd": 0,
+            "shortUsd": 4796.96919,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788703200000": {
+            "longUsd": 0,
+            "shortUsd": 295.5407,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788706800000": {
+            "longUsd": 472.09499999999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 184.96380000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788714000000": {
+            "longUsd": 0,
+            "shortUsd": 118.22370000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788717600000": {
+            "longUsd": 97.96640000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788721200000": {
+            "longUsd": 0,
+            "shortUsd": 7.87401,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 233.54399999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788728400000": {
+            "longUsd": 0,
+            "shortUsd": 323.03408,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788732000000": {
+            "longUsd": 818.559,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788735600000": {
+            "longUsd": 0,
+            "shortUsd": 8.796899999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 2675.99464,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788742800000": {
+            "longUsd": 103.8084,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788746400000": {
+            "longUsd": 0,
+            "shortUsd": 174.5766,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788750000000": {
+            "longUsd": 0,
+            "shortUsd": 7.8183,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 14.538400000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788757200000": {
+            "longUsd": 0,
+            "shortUsd": 7.8633,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788760800000": {
+            "longUsd": 0,
+            "shortUsd": 9.6217,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788764400000": {
+            "longUsd": 1290.93,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788771600000": {
+            "longUsd": 0,
+            "shortUsd": 39.6,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      }
+    },
+    "4h": {
+      "BTC": {
+        "imbalanceUsd": 476.547,
+        "longUsd": 0,
+        "shortUsd": 476.547,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788753600000": {
+            "longUsd": 0,
+            "shortUsd": 238.05480000000003,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 238.4922,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "ETH": {
+        "imbalanceUsd": 233.86838,
+        "longUsd": 0,
+        "shortUsd": 233.86838,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788753600000": {
+            "longUsd": 0,
+            "shortUsd": 226.38161,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 7.486770000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "SOL": {
+        "imbalanceUsd": 1197.0019,
+        "longUsd": 49.2936,
+        "shortUsd": 1246.2955,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788739200000": {
+            "longUsd": 49.2936,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 0,
+            "shortUsd": 125.412,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 1120.8835,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "XRP": {
+        "imbalanceUsd": 432.16608999999994,
+        "longUsd": 243.45761000000005,
+        "shortUsd": 675.6237,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 1.4229,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 99.46561000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 0,
+            "shortUsd": 674.2008,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 143.99200000000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "DOGE": {
+        "imbalanceUsd": -1286.24524,
+        "longUsd": 3287.00434,
+        "shortUsd": 2000.7591,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788696000000": {
+            "longUsd": 0,
+            "shortUsd": 1992.0984999999998,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 67.44415000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 1.8168000000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 2956.0914900000002,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 263.4687,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 6.843800000000001,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "BNB": {
+        "imbalanceUsd": 613.9444000000003,
+        "longUsd": 4389.939200000001,
+        "shortUsd": 5003.883600000001,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": 1,
+        "lastBucket": 1788753600000,
+        "buckets": {
+          "1788667200000": {
+            "longUsd": 3271.1904000000004,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788681600000": {
+            "longUsd": 90.8832,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788696000000": {
+            "longUsd": 0,
+            "shortUsd": 4966.3240000000005,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 30.031599999999997,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 7.528,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 924.9656000000001,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 102.9,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      },
+      "HYPE": {
+        "imbalanceUsd": -1698.93579,
+        "longUsd": 1763.025,
+        "shortUsd": 64.08921000000001,
+        "longEvents": 0,
+        "shortEvents": 0,
+        "events": 0,
+        "establishedSign": -1,
+        "lastBucket": 1788768000000,
+        "buckets": {
+          "1788696000000": {
+            "longUsd": 472.09499999999997,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788710400000": {
+            "longUsd": 0,
+            "shortUsd": 7.87401,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788724800000": {
+            "longUsd": 0,
+            "shortUsd": 8.796899999999999,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788739200000": {
+            "longUsd": 0,
+            "shortUsd": 7.8183,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788753600000": {
+            "longUsd": 1290.93,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 39.6,
+            "longEvents": 0,
+            "shortEvents": 0
+          }
+        }
+      }
+    }
+  }
+}
