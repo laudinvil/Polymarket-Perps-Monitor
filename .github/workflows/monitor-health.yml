@@ -43,26 +43,19 @@ jobs:
 
           path = Path('src/index.js')
           text = path.read_text()
-
-          # Keep these controls in one place. Adding/removing a coin from the
-          # monitored universe must never require changing the patch order.
           disabled = {"5m": ["HYPE"]}
 
-          # Timeframe boundary detection is idempotent.
           old_due = 'const due = bucketStart(current - BOUNDARY_GRACE_MS, timeframe) + size;'
           new_due = 'const due = bucketStart(current, timeframe);'
           if old_due in text:
               text = text.replace(old_due, new_due, 1)
 
-          # Persistent state always lives on monitor-status, never on main.
           old_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;"
           new_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;"
           text = text.replace(old_url, new_url, 1)
           text = text.replace("branch: process.env.GITHUB_REF_NAME || 'main'", "branch: 'monitor-status'", 1)
 
-          # Maintain one idempotent disabled-symbol configuration.
-          config_line = f"const disabledSymbolsByTimeframe = {disabled!r};"
-          config_line = config_line.replace("'", '"')
+          config_line = f"const disabledSymbolsByTimeframe = {disabled!r};".replace("'", '"')
           config_pattern = r"\nconst disabledSymbolsByTimeframe = .*?;"
           if re.search(config_pattern, text):
               text = re.sub(config_pattern, "\n" + config_line, text, count=1)
@@ -72,8 +65,6 @@ jobs:
                   raise SystemExit('Expected timeframe configuration marker not found')
               text = text.replace(marker, marker + "\n" + config_line, 1)
 
-          # Replace processLive as a whole. This makes the patch independent of
-          # whether another configuration change was applied before it.
           process_live = """async function processLive(timeframe, boundary) {
             const period = bucketStart(boundary - 1, timeframe);
             const disabledSymbols = new Set(disabledSymbolsByTimeframe[timeframe] || []);
@@ -97,8 +88,8 @@ jobs:
               if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents);
             }));
           }"""
-          pattern = r"async function processLive\(timeframe, boundary\) \{.*?\n\}\n\nasync function main\(\)"
-          replacement = process_live + "\n\nasync function main()"
+          pattern = r"async function processLive\(timeframe, boundary\) \{.*?\}\s*async function main\(\)"
+          replacement = process_live + "\nasync function main()"
           if not re.search(pattern, text, flags=re.S):
               raise SystemExit('Expected processLive function not found')
           text = re.sub(pattern, replacement, text, count=1, flags=re.S)
