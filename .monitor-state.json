@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updatedAt": "2026-09-07T07:55:02.418Z",
+  "version": 4,
+  "updatedAt": "2026-09-07T07:59:22.715Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -1304,7 +1304,7 @@
         }
       },
       "ETH": {
-        "imbalanceUsd": -2967971.4808000014,
+        "imbalanceUsd": -2967971.480799999,
         "longUsd": 2521271.4579300005,
         "shortUsd": 5489242.93873,
         "longEvents": 196,
@@ -2562,7 +2562,7 @@
         }
       },
       "SOL": {
-        "imbalanceUsd": -980107.126092,
+        "imbalanceUsd": -980107.1260920003,
         "longUsd": 782511.4167660001,
         "shortUsd": 1762618.5428580004,
         "longEvents": 167,
@@ -3820,7 +3820,7 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": 480675.17374999996,
+        "imbalanceUsd": 480675.1737499999,
         "longUsd": 647921.2901699999,
         "shortUsd": 167246.11642000003,
         "longEvents": 150,
@@ -5078,7 +5078,7 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": -111332.4708140063,
+        "imbalanceUsd": -111332.47081400617,
         "longUsd": 321785.14549,
         "shortUsd": 433117.6163040062,
         "longEvents": 90,
@@ -6336,7 +6336,7 @@
         }
       },
       "BNB": {
-        "imbalanceUsd": 55062.864400000006,
+        "imbalanceUsd": 55062.86440000002,
         "longUsd": 149627.64870000002,
         "shortUsd": 94564.7843,
         "longEvents": 36,
@@ -7607,7 +7607,7 @@
     },
     "15m": {
       "BTC": {
-        "imbalanceUsd": 8294998.70355,
+        "imbalanceUsd": 8294998.703549999,
         "longUsd": 16364992.65195,
         "shortUsd": 8069993.948400001,
         "longEvents": 1195,
@@ -8109,7 +8109,7 @@
         }
       },
       "ETH": {
-        "imbalanceUsd": -1000694.2932011788,
+        "imbalanceUsd": -1000694.2932011783,
         "longUsd": 7494010.979028817,
         "shortUsd": 8494705.272229996,
         "longEvents": 614,
@@ -8611,7 +8611,7 @@
         }
       },
       "SOL": {
-        "imbalanceUsd": 125490.38296399987,
+        "imbalanceUsd": 125490.38296400057,
         "longUsd": 2477317.898247,
         "shortUsd": 2351827.5152829993,
         "longEvents": 393,
@@ -9113,7 +9113,7 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": 1480554.0542500096,
+        "imbalanceUsd": 1480554.0542500094,
         "longUsd": 1815379.9117600094,
         "shortUsd": 334825.85751,
         "longEvents": 345,
@@ -9615,7 +9615,7 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": -60264.59009804204,
+        "imbalanceUsd": -60264.590098041925,
         "longUsd": 565249.2244309642,
         "shortUsd": 625513.8145290061,
         "longEvents": 202,
@@ -10117,7 +10117,7 @@
         }
       },
       "BNB": {
-        "imbalanceUsd": 52372.94658,
+        "imbalanceUsd": 52372.94657999999,
         "longUsd": 192092.98940000002,
         "shortUsd": 139720.04282000003,
         "longEvents": 69,
@@ -10619,7 +10619,7 @@
         }
       },
       "HYPE": {
-        "imbalanceUsd": 561796.0751266001,
+        "imbalanceUsd": 561796.0751265999,
         "longUsd": 699749.3807820999,
         "shortUsd": 137953.30565550004,
         "longEvents": 171,
@@ -11123,7 +11123,7 @@
     },
     "1h": {
       "BTC": {
-        "imbalanceUsd": 1932463.0222900035,
+        "imbalanceUsd": 1932463.0222900007,
         "longUsd": 9024529.37493,
         "shortUsd": 7092066.352639999,
         "longEvents": 714,
@@ -11385,7 +11385,7 @@
         }
       },
       "SOL": {
-        "imbalanceUsd": -942177.2004059994,
+        "imbalanceUsd": -942177.2004059996,
         "longUsd": 1407541.891477,
         "shortUsd": 2349719.0918829995,
         "longEvents": 254,
@@ -11516,7 +11516,7 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": 577750.3661400065,
+        "imbalanceUsd": 577750.3661400066,
         "longUsd": 912344.3216500066,
         "shortUsd": 334593.95551,
         "longEvents": 193,
@@ -11647,7 +11647,7 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": -190305.1396560323,
+        "imbalanceUsd": -190305.1396560322,
         "longUsd": 434495.68842297397,
         "shortUsd": 624800.8280790062,
         "longEvents": 114,
@@ -11778,7 +11778,7 @@
         }
       },
       "BNB": {
-        "imbalanceUsd": -66945.33102,
+        "imbalanceUsd": -66945.33102000001,
         "longUsd": 72752.438,
         "shortUsd": 139697.76902,
         "longEvents": 38,
@@ -11909,7 +11909,7 @@
         }
       },
       "HYPE": {
-        "imbalanceUsd": 468468.14354779996,
+        "imbalanceUsd": 468468.1435478,
         "longUsd": 606421.4492033,
         "shortUsd": 137953.30565550004,
         "longEvents": 138,
@@ -12042,7 +12042,7 @@
     },
     "4h": {
       "BTC": {
-        "imbalanceUsd": 4834183.345390001,
+        "imbalanceUsd": 4834183.34539,
         "longUsd": 8300308.21163,
         "shortUsd": 3466124.8662399994,
         "longEvents": 640,
@@ -12122,7 +12122,7 @@
         }
       },
       "SOL": {
-        "imbalanceUsd": -1260844.0343179996,
+        "imbalanceUsd": -1260844.0343179998,
         "longUsd": 1166818.2370649998,
         "shortUsd": 2427662.2713829996,
         "longEvents": 233,
@@ -12162,7 +12162,7 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": 513241.31375000667,
+        "imbalanceUsd": 513241.3137500066,
         "longUsd": 826511.4365700065,
         "shortUsd": 313270.12281999993,
         "longEvents": 179,
@@ -12202,7 +12202,7 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": -269399.56186403224,
+        "imbalanceUsd": -269399.5618640322,
         "longUsd": 344988.92277997406,
         "shortUsd": 614388.4846440062,
         "longEvents": 111,
@@ -12242,7 +12242,7 @@
         }
       },
       "BNB": {
-        "imbalanceUsd": -66447.63002000001,
+        "imbalanceUsd": -66447.63002,
         "longUsd": 68860.3318,
         "shortUsd": 135307.96182,
         "longEvents": 34,
