@@ -1,0 +1,43 @@
+name: Deploy Convex
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'convex/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Configure Convex ingest secret
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+        run: |
+          test -n "$CONVEX_DEPLOY_KEY"
+          test -n "$CONVEX_INGEST_TOKEN"
+          npx convex env set CONVEX_INGEST_TOKEN "$CONVEX_INGEST_TOKEN" --prod
+
+      - name: Deploy Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy
