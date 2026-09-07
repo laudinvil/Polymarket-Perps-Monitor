@@ -68,14 +68,12 @@ jobs:
               break
             fi
 
-            # Heartbeat: a healthy monitor may intentionally wait several minutes
-            # for the next timeframe boundary. Keep monitor.log fresh so the
-            # 4-minute watchdog does not mistake that idle wait for a hang.
-            echo "MONITOR HEARTBEAT: pid=$MONITOR_PID alive=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            # Heartbeat: keep the monitor log fresh during intentional waits.
+            # The watchdog below checks this timestamp, so a healthy monitor
+            # waiting for the next timeframe boundary is not restarted.
+            echo "MONITOR HEARTBEAT: pid=$MONITOR_PID alive=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> monitor.log
 
             # Watchdog: restart only when monitor.log has been stale for 240 seconds.
-            # The heartbeat above makes this a real process-health check rather than
-            # a false positive during a normal wait for the next 5m boundary.
             if [ -f monitor.log ]; then
               LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
               NOW_TS=$(date +%s)
