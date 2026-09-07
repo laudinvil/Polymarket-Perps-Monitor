@@ -39,12 +39,17 @@ jobs:
         run: |
           node --check src/index.js
           grep -F "const disabledSymbolsByTimeframe" src/index.js
-          grep -F "'5m': ['HYPE']" src/index.js
+          grep -F "'5m': []" src/index.js
+          grep -F "'1h': []" src/index.js
+          grep -F "contrarianState" src/index.js
+          grep -F "positive.length === 1 && negative.length === 6" src/index.js
+          grep -F "negative.length === 1 && positive.length === 6" src/index.js
+          grep -F "if (previous.symbol === contrarian.symbol) return null;" src/index.js
           grep -F "?ref=monitor-status" src/index.js
           grep -F "branch: 'monitor-status'" src/index.js
           grep -F "const due = bucketStart(current, timeframe);" src/index.js
           grep -F "await Promise.all(activeSymbols.map" src/index.js
-          echo "Monitor source configuration verified"
+          echo "Contrarian monitor source configuration verified"
 
       - name: Continuous MarginPad monitor
         env:
@@ -64,23 +69,14 @@ jobs:
 
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 60
-            if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
-              break
-            fi
-
-            # Heartbeat: keep the monitor log fresh during intentional waits.
-            # The watchdog below checks this timestamp, so a healthy monitor
-            # waiting for the next timeframe boundary is not restarted.
+            if ! kill -0 "$MONITOR_PID" 2>/dev/null; then break; fi
             echo "MONITOR HEARTBEAT: pid=$MONITOR_PID alive=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> monitor.log
-
-            # Watchdog: restart only when monitor.log has been stale for 240 seconds.
             if [ -f monitor.log ]; then
               LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
               NOW_TS=$(date +%s)
               STALE_SECONDS=$((NOW_TS - LAST_MODIFIED))
               if [ "$LAST_MODIFIED" -gt 0 ] && [ "$STALE_SECONDS" -ge 240 ]; then
                 echo "MONITOR WATCHDOG: stale monitor.log for ${STALE_SECONDS}s; restarting monitor; pid=$MONITOR_PID; last_modified=$(date -u -d "@$LAST_MODIFIED" +'%Y-%m-%dT%H:%M:%SZ')"
-                echo "MONITOR WATCHDOG: last log lines before restart:"
                 tail -n 20 monitor.log || true
                 kill "$MONITOR_PID" 2>/dev/null || true
                 sleep 2
@@ -91,19 +87,16 @@ jobs:
                 echo "MONITOR WATCHDOG: restarted monitor pid=$MONITOR_PID"
               fi
             fi
-
             NEW_LINES=$(wc -l < monitor.log)
             if [ "$NEW_LINES" -gt "$HISTORY_LINES" ]; then
               tail -n +$((HISTORY_LINES + 1)) monitor.log >> monitor-history.log
               HISTORY_LINES=$NEW_LINES
             fi
-
             node scripts/convex-sync.js sync || true
             tail -n 50000 monitor-history.log > monitor-history.tmp
             mv monitor-history.tmp monitor-history.log
             tail -n 5000 monitor.log > monitor-live.log
             node scripts/build-monitor-stats.js monitor-history.log
-
             {
               echo "# MarginPad monitor live status"
               echo
@@ -115,7 +108,6 @@ jobs:
               tail -n 500 monitor.log
               echo '```'
             } > monitor-status.md
-
             git fetch origin monitor-status --depth=1 || true
             rm -rf /tmp/monitor-status-worktree
             git worktree prune
@@ -131,10 +123,7 @@ jobs:
             git -C /tmp/monitor-status-worktree push origin HEAD:monitor-status || true
             git worktree remove /tmp/monitor-status-worktree --force || true
           done
-
-          if ! wait "$MONITOR_PID"; then
-            MONITOR_STATUS=failed
-          fi
+          if ! wait "$MONITOR_PID"; then MONITOR_STATUS=failed; fi
           node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
           test "$MONITOR_STATUS" = completed
 
