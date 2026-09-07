@@ -1,21 +1,13 @@
 name: MarginPad Auto Monitor
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '.monitor-state.json'
-      - 'monitor-status.md'
-      - 'monitor-live.log'
-      - 'monitor-history.log'
-      - 'monitor-stats.md'
   schedule:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
