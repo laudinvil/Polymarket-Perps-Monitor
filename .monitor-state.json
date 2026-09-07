@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updatedAt": "2026-09-07T13:45:04.228Z",
+  "updatedAt": "2026-09-07T13:46:08.631Z",
   "sentAlerts": [
     "15m:BTC:1788774300000:1",
     "15m:ETH:1788774300000:-1",
@@ -1811,14 +1811,14 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": -123777.67662797403,
-        "longUsd": 151211.44201297403,
+        "imbalanceUsd": -123777.67662797493,
+        "longUsd": 151211.44201297493,
         "shortUsd": 27433.765385000002,
         "longEvents": 5,
         "shortEvents": 0,
         "events": 5,
         "establishedSign": -1,
-        "lastBucket": 1788787800000,
+        "lastBucket": 1788788700000,
         "buckets": {
           "1788705000000": {
             "longUsd": 0,
@@ -2208,6 +2208,12 @@
             "longUsd": 6700.86813,
             "shortUsd": 0,
             "longEvents": 5,
+            "shortEvents": 0
+          },
+          "1788788700000": {
+            "longUsd": 9.0886e-10,
+            "shortUsd": 0,
+            "longEvents": 0,
             "shortEvents": 0
           }
         }
@@ -3613,14 +3619,14 @@
         }
       },
       "BNB": {
-        "imbalanceUsd": -13832.911250000003,
+        "imbalanceUsd": -13810.491050000002,
         "longUsd": 27549.278050000004,
-        "shortUsd": 13716.366800000002,
+        "shortUsd": 13738.787000000002,
         "longEvents": 0,
         "shortEvents": 0,
         "events": 0,
         "establishedSign": -1,
-        "lastBucket": 1788782400000,
+        "lastBucket": 1788786000000,
         "buckets": {
           "1788667200000": {
             "longUsd": 0,
@@ -3793,6 +3799,12 @@
           "1788782400000": {
             "longUsd": 0,
             "shortUsd": 156.93720000000002,
+            "longEvents": 0,
+            "shortEvents": 0
+          },
+          "1788786000000": {
+            "longUsd": 0,
+            "shortUsd": 22.4202,
             "longEvents": 0,
             "shortEvents": 0
           }
