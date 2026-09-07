@@ -87,8 +87,13 @@ async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
 async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
   const start = nextBucketStart(now, timeframe);
   for (let i = 0; i < 12; i += 1) {
-    const market = await findMarketByEpoch(symbol, start + i * TIMEFRAMES[timeframe], timeframe);
+    const epoch = start + i * TIMEFRAMES[timeframe];
+    const market = await findMarketByEpoch(symbol, epoch, timeframe);
     if (market) return market;
+  }
+  const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
+  if (fallbackUrl) {
+    return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true };
   }
   return null;
 }
