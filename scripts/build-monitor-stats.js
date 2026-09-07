@@ -14,14 +14,22 @@ for (const line of lines) {
       const key = `${x.timeframe}:${x.symbol}`;
       const longUsd = Math.max(0, Number(x.longUsd) || 0);
       const shortUsd = Math.max(0, Number(x.shortUsd) || 0);
-      const longEvents = Math.max(0, Number(x.longEvents) || 0);
-      const shortEvents = Math.max(0, Number(x.shortEvents) || 0);
+      const hasLongEvents = Number.isFinite(Number(x.longEvents));
+      const hasShortEvents = Number.isFinite(Number(x.shortEvents));
+      const previous = totals.get(key) || { longUsd: 0, shortUsd: 0, fallbackLongEvents: 0, fallbackShortEvents: 0, buckets: 0 };
+
       totals.set(key, {
-        longUsd: (totals.get(key)?.longUsd || 0) + longUsd,
-        shortUsd: (totals.get(key)?.shortUsd || 0) + shortUsd,
-        longEvents: (totals.get(key)?.longEvents || 0) + longEvents,
-        shortEvents: (totals.get(key)?.shortEvents || 0) + shortEvents,
-        buckets: (totals.get(key)?.buckets || 0) + 1
+        longUsd: previous.longUsd + longUsd,
+        shortUsd: previous.shortUsd + shortUsd,
+        // index.js logs cumulative event counters, so they must NOT be summed.
+        latestLongEvents: hasLongEvents ? Math.max(0, Number(x.longEvents)) : (previous.latestLongEvents || 0),
+        latestShortEvents: hasShortEvents ? Math.max(0, Number(x.shortEvents)) : (previous.latestShortEvents || 0),
+        hasLongEventCounter: previous.hasLongEventCounter || hasLongEvents,
+        hasShortEventCounter: previous.hasShortEventCounter || hasShortEvents,
+        // Fallback for older log lines that predate event-counter logging.
+        fallbackLongEvents: previous.fallbackLongEvents + (longUsd > 0 ? 1 : 0),
+        fallbackShortEvents: previous.fallbackShortEvents + (shortUsd > 0 ? 1 : 0),
+        buckets: previous.buckets + 1
       });
       latest.set(key, x);
     }
@@ -48,14 +56,15 @@ for (const tf of frames) {
   for (const symbol of symbols) {
     const key = `${tf}:${symbol}`;
     const t = totals.get(key);
-    const x = latest.get(key);
     if (!t) {
       out += `| ${symbol} | — | — | — | — | — | — | — |\n`;
       continue;
     }
     const imbalance = t.shortUsd - t.longUsd;
     const sign = imbalance > 0 ? 1 : imbalance < 0 ? -1 : 0;
-    out += `| ${symbol} | ${signed(imbalance)} | ${usd(t.longUsd)} | ${usd(t.shortUsd)} | ${t.longEvents} | ${t.shortEvents} | ${t.buckets} | ${sign} |\n`;
+    const longEvents = t.hasLongEventCounter ? t.latestLongEvents : t.fallbackLongEvents;
+    const shortEvents = t.hasShortEventCounter ? t.latestShortEvents : t.fallbackShortEvents;
+    out += `| ${symbol} | ${signed(imbalance)} | ${usd(t.longUsd)} | ${usd(t.shortUsd)} | ${longEvents} | ${shortEvents} | ${t.buckets} | ${sign} |\n`;
   }
   out += '\n';
 }
