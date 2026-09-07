@@ -47,6 +47,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
+          echo "Starting authoritative monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
           node src/index.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           HISTORY_LINES=0
