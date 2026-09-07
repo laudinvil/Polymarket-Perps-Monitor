@@ -67,7 +67,7 @@ jobs:
           from pathlib import Path
           path = Path('src/index.js')
           text = path.read_text()
-          old = 'await Promise.all(symbols.map(async symbol => {'
+          old = "await Promise.all(symbols.map(async symbol => {"
           new = "await Promise.all(symbols.filter(symbol => !(timeframe === '5m' && symbol === 'HYPE')).map(async symbol => {"
           if old not in text:
               raise SystemExit('Expected live symbol loop not found')
