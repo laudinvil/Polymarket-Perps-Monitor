@@ -28,6 +28,19 @@ jobs:
           git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
           touch monitor-history.log
 
+      - name: Fix timeframe boundary detection
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/index.js')
+          text = path.read_text()
+          old = 'const due = bucketStart(current - BOUNDARY_GRACE_MS, timeframe) + size;'
+          new = 'const due = bucketStart(current, timeframe);'
+          if old not in text:
+              raise SystemExit('Expected boundary expression not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
