@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updatedAt": "2026-09-07T07:40:02.652Z",
+  "updatedAt": "2026-09-07T07:45:05.133Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -38,7 +38,8 @@
     "15m:BTC:1788750000000:1",
     "4h:SOL:1788724800000:-1",
     "4h:XRP:1788724800000:-1",
-    "4h:XRP:1788739200000:1"
+    "4h:XRP:1788739200000:1",
+    "5m:BNB:1788766800000:1"
   ],
   "liquidationTimeframes": {
     "5m": {
@@ -50,7 +51,7 @@
         "shortEvents": 209,
         "events": 484,
         "establishedSign": 1,
-        "lastBucket": 1788766500000,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14635.8384,
@@ -1276,18 +1277,25 @@
             "longEvents": 2,
             "shortEvents": 0,
             "events": 2
+          },
+          "1788766800000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
       "ETH": {
-        "imbalanceUsd": -2965486.4708000016,
+        "imbalanceUsd": -2967971.4808000014,
         "longUsd": 2521271.4579300005,
-        "shortUsd": 5486757.92873,
+        "shortUsd": 5489242.93873,
         "longEvents": 196,
-        "shortEvents": 303,
-        "events": 499,
+        "shortEvents": 304,
+        "events": 500,
         "establishedSign": -1,
-        "lastBucket": 1788766500000,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14271.6462,
@@ -2513,18 +2521,25 @@
             "longEvents": 3,
             "shortEvents": 0,
             "events": 3
+          },
+          "1788766800000": {
+            "longUsd": 0,
+            "shortUsd": 2485.01,
+            "longEvents": 0,
+            "shortEvents": 1,
+            "events": 1
           }
         }
       },
       "SOL": {
-        "imbalanceUsd": -979939.074292,
+        "imbalanceUsd": -980107.126092,
         "longUsd": 782511.4167660001,
-        "shortUsd": 1762450.4910580004,
+        "shortUsd": 1762618.5428580004,
         "longEvents": 167,
-        "shortEvents": 133,
-        "events": 300,
+        "shortEvents": 135,
+        "events": 302,
         "establishedSign": -1,
-        "lastBucket": 1788766500000,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 9788.911100000001,
@@ -3750,18 +3765,25 @@
             "longEvents": 1,
             "shortEvents": 0,
             "events": 1
+          },
+          "1788766800000": {
+            "longUsd": 0,
+            "shortUsd": 168.0518,
+            "longEvents": 0,
+            "shortEvents": 2,
+            "events": 2
           }
         }
       },
       "XRP": {
-        "imbalanceUsd": 480676.31782999996,
-        "longUsd": 647690.5322499999,
-        "shortUsd": 167014.21442000003,
-        "longEvents": 147,
-        "shortEvents": 74,
-        "events": 221,
+        "imbalanceUsd": 480675.17374999996,
+        "longUsd": 647921.2901699999,
+        "shortUsd": 167246.11642000003,
+        "longEvents": 150,
+        "shortEvents": 75,
+        "events": 225,
         "establishedSign": 1,
-        "lastBucket": 1788766500000,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -4987,6 +5009,13 @@
             "longEvents": 6,
             "shortEvents": 0,
             "events": 6
+          },
+          "1788766800000": {
+            "longUsd": 230.75792,
+            "shortUsd": 231.90200000000002,
+            "longEvents": 3,
+            "shortEvents": 1,
+            "events": 4
           }
         }
       },
@@ -4998,7 +5027,7 @@
         "shortEvents": 109,
         "events": 199,
         "establishedSign": -1,
-        "lastBucket": 1788766500000,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -6224,18 +6253,25 @@
             "longEvents": 2,
             "shortEvents": 0,
             "events": 2
+          },
+          "1788766800000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
       "BNB": {
-        "imbalanceUsd": -31191.50539999999,
-        "longUsd": 63373.27890000002,
+        "imbalanceUsd": 55062.864400000006,
+        "longUsd": 149627.64870000002,
         "shortUsd": 94564.7843,
-        "longEvents": 29,
+        "longEvents": 36,
         "shortEvents": 64,
-        "events": 93,
-        "establishedSign": -1,
-        "lastBucket": 1788766500000,
+        "events": 100,
+        "establishedSign": 1,
+        "lastBucket": 1788766800000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -7461,6 +7497,13 @@
             "longEvents": 2,
             "shortEvents": 1,
             "events": 3
+          },
+          "1788766800000": {
+            "longUsd": 86254.3698,
+            "shortUsd": 0,
+            "longEvents": 7,
+            "shortEvents": 0,
+            "events": 7
           }
         }
       },
@@ -7478,14 +7521,14 @@
     },
     "15m": {
       "BTC": {
-        "imbalanceUsd": 3006533.719230003,
-        "longUsd": 10438408.288140003,
-        "shortUsd": 7431874.568910001,
-        "longEvents": 831,
-        "shortEvents": 423,
-        "events": 1254,
+        "imbalanceUsd": 8294998.70355,
+        "longUsd": 16364992.65195,
+        "shortUsd": 8069993.948400001,
+        "longEvents": 1195,
+        "shortEvents": 459,
+        "events": 1654,
         "establishedSign": 1,
-        "lastBucket": 1788765300000,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 1405246.6623599993,
@@ -7969,18 +8012,25 @@
             "longEvents": 107,
             "shortEvents": 7,
             "events": 114
+          },
+          "1788766200000": {
+            "longUsd": 5926584.363809997,
+            "shortUsd": 638119.3794900001,
+            "longEvents": 364,
+            "shortEvents": 36,
+            "events": 400
           }
         }
       },
       "ETH": {
-        "imbalanceUsd": -4459968.4450499965,
-        "longUsd": 4015998.151069999,
-        "shortUsd": 8475966.596119996,
-        "longEvents": 409,
-        "shortEvents": 649,
-        "events": 1058,
+        "imbalanceUsd": -1000694.2932011788,
+        "longUsd": 7494010.979028817,
+        "shortUsd": 8494705.272229996,
+        "longEvents": 614,
+        "shortEvents": 655,
+        "events": 1269,
         "establishedSign": -1,
-        "lastBucket": 1788765300000,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -8464,18 +8514,25 @@
             "longEvents": 100,
             "shortEvents": 0,
             "events": 100
+          },
+          "1788766200000": {
+            "longUsd": 3478012.8279588176,
+            "shortUsd": 18738.67611,
+            "longEvents": 205,
+            "shortEvents": 6,
+            "events": 211
           }
         }
       },
       "SOL": {
-        "imbalanceUsd": -925380.1221060001,
-        "longUsd": 1425550.2083769997,
-        "shortUsd": 2350930.3304829993,
-        "longEvents": 267,
-        "shortEvents": 255,
-        "events": 522,
-        "establishedSign": -1,
-        "lastBucket": 1788765300000,
+        "imbalanceUsd": 125490.38296399987,
+        "longUsd": 2477317.898247,
+        "shortUsd": 2351827.5152829993,
+        "longEvents": 393,
+        "shortEvents": 260,
+        "events": 653,
+        "establishedSign": 1,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -8959,18 +9016,25 @@
             "longEvents": 13,
             "shortEvents": 0,
             "events": 13
+          },
+          "1788766200000": {
+            "longUsd": 1051767.68987,
+            "shortUsd": 897.1848,
+            "longEvents": 126,
+            "shortEvents": 5,
+            "events": 131
           }
         }
       },
       "XRP": {
-        "imbalanceUsd": 588395.7034700066,
-        "longUsd": 922989.6589800064,
-        "shortUsd": 334593.95551,
-        "longEvents": 200,
-        "shortEvents": 136,
-        "events": 336,
+        "imbalanceUsd": 1480554.0542500096,
+        "longUsd": 1815379.9117600094,
+        "shortUsd": 334825.85751,
+        "longEvents": 345,
+        "shortEvents": 137,
+        "events": 482,
         "establishedSign": 1,
-        "lastBucket": 1788765300000,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -9454,18 +9518,25 @@
             "longEvents": 7,
             "shortEvents": 0,
             "events": 7
+          },
+          "1788766200000": {
+            "longUsd": 892390.252780003,
+            "shortUsd": 231.90200000000002,
+            "longEvents": 145,
+            "shortEvents": 1,
+            "events": 146
           }
         }
       },
       "DOGE": {
-        "imbalanceUsd": -167818.56916603216,
-        "longUsd": 456982.2589129741,
-        "shortUsd": 624800.8280790062,
-        "longEvents": 128,
-        "shortEvents": 164,
-        "events": 292,
+        "imbalanceUsd": -60264.59009804204,
+        "longUsd": 565249.2244309642,
+        "shortUsd": 625513.8145290061,
+        "longEvents": 202,
+        "shortEvents": 165,
+        "events": 367,
         "establishedSign": -1,
-        "lastBucket": 1788765300000,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -9949,18 +10020,25 @@
             "longEvents": 14,
             "shortEvents": 0,
             "events": 14
+          },
+          "1788766200000": {
+            "longUsd": 108266.96551799012,
+            "shortUsd": 712.98645,
+            "longEvents": 74,
+            "shortEvents": 1,
+            "events": 75
           }
         }
       },
       "BNB": {
-        "imbalanceUsd": -48526.35642,
-        "longUsd": 91171.41260000001,
-        "shortUsd": 139697.76902000004,
-        "longEvents": 51,
-        "shortEvents": 83,
-        "events": 134,
-        "establishedSign": -1,
-        "lastBucket": 1788765300000,
+        "imbalanceUsd": 52372.94658,
+        "longUsd": 192092.98940000002,
+        "shortUsd": 139720.04282000003,
+        "longEvents": 69,
+        "shortEvents": 84,
+        "events": 153,
+        "establishedSign": 1,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -10444,18 +10522,25 @@
             "longEvents": 13,
             "shortEvents": 0,
             "events": 13
+          },
+          "1788766200000": {
+            "longUsd": 100921.5768,
+            "shortUsd": 22.2738,
+            "longEvents": 18,
+            "shortEvents": 1,
+            "events": 19
           }
         }
       },
       "HYPE": {
-        "imbalanceUsd": 470303.0277678001,
-        "longUsd": 608256.3334233,
+        "imbalanceUsd": 561796.0751266001,
+        "longUsd": 699749.3807820999,
         "shortUsd": 137953.30565550004,
-        "longEvents": 143,
+        "longEvents": 171,
         "shortEvents": 78,
-        "events": 221,
+        "events": 249,
         "establishedSign": 1,
-        "lastBucket": 1788765300000,
+        "lastBucket": 1788766200000,
         "buckets": {
           "1788704100000": {
             "longUsd": 0,
@@ -10939,6 +11024,13 @@
             "longEvents": 4,
             "shortEvents": 0,
             "events": 4
+          },
+          "1788766200000": {
+            "longUsd": 91493.0473588,
+            "shortUsd": 0,
+            "longEvents": 28,
+            "shortEvents": 0,
+            "events": 28
           }
         }
       }
