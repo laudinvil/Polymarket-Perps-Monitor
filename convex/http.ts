@@ -44,10 +44,6 @@ const ingest = httpAction(async (ctx, request) => {
 });
 
 const latestStats = httpAction(async (ctx, request) => {
-  if (!authorized(request)) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
   const url = new URL(request.url);
   const timeframe = String(url.searchParams.get("timeframe") || "").trim();
   if (!["5m", "15m", "1h", "4h"].includes(timeframe)) {
