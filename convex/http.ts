@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const http = httpRouter();
 
@@ -43,6 +43,27 @@ const ingest = httpAction(async (ctx, request) => {
   }
 });
 
+const latestStats = httpAction(async (ctx, request) => {
+  if (!authorized(request)) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const timeframe = String(url.searchParams.get("timeframe") || "").trim();
+  if (!["5m", "15m", "1h", "4h"].includes(timeframe)) {
+    return new Response("Invalid timeframe", { status: 400 });
+  }
+
+  try {
+    const rows = await ctx.runQuery(api.monitor.latestStats, { timeframe });
+    return Response.json(rows);
+  } catch (error) {
+    console.error("Convex latest stats failed", error);
+    return new Response("Stats query failed", { status: 500 });
+  }
+});
+
 http.route({ path: "/ingest", method: "POST", handler: ingest });
+http.route({ path: "/latest-stats", method: "GET", handler: latestStats });
 
 export default http;
