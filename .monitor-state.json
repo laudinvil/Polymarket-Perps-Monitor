@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updatedAt": "2026-09-07T09:01:30.952Z",
+  "updatedAt": "2026-09-07T09:01:32.643Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -48,7 +48,8 @@
     "4h:BTC:1788768000000:-1",
     "4h:ETH:1788768000000:1",
     "4h:SOL:1788768000000:1",
-    "4h:XRP:1788768000000:-1"
+    "4h:XRP:1788768000000:-1",
+    "4h:DOGE:1788768000000:1"
   ],
   "liquidationTimeframes": {
     "5m": {
@@ -13150,14 +13151,14 @@
         }
       },
       "DOGE": {
-        "imbalanceUsd": 67182.99828804203,
+        "imbalanceUsd": 68061.20308804198,
         "longUsd": 565551.7224309642,
-        "shortUsd": 632734.7207190063,
+        "shortUsd": 633612.9255190062,
         "longEvents": 203,
         "shortEvents": 178,
         "events": 381,
         "establishedSign": 1,
-        "lastBucket": 1788753600000,
+        "lastBucket": 1788768000000,
         "buckets": {
           "1788696000000": {
             "longUsd": 0,
@@ -13193,6 +13194,12 @@
             "longEvents": 92,
             "shortEvents": 18,
             "events": 110
+          },
+          "1788768000000": {
+            "longUsd": 0,
+            "shortUsd": 878.2048000000001,
+            "longEvents": 0,
+            "shortEvents": 0
           }
         }
       },
