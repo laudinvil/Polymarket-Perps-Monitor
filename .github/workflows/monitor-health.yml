@@ -5,10 +5,6 @@ on:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
-concurrency:
-  group: marginpad-auto-monitor
-  cancel-in-progress: false
-
 jobs:
   monitor:
     runs-on: ubuntu-latest
