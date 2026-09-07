@@ -63,17 +63,17 @@ jobs:
           MONITOR_STATUS=completed
 
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
-            sleep 300
+            sleep 60
             if ! kill -0 "$MONITOR_PID" 2>/dev/null; then
               break
             fi
 
-            # Watchdog: if the monitor has not produced output for 10 minutes,
-            # restart it instead of allowing one hung HTTP request to freeze alerts forever.
+            # Watchdog: restart only when monitor.log has been stale for 240 seconds.
+            # Checking every minute keeps the restart comfortably inside one 5m cycle.
             if [ -f monitor.log ]; then
               LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
               NOW_TS=$(date +%s)
-              if [ "$LAST_MODIFIED" -gt 0 ] && [ $((NOW_TS - LAST_MODIFIED)) -ge 600 ]; then
+              if [ "$LAST_MODIFIED" -gt 0 ] && [ $((NOW_TS - LAST_MODIFIED)) -ge 240 ]; then
                 echo "MONITOR WATCHDOG: stale monitor.log for $((NOW_TS - LAST_MODIFIED))s; restarting monitor"
                 kill "$MONITOR_PID" 2>/dev/null || true
                 sleep 2
