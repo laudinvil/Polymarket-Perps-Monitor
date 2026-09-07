@@ -57,7 +57,7 @@ jobs:
           set -o pipefail
           echo "Starting authoritative monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
           node scripts/convex-sync.js start || true
-          node src/index.js 2>&1 | tee monitor.log &
+          node -r ./src/http-timeout.js src/index.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           HISTORY_LINES=0
           MONITOR_STATUS=completed
@@ -79,7 +79,7 @@ jobs:
                 sleep 2
                 pkill -TERM -P "$MONITOR_PID" 2>/dev/null || true
                 wait "$MONITOR_PID" 2>/dev/null || true
-                node src/index.js 2>&1 | tee -a monitor.log &
+                node -r ./src/http-timeout.js src/index.js 2>&1 | tee -a monitor.log &
                 MONITOR_PID=$!
                 echo "MONITOR WATCHDOG: restarted monitor pid=$MONITOR_PID"
               fi
@@ -138,4 +138,3 @@ jobs:
           name: marginpad-auto-monitor-${{ github.run_id }}
           path: monitor.log
           if-no-files-found: ignore
-          retention-days: 14
