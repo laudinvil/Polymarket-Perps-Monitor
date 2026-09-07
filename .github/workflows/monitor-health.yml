@@ -82,7 +82,8 @@ jobs:
 
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add monitor-status.md monitor-live.log monitor-history.log monitor-stats.md
+            git add monitor-status.md monitor-stats.md
+            git add -f monitor-live.log monitor-history.log
             git diff --cached --quiet || git commit -m 'Persist monitor history and statistics'
             timeout 15s git push origin HEAD:monitor-status --force || true
           done
