@@ -48,6 +48,19 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
 
+      - name: Parallelize live liquidation fetches
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/index.js')
+          text = path.read_text()
+          old = "async function processLive(timeframe, boundary) { for (const symbol of symbols) { const events = await fetchSymbolFeed(symbol); const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState(); const period = bucketStart(boundary - 1, timeframe); let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0; for (const event of events || []) { const ts = normalizeTs(event); if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue; const side = eventSideSign(event), value = eventNotionalUsd(event); if (side > 0) { longUsd += value; longEvents++; } else if (side < 0) { shortUsd += value; shortEvents++; } } const before = state.imbalanceUsd; const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents); if (!next) continue; console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket })); const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period); if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents); } }"
+          new = "async function processLive(timeframe, boundary) { const period = bucketStart(boundary - 1, timeframe); await Promise.all(symbols.map(async symbol => { const events = await fetchSymbolFeed(symbol); const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState(); let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0; for (const event of events || []) { const ts = normalizeTs(event); if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue; const side = eventSideSign(event), value = eventNotionalUsd(event); if (side > 0) { longUsd += value; longEvents++; } else if (side < 0) { shortUsd += value; shortEvents++; } } const before = state.imbalanceUsd; const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents); if (!next) return; console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket })); const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period); if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents); })); }"
+          if old not in text:
+              raise SystemExit('Expected processLive function not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
