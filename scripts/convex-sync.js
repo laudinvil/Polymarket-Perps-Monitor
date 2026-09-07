@@ -18,7 +18,9 @@ async function post(type, data) {
       body: JSON.stringify({ type, data }),
     });
     if (!response.ok) {
-      console.warn(`CONVEX ${type} FAILED: ${response.status}`);
+      let body = '';
+      try { body = (await response.text()).slice(0, 300).replace(/\s+/g, ' '); } catch {}
+      console.warn(`CONVEX ${type} FAILED: ${response.status}${body ? ` ${body}` : ''}`);
       return false;
     }
     console.log(`CONVEX ${type} OK`);
@@ -34,6 +36,7 @@ async function start() {
     console.warn('CONVEX DISABLED: CONVEX_URL or CONVEX_INGEST_TOKEN is missing');
     return;
   }
+  console.log(`CONVEX TARGET: ${BASE_URL}/ingest`);
   await post('run.start', { runId: RUN_ID, githubRunId: String(RUN_ID), commitSha: COMMIT_SHA, startedAt: Date.now() });
   fs.writeFileSync(CURSOR_PATH, '0');
 }
