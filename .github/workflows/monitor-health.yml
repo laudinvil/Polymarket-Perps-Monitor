@@ -40,31 +40,6 @@ jobs:
           git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
           touch monitor-history.log
 
-      - name: Reset persisted liquidation state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set +e
-          STATE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/contents/.monitor-state.json" 2>/dev/null)
-          STATE_STATUS=$?
-          set -e
-          if [ "$STATE_STATUS" -eq 0 ]; then
-            STATE_SHA=$(printf '%s' "$STATE_JSON" | jq -r '.sha // empty')
-            if [ -n "$STATE_SHA" ]; then
-              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/contents/.monitor-state.json" \
-                -f message='Reset liquidation monitor state before fresh run' \
-                -f sha="$STATE_SHA" >/dev/null
-              echo "Persisted liquidation state removed: $STATE_SHA"
-            else
-              echo "Persisted liquidation state has no SHA; leaving it untouched"
-            fi
-          elif [ "$STATE_STATUS" -eq 1 ]; then
-            echo "No persisted liquidation state found"
-          else
-            echo "Failed to inspect persisted liquidation state (gh exit $STATE_STATUS)"
-            exit "$STATE_STATUS"
-          fi
-
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
