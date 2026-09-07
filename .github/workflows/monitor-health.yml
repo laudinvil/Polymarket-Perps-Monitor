@@ -37,12 +37,16 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ github.token }}
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
           set -o pipefail
           echo "Starting authoritative monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
+          node scripts/convex-sync.js start || true
           node src/index.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           HISTORY_LINES=0
+          MONITOR_STATUS=completed
 
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 300
@@ -56,6 +60,7 @@ jobs:
               HISTORY_LINES=$NEW_LINES
             fi
 
+            node scripts/convex-sync.js sync || true
             tail -n 50000 monitor-history.log > monitor-history.tmp
             mv monitor-history.tmp monitor-history.log
             tail -n 5000 monitor.log > monitor-live.log
@@ -81,7 +86,11 @@ jobs:
             timeout 15s git push origin HEAD:monitor-status --force || true
           done
 
-          wait "$MONITOR_PID"
+          if ! wait "$MONITOR_PID"; then
+            MONITOR_STATUS=failed
+          fi
+          node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
+          test "$MONITOR_STATUS" = completed
 
       - name: Upload monitor log
         if: always()
