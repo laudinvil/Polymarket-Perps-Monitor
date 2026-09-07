@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updatedAt": "2026-09-07T06:35:03.126Z",
+  "updatedAt": "2026-09-07T06:40:02.596Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -50,7 +50,7 @@
         "shortEvents": 209,
         "events": 457,
         "establishedSign": 1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14635.8384,
@@ -1185,18 +1185,25 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788762900000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
       "ETH": {
-        "imbalanceUsd": -3185467.4508600016,
-        "longUsd": 2301290.4778700005,
+        "imbalanceUsd": -3184052.8071200014,
+        "longUsd": 2302705.1216100007,
         "shortUsd": 5486757.92873,
-        "longEvents": 177,
+        "longEvents": 180,
         "shortEvents": 303,
-        "events": 480,
+        "events": 483,
         "establishedSign": -1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14271.6462,
@@ -2331,6 +2338,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788762900000": {
+            "longUsd": 1414.6437400000002,
+            "shortUsd": 0,
+            "longEvents": 3,
+            "shortEvents": 0,
+            "events": 3
           }
         }
       },
@@ -2342,7 +2356,7 @@
         "shortEvents": 132,
         "events": 291,
         "establishedSign": -1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 9788.911100000001,
@@ -3477,6 +3491,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788762900000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -3488,7 +3509,7 @@
         "shortEvents": 74,
         "events": 214,
         "establishedSign": 1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -4623,6 +4644,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788762900000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -4634,7 +4662,7 @@
         "shortEvents": 109,
         "events": 196,
         "establishedSign": -1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -5769,6 +5797,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788762900000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -5780,7 +5815,7 @@
         "shortEvents": 63,
         "events": 89,
         "establishedSign": -1,
-        "lastBucket": 1788762600000,
+        "lastBucket": 1788762900000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -6910,6 +6945,13 @@
             "events": 0
           },
           "1788762600000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
+          },
+          "1788762900000": {
             "longUsd": 0,
             "shortUsd": 0,
             "longEvents": 0,
