@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updatedAt": "2026-09-07T12:15:05.133Z",
+  "updatedAt": "2026-09-07T12:15:07.094Z",
   "sentAlerts": [
     "15m:BTC:1788774300000:1",
     "15m:ETH:1788774300000:-1",
@@ -647,9 +647,9 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": -122650.01229000001,
+        "imbalanceUsd": -126092.84102,
         "longUsd": 141045.84038,
-        "shortUsd": 18395.828090000003,
+        "shortUsd": 14952.999360000002,
         "longEvents": 0,
         "shortEvents": 0,
         "events": 0,
@@ -892,7 +892,7 @@
           },
           "1788782400000": {
             "longUsd": 0,
-            "shortUsd": 3748.1868099999997,
+            "shortUsd": 305.35808,
             "longEvents": 0,
             "shortEvents": 0
           }
@@ -2317,9 +2317,9 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": -83797.85456,
+        "imbalanceUsd": -87240.68329,
         "longUsd": 88221.66507,
-        "shortUsd": 4423.810509999999,
+        "shortUsd": 980.98178,
         "longEvents": 0,
         "shortEvents": 0,
         "events": 0,
@@ -2406,7 +2406,7 @@
           },
           "1788782400000": {
             "longUsd": 0,
-            "shortUsd": 3748.1868099999997,
+            "shortUsd": 305.35808,
             "longEvents": 0,
             "shortEvents": 0
           }
@@ -2985,9 +2985,9 @@
         }
       },
       "XRP": {
-        "imbalanceUsd": -44940.46098,
+        "imbalanceUsd": -48383.28971,
         "longUsd": 49364.27149,
-        "shortUsd": 4423.810509999999,
+        "shortUsd": 980.98178,
         "longEvents": 0,
         "shortEvents": 0,
         "events": 0,
@@ -3020,7 +3020,7 @@
           },
           "1788782400000": {
             "longUsd": 0,
-            "shortUsd": 3748.1868099999997,
+            "shortUsd": 305.35808,
             "longEvents": 0,
             "shortEvents": 0
           }
