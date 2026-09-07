@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updatedAt": "2026-09-07T03:05:02.724Z",
+  "updatedAt": "2026-09-07T03:10:02.849Z",
   "sentAlerts": [
     "5m:BTC:1788643651149:-1",
     "5m:BNB:1788643861000:-1",
@@ -46,7 +46,7 @@
         "shortEvents": 209,
         "events": 425,
         "establishedSign": 1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14635.8384,
@@ -887,6 +887,13 @@
             "longEvents": 0,
             "shortEvents": 1,
             "events": 1
+          },
+          "1788750300000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -898,7 +905,7 @@
         "shortEvents": 293,
         "events": 448,
         "establishedSign": -1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 14271.6462,
@@ -1739,6 +1746,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788750300000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -1750,7 +1764,7 @@
         "shortEvents": 132,
         "events": 281,
         "establishedSign": -1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 9788.911100000001,
@@ -2591,18 +2605,25 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788750300000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
       "XRP": {
-        "imbalanceUsd": 407719.57178999996,
-        "longUsd": 574677.3822100001,
+        "imbalanceUsd": 409113.85558999993,
+        "longUsd": 576071.66601,
         "shortUsd": 166957.81042000002,
-        "longEvents": 135,
+        "longEvents": 136,
         "shortEvents": 73,
-        "events": 208,
+        "events": 209,
         "establishedSign": 1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -3443,6 +3464,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788750300000": {
+            "longUsd": 1394.2838000000002,
+            "shortUsd": 0,
+            "longEvents": 1,
+            "shortEvents": 0,
+            "events": 1
           }
         }
       },
@@ -3454,7 +3482,7 @@
         "shortEvents": 108,
         "events": 168,
         "establishedSign": -1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -4295,6 +4323,13 @@
             "longEvents": 0,
             "shortEvents": 0,
             "events": 0
+          },
+          "1788750300000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
           }
         }
       },
@@ -4306,7 +4341,7 @@
         "shortEvents": 61,
         "events": 84,
         "establishedSign": -1,
-        "lastBucket": 1788750000000,
+        "lastBucket": 1788750300000,
         "buckets": {
           "1788714300000": {
             "longUsd": 0,
@@ -5142,6 +5177,13 @@
             "events": 0
           },
           "1788750000000": {
+            "longUsd": 0,
+            "shortUsd": 0,
+            "longEvents": 0,
+            "shortEvents": 0,
+            "events": 0
+          },
+          "1788750300000": {
             "longUsd": 0,
             "shortUsd": 0,
             "longEvents": 0,
