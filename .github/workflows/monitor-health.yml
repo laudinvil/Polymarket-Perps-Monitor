@@ -35,61 +35,77 @@ jobs:
           git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
           touch monitor-history.log
 
-      - name: Fix timeframe boundary detection
+      - name: Apply monitor runtime configuration
         run: |
           python - <<'PY'
           from pathlib import Path
-          path = Path('src/index.js')
-          text = path.read_text()
-          old = 'const due = bucketStart(current - BOUNDARY_GRACE_MS, timeframe) + size;'
-          new = 'const due = bucketStart(current, timeframe);'
-          if old not in text:
-              raise SystemExit('Expected boundary expression not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          import re
 
-      - name: Parallelize live liquidation fetches
-        run: |
-          python - <<'PY'
-          from pathlib import Path
           path = Path('src/index.js')
           text = path.read_text()
-          old = "async function processLive(timeframe, boundary) { for (const symbol of symbols) { const events = await fetchSymbolFeed(symbol); const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState(); const period = bucketStart(boundary - 1, timeframe); let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0; for (const event of events || []) { const ts = normalizeTs(event); if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue; const side = eventSideSign(event), value = eventNotionalUsd(event); if (side > 0) { longUsd += value; longEvents++; } else if (side < 0) { shortUsd += value; shortEvents++; } } const before = state.imbalanceUsd; const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents); if (!next) continue; console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket })); const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period); if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents); } }"
-          new = "async function processLive(timeframe, boundary) { const period = bucketStart(boundary - 1, timeframe); await Promise.all(symbols.map(async symbol => { const events = await fetchSymbolFeed(symbol); const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState(); let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0; for (const event of events || []) { const ts = normalizeTs(event); if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue; const side = eventSideSign(event), value = eventNotionalUsd(event); if (side > 0) { longUsd += value; longEvents++; } else if (side < 0) { shortUsd += value; shortEvents++; } } const before = state.imbalanceUsd; const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents); if (!next) return; console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket })); const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period); if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents); })); }"
-          if old not in text:
-              raise SystemExit('Expected processLive function not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
 
-      - name: Disable HYPE on 5m
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/index.js')
-          text = path.read_text()
-          old = "await Promise.all(symbols.map(async symbol => {"
-          new = "await Promise.all(symbols.filter(symbol => !(timeframe === '5m' && symbol === 'HYPE')).map(async symbol => {"
-          if old not in text:
-              raise SystemExit('Expected live symbol loop not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          # Keep these controls in one place. Adding/removing a coin from the
+          # monitored universe must never require changing the patch order.
+          disabled = {"5m": ["HYPE"]}
 
-      - name: Move persistent monitor state to monitor-status
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/index.js')
-          text = path.read_text()
+          # Timeframe boundary detection is idempotent.
+          old_due = 'const due = bucketStart(current - BOUNDARY_GRACE_MS, timeframe) + size;'
+          new_due = 'const due = bucketStart(current, timeframe);'
+          if old_due in text:
+              text = text.replace(old_due, new_due, 1)
+
+          # Persistent state always lives on monitor-status, never on main.
           old_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}`;"
           new_url = "const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;"
-          old_branch = "branch: process.env.GITHUB_REF_NAME || 'main'"
-          if old_url not in text:
-              raise SystemExit('Expected state API URL not found')
-          if old_branch not in text:
-              raise SystemExit('Expected state branch expression not found')
           text = text.replace(old_url, new_url, 1)
-          text = text.replace(old_branch, "branch: 'monitor-status'", 1)
+          text = text.replace("branch: process.env.GITHUB_REF_NAME || 'main'", "branch: 'monitor-status'", 1)
+
+          # Maintain one idempotent disabled-symbol configuration.
+          config_line = f"const disabledSymbolsByTimeframe = {disabled!r};"
+          config_line = config_line.replace("'", '"')
+          config_pattern = r"\nconst disabledSymbolsByTimeframe = .*?;"
+          if re.search(config_pattern, text):
+              text = re.sub(config_pattern, "\n" + config_line, text, count=1)
+          else:
+              marker = "\nconst FRAMEWORKS = ['5m', '15m', '1h', '4h'];"
+              if marker not in text:
+                  raise SystemExit('Expected timeframe configuration marker not found')
+              text = text.replace(marker, marker + "\n" + config_line, 1)
+
+          # Replace processLive as a whole. This makes the patch independent of
+          # whether another configuration change was applied before it.
+          process_live = """async function processLive(timeframe, boundary) {
+            const period = bucketStart(boundary - 1, timeframe);
+            const disabledSymbols = new Set(disabledSymbolsByTimeframe[timeframe] || []);
+            const activeSymbols = symbols.filter(symbol => !disabledSymbols.has(symbol));
+            await Promise.all(activeSymbols.map(async symbol => {
+              const events = await fetchSymbolFeed(symbol);
+              const state = timeframeState.get(timeframe).get(symbol) || emptySymbolState();
+              let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0;
+              for (const event of events || []) {
+                const ts = normalizeTs(event);
+                if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue;
+                const side = eventSideSign(event), value = eventNotionalUsd(event);
+                if (side > 0) { longUsd += value; longEvents++; }
+                else if (side < 0) { shortUsd += value; shortEvents++; }
+              }
+              const before = state.imbalanceUsd;
+              const next = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents);
+              if (!next) return;
+              console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: next.imbalanceUsd, establishedSign: next.establishedSign, lastBucket: next.lastBucket }));
+              const crossing = crossingFor(timeframe, symbol, before, next.imbalanceUsd, period);
+              if (crossing) await sendCrossingAlert(crossing, next, longUsd, shortUsd, longEvents, shortEvents);
+            }));
+          }"""
+          pattern = r"async function processLive\(timeframe, boundary\) \{.*?\n\}\n\nasync function main\(\)"
+          replacement = process_live + "\n\nasync function main()"
+          if not re.search(pattern, text, flags=re.S):
+              raise SystemExit('Expected processLive function not found')
+          text = re.sub(pattern, replacement, text, count=1, flags=re.S)
+
           path.write_text(text)
+          print('Monitor runtime configuration applied safely and idempotently')
+          print(f'Disabled symbols by timeframe: {disabled}')
           PY
 
       - name: Continuous MarginPad monitor
