@@ -61,6 +61,19 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
 
+      - name: Disable HYPE on 5m
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/index.js')
+          text = path.read_text()
+          old = 'await Promise.all(symbols.map(async symbol => {'
+          new = "await Promise.all(symbols.filter(symbol => !(timeframe === '5m' && symbol === 'HYPE')).map(async symbol => {"
+          if old not in text:
+              raise SystemExit('Expected live symbol loop not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
