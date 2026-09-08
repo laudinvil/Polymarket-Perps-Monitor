@@ -11,18 +11,12 @@ const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSIT
 const REQUEST_TIMEOUT_MS = 15000;
 
 const sentAlerts = new Set();
-const establishedSigns = new Map();
 const processedBuckets = new Set();
 
-function keyFor(tf, symbol) { return `${tf}:${symbol}`; }
 function localBucketStart(ts, tf) { return bucketStart(ts, tf); }
 function side(event) {
   const s = String(event?.side || event?.direction || '').toLowerCase();
   return s.includes('long') ? 1 : s.includes('short') ? -1 : 0;
-}
-function notional(event) {
-  const n = Number(event?.notional ?? event?.usd ?? event?.value ?? event?.amount);
-  return Number.isFinite(n) ? Math.abs(n) : 0;
 }
 function formatCount(v) { return Math.max(0, Number(v) || 0).toLocaleString('en-US'); }
 function githubRequest(method = 'GET', body) {
@@ -48,8 +42,6 @@ function loadPersistedState(state) {
   for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
     const normalized = normalizeAlertKey(key); if (normalized) sentAlerts.add(normalized);
   }
-  // Do not restore establishedSign from the old imbalance-based state.
-  // The new count-based logic must establish its baseline from fresh buckets.
 }
 async function loadState() {
   if (!process.env.GITHUB_TOKEN) return;
@@ -57,7 +49,7 @@ async function loadState() {
     const response = await githubRequest();
     if (!response?.content) return;
     loadPersistedState(JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')));
-    console.log(`STATE LOADED; liquidation-count mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}; old imbalance signs ignored`);
+    console.log(`STATE LOADED; global-largest-liquidation mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 async function reserveAlertKey(key) {
@@ -92,7 +84,7 @@ function aggregate(events, period, tf, symbol) {
   let longEvents = 0, shortEvents = 0;
   for (const event of events || []) {
     const ts = normalizeTs(event?.ts); if (!ts || localBucketStart(ts, tf) !== period) continue;
-    const s = side(event); if (!s || !notional(event)) continue;
+    const s = side(event); if (!s) continue;
     if (s > 0) longEvents++; else shortEvents++;
   }
   const totalEvents = longEvents + shortEvents;
@@ -104,14 +96,22 @@ async function findPlusOneMarket(symbol, completedBucketStart, tf) {
   const plusOne = completedBucketStart + window + window;
   return findMarketByEpoch(symbol, plusOne, tf);
 }
-async function sendAlert(row) {
-  if (!row.sign) return;
-  const stateKey = keyFor(row.tf, row.symbol), previousSign = establishedSigns.get(stateKey) || 0;
-  establishedSigns.set(stateKey, row.sign);
-  if (!previousSign || previousSign === row.sign) {
-    console.log(`${row.tf} LIQUIDATION COUNT ${row.symbol} dominant=${formatCount(row.dominantCount)} longEvents=${formatCount(row.longEvents)} shortEvents=${formatCount(row.shortEvents)} sign=${row.sign} (no flip)`); return;
+function chooseGlobalWinner(rows) {
+  const candidates = [];
+  for (const row of rows) {
+    if (row.longEvents > 0) candidates.push({ row, count: row.longEvents, sign: 1 });
+    if (row.shortEvents > 0) candidates.push({ row, count: row.shortEvents, sign: -1 });
   }
-  const key = `${row.tf}:${row.symbol}:${row.period}:${row.sign}`;
+  if (!candidates.length) return null;
+  const maxCount = Math.max(...candidates.map(c => c.count));
+  const winners = candidates.filter(c => c.count === maxCount);
+  if (winners.length !== 1) return null;
+  const winner = winners[0];
+  return { ...winner.row, dominantCount: winner.count, sign: winner.sign };
+}
+async function sendAlert(row) {
+  if (!row || !row.sign) return;
+  const key = `${row.tf}:GLOBAL:${row.period}:${row.symbol}:${row.sign}`;
   if (!(await reserveAlertKey(key))) return;
   let market = null;
   try { market = await findPlusOneMarket(row.symbol, row.period, row.tf); }
@@ -120,12 +120,12 @@ async function sendAlert(row) {
   const timeframe = row.tf.toUpperCase();
   const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket ${timeframe}\n${market.url}` : '';
   const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nLiquidations: ${formatCount(row.dominantCount)} ${row.sign > 0 ? 'LONG' : 'SHORT'}\n\n${formatCount(row.longEvents)} LONG · ${formatCount(row.shortEvents)} SHORT${link}`;
-  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} LIQUIDATION COUNT ALERT SENT ${row.symbol} ${direction} ${timeframe} dominant=${formatCount(row.dominantCount)} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
+  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} GLOBAL LARGEST LIQUIDATION ALERT SENT ${row.symbol} ${direction} ${timeframe} count=${formatCount(row.dominantCount)} bucket=${new Date(row.period).toISOString()}`); }
   catch (error) { console.warn(`${row.tf} LIQUIDATION COUNT ALERT SEND FAILED ${row.symbol}: ${error.message}`); }
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONLY largest liquidation count; timeframes=${MONITORED.join(',')}; all symbols; Polymarket NEXT+1 links enabled`);
+  console.log(`Liquidation monitor started; ONLY ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}; Polymarket NEXT+1 links enabled`);
   const lastCompleted = new Map(MONITORED.map(tf => [tf, null]));
   while (true) {
     const now = Date.now(), feeds = await fetchAllFeeds();
@@ -134,10 +134,16 @@ async function main() {
       let last = lastCompleted.get(tf); if (last === null) last = completed - window;
       if (completed <= last) continue;
       for (let period = last + window; period <= completed; period += window) {
+        const rows = [];
         for (const symbol of SYMBOLS) {
           const bucketKey = `${tf}:${symbol}:${period}`; if (processedBuckets.has(bucketKey)) continue;
-          processedBuckets.add(bucketKey); const row = aggregate(feeds.get(symbol), period, tf, symbol); await sendAlert(row);
-          console.log(`TIMEFRAME BOUNDARY ${tf} ${symbol} ${new Date(period + window).toISOString()} dominant=${formatCount(row.dominantCount)} longEvents=${formatCount(row.longEvents)} shortEvents=${formatCount(row.shortEvents)} events=${formatCount(row.events)}`);
+          processedBuckets.add(bucketKey); rows.push(aggregate(feeds.get(symbol), period, tf, symbol));
+        }
+        const winner = chooseGlobalWinner(rows);
+        if (winner) await sendAlert(winner);
+        else console.log(`GLOBAL LARGEST LIQUIDATION ${tf} ${new Date(period + window).toISOString()} NO UNIQUE WINNER`);
+        for (const row of rows) {
+          console.log(`TIMEFRAME BOUNDARY ${tf} ${row.symbol} ${new Date(period + window).toISOString()} dominant=${formatCount(row.dominantCount)} longEvents=${formatCount(row.longEvents)} shortEvents=${formatCount(row.shortEvents)} events=${formatCount(row.events)}`);
         }
       }
       lastCompleted.set(tf, completed);
