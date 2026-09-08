@@ -37,7 +37,7 @@ jobs:
         run: |
           node --check src/liquidation-monitor.js
           node --check scripts/imbalance-all-timeframes.js
-          echo "Authoritative liquidation imbalance source syntax verified: 5m, 15m, 1h, 4h, 1d"
+          echo "Authoritative liquidation imbalance source syntax verified: 5m, 15m, 1h, 4h"
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
