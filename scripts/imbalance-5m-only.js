@@ -34,6 +34,30 @@ function polymarketDayBucketStart(ts) {
   return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), 12) - offsetMinutes * 60 * 1000;
 }
 function localBucketStart(ts, tf) { return tf === '1d' ? polymarketDayBucketStart(ts) : bucketStart(ts, tf); }
+async function polymarketAlignedBucketStart(now, tf) {
+  const fallback = localBucketStart(now, tf);
+  if (tf !== '1h' && tf !== '4h') return fallback;
+
+  // 1h/4h must follow the actual Polymarket market boundary, not an assumed clock.
+  // Probe the nearby candidate markets and use their real startDate metadata.
+  const window = TIMEFRAMES[tf];
+  const generic = bucketStart(now, tf);
+  for (let i = -2; i <= 2; i += 1) {
+    const candidate = generic + i * window;
+    try {
+      const market = await findMarketByEpoch('BTC', candidate, tf);
+      const start = market?.startDate ? Date.parse(market.startDate) : NaN;
+      const end = market?.endDate ? Date.parse(market.endDate) : NaN;
+      if (Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end) {
+        console.log(`POLYMARKET BOUNDARY ${tf} start=${new Date(start).toISOString()} end=${new Date(end).toISOString()}`);
+        return start;
+      }
+    } catch (error) {
+      console.warn(`POLYMARKET BOUNDARY LOOKUP FAILED ${tf}: ${error.message}`);
+    }
+  }
+  return fallback;
+}
 function side(event) {
   const s = String(event?.side || event?.direction || '').toLowerCase();
   return s.includes('long') ? 1 : s.includes('short') ? -1 : 0;
@@ -147,12 +171,12 @@ async function sendAlert(row) {
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; 5m excludes HYPE; other timeframes include HYPE; 1d boundary=12:00 America/New_York; timeframes=${MONITORED.join(',')}`);
+  console.log(`Liquidation monitor started; ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; 5m excludes HYPE; other timeframes include HYPE; 1d boundary=12:00 America/New_York; 1h/4h boundaries=Polymarket metadata; timeframes=${MONITORED.join(',')}`);
   const lastCompleted = new Map(MONITORED.map(tf => [tf, null]));
   while (true) {
     const now = Date.now(), feeds = await fetchAllFeeds();
     for (const tf of MONITORED) {
-      const window = TIMEFRAMES[tf], current = localBucketStart(now, tf), completed = current - window;
+      const window = TIMEFRAMES[tf], current = await polymarketAlignedBucketStart(now, tf), completed = current - window;
       let last = lastCompleted.get(tf); if (last === null) last = completed - window;
       if (completed <= last) continue;
       const activeSymbols = symbolsForTimeframe(tf);
