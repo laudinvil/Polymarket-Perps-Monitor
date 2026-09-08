@@ -3,8 +3,8 @@ const { TIMEFRAMES, bucketStart, findNextMarket } = require('../src/polymarket')
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// No imbalance, no streaks, no higher-timeframe monitoring.
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+// BTC only. No imbalance, no streaks, no higher-timeframe monitoring.
+const SYMBOLS = ['BTC'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -159,7 +159,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; individual events only; 900s dedupe; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; individual events only; 900s dedupe; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
