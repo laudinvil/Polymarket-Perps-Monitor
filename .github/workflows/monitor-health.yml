@@ -34,13 +34,12 @@ jobs:
         run: |
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
-          git checkout main -- .github/workflows/monitor-health.yml scripts/first-liquidation-5m.js 2>/dev/null || true
+          git checkout main -- .github/workflows/monitor-health.yml scripts/imbalance-all-timeframes.js 2>/dev/null || true
 
       - name: Verify monitor source configuration
         run: |
-          node --check src/liquidation-monitor.js
-          node --check scripts/first-liquidation-5m.js
-          echo "Authoritative first-liquidation source syntax verified: 5m only"
+          node --check scripts/imbalance-all-timeframes.js
+          echo "Authoritative imbalance source syntax verified: 5m/15m/1h/4h"
 
       - name: Continuous MarginPad monitor
         env:
@@ -52,7 +51,7 @@ jobs:
         run: |
           set -o pipefail
           node scripts/convex-sync.js start || true
-          node -r ./src/http-timeout.js scripts/first-liquidation-5m.js 2>&1 | tee monitor.log &
+          node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           MONITOR_STATUS=completed
           trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
@@ -63,7 +62,7 @@ jobs:
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor.log monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
             git push origin HEAD:monitor-status || true
