@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
 
 # Only one authoritative monitor may run at a time.
-# Do not cancel a healthy long-running monitor when another trigger arrives.
+# This deployment intentionally cancels the stale monitor so the latest code takes over.
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
