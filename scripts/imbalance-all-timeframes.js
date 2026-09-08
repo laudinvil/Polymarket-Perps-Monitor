@@ -100,6 +100,7 @@ function enqueueAlert(message, symbol, side, key) {
 async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
+  const blockedSymbol = lastAlertSymbol;
 
   // Once one liquidation has claimed this 10m period, all other coins/events
   // are ignored until the next 10m period begins.
@@ -109,7 +110,7 @@ async function processLiquidations(feeds, now) {
   for (const symbol of SYMBOLS) {
     // A coin that alerted in the previous 10m period cannot alert again
     // in the immediately following 10m period.
-    if (symbol === lastAlertSymbol) continue;
+    if (symbol === blockedSymbol) continue;
 
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
@@ -127,7 +128,7 @@ async function processLiquidations(feeds, now) {
 
   if (!initialized) {
     initialized = true;
-    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; previous coin block=${lastAlertSymbol || 'none'}`);
+    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; previous coin block=${blockedSymbol || 'none'}`);
     return;
   }
 
@@ -159,7 +160,7 @@ async function processLiquidations(feeds, now) {
     dedupeWindowStart: windowStart,
     firstLiquidationOnly: true,
     periodMinutes: 10,
-    previousPeriodCoinBlocked: lastAlertSymbol
+    previousPeriodCoinBlocked: blockedSymbol
   }));
 
   let market = null;
