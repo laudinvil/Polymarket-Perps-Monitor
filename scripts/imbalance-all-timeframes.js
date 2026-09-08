@@ -3,7 +3,7 @@ const { TIMEFRAMES, bucketStart, findNextMarket } = require('../src/polymarket')
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// No imbalance, no streaks, no 15m/1h/4h/1d monitoring.
+// No imbalance, no streaks, no higher-timeframe monitoring.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
@@ -31,7 +31,7 @@ function resetDedupeWindow(ts) {
   if (dedupePeriodStart === period) return;
   dedupePeriodStart = period;
   seenLiquidations.clear();
-  console.log(`LIQUIDATION DEDUPE RESET ${new Date(period).toISOString()} (15m window)`);
+  console.log(`LIQUIDATION DEDUPE RESET ${new Date(period).toISOString()} (900s window)`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -148,7 +148,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; individual events only; 15m dedupe; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; individual events only; 900s dedupe; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
