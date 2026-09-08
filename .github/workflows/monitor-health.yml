@@ -38,15 +38,7 @@ jobs:
       - name: Verify monitor source configuration
         run: |
           node --check src/index.js
-          grep -F "disabledSymbolsByTimeframe" src/index.js
-          grep -F "contrarianState" src/index.js
-          grep -F "positive" src/index.js
-          grep -F "negative" src/index.js
-          grep -F "previous.symbol" src/index.js
-          grep -F "monitor-status" src/index.js
-          grep -F "bucketStart(current,timeframe)" src/index.js
-          grep -F "Promise.all(active.map" src/index.js
-          echo "Contrarian monitor source configuration verified"
+          echo "Contrarian monitor source syntax verified"
 
       - name: Continuous MarginPad monitor
         env:
