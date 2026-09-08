@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write
       actions: write
-      
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,11 +39,19 @@ jobs:
       - name: Verify authoritative monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
-          if grep -R "first-liquidation-5m\|imbalance-5m-only" .github/workflows scripts 2>/dev/null; then
-            echo "ERROR: legacy monitor reference detected"
+          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only' scripts package.json --exclude='*.log' 2>/dev/null; then
+            echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          echo "Authoritative imbalance source syntax verified: 5M only / BTC ETH SOL XRP DOGE BNB HYPE"
+          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: authoritative monitor does not contain all 7 required coins"
+            exit 1
+          fi
+          if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: authoritative monitor is not 5M-only"
+            exit 1
+          fi
+          echo "Authoritative imbalance source verified: 5M only / BTC ETH SOL XRP DOGE BNB HYPE"
 
       - name: Continuous MarginPad monitor
         env:
@@ -52,6 +60,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
           set -o pipefail
           node scripts/convex-sync.js start || true
@@ -85,4 +95,6 @@ jobs:
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
