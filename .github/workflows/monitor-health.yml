@@ -7,8 +7,6 @@ on:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
-# Only one authoritative monitor may run at a time.
-# This deployment intentionally cancels the stale monitor so the latest code takes over.
 concurrency:
   group: marginpad-auto-monitor
   cancel-in-progress: true
@@ -20,97 +18,66 @@ jobs:
     permissions:
       contents: write
       actions: write
+      
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-      - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/checkout@v4
         with:
-          node-version: 24
-          package-manager-cache: false
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Restore monitor history
         run: |
-          git fetch origin monitor-status --depth=1 || true
-          git show origin/monitor-status:monitor-history.log > monitor-history.log 2>/dev/null || :
-          touch monitor-history.log
+          git fetch origin monitor-status:monitor-status || true
+          git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
+          git checkout main -- .github/workflows/monitor-health.yml scripts/imbalance-all-timeframes.js 2>/dev/null || true
+
       - name: Verify monitor source configuration
         run: |
           node --check src/liquidation-monitor.js
           node --check scripts/imbalance-all-timeframes.js
           echo "Authoritative liquidation imbalance source syntax verified: 5m, 15m, 1h, 4h"
+
       - name: Continuous MarginPad monitor
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MARGINPAD_API_KEY: ${{ secrets.MARGINPAD_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GITHUB_TOKEN: ${{ github.token }}
-          CONVEX_URL: ${{ secrets.CONVEX_URL }}
-          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -o pipefail
-          echo "Starting authoritative liquidation imbalance monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
           node scripts/convex-sync.js start || true
           node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
-          HISTORY_LINES=0
           MONITOR_STATUS=completed
+          trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 60
-            if ! kill -0 "$MONITOR_PID" 2>/dev/null; then break; fi
-            echo "MONITOR HEARTBEAT: pid=$MONITOR_PID alive=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> monitor.log
-            LAST_MODIFIED=$(stat -c %Y monitor.log 2>/dev/null || echo 0)
-            NOW_TS=$(date +%s)
-            STALE_SECONDS=$((NOW_TS - LAST_MODIFIED))
-            if [ "$LAST_MODIFIED" -gt 0 ] && [ "$STALE_SECONDS" -ge 240 ]; then
-              echo "MONITOR WATCHDOG: stale monitor.log for ${STALE_SECONDS}s; restarting monitor; pid=$MONITOR_PID"
-              tail -n 20 monitor.log || true
-              kill "$MONITOR_PID" 2>/dev/null || true
-              sleep 2
-              pkill -TERM -P "$MONITOR_PID" 2>/dev/null || true
-              wait "$MONITOR_PID" 2>/dev/null || true
-              node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor.log &
-              MONITOR_PID=$!
-              echo "MONITOR WATCHDOG: restarted monitor pid=$MONITOR_PID"
-            fi
-            NEW_LINES=$(wc -l < monitor.log)
-            if [ "$NEW_LINES" -gt "$HISTORY_LINES" ]; then
-              tail -n +$((HISTORY_LINES + 1)) monitor.log >> monitor-history.log
-              HISTORY_LINES=$NEW_LINES
-            fi
             node scripts/convex-sync.js sync || true
-            tail -n 50000 monitor-history.log > monitor-history.tmp
-            mv monitor-history.tmp monitor-history.log
-            tail -n 5000 monitor.log > monitor-live.log
             node scripts/build-monitor-stats.js monitor-history.log
-            {
-              echo "# MarginPad monitor live status"
-              echo
-              echo "Updated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-              echo "Run: $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID)"
-              echo "Status: RUNNING"
-              echo
-              echo '```text'
-              tail -n 500 monitor.log
-              echo '```'
-            } > monitor-status.md
-            git fetch origin monitor-status --depth=1 || true
-            rm -rf /tmp/monitor-status-worktree
-            git worktree prune
-            git worktree add --detach /tmp/monitor-status-worktree origin/monitor-status
-            cp monitor-status.md monitor-stats.md monitor-live.log monitor-history.log /tmp/monitor-status-worktree/
-            git -C /tmp/monitor-status-worktree config user.name 'github-actions[bot]'
-            git -C /tmp/monitor-status-worktree config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git -C /tmp/monitor-status-worktree add monitor-status.md monitor-stats.md monitor-live.log monitor-history.log
-            git -C /tmp/monitor-status-worktree diff --cached --quiet || git -C /tmp/monitor-status-worktree commit -m 'Persist monitor history and statistics'
-            git -C /tmp/monitor-status-worktree push origin HEAD:monitor-status || true
-            git worktree remove /tmp/monitor-status-worktree --force || true
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add monitor.log monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git commit -m "Update monitor status" 2>/dev/null || true
+            git push origin HEAD:monitor-status || true
           done
-          if ! wait "$MONITOR_PID"; then MONITOR_STATUS=failed; fi
-          node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
-          test "$MONITOR_STATUS" = completed
+          wait "$MONITOR_PID"
+
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: marginpad-auto-monitor-${{ github.run_id }}
+          name: monitor-log
           path: monitor.log
           if-no-files-found: ignore
+
+      - name: Finish Convex run
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
