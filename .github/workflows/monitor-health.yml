@@ -34,7 +34,7 @@ jobs:
         run: |
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
-          git checkout main -- .github/workflows/monitor-health.yml scripts/imbalance-all-timeframes.js 2>/dev/null || true
+          rm -f monitor.log monitor-live.log .convex-log-cursor
 
       - name: Verify authoritative monitor source
         run: |
@@ -51,7 +51,11 @@ jobs:
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          echo "Authoritative imbalance source verified: 5M only / BTC ETH SOL XRP DOGE BNB HYPE"
+          if grep -nE '15m|1h|4h|1d' scripts/imbalance-all-timeframes.js | grep -v 'TIMEFRAMES\[TIMEFRAME\]' >/dev/null 2>&1; then
+            echo "ERROR: non-5M timeframe logic detected"
+            exit 1
+          fi
+          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE"
 
       - name: Continuous MarginPad monitor
         env:
@@ -64,14 +68,14 @@ jobs:
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
           set -o pipefail
-          node scripts/convex-sync.js start || true
+          timeout 20s node scripts/convex-sync.js start || true
           node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           MONITOR_STATUS=completed
           trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 60
-            node scripts/convex-sync.js sync || true
+            timeout 20s node scripts/convex-sync.js sync || true
             node scripts/build-monitor-stats.js monitor-history.log
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
@@ -97,4 +101,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
-        run: node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
+          MONITOR_STATUS: ${{ job.status }}
+        run: timeout 20s node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
