@@ -15,25 +15,17 @@ const stateByTimeframe = new Map();
 
 for (const timeframe of TIMEFRAME_LIST) {
   stateByTimeframe.set(timeframe, {
-    period: 0,
     globalLongCount: 0,
     globalShortCount: 0,
     globalImbalance: 0,
     establishedSign: 0,
     lastEventTs: 0,
+    currentPeriod: null,
   });
 }
 
-function getTfState(timeframe) { return stateByTimeframe.get(timeframe); }
-
-function resetTfState(timeframe, period) {
-  const state = getTfState(timeframe);
-  state.period = period;
-  state.globalLongCount = 0;
-  state.globalShortCount = 0;
-  state.globalImbalance = 0;
-  state.establishedSign = 0;
-  state.lastEventTs = 0;
+function getTfState(timeframe) {
+  return stateByTimeframe.get(timeframe);
 }
 
 function side(event) {
@@ -43,8 +35,13 @@ function side(event) {
   return 0;
 }
 
-function formatCount(value) { return Math.max(0, Number(value) || 0).toLocaleString('en-US'); }
-function signed(value) { return value > 0 ? `+${value}` : String(value); }
+function formatCount(value) {
+  return Math.max(0, Number(value) || 0).toLocaleString('en-US');
+}
+
+function signed(value) {
+  return value > 0 ? `+${value}` : String(value);
+}
 
 function githubRequest(method = 'GET', body) {
   return new Promise((resolve, reject) => {
@@ -87,23 +84,26 @@ function normalizeAlertKey(key) {
   return match ? `${match[1]}:GLOBAL:${match[2]}:${match[3]}:${match[4]}` : null;
 }
 
+function resetTimeframeState(timeframe, period) {
+  const state = getTfState(timeframe);
+  state.globalLongCount = 0;
+  state.globalShortCount = 0;
+  state.globalImbalance = 0;
+  state.establishedSign = 0;
+  state.lastEventTs = 0;
+  state.currentPeriod = period;
+  console.log(`${timeframe.toUpperCase()} RESET period=${new Date(period).toISOString()} LONG=0 SHORT=0 IMBALANCE=0`);
+}
+
 function loadPersistedState(state) {
   for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
     const normalized = normalizeAlertKey(key);
     if (normalized) sentAlerts.add(normalized);
   }
-  if (!state?.timeframes || typeof state.timeframes !== 'object') return;
-  for (const timeframe of TIMEFRAME_LIST) {
-    const persisted = state.timeframes[timeframe];
-    if (!persisted) continue;
-    const current = getTfState(timeframe);
-    current.period = Number(persisted.period) || 0;
-    current.globalLongCount = Math.max(0, Number(persisted.globalLongCount) || 0);
-    current.globalShortCount = Math.max(0, Number(persisted.globalShortCount) || 0);
-    current.globalImbalance = current.globalLongCount - current.globalShortCount;
-    current.establishedSign = current.globalImbalance > 0 ? 1 : current.globalImbalance < 0 ? -1 : 0;
-    current.lastEventTs = Math.max(0, Number(persisted.lastEventTs) || 0);
-  }
+
+  // Do not restore cumulative liquidation counters: every timeframe is reset
+  // at the beginning of each corresponding Polymarket period.
+  // Persisted data is used only for alert deduplication.
 }
 
 async function loadState() {
@@ -113,11 +113,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log(`STATE LOADED; timeframes=${TIMEFRAME_LIST.join(',')}; symbols=${SYMBOLS.join(',')}`);
-    for (const timeframe of TIMEFRAME_LIST) {
-      const s = getTfState(timeframe);
-      console.log(`STATE ${timeframe} period=${s.period || 0} LONG=${s.globalLongCount} SHORT=${s.globalShortCount} IMBALANCE=${signed(s.globalImbalance)}`);
-    }
+    console.log(`STATE LOADED; period-reset mode; timeframes=${TIMEFRAME_LIST.join(',')}; symbols=${SYMBOLS.join(',')}`);
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -128,9 +124,15 @@ async function saveGlobalState() {
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
       let response = null;
-      try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
-      const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
-      const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
+      try { response = await githubRequest(); }
+      catch (error) { if (error.statusCode !== 404) throw error; }
+      const state = response?.content
+        ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'))
+        : {};
+      const keys = new Set(
+        [...(state.sentAlerts || []), ...(state.alerts || [])]
+          .map(normalizeAlertKey).filter(Boolean)
+      );
       for (const key of sentAlerts) keys.add(key);
       state.version = 12;
       state.sentAlerts = [...keys].slice(-5000);
@@ -138,10 +140,10 @@ async function saveGlobalState() {
       for (const timeframe of TIMEFRAME_LIST) {
         const s = getTfState(timeframe);
         state.timeframes[timeframe] = {
-          period: s.period,
           globalLongCount: s.globalLongCount,
           globalShortCount: s.globalShortCount,
           globalImbalance: s.globalImbalance,
+          currentPeriod: s.currentPeriod,
           lastEventTs: s.lastEventTs,
         };
       }
@@ -150,7 +152,7 @@ async function saveGlobalState() {
       state.globalShortCount = five.globalShortCount;
       state.lastGlobalEventTs = five.lastEventTs;
       await githubRequest('PUT', {
-        message: 'Persist per-period liquidation imbalance state',
+        message: 'Reset imbalance accumulation at each Polymarket period',
         content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
         branch: 'monitor-status',
         ...(response?.sha ? { sha: response.sha } : {})
@@ -173,8 +175,14 @@ async function reserveAlertKey(key) {
     const response = await githubRequest();
     if (response?.content) {
       const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
-      const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
-      if (keys.has(key)) { sentAlerts.add(key); return false; }
+      const keys = new Set(
+        [...(state.sentAlerts || []), ...(state.alerts || [])]
+          .map(normalizeAlertKey).filter(Boolean)
+      );
+      if (keys.has(key)) {
+        sentAlerts.add(key);
+        return false;
+      }
     }
     return true;
   } catch (error) {
@@ -184,10 +192,15 @@ async function reserveAlertKey(key) {
 }
 
 async function fetchAllFeeds() {
-  return new Map(await Promise.all(SYMBOLS.map(async symbol => {
-    try { return [symbol, await fetchSymbolFeed(symbol)]; }
-    catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; }
-  })));
+  return new Map(await Promise.all(
+    SYMBOLS.map(async symbol => {
+      try { return [symbol, await fetchSymbolFeed(symbol)]; }
+      catch (error) {
+        console.warn(`FEED ${symbol} FAILED: ${error.message}`);
+        return [symbol, []];
+      }
+    })
+  ));
 }
 
 function eventsForBucket(feeds, timeframe, period) {
@@ -198,16 +211,17 @@ function eventsForBucket(feeds, timeframe, period) {
       if (!ts || bucketStart(ts, timeframe) !== period) continue;
       const eventSide = side(event);
       if (!eventSide) continue;
-      events.push({ symbol, ts, side: eventSide });
+      events.push({ symbol, ts, side: eventSide, event });
     }
   }
   events.sort((a, b) => a.ts - b.ts);
   return events;
 }
 
-function applyEvents(timeframe, period, events) {
+function applyEvents(timeframe, events, period) {
   const state = getTfState(timeframe);
-  resetTfState(timeframe, period);
+  if (state.currentPeriod !== period) resetTimeframeState(timeframe, period);
+
   let crossing = null;
   for (const item of events) {
     if (item.ts <= state.lastEventTs) continue;
@@ -245,17 +259,21 @@ async function sendAlert(timeframe, period, crossing) {
     console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
     return;
   }
-  let markets = { next: null, nextPlusOne: null };
-  try { markets = await findNextMarkets(crossing.symbol, period, timeframe); }
-  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${crossing.symbol}: ${error.message}`); }
 
-  // Contrarian mapping applies identically to every timeframe.
+  let markets = { next: null, nextPlusOne: null };
+  try {
+    markets = await findNextMarkets(crossing.symbol, period, timeframe);
+  } catch (error) {
+    console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${crossing.symbol}: ${error.message}`);
+  }
+
   const direction = crossing.sign > 0 ? 'BUY DOWN' : 'BUY UP';
   const emoji = crossing.sign > 0 ? '🔴' : '🟢';
   const links = [
     markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
     markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
   ].filter(Boolean).join('\n\n');
+
   const message = [
     `${emoji} ${crossing.symbol} · ${direction} · ${timeframe.toUpperCase()}`,
     '',
@@ -280,21 +298,31 @@ async function processCompletedBucket(timeframe, period, feeds) {
   const bucketKey = `${timeframe}:${period}`;
   if (processedBuckets.has(bucketKey)) return;
   processedBuckets.add(bucketKey);
+
   const events = eventsForBucket(feeds, timeframe, period);
-  const crossing = applyEvents(timeframe, period, events);
+  const crossing = applyEvents(timeframe, events, period);
   const state = getTfState(timeframe);
-  console.log(`${timeframe.toUpperCase()} RESET/BOUNDARY ${new Date(period + TIMEFRAMES[timeframe]).toISOString()} LONG=${formatCount(state.globalLongCount)} SHORT=${formatCount(state.globalShortCount)} IMBALANCE=${signed(state.globalImbalance)} CROSS=${crossing ? `${crossing.symbol}:${crossing.from}->${crossing.to}` : 'NONE'}`);
+  console.log(
+    `${timeframe.toUpperCase()} GLOBAL BOUNDARY ${new Date(period + TIMEFRAMES[timeframe]).toISOString()} ` +
+    `RESET_PERIOD=${new Date(period).toISOString()} ` +
+    `LONG=${formatCount(state.globalLongCount)} SHORT=${formatCount(state.globalShortCount)} ` +
+    `IMBALANCE=${signed(state.globalImbalance)} ` +
+    `CROSS=${crossing ? `${crossing.symbol}:${crossing.from}->${crossing.to}` : 'NONE'}`
+  );
+
   await saveGlobalState();
   await sendAlert(timeframe, period, crossing);
 }
 
 async function main() {
   await loadState();
-  console.log(`GLOBAL LIQUIDATION IMBALANCE MONITOR STARTED; RESET EACH POLYMARKET PERIOD; timeframes=${TIMEFRAME_LIST.join(',')}; all coins=${SYMBOLS.join(',')}; HYPE INCLUDED`);
+  console.log(`GLOBAL LIQUIDATION IMBALANCE MONITOR STARTED; period reset by Polymarket timeframe; timeframes=${TIMEFRAME_LIST.join(',')}; all coins=${SYMBOLS.join(',')}; HYPE INCLUDED`);
+
   const lastCompleted = new Map();
   while (true) {
     const now = Date.now();
     const feeds = await fetchAllFeeds();
+
     for (const timeframe of TIMEFRAME_LIST) {
       const windowMs = TIMEFRAMES[timeframe];
       const current = bucketStart(now, timeframe);
@@ -306,6 +334,7 @@ async function main() {
       }
       lastCompleted.set(timeframe, completed);
     }
+
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
