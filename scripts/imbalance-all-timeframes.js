@@ -1,40 +1,49 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { TIMEFRAMES, bucketStart, findMarketByEpoch } = require('../src/polymarket');
+const { TIMEFRAMES, bucketStart, findMarketByEpoch, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// Authoritative monitor: 5m only, all supported coins including HYPE.
+// Authoritative monitor: 5m liquidation streaks only.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
-const WINDOW_MS = TIMEFRAMES[TIMEFRAME];
+const ALERT_THRESHOLD = 5;
+const ALERT_MIN_GAP_MS = 5000;
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
 const REQUEST_TIMEOUT_MS = 15000;
+const LIQUIDATION_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 
 const sentAlerts = new Set();
 const processedBuckets = new Set();
+const streakState = new Map();
+const liquidationDedupeKeys = new Set();
+let liquidationDedupePeriod = null;
+let stateSaveChain = Promise.resolve();
+let alertSendChain = Promise.resolve();
+let lastAlertSentAt = 0;
 
-let globalLongCount = 0;
-let globalShortCount = 0;
-let globalImbalance = 0;
-let establishedSign = 0;
-let lastEventTs = 0;
+for (const symbol of SYMBOLS) streakState.set(symbol, { side: 0, length: 0, lastBucket: 0 });
 
+function getStreak(symbol) { return streakState.get(symbol); }
 function side(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
   if (value.includes('long') || value === 'buy') return 1;
   if (value.includes('short') || value === 'sell') return -1;
   return 0;
 }
-
-function formatCount(value) {
-  return Math.max(0, Number(value) || 0).toLocaleString('en-US');
+function formatCount(value) { return Math.max(0, Number(value) || 0).toLocaleString('en-US'); }
+function liquidationDedupePeriodStart(ts) { return Math.floor(ts / LIQUIDATION_DEDUPE_WINDOW_MS) * LIQUIDATION_DEDUPE_WINDOW_MS; }
+function liquidationDedupeKey(symbol, ts, eventSide, event) {
+  const id = event?.id ?? event?.liquidationId ?? event?.eventId ?? event?.tradeId ?? event?.txHash ?? event?.orderId;
+  if (id !== undefined && id !== null && String(id) !== '') return `${symbol}:id:${String(id)}`;
+  return [symbol, ts, eventSide, event?.price ?? '', event?.qty ?? event?.quantity ?? '', event?.size ?? ''].join('|');
 }
-
-function signed(value) {
-  return value > 0 ? `+${value}` : String(value);
+function resetLiquidationDedupePeriod(periodStart) {
+  if (liquidationDedupePeriod === periodStart) return;
+  liquidationDedupePeriod = periodStart;
+  liquidationDedupeKeys.clear();
+  console.log(`5M LIQUIDATION DEDUPE RESET ${new Date(periodStart).toISOString()} (15m period)`);
 }
-
 function githubRequest(method = 'GET', body) {
   return new Promise((resolve, reject) => {
     const u = new URL(STATE_API_URL);
@@ -69,25 +78,24 @@ function githubRequest(method = 'GET', body) {
     req.end();
   });
 }
-
 function normalizeAlertKey(key) {
   if (typeof key !== 'string') return null;
-  const match = key.match(/^5m:GLOBAL:(\d+):([A-Z]+):(-?1)$/);
-  return match ? `5m:GLOBAL:${match[1]}:${match[2]}:${match[3]}` : null;
+  return /^5m:STREAK:(\d+):([A-Z]+):(1|2)$/.test(key) ? key : null;
 }
-
 function loadPersistedState(state) {
   for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
     const normalized = normalizeAlertKey(key);
     if (normalized) sentAlerts.add(normalized);
   }
-  if (Number.isFinite(state?.globalLongCount)) globalLongCount = Math.max(0, state.globalLongCount);
-  if (Number.isFinite(state?.globalShortCount)) globalShortCount = Math.max(0, state.globalShortCount);
-  globalImbalance = globalLongCount - globalShortCount;
-  establishedSign = globalImbalance > 0 ? 1 : globalImbalance < 0 ? -1 : 0;
-  if (Number.isFinite(state?.lastGlobalEventTs)) lastEventTs = Math.max(0, state.lastGlobalEventTs);
+  for (const symbol of SYMBOLS) {
+    const saved = state?.streaks?.['5m']?.[symbol];
+    if (!saved) continue;
+    const streak = getStreak(symbol);
+    streak.side = Number(saved.side) === 1 || Number(saved.side) === -1 ? Number(saved.side) : 0;
+    streak.length = Math.max(0, Number(saved.length) || 0);
+    streak.lastBucket = Math.max(0, Number(saved.lastBucket) || 0);
+  }
 }
-
 async function loadState() {
   if (!process.env.GITHUB_TOKEN) return;
   try {
@@ -95,241 +103,184 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log(`STATE LOADED; global 5m counts LONG=${globalLongCount} SHORT=${globalShortCount} IMBALANCE=${signed(globalImbalance)}`);
-  } catch (error) {
-    console.warn(`STATE LOAD FAILED: ${error.message}`);
-  }
+    console.log('STATE LOADED; 5m liquidation streaks restored; threshold=5+');
+  } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
-
 async function saveGlobalState() {
   if (!process.env.GITHUB_TOKEN) return;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
       let response = null;
-      try { response = await githubRequest(); }
-      catch (error) { if (error.statusCode !== 404) throw error; }
-      const state = response?.content
-        ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'))
-        : {};
-      const keys = new Set(
-        [...(state.sentAlerts || []), ...(state.alerts || [])]
-          .map(normalizeAlertKey).filter(Boolean)
-      );
+      try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
+      const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
+      const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
       for (const key of sentAlerts) keys.add(key);
-      state.sentAlerts = [...keys];
-      state.globalLongCount = globalLongCount;
-      state.globalShortCount = globalShortCount;
-      state.lastGlobalEventTs = lastEventTs;
+      state.version = 28;
+      state.sentAlerts = [...keys].slice(-5000);
+      state.streaks = { '5m': {} };
+      for (const symbol of SYMBOLS) {
+        const streak = getStreak(symbol);
+        state.streaks['5m'][symbol] = { side: streak.side, length: streak.length, lastBucket: streak.lastBucket };
+      }
       await githubRequest('PUT', {
-        message: 'Persist global 5m liquidation imbalance state',
+        message: 'Use 5m liquidation streak monitor only',
         content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
         branch: 'monitor-status',
         ...(response?.sha ? { sha: response.sha } : {})
       });
       return;
     } catch (error) {
-      if (error.statusCode !== 409 || attempt === 5) {
-        console.warn(`STATE SAVE FAILED: ${error.message}`);
-        return;
-      }
+      if (error.statusCode !== 409 || attempt === 5) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; }
       await new Promise(resolve => setTimeout(resolve, 250 * attempt));
     }
   }
 }
-
-async function reserveAlertKey(key) {
-  if (sentAlerts.has(key)) return false;
-  if (!process.env.GITHUB_TOKEN) return true;
-  try {
-    const response = await githubRequest();
-    if (response?.content) {
-      const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
-      const keys = new Set(
-        [...(state.sentAlerts || []), ...(state.alerts || [])]
-          .map(normalizeAlertKey).filter(Boolean)
-      );
-      if (keys.has(key)) {
-        sentAlerts.add(key);
-        return false;
-      }
+function queueStateSave() {
+  stateSaveChain = stateSaveChain.then(() => saveGlobalState()).catch(error => console.warn(`STATE SAVE QUEUE FAILED: ${error.message}`));
+  return stateSaveChain;
+}
+function enqueueAlertSend(message, key, symbol, streak) {
+  const task = alertSendChain.then(async () => {
+    const waitMs = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
+    if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+    try {
+      await sendTelegramMessage(message);
+      lastAlertSentAt = Date.now();
+      console.log(`STREAK 5M ALERT SENT ${symbol} ${streak.side === 1 ? 'LONG' : 'SHORT'} streak=${streak.length}`);
+    } catch (error) {
+      sentAlerts.delete(key);
+      console.warn(`STREAK 5M ALERT SEND FAILED ${symbol}: ${error.message}`);
     }
-    return true;
-  } catch (error) {
-    console.warn(`ALERT DEDUP CHECK FAILED ${key}: ${error.message}`);
-    return false;
-  }
+  });
+  alertSendChain = task.catch(error => { sentAlerts.delete(key); console.warn(`ALERT QUEUE FAILED 5m ${symbol}: ${error.message}`); });
+  return alertSendChain;
 }
-
 async function fetchAllFeeds() {
-  return new Map(await Promise.all(
-    SYMBOLS.map(async symbol => {
-      try { return [symbol, await fetchSymbolFeed(symbol)]; }
-      catch (error) {
-        console.warn(`FEED ${symbol} FAILED: ${error.message}`);
-        return [symbol, []];
-      }
-    })
-  ));
+  return new Map(await Promise.all(SYMBOLS.map(async symbol => {
+    try { return [symbol, await fetchSymbolFeed(symbol)]; }
+    catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; }
+  })));
 }
-
 function eventsForBucket(feeds, period) {
   const events = [];
-  for (const symbol of SYMBOLS) {
-    for (const event of feeds.get(symbol) || []) {
-      const ts = normalizeTs(event?.ts);
-      if (!ts || bucketStart(ts, TIMEFRAME) !== period) continue;
-      const eventSide = side(event);
-      if (!eventSide) continue;
-      events.push({ symbol, ts, side: eventSide, event });
-    }
+  resetLiquidationDedupePeriod(liquidationDedupePeriodStart(period));
+  for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) {
+    const ts = normalizeTs(event?.ts);
+    if (!ts || bucketStart(ts, TIMEFRAME) !== period) continue;
+    const eventSide = side(event);
+    if (!eventSide) continue;
+    const dedupeKey = liquidationDedupeKey(symbol, ts, eventSide, event);
+    if (liquidationDedupeKeys.has(dedupeKey)) continue;
+    liquidationDedupeKeys.add(dedupeKey);
+    events.push({ symbol, ts, side: eventSide, event });
   }
   events.sort((a, b) => a.ts - b.ts);
   return events;
 }
-
-function applyEvents(events) {
-  let crossing = null;
+function classifyBucket(events) {
+  const counts = new Map(SYMBOLS.map(symbol => [symbol, { long: 0, short: 0, longUsd: 0, shortUsd: 0 }]));
   for (const item of events) {
-    if (item.ts <= lastEventTs) continue;
-    const previousImbalance = globalImbalance;
-    if (item.side > 0) {
-      globalLongCount += 1;
-      globalImbalance += 1;
-    } else {
-      globalShortCount += 1;
-      globalImbalance -= 1;
-    }
-    lastEventTs = item.ts;
-    const newSign = globalImbalance > 0 ? 1 : globalImbalance < 0 ? -1 : 0;
-    if (!crossing && establishedSign !== 0 && newSign !== 0 && newSign !== establishedSign) {
-      crossing = { symbol: item.symbol, from: previousImbalance, to: globalImbalance, sign: newSign, ts: item.ts };
-    }
-    if (newSign !== 0) establishedSign = newSign;
-  }
-  return crossing;
-}
-
-function buildSymbolSnapshots(events, period) {
-  const rows = new Map(SYMBOLS.map(symbol => [symbol, {
-    longEvents: 0,
-    shortEvents: 0,
-    longUsd: 0,
-    shortUsd: 0,
-  }]));
-  for (const item of events) {
-    const row = rows.get(item.symbol);
+    const row = counts.get(item.symbol);
     const notional = Math.max(0, Number(item.event?.notional) || 0);
-    if (item.side > 0) {
-      row.longEvents += 1;
-      row.longUsd += notional;
-    } else {
-      row.shortEvents += 1;
-      row.shortUsd += notional;
-    }
+    if (item.side > 0) { row.long += 1; row.longUsd += notional; }
+    else { row.short += 1; row.shortUsd += notional; }
   }
-  for (const symbol of SYMBOLS) {
-    const row = rows.get(symbol);
-    console.log(JSON.stringify({
-      timeframe: '5m',
-      symbol,
-      period,
-      boundaryTs: period,
-      imbalanceUsd: row.longUsd - row.shortUsd,
-      longUsd: row.longUsd,
-      shortUsd: row.shortUsd,
-      longEvents: row.longEvents,
-      shortEvents: row.shortEvents,
-    }));
-  }
+  return counts;
 }
-
+function updateStreak(symbol, bucketStartTs, counts) {
+  const streak = getStreak(symbol);
+  const longCount = counts.long;
+  const shortCount = counts.short;
+  if (longCount === 0 && shortCount === 0) {
+    streak.side = 0; streak.length = 0; streak.lastBucket = bucketStartTs;
+    return { side: 0, length: 0, longCount, shortCount, longUsd: counts.longUsd, shortUsd: counts.shortUsd, alert: false };
+  }
+  if (longCount === shortCount) {
+    streak.side = 0; streak.length = 0; streak.lastBucket = bucketStartTs;
+    return { side: 0, length: 0, longCount, shortCount, longUsd: counts.longUsd, shortUsd: counts.shortUsd, alert: false };
+  }
+  const bucketSide = longCount > shortCount ? 1 : -1;
+  const expectedPreviousBucket = bucketStartTs - TIMEFRAMES[TIMEFRAME];
+  if (streak.side === bucketSide && streak.lastBucket === expectedPreviousBucket) streak.length += 1;
+  else streak.length = 1;
+  streak.side = bucketSide;
+  streak.lastBucket = bucketStartTs;
+  return { side: bucketSide, length: streak.length, longCount, shortCount, longUsd: counts.longUsd, shortUsd: counts.shortUsd, alert: streak.length >= ALERT_THRESHOLD };
+}
 async function findNextMarkets(symbol, completedBucketStart) {
-  const nextEpoch = completedBucketStart + WINDOW_MS;
-  const nextPlusOneEpoch = completedBucketStart + 2 * WINDOW_MS;
-  const [next, nextPlusOne] = await Promise.all([
-    findMarketByEpoch(symbol, nextEpoch, TIMEFRAME),
-    findMarketByEpoch(symbol, nextPlusOneEpoch, TIMEFRAME)
-  ]);
+  const next = await findNextMarket(symbol, completedBucketStart + TIMEFRAMES[TIMEFRAME], TIMEFRAME);
+  if (!next) return { next: null, nextPlusOne: null };
+  const nextPlusOne = await findMarketByEpoch(symbol, completedBucketStart + 2 * TIMEFRAMES[TIMEFRAME], TIMEFRAME);
   return { next, nextPlusOne };
 }
-
-async function sendAlert(period, crossing) {
-  if (!crossing) return;
-  const key = `5m:GLOBAL:${period}:${crossing.symbol}:${crossing.sign}`;
-  if (!(await reserveAlertKey(key))) {
-    console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
-    return;
-  }
-
+async function sendAlert(period, symbol, streak) {
+  if (!streak.alert) return false;
+  const key = `5m:STREAK:${period}:${symbol}:${streak.side === 1 ? 1 : 2}`;
+  if (sentAlerts.has(key)) { console.log(`ALERT DUPLICATE SUPPRESSED ${key}`); return false; }
+  sentAlerts.add(key);
   let markets = { next: null, nextPlusOne: null };
-  try {
-    markets = await findNextMarkets(crossing.symbol, period);
-  } catch (error) {
-    console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`);
-  }
-
-  const direction = crossing.sign > 0 ? 'BUY DOWN' : 'BUY UP';
-  const emoji = crossing.sign > 0 ? '🔴' : '🟢';
+  try { markets = await findNextMarkets(symbol, period); }
+  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
+  const isLong = streak.side === 1;
+  const direction = isLong ? 'BUY UP' : 'BUY DOWN';
+  const emoji = isLong ? '🟢' : '🔴';
+  const sideName = isLong ? 'LONG' : 'SHORT';
   const links = [
     markets.next?.url ? `➡️ NEXT · Polymarket 5M\n${markets.next.url}` : '',
     markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket 5M\n${markets.nextPlusOne.url}` : ''
   ].filter(Boolean).join('\n\n');
-
   const message = [
-    `${emoji} ${crossing.symbol} · ${direction} · 5M`,
+    `${emoji} ${symbol} · ${direction} · 5M`,
     '',
-    `Global imbalance: ${signed(globalImbalance)}`,
-    `${formatCount(globalLongCount)} LONG · ${formatCount(globalShortCount)} SHORT`,
-    '',
-    `0 crossed: ${signed(crossing.from)} → ${signed(crossing.to)}`,
+    `Streak: ${streak.length} ${sideName} buckets`,
+    `Current bucket: ${formatCount(streak.longCount)} LONG · ${formatCount(streak.shortCount)} SHORT`,
     links ? `\n${links}` : ''
   ].join('\n').trim();
-
-  try {
-    await sendTelegramMessage(message);
-    await saveGlobalState();
-    console.log(`GLOBAL 5M ZERO CROSS ALERT SENT ${crossing.symbol} ${direction} imbalance=${globalImbalance} long=${globalLongCount} short=${globalShortCount}`);
-  } catch (error) {
-    console.warn(`GLOBAL 5M ALERT SEND FAILED ${crossing.symbol}: ${error.message}`);
-  }
+  enqueueAlertSend(message, key, symbol, streak);
+  return true;
 }
-
 async function processCompletedBucket(period, feeds) {
   const bucketKey = `5m:${period}`;
   if (processedBuckets.has(bucketKey)) return;
   processedBuckets.add(bucketKey);
   const events = eventsForBucket(feeds, period);
-  buildSymbolSnapshots(events, period);
-  const crossing = applyEvents(events);
-  console.log(
-    `5M GLOBAL BOUNDARY ${new Date(period + WINDOW_MS).toISOString()} ` +
-    `LONG=${formatCount(globalLongCount)} SHORT=${formatCount(globalShortCount)} ` +
-    `IMBALANCE=${signed(globalImbalance)} ` +
-    `CROSS=${crossing ? `${crossing.symbol}:${crossing.from}->${crossing.to}` : 'NONE'}`
-  );
-  await saveGlobalState();
-  await sendAlert(period, crossing);
+  const counts = classifyBucket(events);
+  const results = [];
+  for (const symbol of SYMBOLS) {
+    const streak = updateStreak(symbol, period, counts.get(symbol));
+    results.push({ symbol, streak });
+    console.log(JSON.stringify({
+      timeframe: '5m', symbol, period, boundaryTs: period,
+      imbalanceUsd: streak.longUsd - streak.shortUsd,
+      longUsd: streak.longUsd, shortUsd: streak.shortUsd,
+      longEvents: streak.longCount, shortEvents: streak.shortCount,
+      dominant: streak.side > 0 ? 'LONG' : streak.side < 0 ? 'SHORT' : 'NONE',
+      streak: streak.length
+    }));
+  }
+  const eligible = results.filter(item => item.streak.alert);
+  const maxStreak = eligible.length ? Math.max(...eligible.map(item => item.streak.length)) : 0;
+  for (const { symbol, streak } of results) {
+    const isWinner = streak.alert && streak.length === maxStreak;
+    console.log(`5M BUCKET ${new Date(period).toISOString()}-${new Date(period + TIMEFRAMES[TIMEFRAME]).toISOString()} ${symbol} LONG=${streak.longCount} SHORT=${streak.shortCount} DOMINANT=${streak.side > 0 ? 'LONG' : streak.side < 0 ? 'SHORT' : 'NONE'} STREAK=${streak.length}${isWinner ? ' ALERT=YES' : ' ALERT=NO'}`);
+    if (isWinner) await sendAlert(period, symbol, streak);
+  }
+  if (maxStreak) console.log(`5M MAX STREAK ${maxStreak}; alerts=${eligible.filter(item => item.streak.length === maxStreak).map(item => item.symbol).join(',')}`);
+  queueStateSave();
 }
-
 async function main() {
   await loadState();
-  console.log(`GLOBAL 5M LIQUIDATION IMBALANCE MONITOR STARTED; all coins=${SYMBOLS.join(',')}; HYPE INCLUDED; only 5m`);
+  console.log(`LIQUIDATION STREAK MONITOR STARTED; all coins=${SYMBOLS.join(',')}; only 5m; threshold=${ALERT_THRESHOLD}+; largest streak only; ties all alert; no imbalance logic`);
   let lastCompleted = null;
   while (true) {
     const now = Date.now();
     const current = bucketStart(now, TIMEFRAME);
-    const completed = current - WINDOW_MS;
+    const completed = current - TIMEFRAMES[TIMEFRAME];
     const feeds = await fetchAllFeeds();
-    if (lastCompleted === null) lastCompleted = completed - WINDOW_MS;
-    for (let period = lastCompleted + WINDOW_MS; period <= completed; period += WINDOW_MS) {
-      await processCompletedBucket(period, feeds);
-    }
+    if (lastCompleted === null) lastCompleted = completed - TIMEFRAMES[TIMEFRAME];
+    for (let period = lastCompleted + TIMEFRAMES[TIMEFRAME]; period <= completed; period += TIMEFRAMES[TIMEFRAME]) await processCompletedBucket(period, feeds);
     lastCompleted = completed;
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
-
-main().catch(error => {
-  console.error(`FATAL: ${error.stack || error.message}`);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(`FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
