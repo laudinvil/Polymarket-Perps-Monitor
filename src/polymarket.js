@@ -8,94 +8,26 @@ const TIMEFRAMES = {
   '1d': 24 * 60 * 60 * 1000,
 };
 const LONG_ASSET_SLUG = {
-  BTC: 'bitcoin',
-  ETH: 'ethereum',
-  SOL: 'solana',
-  XRP: 'xrp',
-  DOGE: 'dogecoin',
-  BNB: 'bnb',
-  HYPE: 'hype',
+  BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', XRP: 'xrp', DOGE: 'dogecoin', BNB: 'bnb', HYPE: 'hype',
 };
-
-function bucketStart(now = Date.now(), timeframe = '5m') {
-  return Math.floor(now / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe];
-}
-
-function nextBucketStart(now = Date.now(), timeframe = '5m') {
-  return bucketStart(now, timeframe) + TIMEFRAMES[timeframe];
-}
-
-async function getJson(url) {
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) return null;
-  return response.json();
-}
-
-async function findMarketBySlug(slug) {
-  const market = await getJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
-  if (!market || market.slug !== slug) return null;
-  return {
-    slug,
-    url: `${MARKET_BASE_URL}/${slug}`,
-    question: market.question || null,
-    startDate: market.startDate || market.startDateIso || null,
-    endDate: market.endDate || market.endDateIso || null,
-  };
-}
-
-function easternParts(epoch) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    hour12: true,
-  }).formatToParts(new Date(epoch));
-  return Object.fromEntries(parts.map(part => [part.type, part.value]));
-}
-
-function longTimeframeSlug(symbol, epoch, timeframe) {
-  const asset = LONG_ASSET_SLUG[symbol] || symbol.toLowerCase();
-  const p = easternParts(epoch);
-  if (timeframe === '1d') return `${asset}-up-or-down-on-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}`;
-  if (timeframe === '1h') {
-    return `${asset}-up-or-down-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}-${Number(p.hour)}${p.dayPeriod.toLowerCase()}-et`;
-  }
-  return null;
-}
-
-function constructMarketUrl(symbol, epoch, timeframe = '5m') {
-  const asset = String(symbol || '').trim().toUpperCase();
-  if (!asset || !TIMEFRAMES[timeframe]) return null;
-  if (timeframe === '1h' || timeframe === '1d') {
-    const slug = longTimeframeSlug(asset, epoch, timeframe);
-    return slug ? `${MARKET_BASE_URL}/${slug}` : null;
-  }
-  const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
-  return `${MARKET_BASE_URL}/${slug}`;
-}
-
-async function findMarketByEpoch(symbol, epoch, timeframe = '5m') {
-  const asset = String(symbol || '').trim().toUpperCase();
-  if (!asset) return null;
-  if (timeframe === '1h' || timeframe === '1d') return findMarketBySlug(longTimeframeSlug(asset, epoch, timeframe));
-  const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`;
-  return findMarketBySlug(slug);
-}
-
+function bucketStart(now = Date.now(), timeframe = '5m') { return Math.floor(now / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe]; }
+function nextBucketStart(now = Date.now(), timeframe = '5m') { return bucketStart(now, timeframe) + TIMEFRAMES[timeframe]; }
+async function getJson(url) { const response = await fetch(url, { headers: { accept: 'application/json' } }); if (!response.ok) return null; return response.json(); }
+async function findMarketBySlug(slug) { const market = await getJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`); if (!market || market.slug !== slug) return null; return { slug, url: `${MARKET_BASE_URL}/${slug}`, question: market.question || null, startDate: market.startDate || market.startDateIso || null, endDate: market.endDate || market.endDateIso || null }; }
+function easternParts(epoch) { const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', hour12: true }).formatToParts(new Date(epoch)); return Object.fromEntries(parts.map(part => [part.type, part.value])); }
+function longTimeframeSlug(symbol, epoch, timeframe) { const asset = LONG_ASSET_SLUG[symbol] || symbol.toLowerCase(); const p = easternParts(epoch); if (timeframe === '1d') return `${asset}-up-or-down-on-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}`; if (timeframe === '1h') return `${asset}-up-or-down-${p.month.toLowerCase()}-${Number(p.day)}-${p.year}-${Number(p.hour)}${p.dayPeriod.toLowerCase()}-et`; return null; }
+function constructMarketUrl(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset || !TIMEFRAMES[timeframe]) return null; if (timeframe === '1h' || timeframe === '1d') { const slug = longTimeframeSlug(asset, epoch, timeframe); return slug ? `${MARKET_BASE_URL}/${slug}` : null; } const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return `${MARKET_BASE_URL}/${slug}`; }
+async function findMarketByEpoch(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset) return null; if (timeframe === '1h' || timeframe === '1d') return findMarketBySlug(longTimeframeSlug(asset, epoch, timeframe)); const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return findMarketBySlug(slug); }
 async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
-  const start = bucketStart(now, timeframe);
+  // NEXT is always the market immediately after the currently active bucket.
+  const start = nextBucketStart(now, timeframe);
   for (let i = 0; i < 12; i += 1) {
     const epoch = start + i * TIMEFRAMES[timeframe];
     const market = await findMarketByEpoch(symbol, epoch, timeframe);
     if (market) return market;
   }
   const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
-  if (fallbackUrl) {
-    return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true };
-  }
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true };
   return null;
 }
-
 module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket };
