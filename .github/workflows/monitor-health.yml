@@ -36,10 +36,14 @@ jobs:
           git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
           git checkout main -- .github/workflows/monitor-health.yml scripts/imbalance-all-timeframes.js 2>/dev/null || true
 
-      - name: Verify monitor source configuration
+      - name: Verify authoritative monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
-          echo "Authoritative imbalance source syntax verified: 5m/15m/1h/4h"
+          if grep -R "first-liquidation-5m\|imbalance-5m-only" .github/workflows scripts 2>/dev/null; then
+            echo "ERROR: legacy monitor reference detected"
+            exit 1
+          fi
+          echo "Authoritative imbalance source syntax verified: 5M only / BTC ETH SOL XRP DOGE BNB HYPE"
 
       - name: Continuous MarginPad monitor
         env:
