@@ -7,9 +7,11 @@ on:
     - cron: '1 0,6,12,18 * * *'
   workflow_dispatch:
 
+# Only one authoritative monitor may run at a time.
+# Do not cancel a healthy long-running monitor when another trigger arrives.
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -35,7 +37,7 @@ jobs:
         run: |
           node --check src/liquidation-monitor.js
           node --check scripts/imbalance-5m-only.js
-          echo "All liquidation imbalance timeframes source syntax verified"
+          echo "Authoritative 5m liquidation imbalance source syntax verified"
       - name: Continuous MarginPad monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
