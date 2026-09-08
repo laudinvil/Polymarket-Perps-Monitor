@@ -103,13 +103,13 @@ async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
   const blockedSymbol = lastAlertSymbol;
+  const previousLastObservedLiquidationTs = lastObservedLiquidationTs;
 
   // Once one liquidation has claimed this 10m period, all other coins/events
   // are ignored until the next 10m period begins.
   if (periodAlreadyAlerted) return;
 
   const candidates = [];
-  const observedEvents = [];
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
@@ -121,7 +121,6 @@ async function processLiquidations(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
-      observedEvents.push({ symbol, side, key, event, ts });
 
       // A liquidation from any coin counts as market activity for the quiet filter,
       // even if that coin is blocked by the previous-period rule.
@@ -142,14 +141,15 @@ async function processLiquidations(feeds, now) {
 
   if (!candidates.length) return;
 
-  // If the market was quiet for 29 minutes or more, suppress the first eligible
-  // liquidation after the pause. This resets the quiet state without sending an alert.
-  const quietBeforeEvent = lastObservedLiquidationTs !== null && (now - lastObservedLiquidationTs >= QUIET_PERIOD_MS);
-  if (quietBeforeEvent) {
+  // If the market was quiet for 29 minutes or more before this newly observed
+  // liquidation, suppress that first post-pause liquidation and resume monitoring.
+  const quietMs = previousLastObservedLiquidationTs === null
+    ? 0
+    : now - previousLastObservedLiquidationTs;
+  if (previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
     candidates.sort((a, b) => a.ts - b.ts);
     const warmup = candidates[0];
-    lastObservedLiquidationTs = warmup.ts;
-    console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${warmup.symbol} side=${warmup.side} ts=${new Date(warmup.ts).toISOString()} quietMs=${now - lastObservedLiquidationTs} thresholdMs=${QUIET_PERIOD_MS}`);
+    console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${warmup.symbol} side=${warmup.side} ts=${new Date(warmup.ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
     return;
   }
 
