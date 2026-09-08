@@ -11,6 +11,7 @@ const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
 const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+const QUIET_PERIOD_MS = 29 * 60 * 1000;
 
 const seenLiquidations = new Set();
 let dedupePeriodStart = null;
@@ -19,6 +20,7 @@ let lastAlertSymbol = null;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 let initialized = false;
+let lastObservedLiquidationTs = null;
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
@@ -107,11 +109,8 @@ async function processLiquidations(feeds, now) {
   if (periodAlreadyAlerted) return;
 
   const candidates = [];
+  const observedEvents = [];
   for (const symbol of SYMBOLS) {
-    // A coin that alerted in the previous 10m period cannot alert again
-    // in the immediately following 10m period.
-    if (symbol === blockedSymbol) continue;
-
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts < windowStart || ts >= now) continue;
@@ -122,17 +121,37 @@ async function processLiquidations(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
+      observedEvents.push({ symbol, side, key, event, ts });
+
+      // A liquidation from any coin counts as market activity for the quiet filter,
+      // even if that coin is blocked by the previous-period rule.
+      if (lastObservedLiquidationTs === null || ts > lastObservedLiquidationTs) {
+        lastObservedLiquidationTs = ts;
+      }
+
+      if (symbol === blockedSymbol) continue;
       candidates.push({ symbol, side, key, event, ts });
     }
   }
 
   if (!initialized) {
     initialized = true;
-    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; previous coin block=${blockedSymbol || 'none'}`);
+    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; previous coin block=${blockedSymbol || 'none'}; last liquidation=${lastObservedLiquidationTs ? new Date(lastObservedLiquidationTs).toISOString() : 'none'}`);
     return;
   }
 
   if (!candidates.length) return;
+
+  // If the market was quiet for 29 minutes or more, suppress the first eligible
+  // liquidation after the pause. This resets the quiet state without sending an alert.
+  const quietBeforeEvent = lastObservedLiquidationTs !== null && (now - lastObservedLiquidationTs >= QUIET_PERIOD_MS);
+  if (quietBeforeEvent) {
+    candidates.sort((a, b) => a.ts - b.ts);
+    const warmup = candidates[0];
+    lastObservedLiquidationTs = warmup.ts;
+    console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${warmup.symbol} side=${warmup.side} ts=${new Date(warmup.ts).toISOString()} quietMs=${now - lastObservedLiquidationTs} thresholdMs=${QUIET_PERIOD_MS}`);
+    return;
+  }
 
   // The earliest newly observed liquidation wins the 10m period, regardless of coin,
   // except that the previous period's winning coin is blocked for this period.
@@ -184,7 +203,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 10m period; previous-period coin blocked; other events ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 10m period; previous-period coin blocked; 29m quiet-period warmup; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
