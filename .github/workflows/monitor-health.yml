@@ -37,9 +37,9 @@ jobs:
 
       - name: Verify monitor source configuration
         run: |
-          node --check src/index.js
-          node --check scripts/contrarian-only.js
-          echo "6-vs-1 contrarian-only monitor source syntax verified"
+          node --check src/liquidation-monitor.js
+          node --check scripts/imbalance-5m-only.js
+          echo "5m imbalance-only monitor source syntax verified"
 
       - name: Continuous MarginPad monitor
         env:
@@ -50,9 +50,9 @@ jobs:
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
           set -o pipefail
-          echo "Starting authoritative monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
+          echo "Starting authoritative 5m imbalance-only monitor run $GITHUB_RUN_NUMBER (ID $GITHUB_RUN_ID) at commit $GITHUB_SHA"
           node scripts/convex-sync.js start || true
-          node -r ./src/http-timeout.js scripts/contrarian-only.js 2>&1 | tee monitor.log &
+          node -r ./src/http-timeout.js scripts/imbalance-5m-only.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           HISTORY_LINES=0
           MONITOR_STATUS=completed
@@ -72,7 +72,7 @@ jobs:
                 sleep 2
                 pkill -TERM -P "$MONITOR_PID" 2>/dev/null || true
                 wait "$MONITOR_PID" 2>/dev/null || true
-                node -r ./src/http-timeout.js scripts/contrarian-only.js 2>&1 | tee -a monitor.log &
+                node -r ./src/http-timeout.js scripts/imbalance-5m-only.js 2>&1 | tee -a monitor.log &
                 MONITOR_PID=$!
                 echo "MONITOR WATCHDOG: restarted monitor pid=$MONITOR_PID"
               fi
