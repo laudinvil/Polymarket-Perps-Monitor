@@ -14,6 +14,13 @@ const REQUEST_TIMEOUT_MS = 15000;
 const sentAlerts = new Set();
 const processedBuckets = new Set();
 
+// Global state is cumulative across 5m buckets. LONG = +1, SHORT = -1.
+let globalLongCount = 0;
+let globalShortCount = 0;
+let globalImbalance = 0;
+let establishedSign = 0;
+let lastEventTs = 0;
+
 function side(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
   if (value.includes('long') || value === 'buy') return 1;
@@ -23,6 +30,10 @@ function side(event) {
 
 function formatCount(value) {
   return Math.max(0, Number(value) || 0).toLocaleString('en-US');
+}
+
+function signed(value) {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function githubRequest(method = 'GET', body) {
@@ -71,6 +82,11 @@ function loadPersistedState(state) {
     const normalized = normalizeAlertKey(key);
     if (normalized) sentAlerts.add(normalized);
   }
+  if (Number.isFinite(state?.globalLongCount)) globalLongCount = Math.max(0, state.globalLongCount);
+  if (Number.isFinite(state?.globalShortCount)) globalShortCount = Math.max(0, state.globalShortCount);
+  globalImbalance = globalLongCount - globalShortCount;
+  establishedSign = globalImbalance > 0 ? 1 : globalImbalance < 0 ? -1 : 0;
+  if (Number.isFinite(state?.lastGlobalEventTs)) lastEventTs = Math.max(0, state.lastGlobalEventTs);
 }
 
 async function loadState() {
@@ -80,35 +96,33 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log(`STATE LOADED; global 5m liquidation imbalance; symbols=${SYMBOLS.join(',')}`);
+    console.log(`STATE LOADED; global 5m counts LONG=${globalLongCount} SHORT=${globalShortCount} IMBALANCE=${signed(globalImbalance)}`);
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
 }
 
-async function saveSentAlert(key) {
-  sentAlerts.add(key);
+async function saveGlobalState() {
   if (!process.env.GITHUB_TOKEN) return;
-
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
       let response = null;
       try { response = await githubRequest(); }
       catch (error) { if (error.statusCode !== 404) throw error; }
-
       const state = response?.content
         ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'))
         : {};
       const keys = new Set(
         [...(state.sentAlerts || []), ...(state.alerts || [])]
-          .map(normalizeAlertKey)
-          .filter(Boolean)
+          .map(normalizeAlertKey).filter(Boolean)
       );
-      keys.add(key);
+      for (const key of sentAlerts) keys.add(key);
       state.sentAlerts = [...keys];
-
+      state.globalLongCount = globalLongCount;
+      state.globalShortCount = globalShortCount;
+      state.lastGlobalEventTs = lastEventTs;
       await githubRequest('PUT', {
-        message: 'Persist global 5m liquidation imbalance alert state',
+        message: 'Persist global 5m liquidation imbalance state',
         content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
         branch: 'monitor-status',
         ...(response?.sha ? { sha: response.sha } : {})
@@ -127,15 +141,13 @@ async function saveSentAlert(key) {
 async function reserveAlertKey(key) {
   if (sentAlerts.has(key)) return false;
   if (!process.env.GITHUB_TOKEN) return true;
-
   try {
     const response = await githubRequest();
     if (response?.content) {
       const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
       const keys = new Set(
         [...(state.sentAlerts || []), ...(state.alerts || [])]
-          .map(normalizeAlertKey)
-          .filter(Boolean)
+          .map(normalizeAlertKey).filter(Boolean)
       );
       if (keys.has(key)) {
         sentAlerts.add(key);
@@ -152,9 +164,8 @@ async function reserveAlertKey(key) {
 async function fetchAllFeeds() {
   return new Map(await Promise.all(
     SYMBOLS.map(async symbol => {
-      try {
-        return [symbol, await fetchSymbolFeed(symbol)];
-      } catch (error) {
+      try { return [symbol, await fetchSymbolFeed(symbol)]; }
+      catch (error) {
         console.warn(`FEED ${symbol} FAILED: ${error.message}`);
         return [symbol, []];
       }
@@ -170,68 +181,43 @@ function eventsForBucket(feeds, period) {
       if (!ts || bucketStart(ts, TIMEFRAME) !== period) continue;
       const eventSide = side(event);
       if (!eventSide) continue;
-      events.push({
-        symbol,
-        ts,
-        side: eventSide,
-        event
-      });
+      events.push({ symbol, ts, side: eventSide, event });
     }
   }
   events.sort((a, b) => a.ts - b.ts);
   return events;
 }
 
-function calculateGlobalImbalance(events) {
-  let longCount = 0;
-  let shortCount = 0;
-  let runningImbalance = 0;
+function applyEvents(events) {
   let crossing = null;
-
   for (const item of events) {
-    const previousImbalance = runningImbalance;
+    if (item.ts <= lastEventTs) continue;
+    const previousImbalance = globalImbalance;
     if (item.side > 0) {
-      longCount += 1;
-      runningImbalance += 1;
+      globalLongCount += 1;
+      globalImbalance += 1;
     } else {
-      shortCount += 1;
-      runningImbalance -= 1;
+      globalShortCount += 1;
+      globalImbalance -= 1;
     }
-
-    // Alert only when the GLOBAL imbalance actually crosses zero.
-    // The event that performs the crossing identifies the coin responsible.
-    if (!crossing && previousImbalance !== 0 &&
-        ((previousImbalance < 0 && runningImbalance > 0) ||
-         (previousImbalance > 0 && runningImbalance < 0))) {
-      crossing = {
-        symbol: item.symbol,
-        from: previousImbalance,
-        to: runningImbalance,
-        sign: runningImbalance > 0 ? 1 : -1,
-        ts: item.ts
-      };
+    lastEventTs = item.ts;
+    const newSign = globalImbalance > 0 ? 1 : globalImbalance < 0 ? -1 : 0;
+    // Alert only on a genuine GLOBAL + -> - or - -> + crossing.
+    if (!crossing && establishedSign !== 0 && newSign !== 0 && newSign !== establishedSign) {
+      crossing = { symbol: item.symbol, from: previousImbalance, to: globalImbalance, sign: newSign, ts: item.ts };
     }
+    if (newSign !== 0) establishedSign = newSign;
   }
-
-  return {
-    longCount,
-    shortCount,
-    imbalance: longCount - shortCount,
-    crossing
-  };
+  return crossing;
 }
 
 async function findNextPlusOneMarket(symbol, completedBucketStart) {
-  // Next market = period + 1 window; requested link is +1 beyond that.
-  const nextMarketStart = completedBucketStart + WINDOW_MS;
-  const plusOneStart = nextMarketStart + WINDOW_MS;
-  return findMarketByEpoch(symbol, plusOneStart, TIMEFRAME);
+  // NEXT+1 = two 5m periods after the completed bucket.
+  return findMarketByEpoch(symbol, completedBucketStart + 2 * WINDOW_MS, TIMEFRAME);
 }
 
-async function sendAlert(period, stats) {
-  const crossing = stats.crossing;
+async function sendAlert(period, crossing) {
   if (!crossing) return;
-
   const key = `5m:GLOBAL:${period}:${crossing.symbol}:${crossing.sign}`;
   if (!(await reserveAlertKey(key))) {
     console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
@@ -239,32 +225,27 @@ async function sendAlert(period, stats) {
   }
 
   let market = null;
-  try {
-    market = await findNextPlusOneMarket(crossing.symbol, period);
-  } catch (error) {
-    console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`);
-  }
+  try { market = await findNextPlusOneMarket(crossing.symbol, period); }
+  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`); }
 
+  // Global imbalance = LONG - SHORT. Positive => BUY UP, negative => BUY DOWN.
   const direction = crossing.sign > 0 ? 'BUY UP' : 'BUY DOWN';
   const emoji = crossing.sign > 0 ? '🟢' : '🔴';
-  const link = market?.url
-    ? `\n\n➡️ NEXT+1 Polymarket 5M\n${market.url}`
-    : '';
-
+  const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket 5M\n${market.url}` : '';
   const message = [
     `${emoji} ${crossing.symbol} · ${direction} · 5M`,
     '',
-    `Global imbalance: ${crossing.sign > 0 ? '+' : ''}${stats.imbalance}`,
-    `${formatCount(stats.longCount)} LONG · ${formatCount(stats.shortCount)} SHORT`,
+    `Global imbalance: ${signed(globalImbalance)}`,
+    `${formatCount(globalLongCount)} LONG · ${formatCount(globalShortCount)} SHORT`,
     '',
-    `0 crossed: ${crossing.from > 0 ? '+' : ''}${crossing.from} → ${crossing.to > 0 ? '+' : ''}${crossing.to}`,
+    `0 crossed: ${signed(crossing.from)} → ${signed(crossing.to)}`,
     link
   ].join('\n').trim();
 
   try {
     await sendTelegramMessage(message);
-    await saveSentAlert(key);
-    console.log(`GLOBAL 5M IMBALANCE ZERO CROSS ALERT SENT ${crossing.symbol} ${direction} imbalance=${stats.imbalance} long=${stats.longCount} short=${stats.shortCount}`);
+    await saveGlobalState();
+    console.log(`GLOBAL 5M ZERO CROSS ALERT SENT ${crossing.symbol} ${direction} imbalance=${globalImbalance} long=${globalLongCount} short=${globalShortCount}`);
   } catch (error) {
     console.warn(`GLOBAL 5M ALERT SEND FAILED ${crossing.symbol}: ${error.message}`);
   }
@@ -274,38 +255,31 @@ async function processCompletedBucket(period, feeds) {
   const bucketKey = `5m:${period}`;
   if (processedBuckets.has(bucketKey)) return;
   processedBuckets.add(bucketKey);
-
   const events = eventsForBucket(feeds, period);
-  const stats = calculateGlobalImbalance(events);
-
+  const crossing = applyEvents(events);
   console.log(
     `5M GLOBAL BOUNDARY ${new Date(period + WINDOW_MS).toISOString()} ` +
-    `LONG=${formatCount(stats.longCount)} SHORT=${formatCount(stats.shortCount)} ` +
-    `IMBALANCE=${stats.imbalance > 0 ? '+' : ''}${stats.imbalance} ` +
-    `CROSS=${stats.crossing ? `${stats.crossing.symbol}:${stats.crossing.from}->${stats.crossing.to}` : 'NONE'}`
+    `LONG=${formatCount(globalLongCount)} SHORT=${formatCount(globalShortCount)} ` +
+    `IMBALANCE=${signed(globalImbalance)} ` +
+    `CROSS=${crossing ? `${crossing.symbol}:${crossing.from}->${crossing.to}` : 'NONE'}`
   );
-
-  await sendAlert(period, stats);
+  await saveGlobalState();
+  await sendAlert(period, crossing);
 }
 
 async function main() {
   await loadState();
   console.log(`GLOBAL 5M LIQUIDATION IMBALANCE MONITOR STARTED; all coins=${SYMBOLS.join(',')}; HYPE INCLUDED; only 5m`);
-
   let lastCompleted = null;
-
   while (true) {
     const now = Date.now();
     const current = bucketStart(now, TIMEFRAME);
     const completed = current - WINDOW_MS;
     const feeds = await fetchAllFeeds();
-
     if (lastCompleted === null) lastCompleted = completed - WINDOW_MS;
-
     for (let period = lastCompleted + WINDOW_MS; period <= completed; period += WINDOW_MS) {
       await processCompletedBucket(period, feeds);
     }
-
     lastCompleted = completed;
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
