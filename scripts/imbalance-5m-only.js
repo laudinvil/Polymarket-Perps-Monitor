@@ -237,8 +237,10 @@ async function sendAlert(period, crossing) {
     console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`);
   }
 
-  const direction = crossing.sign > 0 ? 'BUY UP' : 'BUY DOWN';
-  const emoji = crossing.sign > 0 ? '🟢' : '🔴';
+  // Contrarian mapping: positive imbalance (more LONG liquidations) => BUY DOWN;
+  // negative imbalance (more SHORT liquidations) => BUY UP.
+  const direction = crossing.sign > 0 ? 'BUY DOWN' : 'BUY UP';
+  const emoji = crossing.sign > 0 ? '🔴' : '🟢';
   const links = [
     markets.next?.url ? `➡️ NEXT · Polymarket 5M\n${markets.next.url}` : '',
     markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket 5M\n${markets.nextPlusOne.url}` : ''
