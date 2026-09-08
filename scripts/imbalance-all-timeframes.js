@@ -249,11 +249,11 @@ async function findNextMarkets(symbol, completedBucketStart, timeframe) {
 }
 
 async function sendAlert(timeframe, period, symbol, streak) {
-  if (!streak.alert) return;
+  if (!streak.alert) return false;
   const key = `${timeframe}:STREAK:${period}:${symbol}:${streak.side === 1 ? 1 : 2}`;
   if (!(await reserveAlertKey(key))) {
     console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
-    return;
+    return false;
   }
 
   let markets = { next: null, nextPlusOne: null };
@@ -287,10 +287,11 @@ async function sendAlert(timeframe, period, symbol, streak) {
   try {
     await sendTelegramMessage(message);
     sentAlerts.add(key);
-    await saveGlobalState();
     console.log(`STREAK ${timeframe.toUpperCase()} ALERT SENT ${symbol} ${sideName} streak=${streak.length} long=${streak.longCount} short=${streak.shortCount}`);
+    return true;
   } catch (error) {
     console.warn(`STREAK ${timeframe.toUpperCase()} ALERT SEND FAILED ${symbol}: ${error.message}`);
+    return false;
   }
 }
 
@@ -302,6 +303,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
   const events = eventsForBucket(feeds, timeframe, period);
   const counts = classifyBucket(events);
   const bucketEnd = period + TIMEFRAMES[timeframe];
+  const alertTasks = [];
 
   for (const symbol of SYMBOLS) {
     const streak = updateStreak(timeframe, symbol, period, counts.get(symbol));
@@ -310,10 +312,14 @@ async function processCompletedBucket(timeframe, period, feeds) {
     } else {
       console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=0 SHORT=0 STREAK=RESET`);
     }
-    await sendAlert(timeframe, period, symbol, streak);
+    if (streak.alert) alertTasks.push(sendAlert(timeframe, period, symbol, streak));
   }
 
-  await saveGlobalState();
+  // Send all alerts for this completed bucket in parallel. Do not block one alert
+  // behind another symbol's Polymarket lookup or Telegram request.
+  const sentAny = (await Promise.all(alertTasks)).some(Boolean);
+  if (sentAny) await saveGlobalState();
+  else await saveGlobalState();
 }
 
 async function main() {
