@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
-const ALERT_THRESHOLD = { '5m': 5, '15m': 2, '1h': 2, '4h': 2 };
+const ALERT_THRESHOLD = { '5m': 6, '15m': 2, '1h': 2, '4h': 2 };
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
@@ -101,7 +101,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:5+,15m:2+,1h:2+,4h:2+; no periodic reset');
+    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:6+,15m:2+,1h:2+,4h:2+; no periodic reset');
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -315,16 +315,13 @@ async function processCompletedBucket(timeframe, period, feeds) {
     if (streak.alert) alertTasks.push(sendAlert(timeframe, period, symbol, streak));
   }
 
-  // Send all alerts for this completed bucket in parallel. Do not block one alert
-  // behind another symbol's Polymarket lookup or Telegram request.
-  const sentAny = (await Promise.all(alertTasks)).some(Boolean);
-  if (sentAny) await saveGlobalState();
-  else await saveGlobalState();
+  await Promise.all(alertTasks);
+  await saveGlobalState();
 }
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:5+,15m:2+,1h:2+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:6+,15m:2+,1h:2+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
