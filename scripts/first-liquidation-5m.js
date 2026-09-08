@@ -43,8 +43,7 @@ async function checkOnce() {
   const nextMarket = await findNextMarket(symbol, now);
 
   const message = [
-    '🔥 LIQUIDATION',
-    `${symbol} · 5M`, '',
+    `🔥 ${symbol} · 5M`, '',
     `Side: ${side}`,
     `Volume: ${formatUsd(notional)}`,
     Number.isFinite(price) ? `Price: ${price}` : null,
