@@ -1,6 +1,6 @@
 const https = require('https');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { findNextMarket } = require('../src/polymarket');
+const { findMarketByEpoch, bucketStart } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
@@ -15,7 +15,7 @@ const sentAlerts = new Set();
 const establishedSigns = new Map();
 const processedBuckets = new Set();
 
-function bucketStart(ts) { return Math.floor(ts / WINDOW_MS) * WINDOW_MS; }
+function localBucketStart(ts) { return Math.floor(ts / WINDOW_MS) * WINDOW_MS; }
 function side(event) {
   const s = String(event?.side || event?.direction || '').toLowerCase();
   return s.includes('long') ? 1 : s.includes('short') ? -1 : 0;
@@ -161,7 +161,7 @@ function aggregate(events, period, symbol) {
   let shortEvents = 0;
   for (const event of events || []) {
     const ts = normalizeTs(event?.ts);
-    if (!ts || bucketStart(ts) !== period) continue;
+    if (!ts || localBucketStart(ts) !== period) continue;
     const value = notional(event);
     const s = side(event);
     if (!value || !s) continue;
@@ -170,6 +170,11 @@ function aggregate(events, period, symbol) {
   }
   const imbalanceUsd = shortUsd - longUsd;
   return { symbol, period, longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents, imbalanceUsd, sign: imbalanceUsd > 0 ? 1 : imbalanceUsd < 0 ? -1 : 0 };
+}
+async function findPlusOneMarket(symbol, now) {
+  const nextMarketStart = bucketStart(now, TIMEFRAME) + WINDOW_MS;
+  const plusOneStart = nextMarketStart + WINDOW_MS;
+  return findMarketByEpoch(symbol, plusOneStart, TIMEFRAME);
 }
 async function sendAlert(row) {
   if (!row.sign) return;
@@ -182,27 +187,27 @@ async function sendAlert(row) {
   const key = `5m:${row.symbol}:${row.period}:${row.sign}`;
   if (!(await reserveAlertKey(key))) return;
   let market = null;
-  try { market = await findNextMarket(row.symbol, Date.now(), TIMEFRAME); }
+  try { market = await findPlusOneMarket(row.symbol, Date.now()); }
   catch (error) { console.warn(`POLYMARKET LOOKUP FAILED 5m ${row.symbol}: ${error.message}`); }
   const direction = row.sign > 0 ? 'BUY UP' : 'BUY DOWN';
   const color = row.sign > 0 ? '🟢' : '🔴';
-  const link = market?.url ? `\n\n➡️ NEXT Polymarket 5M\n${market.url}` : '';
+  const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket 5M\n${market.url}` : '';
   const msg = `${color} ${row.symbol} · ${direction}\n\nImbalance: ${formatUsd(row.imbalanceUsd)}\n\n${formatUsd(row.longUsd)} LONG · ${formatUsd(row.shortUsd)} SHORT${link}`;
   try {
     await sendTelegramMessage(msg);
     await saveSentAlert(key);
-    console.log(`5M IMBALANCE ALERT SENT ${row.symbol} ${direction} ${formatUsd(row.imbalanceUsd)}`);
+    console.log(`5M IMBALANCE ALERT SENT ${row.symbol} ${direction} ${formatUsd(row.imbalanceUsd)} market=NEXT+1`);
   } catch (error) {
     console.warn(`5M IMBALANCE ALERT SEND FAILED ${row.symbol}: ${error.message}`);
   }
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONLY 5m imbalance; all symbols; Polymarket 5M links enabled`);
+  console.log(`Liquidation monitor started; ONLY 5m imbalance; all symbols; Polymarket NEXT+1 links enabled`);
   let lastCompletedPeriod = null;
   while (true) {
     const now = Date.now();
-    const currentPeriod = bucketStart(now);
+    const currentPeriod = localBucketStart(now);
     const completedPeriod = currentPeriod - WINDOW_MS;
     if (lastCompletedPeriod === null) lastCompletedPeriod = completedPeriod - WINDOW_MS;
     if (completedPeriod > lastCompletedPeriod) {
