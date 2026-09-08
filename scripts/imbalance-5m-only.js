@@ -202,7 +202,6 @@ function applyEvents(events) {
     }
     lastEventTs = item.ts;
     const newSign = globalImbalance > 0 ? 1 : globalImbalance < 0 ? -1 : 0;
-    // Alert only on a genuine GLOBAL + -> - or - -> + crossing.
     if (!crossing && establishedSign !== 0 && newSign !== 0 && newSign !== establishedSign) {
       crossing = { symbol: item.symbol, from: previousImbalance, to: globalImbalance, sign: newSign, ts: item.ts };
     }
@@ -211,9 +210,16 @@ function applyEvents(events) {
   return crossing;
 }
 
-async function findNextPlusOneMarket(symbol, completedBucketStart) {
-  // NEXT+1 = two 5m periods after the completed bucket.
-  return findMarketByEpoch(symbol, completedBucketStart + 2 * WINDOW_MS, TIMEFRAME);
+async function findNextMarkets(symbol, completedBucketStart) {
+  // NEXT is the first 5m market after the completed bucket.
+  // NEXT+1 is the market immediately after NEXT.
+  const nextEpoch = completedBucketStart + WINDOW_MS;
+  const nextPlusOneEpoch = completedBucketStart + 2 * WINDOW_MS;
+  const [next, nextPlusOne] = await Promise.all([
+    findMarketByEpoch(symbol, nextEpoch, TIMEFRAME),
+    findMarketByEpoch(symbol, nextPlusOneEpoch, TIMEFRAME)
+  ]);
+  return { next, nextPlusOne };
 }
 
 async function sendAlert(period, crossing) {
@@ -224,14 +230,20 @@ async function sendAlert(period, crossing) {
     return;
   }
 
-  let market = null;
-  try { market = await findNextPlusOneMarket(crossing.symbol, period); }
-  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`); }
+  let markets = { next: null, nextPlusOne: null };
+  try {
+    markets = await findNextMarkets(crossing.symbol, period);
+  } catch (error) {
+    console.warn(`POLYMARKET LOOKUP FAILED 5m ${crossing.symbol}: ${error.message}`);
+  }
 
-  // Global imbalance = LONG - SHORT. Positive => BUY UP, negative => BUY DOWN.
   const direction = crossing.sign > 0 ? 'BUY UP' : 'BUY DOWN';
   const emoji = crossing.sign > 0 ? '🟢' : '🔴';
-  const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket 5M\n${market.url}` : '';
+  const links = [
+    markets.next?.url ? `➡️ NEXT · Polymarket 5M\n${markets.next.url}` : '',
+    markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket 5M\n${markets.nextPlusOne.url}` : ''
+  ].filter(Boolean).join('\n\n');
+
   const message = [
     `${emoji} ${crossing.symbol} · ${direction} · 5M`,
     '',
@@ -239,7 +251,7 @@ async function sendAlert(period, crossing) {
     `${formatCount(globalLongCount)} LONG · ${formatCount(globalShortCount)} SHORT`,
     '',
     `0 crossed: ${signed(crossing.from)} → ${signed(crossing.to)}`,
-    link
+    links ? `\n${links}` : ''
   ].join('\n').trim();
 
   try {
