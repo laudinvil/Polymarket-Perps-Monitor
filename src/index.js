@@ -130,7 +130,7 @@ async function loadState() {
       const savedContrarian = state.contrarianTimeframes?.[timeframe];
       if (savedContrarian) contrarianState.set(timeframe, { symbol: savedContrarian.symbol || null, sign: Number(savedContrarian.sign) || 0 });
     }
-    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; 5m 6-vs-1 contrarian, 15m/1h/4h largest imbalance`);
+    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; 5m contrarian only; 15m/1h/4h largest + 6-vs-1 contrarian`);
   } catch (error) {
     if (error.statusCode === 404) console.log('STATE LOAD: no persisted state found; starting clean');
     else console.warn(`STATE LOAD FAILED: ${error.message}`);
@@ -287,8 +287,13 @@ async function sendLargestAlert(timeframe, period, candidate) {
   if (!(await reserveAlertKey(alertKey))) return;
   let market = null;
   try { market = await findNextMarket(candidate.symbol, Date.now(), timeframe); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${candidate.symbol}: ${error.message}`); }
-  const link = market?.url ? `\n➡️ NEXT Polymarket ${timeframe}\n${market.url}` : '';
-  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\n\nImbalance: ${formatUsd(candidate.state.imbalanceUsd)}\n${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
+  const link = market?.url ? `\
+➡️ NEXT Polymarket ${timeframe}\
+${market.url}` : '';
+  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\
+\
+Imbalance: ${formatUsd(candidate.state.imbalanceUsd)}\
+${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
   try {
     await sendTelegramMessage(msg);
     await markAlertSent(alertKey);
@@ -312,8 +317,13 @@ async function sendContrarianAlert(timeframe, period, candidate, majoritySign) {
   try { market = await findNextMarket(candidate.symbol, Date.now(), timeframe); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${candidate.symbol}: ${error.message}`); }
   const direction = sign > 0 ? 'BUY UP' : 'BUY DOWN';
   const color = sign > 0 ? '🟢' : '🔴';
-  const link = market?.url ? `\n➡️ NEXT Polymarket ${timeframe}\n${market.url}` : '';
-  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\n\nImbalance: ${formatUsd(candidate.state.imbalanceUsd)}\n${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
+  const link = market?.url ? `\
+➡️ NEXT Polymarket ${timeframe}\
+${market.url}` : '';
+  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\
+\
+Imbalance: ${formatUsd(candidate.state.imbalanceUsd)}\
+${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
   try {
     await sendTelegramMessage(msg);
     contrarianState.set(timeframe, { symbol: candidate.symbol, sign });
@@ -369,12 +379,11 @@ async function processLive(timeframe, boundary) {
     if (state) console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: state.imbalanceUsd }));
   }));
 
-  if (timeframe === '5m') {
-    const result = detectContrarian(timeframe, period);
-    if (result) await sendContrarianAlert(timeframe, period, result.candidate, result.majoritySign);
-    else console.log(`NO 6-VS-1 CONTRARIAN ${timeframe} period=${period}`);
-    return;
-  }
+  const result = detectContrarian(timeframe, period);
+  if (result) await sendContrarianAlert(timeframe, period, result.candidate, result.majoritySign);
+  else console.log(`NO 6-VS-1 CONTRARIAN ${timeframe} period=${period}`);
+
+  if (timeframe === '5m') return;
 
   const rows = symbols.map(symbol => ({ symbol, state: timeframeState.get(timeframe).get(symbol) || empty() })).filter(row => row.state.lastBucket === period && row.state.imbalanceUsd !== 0);
   if (!rows.length) return;
@@ -384,7 +393,7 @@ async function processLive(timeframe, boundary) {
 
 async function main() {
   await loadState();
-  console.log('Liquidation monitor started; 5m=6-vs-1 contrarian only; 15m/1h/4h=single largest absolute imbalance');
+  console.log('Liquidation monitor started; 5m=6-vs-1 contrarian only; 15m/1h/4h=largest absolute imbalance + 6-vs-1 contrarian');
   await processHistorical('15m');
   await processHistorical('1h');
   await processHistorical('4h');
