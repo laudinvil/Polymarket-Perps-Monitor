@@ -239,6 +239,13 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
 }
 
 async function findNextMarkets(symbol, completedBucketStart, timeframe) {
+  if (timeframe === '5m') {
+    return {
+      next: null,
+      nextPlusOne: await findNextMarket(symbol, completedBucketStart + TIMEFRAMES[timeframe], '15m')
+    };
+  }
+
   const next = await findNextMarket(symbol, completedBucketStart + TIMEFRAMES[timeframe], timeframe);
   if (!next) return { next: null, nextPlusOne: null };
   const nextEpoch = completedBucketStart + TIMEFRAMES[timeframe];
@@ -267,10 +274,12 @@ async function sendAlert(timeframe, period, symbol, streak) {
   const direction = isLong ? 'BUY UP' : 'BUY DOWN';
   const emoji = isLong ? '🟢' : '🔴';
   const sideName = isLong ? 'LONG' : 'SHORT';
-  const links = [
-    markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
-    markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
-  ].filter(Boolean).join('\n\n');
+  const links = timeframe === '5m'
+    ? (markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket 15M\n${markets.nextPlusOne.url}` : '')
+    : [
+        markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
+        markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
+      ].filter(Boolean).join('\n\n');
 
   const message = [
     `${emoji} ${symbol} · ${direction} · ${timeframe.toUpperCase()}`,
