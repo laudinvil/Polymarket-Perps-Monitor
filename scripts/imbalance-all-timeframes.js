@@ -102,7 +102,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; no periodic reset');
+    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; alerts only on threshold crossing');
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -116,7 +116,7 @@ async function saveGlobalState() {
     const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
     const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
     for (const key of sentAlerts) keys.add(key);
-    state.version = 20;
+    state.version = 21;
     state.sentAlerts = [...keys].slice(-5000);
     state.streaks = {};
     for (const timeframe of TIMEFRAME_LIST) {
@@ -226,7 +226,7 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
     length: streak.length,
     longCount,
     shortCount,
-    alert: streak.length >= threshold
+    alert: streak.length === threshold
   };
 }
 
@@ -317,7 +317,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; alerts only on threshold crossing; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
