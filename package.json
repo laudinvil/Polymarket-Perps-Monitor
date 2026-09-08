@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "monitor": "node src/index.js",
+    "monitor": "node scripts/imbalance-5m-only.js",
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
