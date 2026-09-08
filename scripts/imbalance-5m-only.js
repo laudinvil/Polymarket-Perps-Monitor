@@ -35,8 +35,10 @@ function githubRequest(method = 'GET', body) {
 }
 function normalizeAlertKey(key) {
   if (typeof key !== 'string') return null;
-  const m = key.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+)(?::(-?1))?$/);
-  return m ? (m[4] ? `${m[1]}:${m[2]}:${m[3]}:${m[4]}` : `${m[1]}:${m[2]}:${m[3]}`) : null;
+  const m = key.match(/^(5m|15m|1h|4h|1d):GLOBAL:(\d+):([A-Z]+):(-?1)$/);
+  if (m) return `${m[1]}:GLOBAL:${m[2]}:${m[3]}:${m[4]}`;
+  const old = key.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+)(?::(-?1))?$/);
+  return old ? (old[4] ? `${old[1]}:${old[2]}:${old[3]}:${old[4]}` : `${old[1]}:${old[2]}:${old[3]}`) : null;
 }
 function loadPersistedState(state) {
   for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
