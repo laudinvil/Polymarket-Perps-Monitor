@@ -5,6 +5,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
 const ALERT_THRESHOLD = { '5m': { long: 5, short: 6 }, '15m': 4, '1h': 3, '4h': 2 };
+const ALERT_MIN_GAP_MS = 5000;
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
@@ -14,6 +15,8 @@ const sentAlerts = new Set();
 const processedBuckets = new Set();
 const streakState = new Map();
 let stateSaveChain = Promise.resolve();
+let alertSendChain = Promise.resolve();
+let lastAlertSentAt = 0;
 
 for (const timeframe of TIMEFRAME_LIST) {
   for (const symbol of SYMBOLS) {
@@ -102,7 +105,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; alerts only on threshold crossing');
+    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; alerts continue at each qualifying bucket; sends are serialized');
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -116,7 +119,7 @@ async function saveGlobalState() {
     const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
     const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
     for (const key of sentAlerts) keys.add(key);
-    state.version = 21;
+    state.version = 22;
     state.sentAlerts = [...keys].slice(-5000);
     state.streaks = {};
     for (const timeframe of TIMEFRAME_LIST) {
@@ -151,6 +154,28 @@ function queueStateSave() {
     .then(() => saveGlobalState())
     .catch(error => console.warn(`STATE SAVE QUEUE FAILED: ${error.message}`));
   return stateSaveChain;
+}
+
+function enqueueAlertSend(message, key, timeframe, symbol, streak) {
+  const task = alertSendChain.then(async () => {
+    const waitMs = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
+    if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+
+    try {
+      await sendTelegramMessage(message);
+      lastAlertSentAt = Date.now();
+      console.log(`STREAK ${timeframe.toUpperCase()} ALERT SENT ${symbol} ${streak.side === 1 ? 'LONG' : 'SHORT'} streak=${streak.length} long=${streak.longCount} short=${streak.shortCount}`);
+    } catch (error) {
+      sentAlerts.delete(key);
+      console.warn(`STREAK ${timeframe.toUpperCase()} ALERT SEND FAILED ${symbol}: ${error.message}`);
+    }
+  });
+
+  alertSendChain = task.catch(error => {
+    sentAlerts.delete(key);
+    console.warn(`ALERT QUEUE FAILED ${timeframe} ${symbol}: ${error.message}`);
+  });
+  return alertSendChain;
 }
 
 async function fetchAllFeeds() {
@@ -226,7 +251,7 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
     length: streak.length,
     longCount,
     shortCount,
-    alert: streak.length === threshold
+    alert: streak.length >= threshold
   };
 }
 
@@ -278,15 +303,8 @@ async function sendAlert(timeframe, period, symbol, streak) {
     links ? `\n${links}` : ''
   ].join('\n').trim();
 
-  try {
-    await sendTelegramMessage(message);
-    console.log(`STREAK ${timeframe.toUpperCase()} ALERT SENT ${symbol} ${sideName} streak=${streak.length} long=${streak.longCount} short=${streak.shortCount}`);
-    return true;
-  } catch (error) {
-    sentAlerts.delete(key);
-    console.warn(`STREAK ${timeframe.toUpperCase()} ALERT SEND FAILED ${symbol}: ${error.message}`);
-    return false;
-  }
+  enqueueAlertSend(message, key, timeframe, symbol, streak);
+  return true;
 }
 
 async function processCompletedBucket(timeframe, period, feeds) {
@@ -317,7 +335,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; alerts only on threshold crossing; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:LONG 5+,SHORT 6+,15m:4+,1h:3+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; alerts continue at each qualifying bucket; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
