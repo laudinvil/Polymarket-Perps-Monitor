@@ -94,13 +94,11 @@ function enqueueAlert(message, symbol, side, key) {
 async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
-  const currentBucket = bucketStart(now, TIMEFRAME);
 
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts < windowStart || ts >= now) continue;
-      if (bucketStart(ts, TIMEFRAME) >= currentBucket) continue;
 
       const side = eventSide(event);
       if (!side) continue;
