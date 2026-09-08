@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
-const ALERT_THRESHOLD = { '5m': { long: 5, short: 6 }, '15m': 3, '1h': 2, '4h': 2 };
+const ALERT_THRESHOLD = { '5m': 2, '15m': 2, '1h': 2, '4h': 2 };
 const ALERT_MIN_GAP_MS = 5000;
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
@@ -86,10 +86,8 @@ function loadPersistedState(state) {
     if (normalized) sentAlerts.add(normalized);
   }
 
-  // Do not restore historical streak lengths from state alone.
-  // The state only stores the last bucket, not the complete bucket-by-bucket
-  // history, so restoring length could fabricate a streak after a restart.
-  // Streaks must be rebuilt from consecutively processed live buckets.
+  // Always start streak calculations from zero after restart.
+  // Historical streak lengths are not restored from persisted state.
   for (const timeframe of TIMEFRAME_LIST) {
     for (const symbol of SYMBOLS) {
       const streak = getStreak(timeframe, symbol);
@@ -107,7 +105,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log('STATE LOADED; sent alerts restored, streak history reset for restart safety; thresholds=5m:LONG 5+,SHORT 6+,15m:3+,1h:2+,4h:2+');
+    console.log('STATE LOADED; sent alerts restored, ALL streaks reset to 0; thresholds=5m:2+,15m:2+,1h:2+,4h:2+');
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -121,7 +119,7 @@ async function saveGlobalState() {
     const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
     const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
     for (const key of sentAlerts) keys.add(key);
-    state.version = 23;
+    state.version = 24;
     state.sentAlerts = [...keys].slice(-5000);
     state.streaks = {};
     for (const timeframe of TIMEFRAME_LIST) {
@@ -136,7 +134,7 @@ async function saveGlobalState() {
       }
     }
     await githubRequest('PUT', {
-      message: 'Persist per-coin liquidation streaks',
+      message: 'Persist resettable liquidation streaks',
       content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
       branch: 'monitor-status',
       ...(response?.sha ? { sha: response.sha } : {})
@@ -245,9 +243,7 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
   }
   streak.lastBucket = bucketStartTs;
 
-  const threshold = typeof ALERT_THRESHOLD[timeframe] === 'object'
-    ? (bucketSide > 0 ? ALERT_THRESHOLD[timeframe].long : ALERT_THRESHOLD[timeframe].short)
-    : ALERT_THRESHOLD[timeframe];
+  const threshold = ALERT_THRESHOLD[timeframe];
 
   return {
     side: bucketSide,
@@ -338,7 +334,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:LONG 5+,SHORT 6+,15m:3+,1h:2+,4h:2+; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; alerts continue at each qualifying bucket; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:2+,15m:2+,1h:2+,4h:2+; ALL streaks start from 0 after restart; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; alerts continue at each qualifying bucket; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
