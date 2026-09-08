@@ -73,9 +73,9 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-async function findNextPolymarket(symbol, eventTs) {
+async function findPreviousPolymarket(symbol, eventTs) {
   const currentBucket = bucketStart(eventTs, TIMEFRAME);
-  return findNextMarket(symbol, currentBucket + TIMEFRAMES[TIMEFRAME], TIMEFRAME);
+  return findNextMarket(symbol, currentBucket, TIMEFRAME);
 }
 
 function enqueueAlert(message, symbol, side, key) {
@@ -139,7 +139,7 @@ async function processLiquidations(feeds, now) {
 
     let market = null;
     try {
-      market = await findNextPolymarket(symbol, ts);
+      market = await findPreviousPolymarket(symbol, ts);
     } catch (error) {
       console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
     }
