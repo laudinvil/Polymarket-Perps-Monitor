@@ -1,10 +1,11 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { TIMEFRAMES, bucketStart, findNextMarket } = require('../src/polymarket');
+const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// BTC only. No imbalance, no streaks, no higher-timeframe monitoring.
-const SYMBOLS = ['BTC'];
+// All 7 coins are monitored, but only the FIRST liquidation per 15-minute
+// Polymarket period is alerted. All other coins/events in that period are ignored.
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -12,6 +13,7 @@ const DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 
 const seenLiquidations = new Set();
 let dedupePeriodStart = null;
+let periodAlreadyAlerted = false;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 let initialized = false;
@@ -32,7 +34,8 @@ function resetDedupeWindow(ts) {
   if (dedupePeriodStart === period) return;
   dedupePeriodStart = period;
   seenLiquidations.clear();
-  console.log(`LIQUIDATION DEDUPE RESET ${new Date(period).toISOString()} (900s window)`);
+  periodAlreadyAlerted = false;
+  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (15m; first liquidation only)`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -95,8 +98,12 @@ function enqueueAlert(message, symbol, side, key) {
 async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
-  const pendingAlerts = [];
 
+  // Once one liquidation has claimed this 15m period, all other coins/events
+  // are ignored until the next 15m Polymarket period begins.
+  if (periodAlreadyAlerted) return;
+
+  const candidates = [];
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
@@ -108,9 +115,7 @@ async function processLiquidations(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
-
-      if (!initialized) continue;
-      pendingAlerts.push({ symbol, side, key, event, ts });
+      candidates.push({ symbol, side, key, event, ts });
     }
   }
 
@@ -120,46 +125,55 @@ async function processLiquidations(feeds, now) {
     return;
   }
 
-  for (const { symbol, side, key, event, ts } of pendingAlerts) {
-    const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
-    const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-    const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
+  if (!candidates.length) return;
 
-    console.log(JSON.stringify({
-      type: 'liquidation',
-      timeframe: '5m',
-      symbol,
-      ts,
-      side,
-      price: eventPrice,
-      qty: eventQty,
-      notional: Math.abs(eventNotional),
-      dedupeWindowStart: windowStart
-    }));
+  // The earliest newly observed liquidation wins the 15m period, regardless of coin.
+  candidates.sort((a, b) => a.ts - b.ts);
+  const { symbol, side, key, event, ts } = candidates[0];
+  periodAlreadyAlerted = true;
 
-    let market = null;
-    try {
-      market = await findPreviousPolymarket(symbol, ts);
-    } catch (error) {
-      console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
-    }
+  // All other candidates are intentionally ignored for this 15m period.
+  console.log(`15M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}`);
 
-    const message = [
-      `🔥 ${symbol} · 5M`,
-      `Side: ${side === 'LONG' ? 'Long' : 'Short'}`,
-      `Volume: ${money(eventNotional)}`,
-      `Price: ${price(eventPrice)}`,
-      `Qty: ${quantity(eventQty)}`,
-      market?.url ? '' : null,
-      market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null
-    ].filter(value => value !== null).join('\n');
+  const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
+  const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
+  const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
 
-    enqueueAlert(message, symbol, side, key);
+  console.log(JSON.stringify({
+    type: 'liquidation',
+    timeframe: '5m',
+    symbol,
+    ts,
+    side,
+    price: eventPrice,
+    qty: eventQty,
+    notional: Math.abs(eventNotional),
+    dedupeWindowStart: windowStart,
+    firstLiquidationOnly: true
+  }));
+
+  let market = null;
+  try {
+    market = await findPreviousPolymarket(symbol, ts);
+  } catch (error) {
+    console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
+
+  const message = [
+    `🔥 ${symbol} · 5M`,
+    `Side: ${side === 'LONG' ? 'Long' : 'Short'}`,
+    `Volume: ${money(eventNotional)}`,
+    `Price: ${price(eventPrice)}`,
+    `Qty: ${quantity(eventQty)}`,
+    market?.url ? '' : null,
+    market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null
+  ].filter(value => value !== null).join('\n');
+
+  enqueueAlert(message, symbol, side, key);
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; individual events only; 900s dedupe; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 15m period; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
