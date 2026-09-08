@@ -105,11 +105,9 @@ function aggregate(events, period, tf, symbol) {
   const imbalanceUsd = shortUsd - longUsd;
   return { symbol, tf, period, longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents, imbalanceUsd, sign: imbalanceUsd > 0 ? 1 : imbalanceUsd < 0 ? -1 : 0 };
 }
-async function findPlusOneMarket(symbol, now, tf) {
+async function findPlusOneMarket(symbol, completedBucketStart, tf) {
   const window = TIMEFRAMES[tf];
-  const current = bucketStart(now, tf);
-  const next = current + window;
-  const plusOne = next + window;
+  const plusOne = completedBucketStart + window + window;
   return findMarketByEpoch(symbol, plusOne, tf);
 }
 async function sendAlert(row) {
@@ -121,12 +119,14 @@ async function sendAlert(row) {
   }
   const key = `${row.tf}:${row.symbol}:${row.period}:${row.sign}`;
   if (!(await reserveAlertKey(key))) return;
-  let market = null; try { market = await findPlusOneMarket(row.symbol, Date.now(), row.tf); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${row.tf} ${row.symbol}: ${error.message}`); }
+  let market = null;
+  try { market = await findPlusOneMarket(row.symbol, row.period, row.tf); }
+  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${row.tf} ${row.symbol}: ${error.message}`); }
   const direction = row.sign > 0 ? 'BUY UP' : 'BUY DOWN', color = row.sign > 0 ? '🟢' : '🔴';
   const timeframe = row.tf.toUpperCase();
   const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket ${timeframe}\n${market.url}` : '';
   const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nImbalance: ${formatUsd(row.imbalanceUsd)}\n\n${formatUsd(row.longUsd)} LONG · ${formatUsd(row.shortUsd)} SHORT${link}`;
-  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} IMBALANCE ALERT SENT ${row.symbol} ${direction} ${timeframe} ${formatUsd(row.imbalanceUsd)} market=NEXT+1`); }
+  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} IMBALANCE ALERT SENT ${row.symbol} ${direction} ${timeframe} ${formatUsd(row.imbalanceUsd)} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
   catch (error) { console.warn(`${row.tf} IMBALANCE ALERT SEND FAILED ${row.symbol}: ${error.message}`); }
 }
 async function main() {
