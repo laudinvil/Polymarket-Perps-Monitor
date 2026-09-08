@@ -86,8 +86,6 @@ function loadPersistedState(state) {
     if (normalized) sentAlerts.add(normalized);
   }
 
-  // Always start streak calculations from zero after restart.
-  // Historical streak lengths are not restored from persisted state.
   for (const timeframe of TIMEFRAME_LIST) {
     for (const symbol of SYMBOLS) {
       const streak = getStreak(timeframe, symbol);
@@ -119,22 +117,18 @@ async function saveGlobalState() {
     const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
     const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
     for (const key of sentAlerts) keys.add(key);
-    state.version = 24;
+    state.version = 25;
     state.sentAlerts = [...keys].slice(-5000);
     state.streaks = {};
     for (const timeframe of TIMEFRAME_LIST) {
       state.streaks[timeframe] = {};
       for (const symbol of SYMBOLS) {
         const streak = getStreak(timeframe, symbol);
-        state.streaks[timeframe][symbol] = {
-          side: streak.side,
-          length: streak.length,
-          lastBucket: streak.lastBucket
-        };
+        state.streaks[timeframe][symbol] = { side: streak.side, length: streak.length, lastBucket: streak.lastBucket };
       }
     }
     await githubRequest('PUT', {
-      message: 'Persist resettable liquidation streaks',
+      message: 'Limit streak alerts to timeframe maximum',
       content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
       branch: 'monitor-status',
       ...(response?.sha ? { sha: response.sha } : {})
@@ -150,9 +144,7 @@ async function saveGlobalState() {
 }
 
 function queueStateSave() {
-  stateSaveChain = stateSaveChain
-    .then(() => saveGlobalState())
-    .catch(error => console.warn(`STATE SAVE QUEUE FAILED: ${error.message}`));
+  stateSaveChain = stateSaveChain.then(() => saveGlobalState()).catch(error => console.warn(`STATE SAVE QUEUE FAILED: ${error.message}`));
   return stateSaveChain;
 }
 
@@ -160,7 +152,6 @@ function enqueueAlertSend(message, key, timeframe, symbol, streak) {
   const task = alertSendChain.then(async () => {
     const waitMs = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
     if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
-
     try {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
@@ -170,7 +161,6 @@ function enqueueAlertSend(message, key, timeframe, symbol, streak) {
       console.warn(`STREAK ${timeframe.toUpperCase()} ALERT SEND FAILED ${symbol}: ${error.message}`);
     }
   });
-
   alertSendChain = task.catch(error => {
     sentAlerts.delete(key);
     console.warn(`ALERT QUEUE FAILED ${timeframe} ${symbol}: ${error.message}`);
@@ -180,12 +170,8 @@ function enqueueAlertSend(message, key, timeframe, symbol, streak) {
 
 async function fetchAllFeeds() {
   return new Map(await Promise.all(SYMBOLS.map(async symbol => {
-    try {
-      return [symbol, await fetchSymbolFeed(symbol)];
-    } catch (error) {
-      console.warn(`FEED ${symbol} FAILED: ${error.message}`);
-      return [symbol, []];
-    }
+    try { return [symbol, await fetchSymbolFeed(symbol)]; }
+    catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; }
   })));
 }
 
@@ -219,39 +205,21 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
   const streak = getStreak(timeframe, symbol);
   const longCount = counts.long;
   const shortCount = counts.short;
-
   if (longCount === 0 && shortCount === 0) {
-    streak.side = 0;
-    streak.length = 0;
-    streak.lastBucket = bucketStartTs;
+    streak.side = 0; streak.length = 0; streak.lastBucket = bucketStartTs;
     return { side: 0, length: 0, longCount, shortCount, alert: false };
   }
-
   if (longCount === shortCount) {
-    streak.side = 0;
-    streak.length = 0;
-    streak.lastBucket = bucketStartTs;
+    streak.side = 0; streak.length = 0; streak.lastBucket = bucketStartTs;
     return { side: 0, length: 0, longCount, shortCount, alert: false };
   }
-
   const bucketSide = longCount > shortCount ? 1 : -1;
   const expectedPreviousBucket = bucketStartTs - TIMEFRAMES[timeframe];
   if (streak.side === bucketSide && streak.lastBucket === expectedPreviousBucket) streak.length += 1;
-  else {
-    streak.side = bucketSide;
-    streak.length = 1;
-  }
+  else { streak.side = bucketSide; streak.length = 1; }
   streak.lastBucket = bucketStartTs;
-
   const threshold = ALERT_THRESHOLD[timeframe];
-
-  return {
-    side: bucketSide,
-    length: streak.length,
-    longCount,
-    shortCount,
-    alert: streak.length >= threshold
-  };
+  return { side: bucketSide, length: streak.length, longCount, shortCount, alert: streak.length >= threshold };
 }
 
 async function findNextMarkets(symbol, completedBucketStart, timeframe) {
@@ -259,10 +227,7 @@ async function findNextMarkets(symbol, completedBucketStart, timeframe) {
   if (!next) return { next: null, nextPlusOne: null };
   if (timeframe === '15m') return { next, nextPlusOne: null };
   const nextEpoch = completedBucketStart + TIMEFRAMES[timeframe];
-  return {
-    next,
-    nextPlusOne: await findMarketByEpoch(symbol, nextEpoch + TIMEFRAMES[timeframe], timeframe)
-  };
+  return { next, nextPlusOne: await findMarketByEpoch(symbol, nextEpoch + TIMEFRAMES[timeframe], timeframe) };
 }
 
 async function sendAlert(timeframe, period, symbol, streak) {
@@ -272,14 +237,10 @@ async function sendAlert(timeframe, period, symbol, streak) {
     console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
     return false;
   }
-
   sentAlerts.add(key);
   let markets = { next: null, nextPlusOne: null };
-  try {
-    markets = await findNextMarkets(symbol, period, timeframe);
-  } catch (error) {
-    console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${symbol}: ${error.message}`);
-  }
+  try { markets = await findNextMarkets(symbol, period, timeframe); }
+  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${symbol}: ${error.message}`); }
 
   const isLong = streak.side === 1;
   const direction = isLong ? 'BUY UP' : 'BUY DOWN';
@@ -293,7 +254,6 @@ async function sendAlert(timeframe, period, symbol, streak) {
           markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
           markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
         ].filter(Boolean).join('\n\n');
-
   const message = [
     `${emoji} ${symbol} · ${direction} · ${timeframe.toUpperCase()}`,
     '',
@@ -301,7 +261,6 @@ async function sendAlert(timeframe, period, symbol, streak) {
     `Current bucket: ${formatCount(streak.longCount)} LONG · ${formatCount(streak.shortCount)} SHORT`,
     links ? `\n${links}` : ''
   ].join('\n').trim();
-
   enqueueAlertSend(message, key, timeframe, symbol, streak);
   return true;
 }
@@ -314,34 +273,41 @@ async function processCompletedBucket(timeframe, period, feeds) {
   const events = eventsForBucket(feeds, timeframe, period);
   const counts = classifyBucket(events);
   const bucketEnd = period + TIMEFRAMES[timeframe];
-  const alertTasks = [];
+  const results = [];
 
+  // First update every coin. The alert decision is made only after all coins
+  // have been updated, so only the largest streak(s) in this period qualify.
   for (const symbol of SYMBOLS) {
     const streak = updateStreak(timeframe, symbol, period, counts.get(symbol));
+    results.push({ symbol, streak });
+  }
+
+  const eligible = results.filter(item => item.streak.alert);
+  const maxStreak = eligible.length ? Math.max(...eligible.map(item => item.streak.length)) : 0;
+
+  for (const { symbol, streak } of results) {
+    const isWinner = streak.alert && streak.length === maxStreak;
     if (streak.side !== 0 || streak.longCount !== 0 || streak.shortCount !== 0) {
-      console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=${streak.longCount} SHORT=${streak.shortCount} DOMINANT=${streak.side > 0 ? 'LONG' : streak.side < 0 ? 'SHORT' : 'NONE'} STREAK=${streak.length}${streak.alert ? ' ALERT=YES' : ' ALERT=NO'}`);
+      console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=${streak.longCount} SHORT=${streak.shortCount} DOMINANT=${streak.side > 0 ? 'LONG' : streak.side < 0 ? 'SHORT' : 'NONE'} STREAK=${streak.length}${isWinner ? ' ALERT=YES' : ' ALERT=NO'}`);
     } else {
       console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=0 SHORT=0 STREAK=RESET`);
     }
-    if (streak.alert) alertTasks.push(sendAlert(timeframe, period, symbol, streak));
+    if (isWinner) await sendAlert(timeframe, period, symbol, streak);
   }
 
-  if (alertTasks.length) {
-    await Promise.all(alertTasks);
-  }
+  if (maxStreak) console.log(`${timeframe.toUpperCase()} MAX STREAK ${maxStreak}; alerts=${eligible.filter(item => item.streak.length === maxStreak).map(item => item.symbol).join(',')}`);
   queueStateSave();
 }
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:2+,15m:2+,1h:2+,4h:2+; ALL streaks start from 0 after restart; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; alerts continue at each qualifying bucket; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; alerts only for largest streak in each completed period; ties all alert; thresholds=5m:2+,15m:2+,1h:2+,4h:2+; ALL streaks start from 0 after restart; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
     const now = Date.now();
     const feeds = await fetchAllFeeds();
     const bucketTasks = [];
-
     for (const timeframe of TIMEFRAME_LIST) {
       const windowMs = TIMEFRAMES[timeframe];
       const current = bucketStart(now, timeframe);
@@ -353,7 +319,6 @@ async function main() {
       }
       lastCompleted.set(timeframe, completed);
     }
-
     if (bucketTasks.length) await Promise.all(bucketTasks);
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
