@@ -4,7 +4,8 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
 // All 7 coins are monitored, but only the FIRST liquidation per 10-minute
-// Polymarket period is alerted. All other coins/events in that period are ignored.
+// Polymarket period is alerted. The coin that alerted in the previous period
+// is blocked for the immediately following period.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
@@ -14,6 +15,7 @@ const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const seenLiquidations = new Set();
 let dedupePeriodStart = null;
 let periodAlreadyAlerted = false;
+let lastAlertSymbol = null;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 let initialized = false;
@@ -35,7 +37,7 @@ function resetDedupeWindow(ts) {
   dedupePeriodStart = period;
   seenLiquidations.clear();
   periodAlreadyAlerted = false;
-  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (10m; first liquidation only)`);
+  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (10m; first liquidation only; previous coin blocked=${lastAlertSymbol || 'none'})`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -105,6 +107,10 @@ async function processLiquidations(feeds, now) {
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
+    // A coin that alerted in the previous 10m period cannot alert again
+    // in the immediately following 10m period.
+    if (symbol === lastAlertSymbol) continue;
+
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts < windowStart || ts >= now) continue;
@@ -121,19 +127,21 @@ async function processLiquidations(feeds, now) {
 
   if (!initialized) {
     initialized = true;
-    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}`);
+    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; previous coin block=${lastAlertSymbol || 'none'}`);
     return;
   }
 
   if (!candidates.length) return;
 
-  // The earliest newly observed liquidation wins the 10m period, regardless of coin.
+  // The earliest newly observed liquidation wins the 10m period, regardless of coin,
+  // except that the previous period's winning coin is blocked for this period.
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
+  lastAlertSymbol = symbol;
 
   // All other candidates are intentionally ignored for this 10m period.
-  console.log(`10M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}`);
+  console.log(`10M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next-period block=${symbol}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -150,7 +158,8 @@ async function processLiquidations(feeds, now) {
     notional: Math.abs(eventNotional),
     dedupeWindowStart: windowStart,
     firstLiquidationOnly: true,
-    periodMinutes: 10
+    periodMinutes: 10,
+    previousPeriodCoinBlocked: lastAlertSymbol
   }));
 
   let market = null;
@@ -174,7 +183,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 10m period; other events ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 10m period; previous-period coin blocked; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
