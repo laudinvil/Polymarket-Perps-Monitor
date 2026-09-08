@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
-const ALERT_THRESHOLD = { '5m': 3, '15m': 4, '1h': 2, '4h': 2 };
+const ALERT_THRESHOLD = { '5m': 5, '15m': 5, '1h': 2, '4h': 2 };
 const ALERT_MIN_GAP_MS = 5000;
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
@@ -54,7 +54,7 @@ function loadPersistedState(state) {
 }
 async function loadState() {
   if (!process.env.GITHUB_TOKEN) return;
-  try { const response = await githubRequest(); if (!response?.content) return; const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')); loadPersistedState(state); console.log('STATE LOADED; sent alerts restored, ALL streaks reset to 0; thresholds=5m:3+,15m:4+,1h:2+,4h:2+'); }
+  try { const response = await githubRequest(); if (!response?.content) return; const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')); loadPersistedState(state); console.log('STATE LOADED; sent alerts restored, ALL streaks reset to 0; thresholds=5m:5+,15m:5+,1h:2+,4h:2+'); }
   catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 async function saveGlobalState() {
@@ -65,7 +65,7 @@ async function saveGlobalState() {
     const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean)); for (const key of sentAlerts) keys.add(key);
     state.version = 26; state.sentAlerts = [...keys].slice(-5000); state.streaks = {};
     for (const timeframe of TIMEFRAME_LIST) { state.streaks[timeframe] = {}; for (const symbol of SYMBOLS) { const streak = getStreak(timeframe, symbol); state.streaks[timeframe][symbol] = { side: streak.side, length: streak.length, lastBucket: streak.lastBucket }; } }
-    await githubRequest('PUT', { message: 'Set 15m streak alert threshold to 4+', content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'), branch: 'monitor-status', ...(response?.sha ? { sha: response.sha } : {}) }); return;
+    await githubRequest('PUT', { message: 'Set 5m and 15m streak alert thresholds to 5+', content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'), branch: 'monitor-status', ...(response?.sha ? { sha: response.sha } : {}) }); return;
   } catch (error) { if (error.statusCode !== 409 || attempt === 5) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; } await new Promise(resolve => setTimeout(resolve, 250 * attempt)); }
 }
 function queueStateSave() { stateSaveChain = stateSaveChain.then(() => saveGlobalState()).catch(error => console.warn(`STATE SAVE QUEUE FAILED: ${error.message}`)); return stateSaveChain; }
@@ -107,7 +107,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
   if (maxStreak) console.log(`${timeframe.toUpperCase()} MAX STREAK ${maxStreak}; alerts=${eligible.filter(item => item.streak.length === maxStreak).map(item => item.symbol).join(',')}`); queueStateSave();
 }
 async function main() {
-  await loadState(); console.log('LIQUIDATION STREAK MONITOR STARTED; alerts only for largest streak in each completed period; ties all alert; thresholds=5m:3+,15m:4+,1h:2+,4h:2+; ALL streaks start from 0 after restart; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
+  await loadState(); console.log('LIQUIDATION STREAK MONITOR STARTED; alerts only for largest streak in each completed period; ties all alert; thresholds=5m:5+,15m:5+,1h:2+,4h:2+; ALL streaks start from 0 after restart; streaks require consecutive completed buckets; zero LONG and zero SHORT resets; sends serialized with 5s minimum gap; 5m/15m/1h/4h');
   const lastCompleted = new Map(); while (true) { const now = Date.now(), feeds = await fetchAllFeeds(), bucketTasks = [];
     for (const timeframe of TIMEFRAME_LIST) { const windowMs = TIMEFRAMES[timeframe], current = bucketStart(now, timeframe), completed = current - windowMs; if (!lastCompleted.has(timeframe)) lastCompleted.set(timeframe, completed - windowMs); const previous = lastCompleted.get(timeframe); for (let period = previous + windowMs; period <= completed; period += windowMs) bucketTasks.push(processCompletedBucket(timeframe, period, feeds)); lastCompleted.set(timeframe, completed); }
     if (bucketTasks.length) await Promise.all(bucketTasks); await new Promise(resolve => setTimeout(resolve, POLL_MS));
