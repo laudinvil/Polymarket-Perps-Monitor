@@ -14,6 +14,7 @@ const seenLiquidations = new Set();
 let dedupePeriodStart = null;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
+let initialized = false;
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
@@ -94,6 +95,7 @@ function enqueueAlert(message, symbol, side, key) {
 async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
+  const pendingAlerts = [];
 
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
@@ -107,41 +109,52 @@ async function processLiquidations(feeds, now) {
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
 
-      const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
-      const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-      const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
-
-      console.log(JSON.stringify({
-        type: 'liquidation',
-        timeframe: '5m',
-        symbol,
-        ts,
-        side,
-        price: eventPrice,
-        qty: eventQty,
-        notional: Math.abs(eventNotional),
-        dedupeWindowStart: windowStart
-      }));
-
-      let market = null;
-      try {
-        market = await findNextPolymarket(symbol, ts);
-      } catch (error) {
-        console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
-      }
-
-      const message = [
-        `🔥 ${symbol} · 5M`,
-        `Side: ${side === 'LONG' ? 'Long' : 'Short'}`,
-        `Volume: ${money(eventNotional)}`,
-        `Price: ${price(eventPrice)}`,
-        `Qty: ${quantity(eventQty)}`,
-        market?.url ? '' : null,
-        market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null
-      ].filter(value => value !== null).join('\n');
-
-      enqueueAlert(message, symbol, side, key);
+      if (!initialized) continue;
+      pendingAlerts.push({ symbol, side, key, event, ts });
     }
+  }
+
+  if (!initialized) {
+    initialized = true;
+    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}`);
+    return;
+  }
+
+  for (const { symbol, side, key, event, ts } of pendingAlerts) {
+    const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
+    const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
+    const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
+
+    console.log(JSON.stringify({
+      type: 'liquidation',
+      timeframe: '5m',
+      symbol,
+      ts,
+      side,
+      price: eventPrice,
+      qty: eventQty,
+      notional: Math.abs(eventNotional),
+      dedupeWindowStart: windowStart
+    }));
+
+    let market = null;
+    try {
+      market = await findNextPolymarket(symbol, ts);
+    } catch (error) {
+      console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+    }
+
+    const message = [
+      `🔥 ${symbol} · 5M`,
+      `Side: ${side === 'LONG' ? 'Long' : 'Short'}`,
+      `Volume: ${money(eventNotional)}`,
+      `Price: ${price(eventPrice)}`,
+      `Qty: ${quantity(eventQty)}`,
+      market?.url ? '' : null,
+      market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null
+    ].filter(value => value !== null).join('\n');
+
+    enqueueAlert(message, symbol, side, key);
   }
 }
 
