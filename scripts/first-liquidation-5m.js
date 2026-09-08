@@ -1,12 +1,17 @@
-const { DEFAULT_SYMBOLS, fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
-const { findCurrentMarket, findNextMarket } = require('../src/polymarket');
+const { DEFAULT_SYMBOLS, fetchSymbolFeed, normalizeTs, normalizeSymbol } = require('../src/liquidation-monitor');
+const { findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const symbols = (process.env.SYMBOLS || DEFAULT_SYMBOLS.join(','))
   .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
 
 const POLL_MS = 15000;
-const alertedBuckets = new Set();
+const POLYMARKET_PERIOD_MS = 15 * 60 * 1000;
+const alertedPeriods = new Set();
+
+function periodStart(ts) {
+  return Math.floor(ts / POLYMARKET_PERIOD_MS) * POLYMARKET_PERIOD_MS;
+}
 
 function formatUsd(value) {
   return `$${Math.round(Number(value) || 0).toLocaleString('en-US')}`;
@@ -21,13 +26,16 @@ function sideLabel(side) {
 
 async function checkOnce() {
   const now = Date.now();
-  const currentBucket = bucketStart(now);
+  const currentPeriod = periodStart(now);
 
-  for (const bucket of alertedBuckets) {
-    if (bucket < currentBucket) alertedBuckets.delete(bucket);
+  // Polymarket 15M periods are fixed wall-clock periods (:00, :15, :30, :45).
+  // Once the first liquidation is found in a period, all later liquidations
+  // in that same 15M period are ignored. The period key is discarded as time advances.
+  for (const period of alertedPeriods) {
+    if (period < currentPeriod) alertedPeriods.delete(period);
   }
 
-  if (alertedBuckets.has(currentBucket)) return;
+  if (alertedPeriods.has(currentPeriod)) return;
 
   const results = await Promise.all(
     symbols.map(async symbol => {
@@ -40,24 +48,29 @@ async function checkOnce() {
     }),
   );
 
+  const periodEnd = currentPeriod + POLYMARKET_PERIOD_MS;
   const allowed = new Set(symbols.map(normalizeSymbol));
-  const candidates = results.flat().map(event => ({ event, ts: normalizeTs(event.ts) }))
+  const candidates = results.flat()
+    .map(event => ({ event, ts: normalizeTs(event.ts) }))
     .filter(({ event, ts }) => {
       const symbol = normalizeSymbol(event.symbol);
-      return ts && bucketStart(ts) === currentBucket && allowed.has(symbol);
+      return ts >= currentPeriod && ts < periodEnd && allowed.has(symbol);
     })
     .sort((a, b) => a.ts - b.ts);
 
   if (!candidates.length) {
     console.log(JSON.stringify({
       type: 'liquidation_first_5m',
-      bucketStart: new Date(currentBucket).toISOString(),
+      periodStart: new Date(currentPeriod).toISOString(),
+      periodEnd: new Date(periodEnd).toISOString(),
       rawEvents: results.reduce((sum, events) => sum + events.length, 0),
       alertSent: false,
     }));
     return;
   }
 
+  // FIRST liquidation of the Polymarket 15M period. Everything after it
+  // is ignored until the next fixed 15M boundary.
   const first = candidates[0].event;
   const firstTs = normalizeTs(first.ts) || now;
   const symbol = normalizeSymbol(first.symbol);
@@ -66,12 +79,10 @@ async function checkOnce() {
   const price = Number(first.price);
   const qty = Number(first.qty);
 
-  alertedBuckets.add(currentBucket);
+  // Lock the whole 15M period immediately: no second liquidation can alert.
+  alertedPeriods.add(currentPeriod);
 
-  const [currentMarket, nextMarket] = await Promise.all([
-    findCurrentMarket(symbol, now),
-    findNextMarket(symbol, now),
-  ]);
+  const nextMarket = await findNextMarket(symbol, now);
 
   const timeLabel = new Date(firstTs).toISOString().slice(11, 19);
   let message = [
@@ -83,31 +94,30 @@ async function checkOnce() {
     Number.isFinite(qty) ? `Qty: ${qty}` : null,
   ].filter(Boolean).join('\n');
 
-  message += currentMarket
-    ? `\n\n🔴 Current Polymarket 5M\n${currentMarket.url}`
-    : '\n\n🔴 Current Polymarket 5M\nMarket not found';
   message += nextMarket
-    ? `\n\n➡️ Next Polymarket 5M\n${nextMarket.url}`
-    : '\n\n➡️ Next Polymarket 5M\nMarket not found yet';
+    ? `\n\n➡️ NEXT · Polymarket 5M\n${nextMarket.url}`
+    : '\n\n➡️ NEXT · Polymarket 5M\nMarket not found yet';
 
   await sendTelegramMessage(message);
 
   console.log(JSON.stringify({
     type: 'liquidation_first_5m',
-    bucketStart: new Date(currentBucket).toISOString(),
+    periodStart: new Date(currentPeriod).toISOString(),
+    periodEnd: new Date(periodEnd).toISOString(),
     firstEvent: {
       symbol,
       side,
       ts: firstTs,
       notionalUsd: notional,
     },
+    ignoredAfterFirst: Math.max(0, candidates.length - 1),
     rawEvents: results.reduce((sum, events) => sum + events.length, 0),
     alertSent: true,
   }));
 }
 
 async function main() {
-  console.log(`First-liquidation monitor started; polling every ${POLL_MS}ms`);
+  console.log(`First-liquidation 5M monitor started; first liquidation only per Polymarket 15M period; polling every ${POLL_MS}ms`);
 
   while (true) {
     try {
