@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
-const ALERT_THRESHOLD = { '5m': 3, '15m': 2, '1h': 2, '4h': 2 };
+const ALERT_THRESHOLD = { '5m': 4, '15m': 2, '1h': 2, '4h': 2 };
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
@@ -101,7 +101,7 @@ async function loadState() {
     if (!response?.content) return;
     const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
     loadPersistedState(state);
-    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:3+,15m:2+,1h:2+,4h:2+; no periodic reset');
+    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; thresholds=5m:4+,15m:2+,1h:2+,4h:2+; no periodic reset');
   } catch (error) {
     console.warn(`STATE LOAD FAILED: ${error.message}`);
   }
@@ -207,7 +207,6 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
   const longCount = counts.long;
   const shortCount = counts.short;
 
-  // No liquidation on either side explicitly breaks the streak.
   if (longCount === 0 && shortCount === 0) {
     streak.side = 0;
     streak.length = 0;
@@ -215,8 +214,6 @@ function updateStreak(timeframe, symbol, bucketStartTs, counts) {
     return { side: 0, length: 0, longCount, shortCount, alert: false };
   }
 
-  // A bucket is strictly LONG/SHORT only when one side is greater.
-  // A non-zero tie is not a directional streak bucket and therefore breaks continuity.
   if (longCount === shortCount) {
     streak.side = 0;
     streak.length = 0;
@@ -317,7 +314,7 @@ async function processCompletedBucket(timeframe, period, feeds) {
 
 async function main() {
   await loadState();
-  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:3+,15m:2+,1h:2+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; thresholds=5m:4+,15m:2+,1h:2+,4h:2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
 
   const lastCompleted = new Map();
   while (true) {
