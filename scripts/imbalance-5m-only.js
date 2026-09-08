@@ -16,7 +16,24 @@ const processedBuckets = new Set();
 function symbolsForTimeframe(tf) {
   return tf === '5m' ? SYMBOLS.filter(symbol => symbol !== 'HYPE') : SYMBOLS;
 }
-function localBucketStart(ts, tf) { return bucketStart(ts, tf); }
+function polymarketDayBucketStart(ts) {
+  const date = new Date(ts);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const offsetParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', timeZoneName: 'longOffset',
+  }).formatToParts(date);
+  const offsetText = offsetParts.find(part => part.type === 'timeZoneName')?.value || 'GMT';
+  const offsetMatch = offsetText.match(/GMT([+-])(\d{2}):?(\d{2})?/);
+  const offsetMinutes = offsetMatch
+    ? (Number(offsetMatch[2]) * 60 + Number(offsetMatch[3] || 0)) * (offsetMatch[1] === '-' ? -1 : 1)
+    : 0;
+  return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), 12) - offsetMinutes * 60 * 1000;
+}
+function localBucketStart(ts, tf) { return tf === '1d' ? polymarketDayBucketStart(ts) : bucketStart(ts, tf); }
 function side(event) {
   const s = String(event?.side || event?.direction || '').toLowerCase();
   return s.includes('long') ? 1 : s.includes('short') ? -1 : 0;
@@ -130,12 +147,12 @@ async function sendAlert(row) {
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; 5m excludes HYPE; other timeframes include HYPE; timeframes=${MONITORED.join(',')}`);
+  console.log(`Liquidation monitor started; ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; 5m excludes HYPE; other timeframes include HYPE; 1d boundary=12:00 America/New_York; timeframes=${MONITORED.join(',')}`);
   const lastCompleted = new Map(MONITORED.map(tf => [tf, null]));
   while (true) {
     const now = Date.now(), feeds = await fetchAllFeeds();
     for (const tf of MONITORED) {
-      const window = TIMEFRAMES[tf], current = bucketStart(now, tf), completed = current - window;
+      const window = TIMEFRAMES[tf], current = localBucketStart(now, tf), completed = current - window;
       let last = lastCompleted.get(tf); if (last === null) last = completed - window;
       if (completed <= last) continue;
       const activeSymbols = symbolsForTimeframe(tf);
