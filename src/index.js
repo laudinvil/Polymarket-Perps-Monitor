@@ -1,42 +1,353 @@
-const https=require('https');
-const {fetchSymbolFeed,normalizeTs}=require('./liquidation-monitor');
-const {TIMEFRAMES,findNextMarket}=require('./polymarket');
-const {sendTelegramMessage}=require('./telegram');
-const symbols=['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
-const FRAMEWORKS=['5m','15m','1h','4h'];
-const disabledSymbolsByTimeframe={'5m':[],'15m':[],'1h':[],'4h':[]};
-const BOUNDARY_GRACE_MS=1500,REQUEST_TIMEOUT_MS=15000,STATE_PATH='.monitor-state.json';
-const STATE_API_URL=`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY||'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
-const HISTORICAL_URL='https://marginpad.io/api/v1/liquidations/recent';
-const sentAlerts=new Set(),timeframeState=new Map(),contrarianState=new Map();let stateSha=null;
-function empty(){return{imbalanceUsd:0,longUsd:0,shortUsd:0,longEvents:0,shortEvents:0,events:0,establishedSign:0,lastBucket:null,buckets:{}}}
-for(const t of FRAMEWORKS){timeframeState.set(t,new Map());contrarianState.set(t,{symbol:null,sign:0})}
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function bucketStart(ts,t){return Math.floor(ts/TIMEFRAMES[t])*TIMEFRAMES[t]}
-function nextBoundary(ts){let n=Infinity;for(const t of FRAMEWORKS)n=Math.min(n,bucketStart(ts,t)+TIMEFRAMES[t]);return n}
-function formatUsd(v){const s=v>0?'+':v<0?'-':'';return`${s}$${Math.round(Math.abs(v)).toLocaleString('en-US')}`}
-function side(e){const s=String(e?.side||e?.direction||'').toLowerCase();return s.includes('long')?1:s.includes('short')?-1:0}
-function notional(e){const n=Number(e?.notional??e?.usd??e?.value??e?.amount);return Number.isFinite(n)?Math.abs(n):0}
-function githubRequest(method='GET',body){return new Promise((resolve,reject)=>{const u=new URL(STATE_API_URL),req=https.request({hostname:u.hostname,path:u.pathname+u.search,method,timeout:REQUEST_TIMEOUT_MS,headers:{'User-Agent':'Polymarket-Perps-Monitor','Accept':'application/vnd.github+json','Authorization':`Bearer ${process.env.GITHUB_TOKEN||''}`,'X-GitHub-Api-Version':'2022-11-28'}},res=>{let d='';res.setEncoding('utf8');res.on('data',c=>d+=c);res.on('end',()=>{let p=null;try{p=d?JSON.parse(d):null}catch{}if(res.statusCode>=200&&res.statusCode<300)return resolve(p);const e=new Error(`GitHub state request failed: ${res.statusCode} ${d}`);e.statusCode=res.statusCode;reject(e)})});req.on('timeout',()=>req.destroy(new Error('GitHub state request timed out')));req.on('error',reject);if(body!==undefined)req.write(JSON.stringify(body));req.end()})}
-function buildStatePayload(){const liquidationTimeframes={};for(const t of FRAMEWORKS){liquidationTimeframes[t]={};for(const s of symbols)liquidationTimeframes[t][s]=timeframeState.get(t).get(s)||empty()}return{version:7,updatedAt:new Date().toISOString(),sentAlerts:[...sentAlerts],liquidationTimeframes,contrarianTimeframes:Object.fromEntries(FRAMEWORKS.map(t=>[t,contrarianState.get(t)||{symbol:null,sign:0}]))}}
-function migrateAlertKey(k){if(typeof k!=='string')return null;const m=k.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+):(-?1)$/);if(m)return k;const l=k.match(/^(5m|15m|1h|4h|1d):([A-Z]+):(\d+):(-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)$/i);if(!l)return null;const v=Number(l[4]);return Number.isFinite(v)&&v!==0?`${l[1]}:${l[2]}:${l[3]}:${v>0?1:-1}`:null}
-function mergeAlerts(st){for(const k of[...(st?.sentAlerts||[]),...(st?.alerts||[])]){const m=migrateAlertKey(k);if(m)sentAlerts.add(m)}}
-function normalizeSavedState(saved){const st={...empty(),...saved,buckets:saved?.buckets&&typeof saved.buckets==='object'?saved.buckets:{}};const periods=Object.keys(st.buckets).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);const lp=st.lastBucket!==null&&Number.isFinite(Number(st.lastBucket))?Number(st.lastBucket):periods.at(-1);const b=lp!==undefined?st.buckets[String(lp)]:null;if(b){st.lastBucket=lp;st.longUsd=Math.max(0,Number(b.longUsd)||0);st.shortUsd=Math.max(0,Number(b.shortUsd)||0);st.longEvents=Math.max(0,Number(b.longEvents)||0);st.shortEvents=Math.max(0,Number(b.shortEvents)||0)}else{st.longUsd=Math.max(0,Number(st.longUsd)||0);st.shortUsd=Math.max(0,Number(st.shortUsd)||0);st.longEvents=Math.max(0,Number(st.longEvents)||0);st.shortEvents=Math.max(0,Number(st.shortEvents)||0)}st.events=st.longEvents+st.shortEvents;st.imbalanceUsd=st.shortUsd-st.longUsd;st.establishedSign=st.imbalanceUsd>0?1:st.imbalanceUsd<0?-1:0;return st}
-async function loadState(){if(!process.env.GITHUB_TOKEN)return;try{const r=await githubRequest();stateSha=r?.sha||null;if(!r?.content)return;const st=JSON.parse(Buffer.from(r.content.replace(/\s/g,''),'base64').toString('utf8'));mergeAlerts(st);for(const t of FRAMEWORKS){const m=timeframeState.get(t);for(const s of symbols){const saved=st.liquidationTimeframes?.[t]?.[s];if(saved)m.set(s,normalizeSavedState(saved))}const c=st.contrarianTimeframes?.[t];if(c)contrarianState.set(t,{symbol:c.symbol||null,sign:Number(c.sign)||0})}console.log(`STATE LOADED ${st.updatedAt||'unknown'}; independent timeframe windows restored`)}catch(e){if(e.statusCode===404)console.log('STATE LOAD: no persisted state found; starting clean');else console.warn(`STATE LOAD FAILED: ${e.message}`)}}
-async function saveState(){if(!process.env.GITHUB_TOKEN)return false;for(let a=1;a<=5;a++)try{let r=null;try{r=await githubRequest()}catch(e){if(e.statusCode!==404)throw e}stateSha=r?.sha||null;if(r?.content)try{mergeAlerts(JSON.parse(Buffer.from(r.content.replace(/\s/g,''),'base64').toString('utf8')))}catch{}const p=buildStatePayload(),body={message:'Persist liquidation monitor state',content:Buffer.from(JSON.stringify(p,null,2)).toString('base64'),branch:'monitor-status',...(stateSha?{sha:stateSha}:{})};const out=await githubRequest('PUT',body);stateSha=out?.content?.sha||stateSha;console.log(`STATE SAVED ${p.updatedAt}`);return true}catch(e){if(e.statusCode!==409||a===5){console.warn(`STATE SAVE FAILED: ${e.message}`);return false}await sleep(250*a)}return false}
-async function reserveAlertKey(k){if(sentAlerts.has(k)){console.log(`ALERT DUPLICATE SUPPRESSED ${k}`);return false}if(!process.env.GITHUB_TOKEN)return true;try{const r=await githubRequest();if(r?.content){const st=JSON.parse(Buffer.from(r.content.replace(/\s/g,''),'base64').toString('utf8'));const keys=new Set([...(st.sentAlerts||[]),...(st.alerts||[])].map(migrateAlertKey).filter(Boolean));if(keys.has(k)){sentAlerts.add(k);console.log(`ALERT DUPLICATE SUPPRESSED ${k}`);return false}}return true}catch(e){console.warn(`ALERT DEDUP CHECK FAILED ${k}: ${e.message}`);return false}}
-async function markAlertSent(k){sentAlerts.add(k);await saveState();console.log(`ALERT MARKED SENT ${k}`)}
-function extractHistoricalBuckets(json){const roots=[json?.data,json],cand=['buckets','histogram','rows','series','bars','points','items','data'],seen=new Set(),q=roots.map(value=>({value,depth:0}));while(q.length){const{value,depth}=q.shift();if(!value||depth>3||typeof value!=='object'||seen.has(value))continue;seen.add(value);if(Array.isArray(value)){if(value.some(r=>r&&typeof r==='object'&&!Array.isArray(r)))return value;continue}for(const k of cand)if(Array.isArray(value[k])&&value[k].length)return value[k];for(const c of Object.values(value))if(c&&typeof c==='object')q.push({value:c,depth:depth+1})}return[]}
-function numericValue(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return Number.isFinite(v)?v:0;if(typeof v==='object'){for(const k of['usd','value','notional','amount','total','volume','vol']){const n=numericValue(v[k]);if(n)return n}return 0}const n=Number(String(v).replace(/[$,\s]/g,''));return Number.isFinite(n)?n:0}
-function bucketValue(row,names,direction){for(const n of names){const v=numericValue(row?.[n]);if(v!==0)return Math.abs(v)}if(row&&typeof row==='object')for(const[k,raw]of Object.entries(row)){const l=k.toLowerCase();if(!l.includes(direction))continue;if(!/(usd|notional|volume|value|amount|liquid)/i.test(l)&&l!==direction)continue;const v=numericValue(raw);if(v!==0)return Math.abs(v)}return 0}
-function normalizeHistoricalTimestamp(v){if(v===null||v===undefined||v==='')return null;if(Array.isArray(v))return normalizeHistoricalTimestamp(v[0]);if(typeof v==='object'){for(const k of['$date','date','timestamp','ts','time','start','startTime','epoch'])if(Object.prototype.hasOwnProperty.call(v,k)){const t=normalizeHistoricalTimestamp(v[k]);if(t)return t}return null}if(typeof v==='string'){const n=Number(v.trim());if(Number.isFinite(n)&&n>0)return normalizeHistoricalTimestamp(n);const p=Date.parse(v.trim());return Number.isFinite(p)&&p>0?p:null}const n=Number(v);if(!Number.isFinite(n)||n<=0)return null;if(n<1e11)return n*1000;if(n<1e14)return n;if(n<1e17)return n/1000;return n/1e6}
-function historicalRowTs(row){if(Array.isArray(row))return normalizeHistoricalTimestamp(row[0]);for(const k of['ts','timestamp','time','t','bucket','start','startTime','start_ts','startTimeMs','bucketStart','bucket_start','epoch','date']){const t=normalizeHistoricalTimestamp(row?.[k]);if(t)return t}if(row&&typeof row==='object')for(const[k,v]of Object.entries(row))if(/(time|timestamp|bucket|start|epoch|date|^ts$)/i.test(k)){const t=normalizeHistoricalTimestamp(v);if(t)return t}return null}
-async function fetchHistoricalEvents(symbol,timeframe){const minutes=({'15m':15,'1h':60,'4h':240})[timeframe];if(!minutes)return{events:[],buckets:new Set()};const url=`${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${Math.max(minutes*2,60)}`;try{const r=await fetch(url,{headers:{accept:'application/json'}});if(!r.ok)throw new Error(`MarginPad historical request failed: ${r.status}`);const rows=extractHistoricalBuckets(await r.json()),events=[],buckets=new Set();for(const row of rows){const ts=historicalRowTs(row);if(!ts)continue;const period=bucketStart(ts,timeframe);buckets.add(period);const longUsd=bucketValue(row,['long_liquidations','longLiquidations','long_usd','longUsd','long_volume','longVolume','longNotional','long_notional','long','buy'],'long'),shortUsd=bucketValue(row,['short_liquidations','shortLiquidations','short_usd','shortUsd','short_volume','shortVolume','shortNotional','short_notional','short','sell'],'short');if(longUsd>0||shortUsd>0)events.push({symbol,ts,period,longUsd,shortUsd})}console.log(`HISTORICAL ${timeframe} ${symbol}: rows=${rows.length} buckets=${buckets.size} events=${events.length}`);return{events,buckets}}catch(e){console.warn(`HISTORICAL ${timeframe} ${symbol} FAILED: ${e.message}`);return{events:[],buckets:new Set()}}}
-function applyCompletedBucket(timeframe,symbol,period,longUsd,shortUsd,longEvents=0,shortEvents=0){const map=timeframeState.get(timeframe);if(!map)return null;let state=map.get(symbol)||empty();state=normalizeSavedState(state);if(state.lastBucket!==null&&period<=state.lastBucket)return null;longUsd=Math.max(0,Number(longUsd)||0);shortUsd=Math.max(0,Number(shortUsd)||0);state.longUsd=longUsd;state.shortUsd=shortUsd;state.longEvents=Math.max(0,Number(longEvents)||0);state.shortEvents=Math.max(0,Number(shortEvents)||0);state.events=state.longEvents+state.shortEvents;state.imbalanceUsd=state.shortUsd-state.longUsd;state.establishedSign=state.imbalanceUsd>0?1:state.imbalanceUsd<0?-1:0;state.lastBucket=period;state.buckets[String(period)]={longUsd,shortUsd,longEvents:state.longEvents,shortEvents:state.shortEvents};map.set(symbol,state);return state}
-function crossingFor(timeframe,symbol,before,after,period){if(before===after)return null;if(before===0&&after===0)return null;if(before!==0&&after!==0&&Math.sign(before)===Math.sign(after))return null;if(after===0)return null;return{timeframe,symbol,before,after,period}}
-async function sendCrossingAlert(crossing,state,longUsd,shortUsd,longEvents,shortEvents){const alertKey=`${crossing.timeframe}:${crossing.symbol}:${crossing.period}:${crossing.after>0?1:-1}`;if(!(await reserveAlertKey(alertKey)))return;let market=null;try{market=await findNextMarket(crossing.symbol,Date.now(),crossing.timeframe)}catch(e){console.warn(`POLYMARKET LOOKUP FAILED ${crossing.timeframe} ${crossing.symbol}: ${e.message}`)}const signal=crossing.timeframe==='5m'?'BUY UP':crossing.after>0?'BUY UP':'BUY DOWN',color='🟢',link=market?.url?`\n➡️ NEXT Polymarket ${crossing.timeframe}\n${market.url}`:'';const msg=`${color} ${crossing.symbol} · ${crossing.timeframe} · ${signal}\n\nPrevious imbalance: ${formatUsd(crossing.before)}\nNew imbalance: ${formatUsd(crossing.after)}\n${formatUsd(longUsd)} LONG · ${formatUsd(-shortUsd)} SHORT${link}`;try{await sendTelegramMessage(msg);await markAlertSent(alertKey);console.log(`ZERO CROSSING ALERT SENT ${crossing.timeframe} ${crossing.symbol} ${signal}`)}catch(e){console.warn(`ZERO CROSSING ALERT SEND FAILED ${crossing.timeframe} ${crossing.symbol}: ${e.message}`)}}
-function detectContrarian(timeframe,period){const map=timeframeState.get(timeframe);if(!map)return null;const rows=symbols.map(symbol=>({symbol,state:map.get(symbol)||empty()})),signs=rows.map(r=>r.state.imbalanceUsd>0?1:r.state.imbalanceUsd<0?-1:0);if(signs.includes(0))return null;const pos=rows.filter((_,i)=>signs[i]>0),neg=rows.filter((_,i)=>signs[i]<0);let c=null;if(pos.length===1&&neg.length===6)c=pos[0];else if(neg.length===1&&pos.length===6)c=neg[0];if(!c)return null;const sign=c.state.imbalanceUsd>0?1:-1,prev=contrarianState.get(timeframe)||{symbol:null,sign:0};if(prev.symbol===c.symbol)return null;contrarianState.set(timeframe,{symbol:c.symbol,sign});return{symbol:c.symbol,sign,state:c.state,period}}
-async function processHistorical(timeframe){for(const symbol of symbols){const map=timeframeState.get(timeframe);if(!map)continue;const result=await fetchHistoricalEvents(symbol,timeframe),grouped=new Map();for(const e of result.events){const b=grouped.get(e.period)||{longUsd:0,shortUsd:0};b.longUsd+=e.longUsd;b.shortUsd+=e.shortUsd;grouped.set(e.period,b)}for(const[period,b]of[...grouped.entries()].sort((a,b)=>a[0]-b[0])){const st=map.get(symbol)||empty();if(st.lastBucket!==null&&period<=st.lastBucket)continue;applyCompletedBucket(timeframe,symbol,period,b.longUsd,b.shortUsd)}}}
-async function processLive(timeframe,boundary){const period=bucketStart(boundary-1,timeframe),disabled=new Set(disabledSymbolsByTimeframe[timeframe]||[]),active=symbols.filter(s=>!disabled.has(s));await Promise.all(active.map(async symbol=>{const events=await fetchSymbolFeed(symbol);const previous=timeframeState.get(timeframe).get(symbol)||empty();const before=previous.imbalanceUsd;let longUsd=0,shortUsd=0,longEvents=0,shortEvents=0;for(const e of events||[]){const ts=normalizeTs(e);if(!Number.isFinite(ts)||bucketStart(ts,timeframe)!==period)continue;const s=side(e),v=notional(e);if(s>0){longUsd+=v;longEvents++}else if(s<0){shortUsd+=v;shortEvents++}}const next=applyCompletedBucket(timeframe,symbol,period,longUsd,shortUsd,longEvents,shortEvents);if(!next)return;console.log(JSON.stringify({timeframe,symbol,period,longUsd,shortUsd,imbalanceUsd:next.imbalanceUsd,establishedSign:next.establishedSign,lastBucket:next.lastBucket}));const crossing=crossingFor(timeframe,symbol,before,next.imbalanceUsd,period);if(crossing)await sendCrossingAlert(crossing,next,longUsd,shortUsd,longEvents,shortEvents)}));const c=detectContrarian(timeframe,period);if(c)await sendContrarianAlert(timeframe,c.symbol,c.sign,c.period,c.state)}
-async function main(){await loadState();console.log('Liquidation monitor started; zero-crossing + 6-vs-1 contrarian; independent windows: 5m,15m,1h,4h');await processHistorical('15m');await processHistorical('1h');await processHistorical('4h');await saveState();while(true){const now=Date.now(),boundary=nextBoundary(now),wait=Math.max(1000,boundary-now+BOUNDARY_GRACE_MS);console.log(`Waiting for next timeframe boundary in ${Math.round(wait/1000)}s`);await sleep(wait);const current=Date.now();for(const timeframe of FRAMEWORKS){const due=bucketStart(current,timeframe);if(Math.abs(current-due)<=BOUNDARY_GRACE_MS*2){console.log(`TIMEFRAME BOUNDARY REACHED; due=${timeframe}`);await processLive(timeframe,due)}}await saveState()}}
-main().catch(e=>{console.error(e);process.exitCode=1})
+const https = require('https');
+const { fetchSymbolFeed, normalizeTs } = require('./liquidation-monitor');
+const { TIMEFRAMES, findNextMarket } = require('./polymarket');
+const { sendTelegramMessage } = require('./telegram');
+
+const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const FRAMEWORKS = ['5m', '15m', '1h', '4h'];
+const ALERT_FRAMEWORKS = ['15m', '1h', '4h'];
+const BOUNDARY_GRACE_MS = 1500;
+const REQUEST_TIMEOUT_MS = 15000;
+const STATE_PATH = '.monitor-state.json';
+const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
+const HISTORICAL_URL = 'https://marginpad.io/api/v1/liquidations/recent';
+
+const sentAlerts = new Set();
+const timeframeState = new Map();
+let stateSha = null;
+
+function empty() {
+  return { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, establishedSign: 0, lastBucket: null, buckets: {} };
+}
+
+for (const timeframe of FRAMEWORKS) timeframeState.set(timeframe, new Map());
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+function bucketStart(ts, timeframe) { return Math.floor(ts / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe]; }
+function nextBoundary(ts) { return Math.min(...FRAMEWORKS.map(t => bucketStart(ts, t) + TIMEFRAMES[t])); }
+function formatUsd(v) { const s = v > 0 ? '+' : v < 0 ? '-' : ''; return `${s}$${Math.round(Math.abs(v)).toLocaleString('en-US')}`; }
+function side(event) { const s = String(event?.side || event?.direction || '').toLowerCase(); return s.includes('long') ? 1 : s.includes('short') ? -1 : 0; }
+function notional(event) { const n = Number(event?.notional ?? event?.usd ?? event?.value ?? event?.amount); return Number.isFinite(n) ? Math.abs(n) : 0; }
+
+function githubRequest(method = 'GET', body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(STATE_API_URL);
+    const req = https.request({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method,
+      timeout: REQUEST_TIMEOUT_MS,
+      headers: {
+        'User-Agent': 'Polymarket-Perps-Monitor',
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${process.env.GITHUB_TOKEN || ''}`,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }, res => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = data ? JSON.parse(data) : null; } catch {}
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
+        const error = new Error(`GitHub state request failed: ${res.statusCode} ${data}`);
+        error.statusCode = res.statusCode;
+        reject(error);
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('GitHub state request timed out')));
+    req.on('error', reject);
+    if (body !== undefined) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+function migrateAlertKey(key) {
+  if (typeof key !== 'string') return null;
+  const match = key.match(/^(5m|15m|1h|4h):([A-Z]+):(\d+)(?::(-?1))?$/);
+  if (!match) return null;
+  return match[4] ? `${match[1]}:${match[2]}:${match[3]}:${match[4]}` : `${match[1]}:${match[2]}:${match[3]}`;
+}
+
+function mergeAlerts(state) {
+  for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
+    const normalized = migrateAlertKey(key);
+    if (normalized) sentAlerts.add(normalized);
+  }
+}
+
+function normalizeSavedState(saved) {
+  const state = { ...empty(), ...saved, buckets: saved?.buckets && typeof saved.buckets === 'object' ? saved.buckets : {} };
+  const periods = Object.keys(state.buckets).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const lastPeriod = state.lastBucket !== null && Number.isFinite(Number(state.lastBucket)) ? Number(state.lastBucket) : periods.at(-1);
+  const bucket = lastPeriod !== undefined ? state.buckets[String(lastPeriod)] : null;
+  if (bucket) {
+    state.lastBucket = lastPeriod;
+    state.longUsd = Math.max(0, Number(bucket.longUsd) || 0);
+    state.shortUsd = Math.max(0, Number(bucket.shortUsd) || 0);
+    state.longEvents = Math.max(0, Number(bucket.longEvents) || 0);
+    state.shortEvents = Math.max(0, Number(bucket.shortEvents) || 0);
+  }
+  state.events = state.longEvents + state.shortEvents;
+  state.imbalanceUsd = state.shortUsd - state.longUsd;
+  state.establishedSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
+  return state;
+}
+
+function buildStatePayload() {
+  const liquidationTimeframes = {};
+  for (const timeframe of FRAMEWORKS) {
+    liquidationTimeframes[timeframe] = {};
+    for (const symbol of symbols) liquidationTimeframes[timeframe][symbol] = timeframeState.get(timeframe).get(symbol) || empty();
+  }
+  return { version: 8, updatedAt: new Date().toISOString(), sentAlerts: [...sentAlerts], liquidationTimeframes };
+}
+
+async function loadState() {
+  if (!process.env.GITHUB_TOKEN) return;
+  try {
+    const response = await githubRequest();
+    stateSha = response?.sha || null;
+    if (!response?.content) return;
+    const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+    mergeAlerts(state);
+    for (const timeframe of FRAMEWORKS) {
+      for (const symbol of symbols) {
+        const saved = state.liquidationTimeframes?.[timeframe]?.[symbol];
+        if (saved) timeframeState.get(timeframe).set(symbol, normalizeSavedState(saved));
+      }
+    }
+    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; largest-imbalance alert mode`);
+  } catch (error) {
+    if (error.statusCode === 404) console.log('STATE LOAD: no persisted state found; starting clean');
+    else console.warn(`STATE LOAD FAILED: ${error.message}`);
+  }
+}
+
+async function saveState() {
+  if (!process.env.GITHUB_TOKEN) return false;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      let response = null;
+      try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
+      stateSha = response?.sha || null;
+      if (response?.content) {
+        try { mergeAlerts(JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'))); } catch {}
+      }
+      const payload = buildStatePayload();
+      const body = { message: 'Persist liquidation monitor state', content: Buffer.from(JSON.stringify(payload, null, 2)).toString('base64'), branch: 'monitor-status', ...(stateSha ? { sha: stateSha } : {}) };
+      const output = await githubRequest('PUT', body);
+      stateSha = output?.content?.sha || stateSha;
+      console.log(`STATE SAVED ${payload.updatedAt}`);
+      return true;
+    } catch (error) {
+      if (error.statusCode !== 409 || attempt === 5) { console.warn(`STATE SAVE FAILED: ${error.message}`); return false; }
+      await sleep(250 * attempt);
+    }
+  }
+  return false;
+}
+
+async function reserveAlertKey(key) {
+  if (sentAlerts.has(key)) { console.log(`ALERT DUPLICATE SUPPRESSED ${key}`); return false; }
+  if (!process.env.GITHUB_TOKEN) return true;
+  try {
+    const response = await githubRequest();
+    if (response?.content) {
+      const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+      const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(migrateAlertKey).filter(Boolean));
+      if (keys.has(key)) { sentAlerts.add(key); console.log(`ALERT DUPLICATE SUPPRESSED ${key}`); return false; }
+    }
+    return true;
+  } catch (error) {
+    console.warn(`ALERT DEDUP CHECK FAILED ${key}: ${error.message}`);
+    return false;
+  }
+}
+
+async function markAlertSent(key) { sentAlerts.add(key); await saveState(); console.log(`ALERT MARKED SENT ${key}`); }
+
+function extractHistoricalBuckets(json) {
+  const roots = [json?.data, json];
+  const candidates = ['buckets', 'histogram', 'rows', 'series', 'bars', 'points', 'items', 'data'];
+  const seen = new Set();
+  const queue = roots.map(value => ({ value, depth: 0 }));
+  while (queue.length) {
+    const { value, depth } = queue.shift();
+    if (!value || depth > 3 || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    if (Array.isArray(value)) { if (value.some(row => row && typeof row === 'object' && !Array.isArray(row))) return value; continue; }
+    for (const key of candidates) if (Array.isArray(value[key]) && value[key].length) return value[key];
+    for (const child of Object.values(value)) if (child && typeof child === 'object') queue.push({ value: child, depth: depth + 1 });
+  }
+  return [];
+}
+
+function numericValue(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'object') for (const key of ['usd', 'value', 'notional', 'amount', 'total', 'volume', 'vol']) { const n = numericValue(value[key]); if (n) return n; }
+  const n = Number(String(value).replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function bucketValue(row, names, direction) {
+  for (const name of names) { const value = numericValue(row?.[name]); if (value !== 0) return Math.abs(value); }
+  if (row && typeof row === 'object') for (const [key, raw] of Object.entries(row)) {
+    const lower = key.toLowerCase();
+    if (!lower.includes(direction)) continue;
+    if (!/(usd|notional|volume|value|amount|liquid)/i.test(lower) && lower !== direction) continue;
+    const value = numericValue(raw);
+    if (value !== 0) return Math.abs(value);
+  }
+  return 0;
+}
+
+function normalizeHistoricalTimestamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (Array.isArray(value)) return normalizeHistoricalTimestamp(value[0]);
+  if (typeof value === 'object') for (const key of ['$date', 'date', 'timestamp', 'ts', 'time', 'start', 'startTime', 'epoch']) if (Object.prototype.hasOwnProperty.call(value, key)) { const t = normalizeHistoricalTimestamp(value[key]); if (t) return t; }
+  if (typeof value === 'string') { const n = Number(value.trim()); if (Number.isFinite(n) && n > 0) return normalizeHistoricalTimestamp(n); const parsed = Date.parse(value.trim()); return Number.isFinite(parsed) && parsed > 0 ? parsed : null; }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1e11) return n * 1000;
+  if (n < 1e14) return n;
+  if (n < 1e17) return n / 1000;
+  return n / 1e6;
+}
+
+function historicalRowTs(row) {
+  if (Array.isArray(row)) return normalizeHistoricalTimestamp(row[0]);
+  for (const key of ['ts', 'timestamp', 'time', 't', 'bucket', 'start', 'startTime', 'start_ts', 'startTimeMs', 'bucketStart', 'bucket_start', 'epoch', 'date']) { const t = normalizeHistoricalTimestamp(row?.[key]); if (t) return t; }
+  if (row && typeof row === 'object') for (const [key, value] of Object.entries(row)) if (/(time|timestamp|bucket|start|epoch|date|^ts$)/i.test(key)) { const t = normalizeHistoricalTimestamp(value); if (t) return t; }
+  return null;
+}
+
+async function fetchHistoricalEvents(symbol, timeframe) {
+  const minutes = ({ '15m': 15, '1h': 60, '4h': 240 })[timeframe];
+  if (!minutes) return { events: [] };
+  const url = `${HISTORICAL_URL}?symbol=${encodeURIComponent(symbol)}&minutes=${Math.max(minutes * 2, 60)}`;
+  try {
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error(`MarginPad historical request failed: ${response.status}`);
+    const rows = extractHistoricalBuckets(await response.json());
+    const events = [];
+    for (const row of rows) {
+      const ts = historicalRowTs(row);
+      if (!ts) continue;
+      const period = bucketStart(ts, timeframe);
+      const longUsd = bucketValue(row, ['long_liquidations', 'longLiquidations', 'long_usd', 'longUsd', 'long_volume', 'longVolume', 'longNotional', 'long_notional', 'long', 'buy'], 'long');
+      const shortUsd = bucketValue(row, ['short_liquidations', 'shortLiquidations', 'short_usd', 'shortUsd', 'short_volume', 'shortVolume', 'shortNotional', 'short_notional', 'short', 'sell'], 'short');
+      if (longUsd > 0 || shortUsd > 0) events.push({ period, longUsd, shortUsd });
+    }
+    return { events };
+  } catch (error) {
+    console.warn(`HISTORICAL ${timeframe} ${symbol} FAILED: ${error.message}`);
+    return { events: [] };
+  }
+}
+
+function applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents = 0, shortEvents = 0) {
+  const map = timeframeState.get(timeframe);
+  if (!map) return null;
+  const previous = map.get(symbol) || empty();
+  if (previous.lastBucket !== null && period <= previous.lastBucket) return null;
+  const state = { ...previous };
+  state.longUsd = Math.max(0, Number(longUsd) || 0);
+  state.shortUsd = Math.max(0, Number(shortUsd) || 0);
+  state.longEvents = Math.max(0, Number(longEvents) || 0);
+  state.shortEvents = Math.max(0, Number(shortEvents) || 0);
+  state.events = state.longEvents + state.shortEvents;
+  state.imbalanceUsd = state.shortUsd - state.longUsd;
+  state.establishedSign = state.imbalanceUsd > 0 ? 1 : state.imbalanceUsd < 0 ? -1 : 0;
+  state.lastBucket = period;
+  state.buckets = { ...state.buckets, [String(period)]: { longUsd: state.longUsd, shortUsd: state.shortUsd, longEvents: state.longEvents, shortEvents: state.shortEvents } };
+  map.set(symbol, state);
+  return state;
+}
+
+async function sendLargestAlert(timeframe, period, candidate) {
+  if (!candidate || candidate.state.imbalanceUsd === 0) return;
+  const direction = candidate.state.imbalanceUsd > 0 ? 'BUY UP' : 'BUY DOWN';
+  const color = candidate.state.imbalanceUsd > 0 ? '🟢' : '🔴';
+  const alertKey = `${timeframe}:${candidate.symbol}:${period}`;
+  if (!(await reserveAlertKey(alertKey))) return;
+  let market = null;
+  try { market = await findNextMarket(candidate.symbol, Date.now(), timeframe); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${candidate.symbol}: ${error.message}`); }
+  const link = market?.url ? `\n➡️ NEXT Polymarket ${timeframe}\n${market.url}` : '';
+  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\n\nImbalance: ${formatUsd(candidate.state.imbalanceUsd)}\n${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
+  try {
+    await sendTelegramMessage(msg);
+    await markAlertSent(alertKey);
+    console.log(`LARGEST IMBALANCE ALERT SENT ${timeframe} ${candidate.symbol} ${direction} ${formatUsd(candidate.state.imbalanceUsd)}`);
+  } catch (error) {
+    console.warn(`LARGEST IMBALANCE ALERT SEND FAILED ${timeframe} ${candidate.symbol}: ${error.message}`);
+  }
+}
+
+async function processHistorical(timeframe) {
+  for (const symbol of symbols) {
+    const result = await fetchHistoricalEvents(symbol, timeframe);
+    const grouped = new Map();
+    for (const event of result.events) {
+      const bucket = grouped.get(event.period) || { longUsd: 0, shortUsd: 0 };
+      bucket.longUsd += event.longUsd;
+      bucket.shortUsd += event.shortUsd;
+      grouped.set(event.period, bucket);
+    }
+    for (const [period, bucket] of [...grouped.entries()].sort((a, b) => a[0] - b[0])) {
+      applyCompletedBucket(timeframe, symbol, period, bucket.longUsd, bucket.shortUsd);
+    }
+  }
+}
+
+async function processLive(timeframe, boundary) {
+  if (!ALERT_FRAMEWORKS.includes(timeframe)) return;
+  const period = bucketStart(boundary - 1, timeframe);
+  const active = symbols;
+  await Promise.all(active.map(async symbol => {
+    const events = await fetchSymbolFeed(symbol);
+    let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0;
+    for (const event of events || []) {
+      const ts = normalizeTs(event);
+      if (!Number.isFinite(ts) || bucketStart(ts, timeframe) !== period) continue;
+      const direction = side(event), value = notional(event);
+      if (direction > 0) { longUsd += value; longEvents++; }
+      else if (direction < 0) { shortUsd += value; shortEvents++; }
+    }
+    const state = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents);
+    if (state) console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: state.imbalanceUsd }));
+  }));
+  const rows = symbols.map(symbol => ({ symbol, state: timeframeState.get(timeframe).get(symbol) || empty() })).filter(row => row.state.lastBucket === period && row.state.imbalanceUsd !== 0);
+  if (!rows.length) return;
+  rows.sort((a, b) => Math.abs(b.state.imbalanceUsd) - Math.abs(a.state.imbalanceUsd));
+  await sendLargestAlert(timeframe, period, rows[0]);
+}
+
+async function main() {
+  await loadState();
+  console.log('Liquidation monitor started; 5m alerts STOPPED; 15m/1h/4h alert only the single largest absolute imbalance per period');
+  await processHistorical('15m');
+  await processHistorical('1h');
+  await processHistorical('4h');
+  await saveState();
+  while (true) {
+    const now = Date.now();
+    const boundary = nextBoundary(now);
+    const wait = Math.max(1000, boundary - now + BOUNDARY_GRACE_MS);
+    console.log(`Waiting for next timeframe boundary in ${Math.round(wait / 1000)}s`);
+    await sleep(wait);
+    const current = Date.now();
+    for (const timeframe of FRAMEWORKS) {
+      const due = bucketStart(current, timeframe);
+      if (Math.abs(current - due) <= BOUNDARY_GRACE_MS * 2) {
+        console.log(`TIMEFRAME BOUNDARY REACHED; due=${timeframe}`);
+        await processLive(timeframe, due);
+      }
+    }
+    await saveState();
+  }
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });
