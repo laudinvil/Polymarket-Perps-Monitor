@@ -60,9 +60,11 @@ jobs:
             sleep 60
             node scripts/convex-sync.js sync || true
             node scripts/build-monitor-stats.js monitor-history.log
+            tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add monitor.log monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
             git push origin HEAD:monitor-status || true
           done
