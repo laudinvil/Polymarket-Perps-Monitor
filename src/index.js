@@ -5,7 +5,7 @@ const { sendTelegramMessage } = require('./telegram');
 
 const symbols = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const FRAMEWORKS = ['5m', '15m', '1h', '4h'];
-const ALERT_FRAMEWORKS = ['15m', '1h', '4h'];
+const ALERT_FRAMEWORKS = ['5m', '15m', '1h', '4h'];
 const BOUNDARY_GRACE_MS = 1500;
 const REQUEST_TIMEOUT_MS = 15000;
 const STATE_PATH = '.monitor-state.json';
@@ -14,13 +14,17 @@ const HISTORICAL_URL = 'https://marginpad.io/api/v1/liquidations/recent';
 
 const sentAlerts = new Set();
 const timeframeState = new Map();
+const contrarianState = new Map();
 let stateSha = null;
 
 function empty() {
   return { imbalanceUsd: 0, longUsd: 0, shortUsd: 0, longEvents: 0, shortEvents: 0, events: 0, establishedSign: 0, lastBucket: null, buckets: {} };
 }
 
-for (const timeframe of FRAMEWORKS) timeframeState.set(timeframe, new Map());
+for (const timeframe of FRAMEWORKS) {
+  timeframeState.set(timeframe, new Map());
+  contrarianState.set(timeframe, { symbol: null, sign: 0 });
+}
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 function bucketStart(ts, timeframe) { return Math.floor(ts / TIMEFRAMES[timeframe]) * TIMEFRAMES[timeframe]; }
@@ -101,7 +105,13 @@ function buildStatePayload() {
     liquidationTimeframes[timeframe] = {};
     for (const symbol of symbols) liquidationTimeframes[timeframe][symbol] = timeframeState.get(timeframe).get(symbol) || empty();
   }
-  return { version: 8, updatedAt: new Date().toISOString(), sentAlerts: [...sentAlerts], liquidationTimeframes };
+  return {
+    version: 9,
+    updatedAt: new Date().toISOString(),
+    sentAlerts: [...sentAlerts],
+    liquidationTimeframes,
+    contrarianTimeframes: Object.fromEntries(FRAMEWORKS.map(timeframe => [timeframe, contrarianState.get(timeframe) || { symbol: null, sign: 0 }]))
+  };
 }
 
 async function loadState() {
@@ -117,8 +127,10 @@ async function loadState() {
         const saved = state.liquidationTimeframes?.[timeframe]?.[symbol];
         if (saved) timeframeState.get(timeframe).set(symbol, normalizeSavedState(saved));
       }
+      const savedContrarian = state.contrarianTimeframes?.[timeframe];
+      if (savedContrarian) contrarianState.set(timeframe, { symbol: savedContrarian.symbol || null, sign: Number(savedContrarian.sign) || 0 });
     }
-    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; largest-imbalance alert mode`);
+    console.log(`STATE LOADED ${state.updatedAt || 'unknown'}; 5m 6-vs-1 contrarian, 15m/1h/4h largest imbalance`);
   } catch (error) {
     if (error.statusCode === 404) console.log('STATE LOAD: no persisted state found; starting clean');
     else console.warn(`STATE LOAD FAILED: ${error.message}`);
@@ -286,6 +298,44 @@ async function sendLargestAlert(timeframe, period, candidate) {
   }
 }
 
+async function sendContrarianAlert(timeframe, period, candidate, majoritySign) {
+  if (!candidate || !majoritySign || candidate.state.imbalanceUsd === 0) return;
+  const sign = candidate.state.imbalanceUsd > 0 ? 1 : -1;
+  const previous = contrarianState.get(timeframe) || { symbol: null, sign: 0 };
+  if (previous.symbol === candidate.symbol && previous.sign === sign) {
+    console.log(`CONTRARIAN CONTINUATION SUPPRESSED ${timeframe} ${candidate.symbol}`);
+    return;
+  }
+  const alertKey = `${timeframe}:${candidate.symbol}:${period}:${sign}`;
+  if (!(await reserveAlertKey(alertKey))) return;
+  let market = null;
+  try { market = await findNextMarket(candidate.symbol, Date.now(), timeframe); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${candidate.symbol}: ${error.message}`); }
+  const direction = sign > 0 ? 'BUY UP' : 'BUY DOWN';
+  const color = sign > 0 ? '🟢' : '🔴';
+  const link = market?.url ? `\n➡️ NEXT Polymarket ${timeframe}\n${market.url}` : '';
+  const msg = `${color} ${candidate.symbol} · ${timeframe} · ${direction}\n\nImbalance: ${formatUsd(candidate.state.imbalanceUsd)}\n${formatUsd(candidate.state.longUsd)} LONG · ${formatUsd(candidate.state.shortUsd)} SHORT${link}`;
+  try {
+    await sendTelegramMessage(msg);
+    contrarianState.set(timeframe, { symbol: candidate.symbol, sign });
+    await markAlertSent(alertKey);
+    console.log(`6-VS-1 CONTRARIAN ALERT SENT ${timeframe} ${candidate.symbol} ${direction} ${formatUsd(candidate.state.imbalanceUsd)}`);
+  } catch (error) {
+    console.warn(`6-VS-1 CONTRARIAN ALERT SEND FAILED ${timeframe} ${candidate.symbol}: ${error.message}`);
+  }
+}
+
+function detectContrarian(timeframe, period) {
+  const map = timeframeState.get(timeframe);
+  if (!map) return null;
+  const rows = symbols.map(symbol => ({ symbol, state: map.get(symbol) || empty() }));
+  if (rows.some(row => row.state.lastBucket !== period || row.state.imbalanceUsd === 0)) return null;
+  const positives = rows.filter(row => row.state.imbalanceUsd > 0);
+  const negatives = rows.filter(row => row.state.imbalanceUsd < 0);
+  if (positives.length === 6 && negatives.length === 1) return { candidate: negatives[0], majoritySign: 1 };
+  if (negatives.length === 6 && positives.length === 1) return { candidate: positives[0], majoritySign: -1 };
+  return null;
+}
+
 async function processHistorical(timeframe) {
   for (const symbol of symbols) {
     const result = await fetchHistoricalEvents(symbol, timeframe);
@@ -305,8 +355,7 @@ async function processHistorical(timeframe) {
 async function processLive(timeframe, boundary) {
   if (!ALERT_FRAMEWORKS.includes(timeframe)) return;
   const period = bucketStart(boundary - 1, timeframe);
-  const active = symbols;
-  await Promise.all(active.map(async symbol => {
+  await Promise.all(symbols.map(async symbol => {
     const events = await fetchSymbolFeed(symbol);
     let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0;
     for (const event of events || []) {
@@ -319,6 +368,14 @@ async function processLive(timeframe, boundary) {
     const state = applyCompletedBucket(timeframe, symbol, period, longUsd, shortUsd, longEvents, shortEvents);
     if (state) console.log(JSON.stringify({ timeframe, symbol, period, longUsd, shortUsd, imbalanceUsd: state.imbalanceUsd }));
   }));
+
+  if (timeframe === '5m') {
+    const result = detectContrarian(timeframe, period);
+    if (result) await sendContrarianAlert(timeframe, period, result.candidate, result.majoritySign);
+    else console.log(`NO 6-VS-1 CONTRARIAN ${timeframe} period=${period}`);
+    return;
+  }
+
   const rows = symbols.map(symbol => ({ symbol, state: timeframeState.get(timeframe).get(symbol) || empty() })).filter(row => row.state.lastBucket === period && row.state.imbalanceUsd !== 0);
   if (!rows.length) return;
   rows.sort((a, b) => Math.abs(b.state.imbalanceUsd) - Math.abs(a.state.imbalanceUsd));
@@ -327,7 +384,7 @@ async function processLive(timeframe, boundary) {
 
 async function main() {
   await loadState();
-  console.log('Liquidation monitor started; 5m alerts STOPPED; 15m/1h/4h alert only the single largest absolute imbalance per period');
+  console.log('Liquidation monitor started; 5m=6-vs-1 contrarian only; 15m/1h/4h=single largest absolute imbalance');
   await processHistorical('15m');
   await processHistorical('1h');
   await processHistorical('4h');
