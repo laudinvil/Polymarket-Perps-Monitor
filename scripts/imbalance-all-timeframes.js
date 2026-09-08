@@ -3,13 +3,13 @@ const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// All 7 coins are monitored, but only the FIRST liquidation per 15-minute
+// All 7 coins are monitored, but only the FIRST liquidation per 10-minute
 // Polymarket period is alerted. All other coins/events in that period are ignored.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
-const DEDUPE_WINDOW_MS = 15 * 60 * 1000;
+const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 
 const seenLiquidations = new Set();
 let dedupePeriodStart = null;
@@ -35,7 +35,7 @@ function resetDedupeWindow(ts) {
   dedupePeriodStart = period;
   seenLiquidations.clear();
   periodAlreadyAlerted = false;
-  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (15m; first liquidation only)`);
+  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (10m; first liquidation only)`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -99,8 +99,8 @@ async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
   const windowStart = dedupePeriodStart;
 
-  // Once one liquidation has claimed this 15m period, all other coins/events
-  // are ignored until the next 15m Polymarket period begins.
+  // Once one liquidation has claimed this 10m period, all other coins/events
+  // are ignored until the next 10m period begins.
   if (periodAlreadyAlerted) return;
 
   const candidates = [];
@@ -127,13 +127,13 @@ async function processLiquidations(feeds, now) {
 
   if (!candidates.length) return;
 
-  // The earliest newly observed liquidation wins the 15m period, regardless of coin.
+  // The earliest newly observed liquidation wins the 10m period, regardless of coin.
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
 
-  // All other candidates are intentionally ignored for this 15m period.
-  console.log(`15M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}`);
+  // All other candidates are intentionally ignored for this 10m period.
+  console.log(`10M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -149,7 +149,8 @@ async function processLiquidations(feeds, now) {
     qty: eventQty,
     notional: Math.abs(eventNotional),
     dedupeWindowStart: windowStart,
-    firstLiquidationOnly: true
+    firstLiquidationOnly: true,
+    periodMinutes: 10
   }));
 
   let market = null;
@@ -173,7 +174,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 15m period; other events ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 10m period; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
