@@ -24,11 +24,7 @@ function notional(event) {
   const n = Number(event?.notional ?? event?.usd ?? event?.value ?? event?.amount);
   return Number.isFinite(n) ? Math.abs(n) : 0;
 }
-function formatUsd(v) {
-  const n = Number(v) || 0;
-  const sign = n > 0 ? '+' : n < 0 ? '-' : '';
-  return `${sign}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
-}
+function formatCount(v) { return Math.max(0, Number(v) || 0).toLocaleString('en-US'); }
 function githubRequest(method = 'GET', body) {
   return new Promise((resolve, reject) => {
     const u = new URL(STATE_API_URL);
@@ -52,11 +48,8 @@ function loadPersistedState(state) {
   for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
     const normalized = normalizeAlertKey(key); if (normalized) sentAlerts.add(normalized);
   }
-  for (const tf of MONITORED) for (const symbol of SYMBOLS) {
-    const saved = state?.liquidationTimeframes?.[tf]?.[symbol];
-    const sign = Number(saved?.establishedSign) || 0;
-    if (sign) establishedSigns.set(keyFor(tf, symbol), sign);
-  }
+  // Do not restore establishedSign from the old imbalance-based state.
+  // The new count-based logic must establish its baseline from fresh buckets.
 }
 async function loadState() {
   if (!process.env.GITHUB_TOKEN) return;
@@ -64,7 +57,7 @@ async function loadState() {
     const response = await githubRequest();
     if (!response?.content) return;
     loadPersistedState(JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')));
-    console.log(`STATE LOADED; liquidation-count mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}`);
+    console.log(`STATE LOADED; liquidation-count mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}; old imbalance signs ignored`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 async function reserveAlertKey(key) {
@@ -116,7 +109,7 @@ async function sendAlert(row) {
   const stateKey = keyFor(row.tf, row.symbol), previousSign = establishedSigns.get(stateKey) || 0;
   establishedSigns.set(stateKey, row.sign);
   if (!previousSign || previousSign === row.sign) {
-    console.log(`${row.tf} LIQUIDATION COUNT ${row.symbol} dominant=${row.dominantCount} longEvents=${row.longEvents} shortEvents=${row.shortEvents} sign=${row.sign} (no flip)`); return;
+    console.log(`${row.tf} LIQUIDATION COUNT ${row.symbol} dominant=${formatCount(row.dominantCount)} longEvents=${formatCount(row.longEvents)} shortEvents=${formatCount(row.shortEvents)} sign=${row.sign} (no flip)`); return;
   }
   const key = `${row.tf}:${row.symbol}:${row.period}:${row.sign}`;
   if (!(await reserveAlertKey(key))) return;
@@ -126,8 +119,8 @@ async function sendAlert(row) {
   const direction = row.sign > 0 ? 'BUY UP' : 'BUY DOWN', color = row.sign > 0 ? '🟢' : '🔴';
   const timeframe = row.tf.toUpperCase();
   const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket ${timeframe}\n${market.url}` : '';
-  const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nLiquidations: ${row.dominantCount} ${row.sign > 0 ? 'LONG' : 'SHORT'}\n\n${row.longEvents} LONG · ${row.shortEvents} SHORT${link}`;
-  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} LIQUIDATION COUNT ALERT SENT ${row.symbol} ${direction} ${timeframe} dominant=${row.dominantCount} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
+  const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nLiquidations: ${formatCount(row.dominantCount)} ${row.sign > 0 ? 'LONG' : 'SHORT'}\n\n${formatCount(row.longEvents)} LONG · ${formatCount(row.shortEvents)} SHORT${link}`;
+  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} LIQUIDATION COUNT ALERT SENT ${row.symbol} ${direction} ${timeframe} dominant=${formatCount(row.dominantCount)} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
   catch (error) { console.warn(`${row.tf} LIQUIDATION COUNT ALERT SEND FAILED ${row.symbol}: ${error.message}`); }
 }
 async function main() {
@@ -144,7 +137,7 @@ async function main() {
         for (const symbol of SYMBOLS) {
           const bucketKey = `${tf}:${symbol}:${period}`; if (processedBuckets.has(bucketKey)) continue;
           processedBuckets.add(bucketKey); const row = aggregate(feeds.get(symbol), period, tf, symbol); await sendAlert(row);
-          console.log(`TIMEFRAME BOUNDARY ${tf} ${symbol} ${new Date(period + window).toISOString()} dominant=${row.dominantCount} longEvents=${row.longEvents} shortEvents=${row.shortEvents} events=${row.events}`);
+          console.log(`TIMEFRAME BOUNDARY ${tf} ${symbol} ${new Date(period + window).toISOString()} dominant=${formatCount(row.dominantCount)} longEvents=${formatCount(row.longEvents)} shortEvents=${formatCount(row.shortEvents)} events=${formatCount(row.events)}`);
         }
       }
       lastCompleted.set(tf, completed);
