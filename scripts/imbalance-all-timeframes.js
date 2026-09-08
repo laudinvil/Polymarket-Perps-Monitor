@@ -10,10 +10,13 @@ const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
 const REQUEST_TIMEOUT_MS = 15000;
+const LIQUIDATION_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 
 const sentAlerts = new Set();
 const processedBuckets = new Set();
 const streakState = new Map();
+const liquidationDedupeKeys = new Set();
+let liquidationDedupePeriod = null;
 let stateSaveChain = Promise.resolve();
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
@@ -32,6 +35,18 @@ function side(event) {
   return 0;
 }
 function formatCount(value) { return Math.max(0, Number(value) || 0).toLocaleString('en-US'); }
+function liquidationDedupePeriodStart(ts) { return Math.floor(ts / LIQUIDATION_DEDUPE_WINDOW_MS) * LIQUIDATION_DEDUPE_WINDOW_MS; }
+function liquidationDedupeKey(symbol, ts, eventSide, event) {
+  const id = event?.id ?? event?.liquidationId ?? event?.eventId ?? event?.tradeId ?? event?.txHash ?? event?.orderId;
+  if (id !== undefined && id !== null && String(id) !== '') return `${symbol}:id:${String(id)}`;
+  return [symbol, ts, eventSide, event?.price ?? '', event?.qty ?? event?.quantity ?? '', event?.size ?? ''].join('|');
+}
+function resetLiquidationDedupePeriod(periodStart) {
+  if (liquidationDedupePeriod === periodStart) return;
+  liquidationDedupePeriod = periodStart;
+  liquidationDedupeKeys.clear();
+  console.log(`5M LIQUIDATION DEDUPE RESET ${new Date(periodStart).toISOString()} (15m period)`);
+}
 
 function githubRequest(method = 'GET', body) {
   return new Promise((resolve, reject) => {
@@ -77,7 +92,21 @@ function enqueueAlertSend(message, key, timeframe, symbol, streak) {
   alertSendChain = task.catch(error => { sentAlerts.delete(key); console.warn(`ALERT QUEUE FAILED ${timeframe} ${symbol}: ${error.message}`); }); return alertSendChain;
 }
 async function fetchAllFeeds() { return new Map(await Promise.all(SYMBOLS.map(async symbol => { try { return [symbol, await fetchSymbolFeed(symbol)]; } catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; } }))); }
-function eventsForBucket(feeds, timeframe, period) { const events = []; for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) { const ts = normalizeTs(event?.ts); if (!ts || bucketStart(ts, timeframe) !== period) continue; const eventSide = side(event); if (!eventSide) continue; events.push({ symbol, ts, side: eventSide, event }); } events.sort((a, b) => a.ts - b.ts); return events; }
+function eventsForBucket(feeds, timeframe, period) {
+  const events = [];
+  if (timeframe === '5m') resetLiquidationDedupePeriod(liquidationDedupePeriodStart(period));
+  for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) {
+    const ts = normalizeTs(event?.ts); if (!ts || bucketStart(ts, timeframe) !== period) continue;
+    const eventSide = side(event); if (!eventSide) continue;
+    if (timeframe === '5m') {
+      const dedupeKey = liquidationDedupeKey(symbol, ts, eventSide, event);
+      if (liquidationDedupeKeys.has(dedupeKey)) continue;
+      liquidationDedupeKeys.add(dedupeKey);
+    }
+    events.push({ symbol, ts, side: eventSide, event });
+  }
+  events.sort((a, b) => a.ts - b.ts); return events;
+}
 function classifyBucket(events) { const counts = new Map(); for (const symbol of SYMBOLS) counts.set(symbol, { long: 0, short: 0 }); for (const item of events) { const count = counts.get(item.symbol); if (item.side > 0) count.long += 1; else if (item.side < 0) count.short += 1; } return counts; }
 function updateStreak(timeframe, symbol, bucketStartTs, counts) {
   const streak = getStreak(timeframe, symbol), longCount = counts.long, shortCount = counts.short;
