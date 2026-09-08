@@ -172,7 +172,7 @@ async function processLiquidations(feeds, now) {
 
   const message = [
     `🔥 ${symbol} · 5M`,
-    `Side: ${side === 'LONG' ? 'Long' : 'Short'}`,
+    side,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     `Qty: ${quantity(eventQty)}`,
