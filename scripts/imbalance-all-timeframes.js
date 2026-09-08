@@ -4,8 +4,6 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME_LIST = ['5m', '15m', '1h', '4h'];
-const RESET_TIMEFRAME = { '5m': '30m', '15m': '30m', '1h': '1h', '4h': '4h' };
-const RESET_MS = 30 * 60 * 1000;
 const POLL_MS = 4000;
 const STATE_PATH = '.monitor-state.json';
 const STATE_API_URL = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'laudinvil/Polymarket-Perps-Monitor'}/contents/${STATE_PATH}?ref=monitor-status`;
@@ -13,44 +11,335 @@ const REQUEST_TIMEOUT_MS = 15000;
 
 const sentAlerts = new Set();
 const processedBuckets = new Set();
-const stateByTimeframe = new Map();
-for (const timeframe of TIMEFRAME_LIST) stateByTimeframe.set(timeframe, { globalLongCount: 0, globalShortCount: 0, globalImbalance: 0, establishedSign: 0, lastEventTs: 0, currentPeriod: null, periodStartSign: 0, periodCrossing: null });
-function getTfState(timeframe) { return stateByTimeframe.get(timeframe); }
-function side(event) { const value = String(event?.side || event?.direction || '').toLowerCase(); if (value.includes('long') || value === 'buy') return 1; if (value.includes('short') || value === 'sell') return -1; return 0; }
-function formatCount(value) { return Math.max(0, Number(value) || 0).toLocaleString('en-US'); }
-function signed(value) { return value > 0 ? `+${value}` : String(value); }
+const streakState = new Map();
+
+for (const timeframe of TIMEFRAME_LIST) {
+  for (const symbol of SYMBOLS) {
+    streakState.set(`${timeframe}:${symbol}`, { side: 0, length: 0, lastBucket: 0 });
+  }
+}
+
+function getStreak(timeframe, symbol) {
+  return streakState.get(`${timeframe}:${symbol}`);
+}
+
+function side(event) {
+  const value = String(event?.side || event?.direction || '').toLowerCase();
+  if (value.includes('long') || value === 'buy') return 1;
+  if (value.includes('short') || value === 'sell') return -1;
+  return 0;
+}
+
+function formatCount(value) {
+  return Math.max(0, Number(value) || 0).toLocaleString('en-US');
+}
+
 function githubRequest(method = 'GET', body) {
   return new Promise((resolve, reject) => {
     const u = new URL(STATE_API_URL);
-    const req = require('https').request({ hostname: u.hostname, path: u.pathname + u.search, method, timeout: REQUEST_TIMEOUT_MS, headers: { 'User-Agent': 'Polymarket-Perps-Monitor', Accept: 'application/vnd.github+json', Authorization: `Bearer ${process.env.GITHUB_TOKEN || ''}`, 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) } }, response => {
-      let data = ''; response.setEncoding('utf8'); response.on('data', chunk => { data += chunk; }); response.on('end', () => { let parsed = null; try { parsed = data ? JSON.parse(data) : null; } catch {} if (response.statusCode >= 200 && response.statusCode < 300) return resolve(parsed); const error = new Error(`GitHub state request failed: ${response.statusCode}`); error.statusCode = response.statusCode; reject(error); });
+    const req = require('https').request({
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      method,
+      timeout: REQUEST_TIMEOUT_MS,
+      headers: {
+        'User-Agent': 'Polymarket-Perps-Monitor',
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN || ''}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(body ? { 'Content-Type': 'application/json' } : {})
+      }
+    }, response => {
+      let data = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { data += chunk; });
+      response.on('end', () => {
+        let parsed = null;
+        try { parsed = data ? JSON.parse(data) : null; } catch {}
+        if (response.statusCode >= 200 && response.statusCode < 300) return resolve(parsed);
+        const error = new Error(`GitHub state request failed: ${response.statusCode}`);
+        error.statusCode = response.statusCode;
+        reject(error);
+      });
     });
-    req.on('timeout', () => req.destroy(new Error('GitHub state request timed out'))); req.on('error', reject); if (body) req.write(JSON.stringify(body)); req.end();
+    req.on('timeout', () => req.destroy(new Error('GitHub state request timed out')));
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
   });
 }
-function normalizeAlertKey(key) { if (typeof key !== 'string') return null; const match = key.match(/^(5m|15m|1h|4h):GLOBAL:(\d+):([A-Z]+):(-?1)$/); return match ? `${match[1]}:GLOBAL:${match[2]}:${match[3]}:${match[4]}` : null; }
-function resetTimeframeState(timeframe, resetPeriod) { const state = getTfState(timeframe); state.globalLongCount = 0; state.globalShortCount = 0; state.globalImbalance = 0; state.establishedSign = 0; state.lastEventTs = 0; state.currentPeriod = resetPeriod; state.periodStartSign = 0; state.periodCrossing = null; console.log(`${timeframe.toUpperCase()} RESET 30M PERIOD=${new Date(resetPeriod).toISOString()} LONG=0 SHORT=0 IMBALANCE=0`); }
-function loadPersistedState(state) { for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) { const normalized = normalizeAlertKey(key); if (normalized) sentAlerts.add(normalized); } }
-async function loadState() { if (!process.env.GITHUB_TOKEN) return; try { const response = await githubRequest(); if (!response?.content) return; const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')); loadPersistedState(state); console.log('STATE LOADED; accumulation reset: 5m->30m, 15m->30m, 1h->1h, 4h->4h; alerts at each timeframe boundary'); } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); } }
+
+function normalizeAlertKey(key) {
+  if (typeof key !== 'string') return null;
+  const match = key.match(/^(5m|15m|1h|4h):STREAK:(\d+):([A-Z]+):([12]+)$/);
+  return match ? key : null;
+}
+
+function loadPersistedState(state) {
+  for (const key of [...(state?.sentAlerts || []), ...(state?.alerts || [])]) {
+    const normalized = normalizeAlertKey(key);
+    if (normalized) sentAlerts.add(normalized);
+  }
+
+  for (const timeframe of TIMEFRAME_LIST) {
+    for (const symbol of SYMBOLS) {
+      const saved = state?.streaks?.[timeframe]?.[symbol];
+      if (!saved) continue;
+      const streak = getStreak(timeframe, symbol);
+      streak.side = Number(saved.side) === 1 || Number(saved.side) === -1 ? Number(saved.side) : 0;
+      streak.length = Math.max(0, Number(saved.length) || 0);
+      streak.lastBucket = Math.max(0, Number(saved.lastBucket) || 0);
+    }
+  }
+}
+
+async function loadState() {
+  if (!process.env.GITHUB_TOKEN) return;
+  try {
+    const response = await githubRequest();
+    if (!response?.content) return;
+    const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+    loadPersistedState(state);
+    console.log('STATE LOADED; per-coin streaks persist across buckets and restarts; alert threshold=2+; no periodic reset');
+  } catch (error) {
+    console.warn(`STATE LOAD FAILED: ${error.message}`);
+  }
+}
+
 async function saveGlobalState() {
   if (!process.env.GITHUB_TOKEN) return;
   for (let attempt = 1; attempt <= 5; attempt += 1) try {
-    let response = null; try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
+    let response = null;
+    try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
     const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
-    const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean)); for (const key of sentAlerts) keys.add(key);
-    state.version = 19; state.sentAlerts = [...keys].slice(-5000); state.timeframes = state.timeframes || {};
-    for (const timeframe of TIMEFRAME_LIST) { const s = getTfState(timeframe); state.timeframes[timeframe] = { globalLongCount: s.globalLongCount, globalShortCount: s.globalShortCount, globalImbalance: s.globalImbalance, currentPeriod: s.currentPeriod, resetTimeframe: RESET_TIMEFRAME[timeframe], lastEventTs: s.lastEventTs }; }
-    const five = getTfState('5m'); state.globalLongCount = five.globalLongCount; state.globalShortCount = five.globalShortCount; state.lastGlobalEventTs = five.lastEventTs;
-    await githubRequest('PUT', { message: 'Require real imbalance overshoot for zero-cross alerts', content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'), branch: 'monitor-status', ...(response?.sha ? { sha: response.sha } : {}) }); return;
-  } catch (error) { if (error.statusCode !== 409 || attempt === 5) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; } await new Promise(resolve => setTimeout(resolve, 250 * attempt)); }
+    const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
+    for (const key of sentAlerts) keys.add(key);
+    state.version = 20;
+    state.sentAlerts = [...keys].slice(-5000);
+    state.streaks = {};
+    for (const timeframe of TIMEFRAME_LIST) {
+      state.streaks[timeframe] = {};
+      for (const symbol of SYMBOLS) {
+        const streak = getStreak(timeframe, symbol);
+        state.streaks[timeframe][symbol] = {
+          side: streak.side,
+          length: streak.length,
+          lastBucket: streak.lastBucket
+        };
+      }
+    }
+    await githubRequest('PUT', {
+      message: 'Persist per-coin liquidation streaks',
+      content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'),
+      branch: 'monitor-status',
+      ...(response?.sha ? { sha: response.sha } : {})
+    });
+    return;
+  } catch (error) {
+    if (error.statusCode !== 409 || attempt === 5) {
+      console.warn(`STATE SAVE FAILED: ${error.message}`);
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+  }
 }
-async function reserveAlertKey(key) { if (sentAlerts.has(key)) return false; if (!process.env.GITHUB_TOKEN) return true; try { const response = await githubRequest(); if (response?.content) { const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')); const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean)); if (keys.has(key)) { sentAlerts.add(key); return false; } } return true; } catch (error) { console.warn(`ALERT DEDUP CHECK FAILED ${key}: ${error.message}`); return false; } }
-async function fetchAllFeeds() { return new Map(await Promise.all(SYMBOLS.map(async symbol => { try { return [symbol, await fetchSymbolFeed(symbol)]; } catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; } }))); }
-function eventsForBucket(feeds, timeframe, period) { const events = []; for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) { const ts = normalizeTs(event?.ts); if (!ts || bucketStart(ts, timeframe) !== period) continue; const eventSide = side(event); if (!eventSide) continue; events.push({ symbol, ts, side: eventSide, event }); } events.sort((a, b) => a.ts - b.ts); return events; }
-function applyEvents(timeframe, events, resetPeriod) { const state = getTfState(timeframe); if (state.currentPeriod !== resetPeriod) resetTimeframeState(timeframe, resetPeriod); let crossing = null; for (const item of events) { if (item.ts <= state.lastEventTs) continue; const previousImbalance = state.globalImbalance; if (item.side > 0) { state.globalLongCount += 1; state.globalImbalance += 1; } else { state.globalShortCount += 1; state.globalImbalance -= 1; } state.lastEventTs = item.ts; const newSign = state.globalImbalance > 0 ? 1 : state.globalImbalance < 0 ? -1 : 0; if (state.periodStartSign === 0 && newSign !== 0) state.periodStartSign = newSign; const realOvershoot = previousImbalance !== 0 && newSign !== 0 && Math.sign(previousImbalance) !== newSign; if (realOvershoot) { crossing = { symbol: item.symbol, from: previousImbalance, to: state.globalImbalance, sign: newSign, ts: item.ts }; state.periodCrossing = crossing; } if (newSign !== 0) state.establishedSign = newSign; } return crossing; }
-async function findNextMarkets(symbol, completedBucketStart, timeframe) { const next = await findNextMarket(symbol, completedBucketStart + TIMEFRAMES[timeframe], timeframe); if (!next) return { next: null, nextPlusOne: null }; const nextEpoch = completedBucketStart + TIMEFRAMES[timeframe]; return { next, nextPlusOne: await findMarketByEpoch(symbol, nextEpoch + TIMEFRAMES[timeframe], timeframe) }; }
-async function sendAlert(timeframe, period, crossing) { if (!crossing) return; const state = getTfState(timeframe); const key = `${timeframe}:GLOBAL:${period}:${crossing.symbol}:${crossing.sign}`; if (!(await reserveAlertKey(key))) { console.log(`ALERT DUPLICATE SUPPRESSED ${key}`); return; } let markets = { next: null, nextPlusOne: null }; try { markets = await findNextMarkets(crossing.symbol, period, timeframe); } catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${crossing.symbol}: ${error.message}`); } const direction = crossing.sign > 0 ? 'BUY DOWN' : 'BUY UP'; const emoji = crossing.sign > 0 ? '🔴' : '🟢'; const links = [markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '', markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''].filter(Boolean).join('\n\n'); const message = [`${emoji} ${crossing.symbol} · ${direction} · ${timeframe.toUpperCase()}`, '', `Global imbalance: ${signed(state.globalImbalance)}`, `${formatCount(state.globalLongCount)} LONG · ${formatCount(state.globalShortCount)} SHORT`, '', `0 crossed: ${signed(crossing.from)} → ${signed(crossing.to)}`, links ? `\n${links}` : ''].join('\n').trim(); try { await sendTelegramMessage(message); sentAlerts.add(key); await saveGlobalState(); console.log(`GLOBAL ${timeframe.toUpperCase()} ZERO CROSS ALERT SENT ${crossing.symbol} ${direction} imbalance=${state.globalImbalance} long=${state.globalLongCount} short=${state.globalShortCount}`); } catch (error) { console.warn(`GLOBAL ${timeframe.toUpperCase()} ALERT SEND FAILED ${crossing.symbol}: ${error.message}`); } }
-async function processCompletedBucket(timeframe, period, feeds) { const bucketKey = `${timeframe}:${period}`; if (processedBuckets.has(bucketKey)) return; processedBuckets.add(bucketKey); const events = eventsForBucket(feeds, timeframe, period); const resetPeriod = Math.floor(period / RESET_MS) * RESET_MS; const crossing = applyEvents(timeframe, events, resetPeriod); const state = getTfState(timeframe); const bucketEnd = period + TIMEFRAMES[timeframe]; const resetBoundary = bucketEnd === resetPeriod + RESET_MS; const alertCrossing = crossing; console.log(`${timeframe.toUpperCase()} GLOBAL BOUNDARY ${new Date(bucketEnd).toISOString()} ACCUMULATION_RESET=${RESET_TIMEFRAME[timeframe]}${resetTimeframeBoundaryLabel(resetPeriod)} LONG=${formatCount(state.globalLongCount)} SHORT=${formatCount(state.globalShortCount)} IMBALANCE=${signed(state.globalImbalance)} CROSS=${crossing ? `${crossing.symbol}:${crossing.from}->${crossing.to}` : 'NONE'} ALERT_AT_BOUNDARY=${alertCrossing ? `${alertCrossing.symbol}:${alertCrossing.from}->${alertCrossing.to}` : 'NONE'} RESET_AT_BOUNDARY=${resetBoundary ? 'YES' : 'NO'}`); await saveGlobalState(); await sendAlert(timeframe, period, alertCrossing); }
-function resetTimeframeBoundaryLabel(resetPeriod) { return `@${new Date(resetPeriod).toISOString()}`; }
-async function main() { await loadState(); console.log('GLOBAL LIQUIDATION IMBALANCE MONITOR STARTED; reset: 5m->30m, 15m->30m, 1h->1h, 4h->4h; alerts at every 5m/15m/1h/4h timeframe boundary; zero-cross requires real overshoot'); const lastCompleted = new Map(); while (true) { const now = Date.now(); const feeds = await fetchAllFeeds(); for (const timeframe of TIMEFRAME_LIST) { const windowMs = TIMEFRAMES[timeframe]; const current = bucketStart(now, timeframe); const completed = current - windowMs; if (!lastCompleted.has(timeframe)) lastCompleted.set(timeframe, completed - windowMs); const previous = lastCompleted.get(timeframe); for (let period = previous + windowMs; period <= completed; period += windowMs) await processCompletedBucket(timeframe, period, feeds); lastCompleted.set(timeframe, completed); } await new Promise(resolve => setTimeout(resolve, POLL_MS)); } }
-main().catch(error => { console.error(`FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
+
+async function reserveAlertKey(key) {
+  if (sentAlerts.has(key)) return false;
+  if (!process.env.GITHUB_TOKEN) return true;
+  try {
+    const response = await githubRequest();
+    if (response?.content) {
+      const state = JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+      const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean));
+      if (keys.has(key)) {
+        sentAlerts.add(key);
+        return false;
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn(`ALERT DEDUP CHECK FAILED ${key}: ${error.message}`);
+    return false;
+  }
+}
+
+async function fetchAllFeeds() {
+  return new Map(await Promise.all(SYMBOLS.map(async symbol => {
+    try {
+      return [symbol, await fetchSymbolFeed(symbol)];
+    } catch (error) {
+      console.warn(`FEED ${symbol} FAILED: ${error.message}`);
+      return [symbol, []];
+    }
+  })));
+}
+
+function eventsForBucket(feeds, timeframe, period) {
+  const events = [];
+  for (const symbol of SYMBOLS) {
+    for (const event of feeds.get(symbol) || []) {
+      const ts = normalizeTs(event?.ts);
+      if (!ts || bucketStart(ts, timeframe) !== period) continue;
+      const eventSide = side(event);
+      if (!eventSide) continue;
+      events.push({ symbol, ts, side: eventSide, event });
+    }
+  }
+  events.sort((a, b) => a.ts - b.ts);
+  return events;
+}
+
+function classifyBucket(events) {
+  const counts = new Map();
+  for (const symbol of SYMBOLS) counts.set(symbol, { long: 0, short: 0 });
+  for (const item of events) {
+    const count = counts.get(item.symbol);
+    if (item.side > 0) count.long += 1;
+    else if (item.side < 0) count.short += 1;
+  }
+  return counts;
+}
+
+function updateStreak(timeframe, symbol, bucketStartTs, counts) {
+  const streak = getStreak(timeframe, symbol);
+  const longCount = counts.long;
+  const shortCount = counts.short;
+
+  // No liquidation on either side explicitly breaks the streak.
+  if (longCount === 0 && shortCount === 0) {
+    streak.side = 0;
+    streak.length = 0;
+    streak.lastBucket = bucketStartTs;
+    return { side: 0, length: 0, longCount, shortCount, alert: false };
+  }
+
+  // A bucket is strictly LONG/SHORT only when one side is greater.
+  // A non-zero tie is not a directional streak bucket and therefore breaks continuity.
+  if (longCount === shortCount) {
+    streak.side = 0;
+    streak.length = 0;
+    streak.lastBucket = bucketStartTs;
+    return { side: 0, length: 0, longCount, shortCount, alert: false };
+  }
+
+  const bucketSide = longCount > shortCount ? 1 : -1;
+  if (streak.side === bucketSide) streak.length += 1;
+  else {
+    streak.side = bucketSide;
+    streak.length = 1;
+  }
+  streak.lastBucket = bucketStartTs;
+
+  return {
+    side: bucketSide,
+    length: streak.length,
+    longCount,
+    shortCount,
+    alert: streak.length >= 2
+  };
+}
+
+async function findNextMarkets(symbol, completedBucketStart, timeframe) {
+  const next = await findNextMarket(symbol, completedBucketStart + TIMEFRAMES[timeframe], timeframe);
+  if (!next) return { next: null, nextPlusOne: null };
+  const nextEpoch = completedBucketStart + TIMEFRAMES[timeframe];
+  return {
+    next,
+    nextPlusOne: await findMarketByEpoch(symbol, nextEpoch + TIMEFRAMES[timeframe], timeframe)
+  };
+}
+
+async function sendAlert(timeframe, period, symbol, streak) {
+  if (!streak.alert) return;
+  const key = `${timeframe}:STREAK:${period}:${symbol}:${streak.side === 1 ? 1 : 2}`;
+  if (!(await reserveAlertKey(key))) {
+    console.log(`ALERT DUPLICATE SUPPRESSED ${key}`);
+    return;
+  }
+
+  let markets = { next: null, nextPlusOne: null };
+  try {
+    markets = await findNextMarkets(symbol, period, timeframe);
+  } catch (error) {
+    console.warn(`POLYMARKET LOOKUP FAILED ${timeframe} ${symbol}: ${error.message}`);
+  }
+
+  const isLong = streak.side === 1;
+  const direction = isLong ? 'BUY UP' : 'BUY DOWN';
+  const emoji = isLong ? '🟢' : '🔴';
+  const sideName = isLong ? 'LONG' : 'SHORT';
+  const links = [
+    markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
+    markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
+  ].filter(Boolean).join('\n\n');
+
+  const message = [
+    `${emoji} ${symbol} · ${direction} · ${timeframe.toUpperCase()}`,
+    '',
+    `Streak: ${streak.length} ${sideName} buckets`,
+    `Current bucket: ${formatCount(streak.longCount)} LONG · ${formatCount(streak.shortCount)} SHORT`,
+    links ? `\n${links}` : ''
+  ].join('\n').trim();
+
+  try {
+    await sendTelegramMessage(message);
+    sentAlerts.add(key);
+    await saveGlobalState();
+    console.log(`STREAK ${timeframe.toUpperCase()} ALERT SENT ${symbol} ${sideName} streak=${streak.length} long=${streak.longCount} short=${streak.shortCount}`);
+  } catch (error) {
+    console.warn(`STREAK ${timeframe.toUpperCase()} ALERT SEND FAILED ${symbol}: ${error.message}`);
+  }
+}
+
+async function processCompletedBucket(timeframe, period, feeds) {
+  const bucketKey = `${timeframe}:${period}`;
+  if (processedBuckets.has(bucketKey)) return;
+  processedBuckets.add(bucketKey);
+
+  const events = eventsForBucket(feeds, timeframe, period);
+  const counts = classifyBucket(events);
+  const bucketEnd = period + TIMEFRAMES[timeframe];
+
+  for (const symbol of SYMBOLS) {
+    const streak = updateStreak(timeframe, symbol, period, counts.get(symbol));
+    if (streak.side !== 0 || streak.longCount !== 0 || streak.shortCount !== 0) {
+      console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=${streak.longCount} SHORT=${streak.shortCount} DOMINANT=${streak.side > 0 ? 'LONG' : streak.side < 0 ? 'SHORT' : 'NONE'} STREAK=${streak.length}${streak.alert ? ' ALERT=YES' : ' ALERT=NO'}`);
+    } else {
+      console.log(`${timeframe.toUpperCase()} BUCKET ${new Date(period).toISOString()}-${new Date(bucketEnd).toISOString()} ${symbol} LONG=0 SHORT=0 STREAK=RESET`);
+    }
+    await sendAlert(timeframe, period, symbol, streak);
+  }
+
+  await saveGlobalState();
+}
+
+async function main() {
+  await loadState();
+  console.log('LIQUIDATION STREAK MONITOR STARTED; per-coin dominant LONG/SHORT buckets; threshold=2+; streaks persist without periodic reset; zero LONG and zero SHORT resets; 5m/15m/1h/4h');
+
+  const lastCompleted = new Map();
+  while (true) {
+    const now = Date.now();
+    const feeds = await fetchAllFeeds();
+
+    for (const timeframe of TIMEFRAME_LIST) {
+      const windowMs = TIMEFRAMES[timeframe];
+      const current = bucketStart(now, timeframe);
+      const completed = current - windowMs;
+      if (!lastCompleted.has(timeframe)) lastCompleted.set(timeframe, completed - windowMs);
+      const previous = lastCompleted.get(timeframe);
+      for (let period = previous + windowMs; period <= completed; period += windowMs) {
+        await processCompletedBucket(timeframe, period, feeds);
+      }
+      lastCompleted.set(timeframe, completed);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, POLL_MS));
+  }
+}
+
+main().catch(error => {
+  console.error(`FATAL: ${error.stack || error.message}`);
+  process.exitCode = 1;
+});
