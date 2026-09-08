@@ -14,7 +14,6 @@ const REQUEST_TIMEOUT_MS = 15000;
 const sentAlerts = new Set();
 const processedBuckets = new Set();
 
-// Global state is cumulative across 5m buckets. LONG = +1, SHORT = -1.
 let globalLongCount = 0;
 let globalShortCount = 0;
 let globalImbalance = 0;
@@ -210,6 +209,40 @@ function applyEvents(events) {
   return crossing;
 }
 
+function buildSymbolSnapshots(events, period) {
+  const rows = new Map(SYMBOLS.map(symbol => [symbol, {
+    longEvents: 0,
+    shortEvents: 0,
+    longUsd: 0,
+    shortUsd: 0,
+  }]));
+  for (const item of events) {
+    const row = rows.get(item.symbol);
+    const notional = Math.max(0, Number(item.event?.notional) || 0);
+    if (item.side > 0) {
+      row.longEvents += 1;
+      row.longUsd += notional;
+    } else {
+      row.shortEvents += 1;
+      row.shortUsd += notional;
+    }
+  }
+  for (const symbol of SYMBOLS) {
+    const row = rows.get(symbol);
+    console.log(JSON.stringify({
+      timeframe: '5m',
+      symbol,
+      period,
+      boundaryTs: period,
+      imbalanceUsd: row.longUsd - row.shortUsd,
+      longUsd: row.longUsd,
+      shortUsd: row.shortUsd,
+      longEvents: row.longEvents,
+      shortEvents: row.shortEvents,
+    }));
+  }
+}
+
 async function findNextMarkets(symbol, completedBucketStart) {
   const nextEpoch = completedBucketStart + WINDOW_MS;
   const nextPlusOneEpoch = completedBucketStart + 2 * WINDOW_MS;
@@ -266,6 +299,7 @@ async function processCompletedBucket(period, feeds) {
   if (processedBuckets.has(bucketKey)) return;
   processedBuckets.add(bucketKey);
   const events = eventsForBucket(feeds, period);
+  buildSymbolSnapshots(events, period);
   const crossing = applyEvents(events);
   console.log(
     `5M GLOBAL BOUNDARY ${new Date(period + WINDOW_MS).toISOString()} ` +
