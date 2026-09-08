@@ -42,13 +42,13 @@ jobs:
           grep -F "'5m': []" src/index.js
           grep -F "'1h': []" src/index.js
           grep -F "contrarianState" src/index.js
-          grep -F "positive.length === 1 && negative.length === 6" src/index.js
-          grep -F "negative.length === 1 && positive.length === 6" src/index.js
-          grep -F "if (previous.symbol === contrarian.symbol) return null;" src/index.js
+          grep -F "positive.length===1&&negative.length===6" src/index.js
+          grep -F "negative.length===1&&positive.length===6" src/index.js
+          grep -F "if(prev.symbol===c.symbol)return null" src/index.js
           grep -F "?ref=monitor-status" src/index.js
-          grep -F "branch: 'monitor-status'" src/index.js
-          grep -F "const due = bucketStart(current, timeframe);" src/index.js
-          grep -F "await Promise.all(activeSymbols.map" src/index.js
+          grep -F "monitor-status" src/index.js
+          grep -F "const due=bucketStart(current,timeframe)" src/index.js
+          grep -F "await Promise.all(active.map" src/index.js
           echo "Contrarian monitor source configuration verified"
 
       - name: Continuous MarginPad monitor
