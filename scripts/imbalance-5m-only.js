@@ -13,6 +13,9 @@ const REQUEST_TIMEOUT_MS = 15000;
 const sentAlerts = new Set();
 const processedBuckets = new Set();
 
+function symbolsForTimeframe(tf) {
+  return tf === '5m' ? SYMBOLS.filter(symbol => symbol !== 'HYPE') : SYMBOLS;
+}
 function localBucketStart(ts, tf) { return bucketStart(ts, tf); }
 function side(event) {
   const s = String(event?.side || event?.direction || '').toLowerCase();
@@ -51,7 +54,7 @@ async function loadState() {
     const response = await githubRequest();
     if (!response?.content) return;
     loadPersistedState(JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')));
-    console.log(`STATE LOADED; global-largest-liquidation mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}`);
+    console.log(`STATE LOADED; global-largest-liquidation mode; timeframes=${MONITORED.join(',')}; 5m excludes HYPE; other timeframes include HYPE`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 async function reserveAlertKey(key) {
@@ -127,7 +130,7 @@ async function sendAlert(row) {
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONLY ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}; Polymarket NEXT+1 links enabled`);
+  console.log(`Liquidation monitor started; ONE GLOBAL LARGEST LIQUIDATION COUNT PER BUCKET; 5m excludes HYPE; other timeframes include HYPE; timeframes=${MONITORED.join(',')}`);
   const lastCompleted = new Map(MONITORED.map(tf => [tf, null]));
   while (true) {
     const now = Date.now(), feeds = await fetchAllFeeds();
@@ -135,9 +138,10 @@ async function main() {
       const window = TIMEFRAMES[tf], current = bucketStart(now, tf), completed = current - window;
       let last = lastCompleted.get(tf); if (last === null) last = completed - window;
       if (completed <= last) continue;
+      const activeSymbols = symbolsForTimeframe(tf);
       for (let period = last + window; period <= completed; period += window) {
         const rows = [];
-        for (const symbol of SYMBOLS) {
+        for (const symbol of activeSymbols) {
           const bucketKey = `${tf}:${symbol}:${period}`; if (processedBuckets.has(bucketKey)) continue;
           processedBuckets.add(bucketKey); rows.push(aggregate(feeds.get(symbol), period, tf, symbol));
         }
