@@ -269,10 +269,12 @@ async function sendAlert(timeframe, period, symbol, streak) {
   const sideName = isLong ? 'LONG' : 'SHORT';
   const links = timeframe === '5m'
     ? (markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket 5M\n${markets.nextPlusOne.url}` : '')
-    : [
-        markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
-        markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
-      ].filter(Boolean).join('\n\n');
+    : timeframe === '15m'
+      ? (markets.next?.url ? `➡️ NEXT · Polymarket 15M\n${markets.next.url}` : '')
+      : [
+          markets.next?.url ? `➡️ NEXT · Polymarket ${timeframe.toUpperCase()}\n${markets.next.url}` : '',
+          markets.nextPlusOne?.url ? `➡️ NEXT+1 · Polymarket ${timeframe.toUpperCase()}\n${markets.nextPlusOne.url}` : ''
+        ].filter(Boolean).join('\n\n');
 
   const message = [
     `${emoji} ${symbol} · ${direction} · ${timeframe.toUpperCase()}`,
