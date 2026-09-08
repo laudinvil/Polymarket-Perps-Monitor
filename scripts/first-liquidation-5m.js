@@ -27,10 +27,8 @@ function sideLabel(side) {
 async function checkOnce() {
   const now = Date.now();
   const currentPeriod = periodStart(now);
+  const periodEnd = currentPeriod + POLYMARKET_PERIOD_MS;
 
-  // Polymarket 15M periods are fixed wall-clock periods (:00, :15, :30, :45).
-  // Once the first liquidation is found in a period, all later liquidations
-  // in that same 15M period are ignored. The period key is discarded as time advances.
   for (const period of alertedPeriods) {
     if (period < currentPeriod) alertedPeriods.delete(period);
   }
@@ -48,13 +46,12 @@ async function checkOnce() {
     }),
   );
 
-  const periodEnd = currentPeriod + POLYMARKET_PERIOD_MS;
   const allowed = new Set(symbols.map(normalizeSymbol));
   const candidates = results.flat()
     .map(event => ({ event, ts: normalizeTs(event.ts) }))
     .filter(({ event, ts }) => {
       const symbol = normalizeSymbol(event.symbol);
-      return ts >= currentPeriod && ts < periodEnd && allowed.has(symbol);
+      return Number.isFinite(ts) && ts >= currentPeriod && ts < periodEnd && allowed.has(symbol);
     })
     .sort((a, b) => a.ts - b.ts);
 
@@ -69,8 +66,6 @@ async function checkOnce() {
     return;
   }
 
-  // FIRST liquidation of the Polymarket 15M period. Everything after it
-  // is ignored until the next fixed 15M boundary.
   const first = candidates[0].event;
   const firstTs = normalizeTs(first.ts) || now;
   const symbol = normalizeSymbol(first.symbol);
@@ -79,12 +74,13 @@ async function checkOnce() {
   const price = Number(first.price);
   const qty = Number(first.qty);
 
-  // Lock the whole 15M period immediately: no second liquidation can alert.
+  // Lock the fixed Polymarket 15M period immediately. Every later liquidation
+  // in this same period is ignored. At the next 15M boundary the lock is cleared.
   alertedPeriods.add(currentPeriod);
 
   const nextMarket = await findNextMarket(symbol, now);
-
   const timeLabel = new Date(firstTs).toISOString().slice(11, 19);
+
   let message = [
     '🔥 LIQUIDATION',
     `${symbol} · 5M · ${timeLabel} UTC`, '',
