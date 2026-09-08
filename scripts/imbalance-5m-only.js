@@ -64,7 +64,7 @@ async function loadState() {
     const response = await githubRequest();
     if (!response?.content) return;
     loadPersistedState(JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')));
-    console.log(`STATE LOADED; imbalance-only; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}`);
+    console.log(`STATE LOADED; liquidation-count mode; timeframes=${MONITORED.join(',')}; symbols=${SYMBOLS.join(',')}`);
   } catch (error) { console.warn(`STATE LOAD FAILED: ${error.message}`); }
 }
 async function reserveAlertKey(key) {
@@ -87,7 +87,7 @@ async function saveSentAlert(key) {
       let response = null; try { response = await githubRequest(); } catch (error) { if (error.statusCode !== 404) throw error; }
       const state = response?.content ? JSON.parse(Buffer.from(response.content.replace(/\s/g, ''), 'base64').toString('utf8')) : {};
       const keys = new Set([...(state.sentAlerts || []), ...(state.alerts || [])].map(normalizeAlertKey).filter(Boolean)); keys.add(key); state.sentAlerts = [...keys];
-      await githubRequest('PUT', { message: 'Persist liquidation imbalance alert state', content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'), branch: 'monitor-status', ...(response?.sha ? { sha: response.sha } : {}) });
+      await githubRequest('PUT', { message: 'Persist liquidation count alert state', content: Buffer.from(JSON.stringify(state, null, 2)).toString('base64'), branch: 'monitor-status', ...(response?.sha ? { sha: response.sha } : {}) });
       return;
     } catch (error) { if (error.statusCode !== 409 || attempt === 5) { console.warn(`STATE SAVE FAILED: ${error.message}`); return; } await new Promise(r => setTimeout(r, 250 * attempt)); }
   }
@@ -96,14 +96,15 @@ async function fetchAllFeeds() {
   return new Map(await Promise.all(SYMBOLS.map(async symbol => { try { return [symbol, await fetchSymbolFeed(symbol)]; } catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; } })));
 }
 function aggregate(events, period, tf, symbol) {
-  let longUsd = 0, shortUsd = 0, longEvents = 0, shortEvents = 0;
+  let longEvents = 0, shortEvents = 0;
   for (const event of events || []) {
     const ts = normalizeTs(event?.ts); if (!ts || localBucketStart(ts, tf) !== period) continue;
-    const value = notional(event), s = side(event); if (!value || !s) continue;
-    if (s > 0) { longUsd += value; longEvents++; } else { shortUsd += value; shortEvents++; }
+    const s = side(event); if (!s || !notional(event)) continue;
+    if (s > 0) longEvents++; else shortEvents++;
   }
-  const imbalanceUsd = shortUsd - longUsd;
-  return { symbol, tf, period, longUsd, shortUsd, longEvents, shortEvents, events: longEvents + shortEvents, imbalanceUsd, sign: imbalanceUsd > 0 ? 1 : imbalanceUsd < 0 ? -1 : 0 };
+  const totalEvents = longEvents + shortEvents;
+  const dominantSign = longEvents > shortEvents ? 1 : shortEvents > longEvents ? -1 : 0;
+  return { symbol, tf, period, longEvents, shortEvents, events: totalEvents, dominantCount: Math.max(longEvents, shortEvents), sign: dominantSign };
 }
 async function findPlusOneMarket(symbol, completedBucketStart, tf) {
   const window = TIMEFRAMES[tf];
@@ -115,7 +116,7 @@ async function sendAlert(row) {
   const stateKey = keyFor(row.tf, row.symbol), previousSign = establishedSigns.get(stateKey) || 0;
   establishedSigns.set(stateKey, row.sign);
   if (!previousSign || previousSign === row.sign) {
-    console.log(`${row.tf} IMBALANCE ${row.symbol} ${formatUsd(row.imbalanceUsd)} sign=${row.sign} (no flip)`); return;
+    console.log(`${row.tf} LIQUIDATION COUNT ${row.symbol} dominant=${row.dominantCount} longEvents=${row.longEvents} shortEvents=${row.shortEvents} sign=${row.sign} (no flip)`); return;
   }
   const key = `${row.tf}:${row.symbol}:${row.period}:${row.sign}`;
   if (!(await reserveAlertKey(key))) return;
@@ -125,13 +126,13 @@ async function sendAlert(row) {
   const direction = row.sign > 0 ? 'BUY UP' : 'BUY DOWN', color = row.sign > 0 ? '🟢' : '🔴';
   const timeframe = row.tf.toUpperCase();
   const link = market?.url ? `\n\n➡️ NEXT+1 Polymarket ${timeframe}\n${market.url}` : '';
-  const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nImbalance: ${formatUsd(row.imbalanceUsd)}\n\n${formatUsd(row.longUsd)} LONG · ${formatUsd(row.shortUsd)} SHORT${link}`;
-  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} IMBALANCE ALERT SENT ${row.symbol} ${direction} ${timeframe} ${formatUsd(row.imbalanceUsd)} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
-  catch (error) { console.warn(`${row.tf} IMBALANCE ALERT SEND FAILED ${row.symbol}: ${error.message}`); }
+  const msg = `${color} ${row.symbol} · ${direction} · ${timeframe}\n\nLiquidations: ${row.dominantCount} ${row.sign > 0 ? 'LONG' : 'SHORT'}\n\n${row.longEvents} LONG · ${row.shortEvents} SHORT${link}`;
+  try { await sendTelegramMessage(msg); await saveSentAlert(key); console.log(`${row.tf} LIQUIDATION COUNT ALERT SENT ${row.symbol} ${direction} ${timeframe} dominant=${row.dominantCount} market=NEXT+1 bucket=${new Date(row.period).toISOString()}`); }
+  catch (error) { console.warn(`${row.tf} LIQUIDATION COUNT ALERT SEND FAILED ${row.symbol}: ${error.message}`); }
 }
 async function main() {
   await loadState();
-  console.log(`Liquidation monitor started; ONLY imbalance; timeframes=${MONITORED.join(',')}; all symbols; Polymarket NEXT+1 links enabled`);
+  console.log(`Liquidation monitor started; ONLY largest liquidation count; timeframes=${MONITORED.join(',')}; all symbols; Polymarket NEXT+1 links enabled`);
   const lastCompleted = new Map(MONITORED.map(tf => [tf, null]));
   while (true) {
     const now = Date.now(), feeds = await fetchAllFeeds();
@@ -143,7 +144,7 @@ async function main() {
         for (const symbol of SYMBOLS) {
           const bucketKey = `${tf}:${symbol}:${period}`; if (processedBuckets.has(bucketKey)) continue;
           processedBuckets.add(bucketKey); const row = aggregate(feeds.get(symbol), period, tf, symbol); await sendAlert(row);
-          console.log(`TIMEFRAME BOUNDARY ${tf} ${symbol} ${new Date(period + window).toISOString()} imbalance=${formatUsd(row.imbalanceUsd)} long=${formatUsd(row.longUsd)} short=${formatUsd(row.shortUsd)} events=${row.events}`);
+          console.log(`TIMEFRAME BOUNDARY ${tf} ${symbol} ${new Date(period + window).toISOString()} dominant=${row.dominantCount} longEvents=${row.longEvents} shortEvents=${row.shortEvents} events=${row.events}`);
         }
       }
       lastCompleted.set(tf, completed);
