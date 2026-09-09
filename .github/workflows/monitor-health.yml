@@ -39,8 +39,8 @@ jobs:
       - name: Initialize side state
         run: |
           if [ ! -s .monitor-side-state.json ]; then
-            printf '{\n  "version": 1,\n  "lastAlertSide": "SHORT",\n  "nextExpectedSide": "LONG",\n  "updatedAt": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
-            echo "SIDE STATE INITIALIZED: last=SHORT next=LONG"
+            printf '{\n  "version": 1,\n  "lastAlertSide": "LONG",\n  "nextExpectedSide": "SHORT",\n  "updatedAt": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
+            echo "SIDE STATE INITIALIZED: last=LONG next=SHORT"
           else
             node -e "const s=require('./.monitor-side-state.json'); console.log('SIDE STATE RESTORED: last='+s.lastAlertSide+' next='+s.nextExpectedSide)"
           fi
