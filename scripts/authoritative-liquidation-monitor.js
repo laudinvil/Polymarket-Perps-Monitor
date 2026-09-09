@@ -158,7 +158,65 @@ async function processLiquidations(feeds, now) {
     }
   }
 
-  // Any liquidation in the current window becomes pending. No alert is sent now.
+  if (hasAlerted) {
+    // Current-window liquidations are still tracked for the next cycle, but the global
+    // one-alert-per-window gate prevents another alert during this 5m period.
+    for (const [symbol, events] of newLiquidations.entries()) {
+      const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
+      if (!currentEvents.length) continue;
+      currentEvents.sort((a, b) => a.ts - b.ts);
+      const event = currentEvents[0];
+      pendingBySymbol[symbol] = {
+        sourceWindow: currentWindow,
+        key: event.key,
+        side: event.side,
+        eventPrice: event.eventPrice,
+        eventNotional: event.eventNotional
+      };
+      console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
+    }
+    saveState();
+    return;
+  }
+
+  // IMPORTANT: determine N+2 eligibility BEFORE storing a new candidate from the
+  // current N+2 window. A new liquidation now must not overwrite an older candidate
+  // that has just become eligible after a clean N+1 window.
+  const eligible = SYMBOLS.map(symbol => {
+    const pending = pendingBySymbol[symbol];
+    if (!pending || Number(pending.sourceWindow) !== previousWindow - FIVE_MINUTE_MS) return null;
+    if (hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow)) return null;
+    return { symbol, ...pending };
+  }).filter(Boolean);
+
+  if (eligible.length) {
+    eligible.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
+    const selected = eligible[0];
+    const { symbol, side, key, eventPrice, eventNotional } = selected;
+    hasAlerted = true;
+    delete pendingBySymbol[symbol];
+    saveState();
+
+    let currentMarket = null;
+    try { currentMarket = await findCurrentMarket(symbol); }
+    catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${symbol}: ${error.message}`); }
+
+    let nextMarket = null;
+    try { nextMarket = await findNextMarket(symbol); }
+    catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
+
+    const lines = [
+      `🔥 ${symbol} · 5M`,
+      `Volume: ${money(eventNotional)}`,
+      `Price: ${price(eventPrice)}`,
+      currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
+      nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
+    ];
+    enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
+  }
+
+  // Any liquidation in the current window becomes pending for the next evaluation.
+  // This happens after N+2 eligibility so it cannot overwrite an eligible older candidate.
   for (const [symbol, events] of newLiquidations.entries()) {
     const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
     if (!currentEvents.length) continue;
@@ -174,42 +232,7 @@ async function processLiquidations(feeds, now) {
     console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
   }
 
-  if (hasAlerted) { saveState(); return; }
-
-  // Only at the boundary N+2: if N had a liquidation and the entire N+1 had none,
-  // the candidate is eligible. This is deliberately evaluated against the full raw feed.
-  const eligible = SYMBOLS.map(symbol => {
-    const pending = pendingBySymbol[symbol];
-    if (!pending || Number(pending.sourceWindow) !== previousWindow - FIVE_MINUTE_MS) return null;
-    if (hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow)) return null;
-    return { symbol, ...pending };
-  }).filter(Boolean);
-
-  if (!eligible.length) { saveState(); return; }
-
-  eligible.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
-  const selected = eligible[0];
-  const { symbol, side, key, eventPrice, eventNotional } = selected;
-  hasAlerted = true;
-  delete pendingBySymbol[symbol];
   saveState();
-
-  let currentMarket = null;
-  try { currentMarket = await findCurrentMarket(symbol); }
-  catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${symbol}: ${error.message}`); }
-
-  let nextMarket = null;
-  try { nextMarket = await findNextMarket(symbol); }
-  catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
-
-  const lines = [
-    `🔥 ${symbol} · 5M`,
-    `Volume: ${money(eventNotional)}`,
-    `Price: ${price(eventPrice)}`,
-    currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
-    nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
-  ];
-  enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
 }
 
 async function main() {
