@@ -85,10 +85,6 @@ function money(value) {
   return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 }
 
-function quantity(value) {
-  return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
-}
-
 function price(value) {
   return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
 }
@@ -173,7 +169,6 @@ async function processLiquidations(feeds, now) {
     ts,
     side,
     price: eventPrice,
-    qty: eventQty,
     notional: Math.abs(eventNotional),
     dedupeWindowStart: dedupePeriodStart,
     firstLiquidationOnly: true,
@@ -196,7 +191,6 @@ async function processLiquidations(feeds, now) {
     side,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    `Qty: ${quantity(eventQty)}`,
     market?.url ? '' : null,
     market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null
   ].filter(value => value !== null).join('\n');
