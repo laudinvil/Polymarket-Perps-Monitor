@@ -47,8 +47,8 @@ jobs:
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if ! grep -q "DEDUPE_WINDOW_MS = 25 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: global alert period is not 25 minutes"
+          if ! grep -q "DEDUPE_WINDOW_MS = 10 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: global alert period is not 10 minutes"
             exit 1
           fi
           if ! grep -q "QUIET_PERIOD_MS = 29 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
@@ -59,7 +59,7 @@ jobs:
             echo "ERROR: rolling alert state is not persisted"
             exit 1
           fi
-          echo "Authoritative monitor verified: 7 coins / ONLY 5M / individual liquidations / 25M rolling global window / previous coin blocked / 29M quiet period / persistent alert state"
+          echo "Authoritative monitor verified: 6 coins / ONLY 5M / individual LONG liquidations / 10M rolling global alert window / previous coin blocked / 29M quiet-period first-liquidation suppression / persistent alert state"
 
       - name: Continuous MarginPad monitor
         env:
