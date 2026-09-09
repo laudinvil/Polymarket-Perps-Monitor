@@ -3,10 +3,10 @@ const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// All 7 coins are monitored. Each 5-minute period can produce exactly ONE
+// Six coins are monitored. Each 5-minute period can produce exactly ONE
 // alert. Alert side alternates: the last alert was SHORT, so the next allowed
 // side is LONG; after a LONG alert the next allowed side is SHORT, and so on.
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -175,7 +175,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION; last alert=SHORT; first expected=LONG; other coins ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=DISABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION; last alert=SHORT; first expected=LONG; other coins ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
