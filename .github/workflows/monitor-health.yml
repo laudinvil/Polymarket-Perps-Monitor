@@ -33,8 +33,17 @@ jobs:
       - name: Restore monitor history
         run: |
           git fetch origin monitor-status:monitor-status || true
-          git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
+          git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
+
+      - name: Initialize side state
+        run: |
+          if [ ! -s .monitor-side-state.json ]; then
+            printf '{\n  "version": 1,\n  "lastAlertSide": "SHORT",\n  "nextExpectedSide": "LONG",\n  "updatedAt": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
+            echo "SIDE STATE INITIALIZED: last=SHORT next=LONG"
+          else
+            node -e "const s=require('./.monitor-side-state.json'); console.log('SIDE STATE RESTORED: last='+s.lastAlertSide+' next='+s.nextExpectedSide)"
+          fi
 
       - name: Verify authoritative monitor source
         run: |
@@ -55,19 +64,19 @@ jobs:
             echo "ERROR: monitor window is not 5 minutes"
             exit 1
           fi
-          if ! grep -q "let expectedSide = 'LONG'" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor does not start with LONG after last SHORT"
+          if ! grep -q "loadExpectedSide" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor does not restore persistent side state"
             exit 1
           fi
-          if ! grep -q "expectedSide = side === 'LONG' ? 'SHORT' : 'LONG'" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor does not alternate LONG/SHORT after each alert"
+          if ! grep -q "persistLastAlertSide" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor does not persist the side after an alert"
             exit 1
           fi
           if ! grep -q "if (periodAlreadyAlerted) return" scripts/imbalance-all-timeframes.js; then
             echo "ERROR: monitor does not enforce one alert per 5-minute period"
             exit 1
           fi
-          echo "Authoritative monitor verified: ONLY 5M / ETH SOL XRP DOGE BNB HYPE / BTC disabled / one coin per period / alternating side / last SHORT -> next LONG"
+          echo "Authoritative monitor verified: ONLY 5M / ETH SOL XRP DOGE BNB HYPE / BTC disabled / one coin per period / alternating side persists across restarts"
 
       - name: Continuous MarginPad monitor
         env:
@@ -92,7 +101,7 @@ jobs:
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git add monitor-history.log monitor-stats.json .monitor-state.json .monitor-side-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
             git push origin HEAD:monitor-status || true
