@@ -3,10 +3,10 @@ const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// All 7 coins are monitored, but only the FIRST liquidation per 15-minute
+// All 6 coins are monitored, but only the FIRST liquidation per 15-minute
 // Polymarket period is alerted. The coin that alerted in the previous period
 // is blocked for the immediately following period.
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -105,8 +105,6 @@ async function processLiquidations(feeds, now) {
   const blockedSymbol = lastAlertSymbol;
   const previousLastObservedLiquidationTs = lastObservedLiquidationTs;
 
-  // Once one liquidation has claimed this 15m period, all other coins/events
-  // are ignored until the next 15m period begins.
   if (periodAlreadyAlerted) return;
 
   const candidates = [];
@@ -122,8 +120,6 @@ async function processLiquidations(feeds, now) {
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
 
-      // A liquidation from any coin counts as market activity for the quiet filter,
-      // even if that coin is blocked by the previous-period rule.
       if (lastObservedLiquidationTs === null || ts > lastObservedLiquidationTs) {
         lastObservedLiquidationTs = ts;
       }
@@ -141,8 +137,6 @@ async function processLiquidations(feeds, now) {
 
   if (!candidates.length) return;
 
-  // If the market was quiet for 29 minutes or more before this newly observed
-  // liquidation, suppress that first post-pause liquidation and resume monitoring.
   const quietMs = previousLastObservedLiquidationTs === null
     ? 0
     : now - previousLastObservedLiquidationTs;
@@ -153,14 +147,11 @@ async function processLiquidations(feeds, now) {
     return;
   }
 
-  // The earliest newly observed liquidation wins the 15m period, regardless of coin,
-  // except that the previous period's winning coin is blocked for this period.
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
   lastAlertSymbol = symbol;
 
-  // All other candidates are intentionally ignored for this 15m period.
   console.log(`15M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next-period block=${symbol}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
