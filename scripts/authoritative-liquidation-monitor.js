@@ -6,13 +6,14 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
 // All monitored coins. Internal LONG/SHORT are displayed as UP/DOWN.
-// Alert window: 30 minutes, aligned strictly to :00 and :30.
+// Alert window: 30 minutes, aligned strictly to :15 and :45.
 // Alerts are immediate. No next-period ignore. No minimum volume.
 // No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '30m';
 const POLL_MS = 4000;
 const THIRTY_MINUTE_MS = 30 * 60 * 1000;
+const WINDOW_OFFSET_MS = 15 * 60 * 1000;
 
 const seenLiquidations = new Set();
 const startupTs = Date.now();
@@ -23,7 +24,7 @@ let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
 function alignedWindowStart(ts) {
-  return Math.floor(ts / THIRTY_MINUTE_MS) * THIRTY_MINUTE_MS;
+  return Math.floor((ts - WINDOW_OFFSET_MS) / THIRTY_MINUTE_MS) * THIRTY_MINUTE_MS + WINDOW_OFFSET_MS;
 }
 
 function eventSide(event) {
@@ -157,7 +158,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:00/:30; DISPLAY LONG=UP SHORT=DOWN; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT + NEXT+1 POLYMARKET LINKS; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:15/:45; DISPLAY LONG=UP SHORT=DOWN; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT + NEXT+1 POLYMARKET LINKS; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
