@@ -11,7 +11,6 @@ const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
-const QUIET_PERIOD_MS = 29 * 60 * 1000;
 const STATE_FILE = path.resolve('.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
@@ -22,7 +21,6 @@ let lastAlertSymbol = null;
 let hasAlerted = false;
 let periodAlreadyAlerted = false;
 let previousWindowBlockedSymbol = null;
-let lastObservedLiquidationTs = null;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
@@ -136,7 +134,6 @@ async function processLiquidations(feeds, now) {
         if (ts && ts < now) {
           const side = eventSide(event);
           if (side) seenLiquidations.add(liquidationKey(symbol, ts, side, event));
-          if (lastObservedLiquidationTs === null || ts > lastObservedLiquidationTs) lastObservedLiquidationTs = ts;
         }
       }
     }
@@ -148,13 +145,12 @@ async function processLiquidations(feeds, now) {
     periodAlreadyAlerted = false;
     previousWindowBlockedSymbol = lastAlertSymbol;
     seenLiquidations.clear();
-    console.log(`LIQUIDATION PERIOD READY ${new Date(now).toISOString()} previous-period coin blocked=${previousWindowBlockedSymbol || 'none'}`);
+    console.log(`LIQUIDATION 10M WINDOW READY ${new Date(now).toISOString()} previous-period coin blocked=${previousWindowBlockedSymbol || 'none'}`);
   }
 
   if (hasAlerted && alertWindowStart !== null && now - alertWindowStart < DEDUPE_WINDOW_MS) return;
   if (periodAlreadyAlerted) return;
 
-  const previousLastObservedLiquidationTs = lastObservedLiquidationTs;
   const candidates = [];
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
@@ -165,20 +161,12 @@ async function processLiquidations(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
-      if (lastObservedLiquidationTs === null || ts > lastObservedLiquidationTs) lastObservedLiquidationTs = ts;
       if (symbol === previousWindowBlockedSymbol) continue;
       candidates.push({ symbol, side, key, event, ts });
     }
   }
 
   if (!candidates.length) return;
-
-  const quietMs = previousLastObservedLiquidationTs === null ? 0 : now - previousLastObservedLiquidationTs;
-  if (hasAlerted && previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
-    candidates.sort((a, b) => a.ts - b.ts);
-    console.log(`QUIET PERIOD EXIT; first LONG liquidation suppressed symbol=${candidates[0].symbol} ts=${new Date(candidates[0].ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
-    return;
-  }
 
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
@@ -189,10 +177,9 @@ async function processLiquidations(feeds, now) {
   previousWindowBlockedSymbol = null;
   hasAlerted = true;
 
-  if (!(await persistState())) {
-    periodAlreadyAlerted = false;
-    return;
-  }
+  // Telegram delivery must not be blocked by state persistence failure.
+  // The alert window is already claimed locally; persistence is best-effort.
+  await persistState();
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -217,7 +204,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ONE ALERT PER 10M ROLLING GLOBAL WINDOW; previous-period coin blocked; 29m quiet-period only after alert; no imbalance; no streaks`);
+  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ONE ALERT PER 10M ROLLING GLOBAL WINDOW; previous-period coin blocked; no quiet-period; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try {
