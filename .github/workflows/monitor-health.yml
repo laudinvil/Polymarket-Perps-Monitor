@@ -39,27 +39,31 @@ jobs:
       - name: Verify authoritative monitor source
         run: |
           node --check scripts/authoritative-liquidation-monitor.js
-          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only' scripts package.json --exclude='*.log' 2>/dev/null; then
-            echo "ERROR: legacy monitor reference detected in executable project files"
+          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|QUIET_PERIOD_MS|29-minute|29M quiet' scripts package.json --exclude='*.log' 2>/dev/null; then
+            echo "ERROR: removed legacy monitor logic detected in executable project files"
+            exit 1
+          fi
+          if ! grep -q "const SYMBOLS = \['BTC'\]" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: authoritative monitor is not BTC-only"
             exit 1
           fi
           if ! grep -q "const TIMEFRAME = '5m'" scripts/authoritative-liquidation-monitor.js; then
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if ! grep -q "DEDUPE_WINDOW_MS = 10 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: global alert period is not 10 minutes"
+          if ! grep -q "FIVE_MINUTE_MS = 5 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: alert window is not 5 minutes"
             exit 1
           fi
-          if ! grep -q "QUIET_PERIOD_MS = 29 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: quiet period is not 29 minutes"
+          if ! grep -q "displaySide" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: UP/DOWN display mapping is missing"
             exit 1
           fi
           if ! grep -q "persistState" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: rolling alert state is not persisted"
+            echo "ERROR: alert state is not persisted"
             exit 1
           fi
-          echo "Authoritative monitor verified: 6 coins / ONLY 5M / individual LONG liquidations / 10M rolling global alert window / previous coin blocked / 29M quiet-period first-liquidation suppression / persistent alert state"
+          echo "Authoritative monitor verified: BTC / ONLY 5M / individual liquidations / 5M window / next window ignored / LONG=UP SHORT=DOWN / no 29M rule / no imbalance / no streaks"
 
       - name: Continuous MarginPad monitor
         env:
