@@ -5,12 +5,14 @@ const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarke
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual LONG/SHORT liquidations only, 5M only.
+// BNB: SHORT only. All other monitored coins: LONG + SHORT.
 // ALERT TIMING: send immediately when a qualifying liquidation is detected.
 // The 10-minute period is ONLY a duplicate-suppression period; it NEVER delays an alert.
 // The ONLY time-dependent Polymarket logic is the NEXT market link.
 // After a 29-minute quiet period, the first new liquidation is intentionally ignored.
 // The previous alert's coin is blocked in the immediately following suppression period.
 const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const BNB_ALLOWED_SIDE = 'SHORT';
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const FIVE_MINUTE_MS = 5 * 60 * 1000;
@@ -154,6 +156,7 @@ async function processLiquidations(feeds, now) {
       if (!ts || ts >= now || ts <= startupTs) continue;
       const side = eventSide(event);
       if (side !== 'LONG' && side !== 'SHORT') continue;
+      if (symbol === 'BNB' && side !== BNB_ALLOWED_SIDE) continue;
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
@@ -184,7 +187,6 @@ async function processLiquidations(feeds, now) {
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-  // Volume is the actual liquidation notional: execution/mark price multiplied by liquidation quantity.
   const eventNotional = Math.abs(eventPrice * eventQty);
 
   let market = null;
@@ -204,7 +206,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LONG/SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; LONG+SHORT; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY; NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
+  console.log(`SINGLE LONG/SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BNB=SHORT ONLY; ONLY 5M; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY; NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
