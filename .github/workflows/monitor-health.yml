@@ -39,17 +39,27 @@ jobs:
       - name: Verify authoritative monitor source
         run: |
           set -e
-          test -f scripts/authoritative-liquidation-monitor.js
-          node --check scripts/authoritative-liquidation-monitor.js
+          SOURCE="scripts/authoritative-liquidation-monitor.js"
+          test -f "$SOURCE"
+          node --check "$SOURCE"
+
+          # Current strategy guardrails: these are intentional and must not silently change.
+          grep -Fq "const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];" "$SOURCE"
+          grep -Fq "const TIMEFRAME = '30m';" "$SOURCE"
+          grep -Fq "bucketStart(now, '5m')" "$SOURCE"
+          grep -Fq "TIMEFRAMES['5m']" "$SOURCE"
+
+          # Obsolete strategies must never return to executable project files.
           if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|QUIET_PERIOD_MS|29-minute|29M quiet' scripts package.json --exclude='*.log' 2>/dev/null; then
             echo "ERROR: obsolete monitor logic detected in executable project files"
             exit 1
           fi
-          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js 2>/dev/null; then
+          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' "$SOURCE" 2>/dev/null; then
             echo "ERROR: obsolete minimum-volume filter detected"
             exit 1
           fi
-          echo "Authoritative monitor source verified: file exists, JavaScript syntax is valid, and known obsolete monitor rules are absent."
+
+          echo "Authoritative monitor source verified: current 7-coin / 30m monitor and 5m Polymarket links are enforced; obsolete rules are absent."
 
       - name: Continuous MarginPad monitor
         env:
@@ -98,4 +108,4 @@ jobs:
           MONITOR_STATUS: ${{ job.status }}
         run: timeout 20s node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
 
-# Manual verification trigger: guardrail checks only source integrity, not mutable strategy parameters.
+# Guardrail: verify the current strategy, not an obsolete historical configuration.
