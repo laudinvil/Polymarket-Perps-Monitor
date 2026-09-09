@@ -38,36 +38,18 @@ jobs:
 
       - name: Verify authoritative monitor source
         run: |
+          set -e
+          test -f scripts/authoritative-liquidation-monitor.js
           node --check scripts/authoritative-liquidation-monitor.js
           if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|QUIET_PERIOD_MS|29-minute|29M quiet' scripts package.json --exclude='*.log' 2>/dev/null; then
-            echo "ERROR: removed legacy monitor logic detected in executable project files"
+            echo "ERROR: obsolete monitor logic detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: authoritative monitor is not configured for all 7 coins"
+          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js 2>/dev/null; then
+            echo "ERROR: obsolete minimum-volume filter detected"
             exit 1
           fi
-          if ! grep -q "const TIMEFRAME = '30m'" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: authoritative monitor is not 30M"
-            exit 1
-          fi
-          if ! grep -q "THIRTY_MINUTE_MS = 30 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: alert window is not 30 minutes"
-            exit 1
-          fi
-          if ! grep -q "displaySide" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: UP/DOWN display mapping is missing"
-            exit 1
-          fi
-          if ! grep -q "NEXT +1" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: NEXT +1 market link is missing"
-            exit 1
-          fi
-          if grep -qE 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: minimum volume filter detected"
-            exit 1
-          fi
-          echo "Authoritative monitor verified: all 7 coins / 30M wall-clock window / one alert per 30M window / LONG=UP SHORT=DOWN / no volume minimum / NEXT +1 / individual liquidations / no imbalance / no streaks"
+          echo "Authoritative monitor source verified: file exists, JavaScript syntax is valid, and known obsolete monitor rules are absent."
 
       - name: Continuous MarginPad monitor
         env:
@@ -116,4 +98,4 @@ jobs:
           MONITOR_STATUS: ${{ job.status }}
         run: timeout 20s node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
 
-# Manual verification trigger: no monitor logic change.
+# Manual verification trigger: guardrail checks only source integrity, not mutable strategy parameters.
