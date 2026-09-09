@@ -52,8 +52,8 @@ jobs:
             echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const SYMBOLS = \['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: authoritative monitor does not contain exactly the 6 enabled coins"
+          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: authoritative monitor must contain exactly the 7 enabled coins: BTC ETH SOL XRP DOGE BNB HYPE"
             exit 1
           fi
           if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
@@ -76,7 +76,7 @@ jobs:
             echo "ERROR: monitor does not enforce one alert per 5-minute period"
             exit 1
           fi
-          echo "Authoritative monitor verified: ONLY 5M / ETH SOL XRP DOGE BNB HYPE / BTC disabled / one coin per period / alternating side persists across restarts"
+          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE / one coin per period / alternating side persists across restarts"
 
       - name: Continuous MarginPad monitor
         env:
