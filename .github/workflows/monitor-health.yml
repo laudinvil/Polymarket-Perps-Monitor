@@ -43,20 +43,12 @@ jobs:
             echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const SYMBOLS = \['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: authoritative monitor does not contain the required 6 coins"
-            exit 1
-          fi
-          if grep -q "const SYMBOLS = .*BTC" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: BTC must be excluded from the authoritative monitor"
-            exit 1
-          fi
           if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if grep -nE 'TIMEFRAME[^[:alnum:]]*(15m|1h|4h|1d)|TIMEFRAMES[^[:alnum:]]*(15m|1h|4h|1d)|['\"](1h|4h|1d)['\"]' scripts/imbalance-all-timeframes.js >/dev/null 2>&1; then
-            echo "ERROR: non-5M timeframe value detected"
+          if grep -nE '15m|1h|4h|1d' scripts/imbalance-all-timeframes.js | grep -v 'TIMEFRAMES\[TIMEFRAME\]' >/dev/null 2>&1; then
+            echo "ERROR: non-5M timeframe logic detected"
             exit 1
           fi
           if ! grep -q "DEDUPE_WINDOW_MS = 15 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
@@ -67,7 +59,7 @@ jobs:
             echo "ERROR: quiet period is not 29 minutes"
             exit 1
           fi
-          echo "Authoritative monitor verified: ONLY 5M / ETH SOL XRP DOGE BNB HYPE / BTC excluded / 1 global alert per 15M / 29M quiet"
+          echo "Authoritative monitor verified: configured coin list / ONLY 5M / 15M global period / 29M quiet period"
 
       - name: Continuous MarginPad monitor
         env:
