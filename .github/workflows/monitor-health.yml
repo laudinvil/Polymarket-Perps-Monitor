@@ -47,15 +47,15 @@ jobs:
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if ! grep -q "DEDUPE_WINDOW_MS = 20 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: global alert period is not 20 minutes"
+          if ! grep -q "DEDUPE_WINDOW_MS = 25 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: global alert period is not 25 minutes"
             exit 1
           fi
           if ! grep -q "QUIET_PERIOD_MS = 29 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
             echo "ERROR: quiet period is not 29 minutes"
             exit 1
           fi
-          echo "Authoritative monitor verified: configured coin list / ONLY 5M / 20M global period / 29M quiet period"
+          echo "Authoritative monitor verified: configured coin list / ONLY 5M / 25M global period / 29M quiet period"
 
       - name: Continuous MarginPad monitor
         env:
