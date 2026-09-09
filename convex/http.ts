@@ -26,6 +26,8 @@ const ingest = httpAction(async (ctx, request) => {
   try {
     if (body.type === "run.start") {
       await ctx.runMutation(internal.monitor.startRun, body.data);
+    } else if (body.type === "run.heartbeat") {
+      await ctx.runMutation(internal.monitor.heartbeat, body.data);
     } else if (body.type === "run.finish") {
       await ctx.runMutation(internal.monitor.finishRun, body.data);
     } else if (body.type === "snapshot") {
