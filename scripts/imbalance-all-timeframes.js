@@ -1,24 +1,51 @@
+const fs = require('fs');
+const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
 // Six coins are monitored. Each 5-minute period can produce exactly ONE
-// alert. Alert side alternates: the last alert was SHORT, so the next allowed
-// side is LONG; after a LONG alert the next allowed side is SHORT, and so on.
+// alert. Alert side alternates globally and persists across workflow restarts.
 const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
 const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+const SIDE_STATE_PATH = path.resolve('.monitor-side-state.json');
 
 const seenLiquidations = new Set();
 let dedupePeriodStart = null;
 let periodAlreadyAlerted = false;
-let expectedSide = 'LONG'; // last known alert was SHORT
+let expectedSide = loadExpectedSide();
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 let initialized = false;
+
+function loadExpectedSide() {
+  try {
+    const state = JSON.parse(fs.readFileSync(SIDE_STATE_PATH, 'utf8'));
+    const lastSide = String(state?.lastAlertSide || '').toUpperCase();
+    if (lastSide === 'LONG') return 'SHORT';
+    if (lastSide === 'SHORT') return 'LONG';
+  } catch {}
+  return 'LONG'; // known last alert was SHORT
+}
+
+function persistLastAlertSide(side) {
+  const payload = JSON.stringify({
+    version: 1,
+    lastAlertSide: side,
+    nextExpectedSide: side === 'LONG' ? 'SHORT' : 'LONG',
+    updatedAt: new Date().toISOString()
+  }, null, 2) + '\n';
+  try {
+    fs.writeFileSync(SIDE_STATE_PATH, payload);
+    console.log(`SIDE STATE SAVED last=${side} next=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
+  } catch (error) {
+    console.warn(`SIDE STATE SAVE FAILED: ${error.message}`);
+  }
+}
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
@@ -91,6 +118,7 @@ function enqueueAlert(message, symbol, side, key) {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
       expectedSide = side === 'LONG' ? 'SHORT' : 'LONG';
+      persistLastAlertSide(side);
       console.log(`5M ALERT SENT ${symbol} ${side} key=${key}; NEXT EXPECTED SIDE=${expectedSide}`);
     } catch (error) {
       console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`);
@@ -175,7 +203,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=DISABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION; last alert=SHORT; first expected=LONG; other coins ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=DISABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; last state read from ${SIDE_STATE_PATH}; other coins ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
