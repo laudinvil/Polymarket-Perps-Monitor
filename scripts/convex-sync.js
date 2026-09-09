@@ -55,6 +55,7 @@ function readNewLines() {
 
 async function sync() {
   if (!BASE_URL || !TOKEN) return;
+  await post('run.heartbeat', { runId: RUN_ID, heartbeatAt: Date.now() });
   for (const line of readNewLines()) {
     if (!line.trim().startsWith('{')) continue;
     try {
