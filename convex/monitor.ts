@@ -137,6 +137,22 @@ export const pruneOldData = internalMutation({
   },
 });
 
+export const monitorHealth = query({
+  args: {},
+  returns: v.object({ ok: v.boolean(), ageMs: v.number() }),
+  handler: async (ctx) => {
+    const latest = await ctx.db
+      .query("monitorRuns")
+      .withIndex("by_started_at")
+      .order("desc")
+      .take(1);
+    const row = latest[0];
+    if (!row) return { ok: false, ageMs: Number.MAX_SAFE_INTEGER };
+    const ageMs = Date.now() - row.startedAt;
+    return { ok: row.status === "running" && ageMs < 6 * 60 * 60 * 1000, ageMs };
+  },
+});
+
 export const latestSnapshots = query({
   args: {
     timeframe: v.string(),
