@@ -39,27 +39,28 @@ jobs:
       - name: Verify authoritative monitor source
         run: |
           set -e
-          SOURCE="scripts/authoritative-liquidation-monitor.js"
-          test -f "$SOURCE"
-          node --check "$SOURCE"
-
-          # Current strategy guardrails: these are intentional and must not silently change.
-          grep -Fq "const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];" "$SOURCE"
-          grep -Fq "const TIMEFRAME = '30m';" "$SOURCE"
-          grep -Fq "bucketStart(now, '5m')" "$SOURCE"
-          grep -Fq "TIMEFRAMES['5m']" "$SOURCE"
-
-          # Obsolete strategies must never return to executable project files.
+          test -f scripts/authoritative-liquidation-monitor.js
+          node --check scripts/authoritative-liquidation-monitor.js
           if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|QUIET_PERIOD_MS|29-minute|29M quiet' scripts package.json --exclude='*.log' 2>/dev/null; then
             echo "ERROR: obsolete monitor logic detected in executable project files"
             exit 1
           fi
-          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' "$SOURCE" 2>/dev/null; then
+          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js 2>/dev/null; then
             echo "ERROR: obsolete minimum-volume filter detected"
             exit 1
           fi
-
-          echo "Authoritative monitor source verified: current 7-coin / 30m monitor and 5m Polymarket links are enforced; obsolete rules are absent."
+          node - <<'NODE'
+          const fs = require('fs');
+          const src = fs.readFileSync('scripts/authoritative-liquidation-monitor.js', 'utf8');
+          for (const symbol of ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE']) {
+            if (!src.includes(`'${symbol}'`)) throw new Error(`Missing required symbol: ${symbol}`);
+          }
+          if (!src.includes("const TIMEFRAME = '30m'")) throw new Error('Monitor timeframe is not 30m');
+          if (!src.includes("const WINDOW_OFFSET_MS = 15 * 60 * 1000")) throw new Error('Window boundaries are not aligned to :15/:45');
+          if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
+          if (!src.includes("'UP'") || !src.includes("'DOWN'")) throw new Error('Telegram UP/DOWN mapping is missing');
+          NODE
+          echo "Authoritative monitor source verified: current 7-coin / 30m / :15-:45 strategy and one-alert-per-window guard are present; obsolete rules are absent."
 
       - name: Continuous MarginPad monitor
         env:
@@ -107,5 +108,3 @@ jobs:
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
           MONITOR_STATUS: ${{ job.status }}
         run: timeout 20s node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
-
-# Guardrail: verify the current strategy, not an obsolete historical configuration.
