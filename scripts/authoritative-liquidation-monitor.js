@@ -5,7 +5,7 @@ const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarke
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
-// Only SHORT liquidations are eligible and are displayed as DOWN.
+// LONG liquidations are displayed as UP; SHORT liquidations are displayed as DOWN.
 // Alert window: exactly one active Polymarket 5m market bucket (:00/:05/:10/... UTC).
 // One alert total per 5m window. The coin alerted in window N is blocked in window N+1.
 // No minimum volume. No imbalance. No streaks.
@@ -112,14 +112,14 @@ async function findNextMarket(symbol) {
   return findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
 }
 
-function enqueueAlert(message, symbol, key, alertDetectedAt) {
+function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
   alertSendChain = alertSendChain.then(async () => {
     try {
       const waitMs = Math.max(0, 5000 - (Date.now() - lastAlertSentAt));
       if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      console.log(`5M ALERT SENT ${symbol} DOWN key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()}`);
+      console.log(`5M ALERT SENT ${symbol} ${side === 'LONG' ? 'UP' : 'DOWN'} key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()}`);
     } catch (error) { console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`); }
   }).catch(error => console.warn(`5M ALERT QUEUE FAILED: ${error.message}`));
 }
@@ -164,8 +164,8 @@ async function processLiquidations(feeds, now) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts >= now || ts <= startupTs) continue;
       const side = eventSide(event);
-      // SHORT only. In Telegram it is always DOWN.
-      if (side !== 'SHORT') continue;
+      // Both directions are eligible: LONG => UP, SHORT => DOWN.
+      if (side !== 'LONG' && side !== 'SHORT') continue;
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
@@ -173,18 +173,17 @@ async function processLiquidations(feeds, now) {
       const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
       const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
       const eventNotional = Math.abs(eventPrice * eventQty);
-      candidates.push({ symbol, key, ts, eventPrice, eventNotional });
+      candidates.push({ symbol, side, key, ts, eventPrice, eventNotional });
     }
   }
 
   if (!candidates.length) return;
 
   candidates.sort((a, b) => a.ts - b.ts);
-  const { symbol, key, eventPrice, eventNotional } = candidates[0];
+  const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
+  const direction = side === 'LONG' ? 'UP' : 'DOWN';
   hasAlerted = true;
   lastAlertWindowBySymbol[symbol] = currentWindow;
-  // Persist BEFORE Telegram send so restart cannot duplicate this window or
-  // allow the same coin in the immediately following 5m window.
   saveState();
 
   let nextMarket = null;
@@ -192,19 +191,19 @@ async function processLiquidations(feeds, now) {
   catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${symbol}: ${error.message}`); }
 
   const lines = [
-    `🔥 ${symbol} · 5M · DOWN`,
+    `🔥 ${symbol} · 5M · ${direction}`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     nextMarket?.url ? '' : null,
     nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ];
 
-  enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, key, now);
+  enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
 }
 
 async function main() {
   loadState();
-  console.log(`SINGLE SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; SHORT ONLY => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; LONG => UP; SHORT => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
