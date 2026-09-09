@@ -63,7 +63,7 @@ jobs:
           if (src.includes('PENDING CANCEL')) throw new Error('Obsolete pending cancellation logic is still present');
           if (src.includes('NO LIQUIDATION IN N+1')) throw new Error('Obsolete N+1 cancellation gate is still present');
           if (!src.includes('findNextMarket')) throw new Error('NEXT market lookup is missing');
-          if (!src.includes('currentBucket')) throw new Error('Current market bucket is missing');
+          if (!src.includes('bucketStart(Date.now(), TIMEFRAME)')) throw new Error('Current market bucket is missing');
           if (!src.includes('FIVE_MINUTE_MS')) throw new Error('5m market increment is missing');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
           if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
