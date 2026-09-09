@@ -14,6 +14,7 @@ const TIMEFRAME = '30m';
 const POLL_MS = 4000;
 const THIRTY_MINUTE_MS = 30 * 60 * 1000;
 const WINDOW_OFFSET_MS = 15 * 60 * 1000;
+const STATE_FILE = path.join(__dirname, '..', '.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
 const startupTs = Date.now();
@@ -27,6 +28,37 @@ function alignedWindowStart(ts) {
   return Math.floor((ts - WINDOW_OFFSET_MS) / THIRTY_MINUTE_MS) * THIRTY_MINUTE_MS + WINDOW_OFFSET_MS;
 }
 
+function loadState() {
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const currentWindow = alignedWindowStart(Date.now());
+    if (Number(state.alertWindowStart) === currentWindow) {
+      alertWindowStart = currentWindow;
+      hasAlerted = Boolean(state.hasAlerted);
+    }
+    for (const key of Array.isArray(state.seenLiquidations) ? state.seenLiquidations : []) {
+      if (typeof key === 'string') seenLiquidations.add(key);
+    }
+    console.log(`ALERT STATE LOADED window=${alertWindowStart ?? 'none'} hasAlerted=${hasAlerted} seen=${seenLiquidations.size}`);
+  } catch (error) {
+    console.log(`ALERT STATE INIT: ${error.message}`);
+  }
+}
+
+function saveState() {
+  try {
+    const keys = Array.from(seenLiquidations);
+    fs.writeFileSync(STATE_FILE, JSON.stringify({
+      alertWindowStart,
+      hasAlerted,
+      seenLiquidations: keys.slice(-10000),
+      updatedAt: Date.now()
+    }, null, 2));
+  } catch (error) {
+    console.warn(`ALERT STATE SAVE FAILED: ${error.message}`);
+  }
+}
+
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
   if (value.includes('long') || value === 'buy') return 'LONG';
@@ -38,8 +70,6 @@ function displaySide(side) {
   return side === 'LONG' ? 'DOWN' : side === 'SHORT' ? 'UP' : side;
 }
 
-// Use a provider-independent fingerprint. Do not prefer provider IDs because
-// the same liquidation can be represented by different IDs across feed refreshes.
 function liquidationKey(symbol, ts, side, event) {
   return [
     symbol,
@@ -99,8 +129,8 @@ async function processLiquidations(feeds, now) {
   if (alertWindowStart !== currentWindow) {
     alertWindowStart = currentWindow;
     hasAlerted = false;
-    // IMPORTANT: keep seenLiquidations across window boundaries.
-    // Clearing it allowed the same feed event to become a new alert after :15/:45.
+    saveState();
+    console.log(`30M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
   }
 
   if (!initialized) {
@@ -114,6 +144,7 @@ async function processLiquidations(feeds, now) {
         }
       }
     }
+    saveState();
     return;
   }
 
@@ -142,6 +173,9 @@ async function processLiquidations(feeds, now) {
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
   hasAlerted = true;
+  // Persist BEFORE Telegram send so a monitor restart cannot produce another
+  // alert inside the same :15/:45 window.
+  saveState();
 
   let nextMarket = null;
   try { nextMarket = await findNextMarket(symbol); }
@@ -159,6 +193,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
+  loadState();
   console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:15/:45; DISPLAY LONG=DOWN SHORT=UP; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT ONLY POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
