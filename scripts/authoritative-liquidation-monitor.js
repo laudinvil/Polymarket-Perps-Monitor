@@ -7,7 +7,6 @@ const { sendTelegramMessage } = require('../src/telegram');
 // AUTHORITATIVE: individual LONG liquidations only, 5M only.
 // ALERT TIMING: send immediately when a qualifying liquidation is detected.
 // The 10-minute period is ONLY a duplicate-suppression period; it NEVER delays an alert.
-// The suppression period ends on the next 5-minute boundary after 10 minutes from its aligned start.
 // The ONLY time-dependent Polymarket logic is the NEXT market link.
 // After a 29-minute quiet period, the first new liquidation is intentionally ignored.
 // The previous alert's coin is blocked in the immediately following suppression period.
@@ -52,10 +51,7 @@ function loadState() {
 async function persistState() {
   const repository = String(process.env.GITHUB_REPOSITORY || '').trim();
   const token = String(process.env.GITHUB_TOKEN || '').trim();
-  if (!repository || !token) {
-    console.warn('ALERT STATE PERSIST FAILED: GitHub credentials unavailable');
-    return false;
-  }
+  if (!repository || !token) return false;
   const api = `https://api.github.com/repos/${repository}/contents/.liquidation-alert-state.json`;
   const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-github-api-version': '2022-11-28', 'user-agent': 'Polymarket-Perps-Monitor' };
   try {
@@ -65,16 +61,8 @@ async function persistState() {
     const body = { message: 'Persist liquidation alert suppression period', content: Buffer.from(JSON.stringify({ alertWindowStart, lastAlertSymbol, hasAlerted }, null, 2) + '\n').toString('base64'), branch: 'monitor-status' };
     if (sha) body.sha = sha;
     const response = await fetch(api, { method: 'PUT', headers, body: JSON.stringify(body) });
-    if (!response.ok) {
-      console.warn(`ALERT STATE PERSIST FAILED: ${response.status}`);
-      return false;
-    }
-    console.log(`ALERT STATE PERSISTED suppressionStart=${new Date(alertWindowStart).toISOString()} suppressionEnd=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()} coin=${lastAlertSymbol}`);
-    return true;
-  } catch (error) {
-    console.warn(`ALERT STATE PERSIST FAILED: ${error.message}`);
-    return false;
-  }
+    return response.ok;
+  } catch { return false; }
 }
 
 function eventSide(event) {
@@ -114,13 +102,10 @@ async function fetchAllFeeds() {
 }
 
 async function findNextPolymarket(symbol) {
-  // This is the ONLY calculation that uses the current time for the Polymarket link.
   const now = Date.now();
   const currentBucket = bucketStart(now, TIMEFRAME);
   const nextEpoch = currentBucket + TIMEFRAMES[TIMEFRAME];
-  const market = await findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
-  console.log(`POLYMARKET NEXT ${symbol} now=${new Date(now).toISOString()} currentBucket=${new Date(currentBucket).toISOString()} target=${new Date(nextEpoch).toISOString()} url=${market?.url || 'NOT FOUND'}`);
-  return market;
+  return await findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
 }
 
 function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
@@ -130,10 +115,8 @@ function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
       if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      console.log(`5M ALERT SENT ${symbol} ${side} key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()} suppressionStart=${new Date(alertWindowStart).toISOString()} suppressionEnd=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()}`);
-    } catch (error) {
-      console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`);
-    }
+      console.log(`5M ALERT SENT ${symbol} ${side} key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()}`);
+    } catch (error) { console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`); }
   }).catch(error => console.warn(`5M ALERT QUEUE FAILED: ${error.message}`));
 }
 
@@ -150,16 +133,13 @@ async function processLiquidations(feeds, now) {
         }
       }
     }
-    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; startup=${new Date(startupTs).toISOString()}`);
     return;
   }
 
-  // The suppression period is aligned to 5-minute boundaries, but this NEVER delays a new alert.
   if (alertWindowStart !== null && now >= alertWindowStart + DEDUPE_WINDOW_MS && periodAlreadyAlerted) {
     periodAlreadyAlerted = false;
     previousWindowBlockedSymbol = lastAlertSymbol;
     seenLiquidations.clear();
-    console.log(`LIQUIDATION SUPPRESSION PERIOD READY ${new Date(now).toISOString()} previous-period coin blocked=${previousWindowBlockedSymbol || 'none'}`);
   }
 
   if (hasAlerted && alertWindowStart !== null && now < alertWindowStart + DEDUPE_WINDOW_MS) return;
@@ -187,16 +167,12 @@ async function processLiquidations(feeds, now) {
   const quietMs = previousLastObservedLiquidationTs === null ? 0 : now - previousLastObservedLiquidationTs;
   if (hasAlerted && previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
     candidates.sort((a, b) => a.ts - b.ts);
-    console.log(`QUIET PERIOD EXIT; first LONG liquidation suppressed symbol=${candidates[0].symbol} ts=${new Date(candidates[0].ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
+    console.log(`QUIET PERIOD EXIT; first LONG liquidation suppressed symbol=${candidates[0].symbol}`);
     return;
   }
 
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
-  const blockedSymbol = previousWindowBlockedSymbol;
-
-  // ALERT IS CLAIMED AT DETECTION TIME. The aligned 10M period only prevents another alert.
-  // Example: liquidation at 13:12 -> send at 13:12; suppression period is 13:10-13:20.
   alertWindowStart = alignedWindowStart(now);
   periodAlreadyAlerted = true;
   lastAlertSymbol = symbol;
@@ -207,9 +183,8 @@ async function processLiquidations(feeds, now) {
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-  const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
-  console.log(`LONG LIQUIDATION DETECTED -> ALERT IMMEDIATELY symbol=${symbol} eventTs=${new Date(ts).toISOString()} detectedAt=${new Date(now).toISOString()} suppressionStart=${new Date(alertWindowStart).toISOString()} suppressionEnd=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()} previousPeriodCoinBlocked=${blockedSymbol || 'none'}`);
-  console.log(JSON.stringify({ type: 'liquidation', timeframe: '5m', symbol, ts, side, price: eventPrice, qty: eventQty, notional: Math.abs(eventNotional), alertDetectedAt: now, suppressionStart: alertWindowStart, suppressionEnd: alertWindowStart + DEDUPE_WINDOW_MS, alertTiming: 'immediate', previousPeriodCoinBlocked: blockedSymbol }));
+  // Volume is the actual liquidation notional: execution/mark price multiplied by liquidation quantity.
+  const eventNotional = Math.abs(eventPrice * eventQty);
 
   let market = null;
   try { market = await findNextPolymarket(symbol); }
@@ -228,15 +203,11 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY (5M-ALIGNED); NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
+  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY; NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
-    try {
-      const feeds = await fetchAllFeeds();
-      await processLiquidations(feeds, now);
-    } catch (error) {
-      console.warn(`MONITOR LOOP FAILED: ${error.message}`);
-    }
+    try { await processLiquidations(await fetchAllFeeds(), now); }
+    catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
