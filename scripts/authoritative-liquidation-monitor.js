@@ -5,15 +5,14 @@ const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarke
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
-// All monitored coins. Internal LONG/SHORT are displayed as DOWN/UP.
-// Alert window: 30 minutes, aligned strictly to :15 and :45.
-// Alerts are immediate. No next-period ignore. No minimum volume.
-// No imbalance. No streaks.
+// Only LONG liquidations are eligible and are displayed as UP.
+// Alert window: exactly one active Polymarket 5m market bucket (:00/:05/:10/... UTC).
+// One alert total per 5m window. The coin alerted in window N is blocked in window N+1.
+// No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
-const TIMEFRAME = '30m';
+const TIMEFRAME = '5m';
 const POLL_MS = 4000;
-const THIRTY_MINUTE_MS = 30 * 60 * 1000;
-const WINDOW_OFFSET_MS = 15 * 60 * 1000;
+const FIVE_MINUTE_MS = TIMEFRAMES[TIMEFRAME];
 const STATE_FILE = path.join(__dirname, '..', '.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
@@ -21,11 +20,12 @@ const startupTs = Date.now();
 let initialized = false;
 let alertWindowStart = null;
 let hasAlerted = false;
+let lastAlertWindowBySymbol = {};
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
 function alignedWindowStart(ts) {
-  return Math.floor((ts - WINDOW_OFFSET_MS) / THIRTY_MINUTE_MS) * THIRTY_MINUTE_MS + WINDOW_OFFSET_MS;
+  return bucketStart(ts, TIMEFRAME);
 }
 
 function loadState() {
@@ -36,10 +36,13 @@ function loadState() {
       alertWindowStart = currentWindow;
       hasAlerted = Boolean(state.hasAlerted);
     }
+    if (state.lastAlertWindowBySymbol && typeof state.lastAlertWindowBySymbol === 'object') {
+      lastAlertWindowBySymbol = { ...state.lastAlertWindowBySymbol };
+    }
     for (const key of Array.isArray(state.seenLiquidations) ? state.seenLiquidations : []) {
       if (typeof key === 'string') seenLiquidations.add(key);
     }
-    console.log(`ALERT STATE LOADED window=${alertWindowStart ?? 'none'} hasAlerted=${hasAlerted} seen=${seenLiquidations.size}`);
+    console.log(`ALERT STATE LOADED window=${alertWindowStart ?? 'none'} hasAlerted=${hasAlerted} blockedSymbols=${Object.keys(lastAlertWindowBySymbol).length} seen=${seenLiquidations.size}`);
   } catch (error) {
     console.log(`ALERT STATE INIT: ${error.message}`);
   }
@@ -51,6 +54,7 @@ function saveState() {
     fs.writeFileSync(STATE_FILE, JSON.stringify({
       alertWindowStart,
       hasAlerted,
+      lastAlertWindowBySymbol,
       seenLiquidations: keys.slice(-10000),
       updatedAt: Date.now()
     }, null, 2));
@@ -64,10 +68,6 @@ function eventSide(event) {
   if (value.includes('long') || value === 'buy') return 'LONG';
   if (value.includes('short') || value === 'sell') return 'SHORT';
   return null;
-}
-
-function displaySide(side) {
-  return side === 'LONG' ? 'DOWN' : side === 'SHORT' ? 'UP' : side;
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -107,21 +107,25 @@ async function fetchAllFeeds() {
 
 async function findNextMarket(symbol) {
   const now = Date.now();
-  const currentBucket = bucketStart(now, '5m');
-  const nextEpoch = currentBucket + TIMEFRAMES['5m'];
-  return findMarketByEpoch(symbol, nextEpoch, '5m');
+  const currentBucket = bucketStart(now, TIMEFRAME);
+  const nextEpoch = currentBucket + TIMEFRAMES[TIMEFRAME];
+  return findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
 }
 
-function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
+function enqueueAlert(message, symbol, key, alertDetectedAt) {
   alertSendChain = alertSendChain.then(async () => {
     try {
       const waitMs = Math.max(0, 5000 - (Date.now() - lastAlertSentAt));
       if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      console.log(`30M ALERT SENT ${symbol} ${displaySide(side)} key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()}`);
-    } catch (error) { console.warn(`30M ALERT SEND FAILED ${symbol}: ${error.message}`); }
-  }).catch(error => console.warn(`30M ALERT QUEUE FAILED: ${error.message}`));
+      console.log(`5M ALERT SENT ${symbol} UP key=${key} detectedAt=${new Date(alertDetectedAt).toISOString()} sentAt=${new Date(lastAlertSentAt).toISOString()}`);
+    } catch (error) { console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`); }
+  }).catch(error => console.warn(`5M ALERT QUEUE FAILED: ${error.message}`));
+}
+
+function wasBlockedFromPreviousWindow(symbol, currentWindow) {
+  return Number(lastAlertWindowBySymbol[symbol]) === currentWindow - FIVE_MINUTE_MS;
 }
 
 async function processLiquidations(feeds, now) {
@@ -130,7 +134,7 @@ async function processLiquidations(feeds, now) {
     alertWindowStart = currentWindow;
     hasAlerted = false;
     saveState();
-    console.log(`30M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
+    console.log(`5M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
   }
 
   if (!initialized) {
@@ -152,11 +156,16 @@ async function processLiquidations(feeds, now) {
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
+    if (wasBlockedFromPreviousWindow(symbol, currentWindow)) {
+      console.log(`5M PREVIOUS-WINDOW COIN BLOCK ${symbol}`);
+      continue;
+    }
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts >= now || ts <= startupTs) continue;
       const side = eventSide(event);
-      if (side !== 'LONG' && side !== 'SHORT') continue;
+      // LONG only. In Telegram it is always UP.
+      if (side !== 'LONG') continue;
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
@@ -164,17 +173,18 @@ async function processLiquidations(feeds, now) {
       const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
       const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
       const eventNotional = Math.abs(eventPrice * eventQty);
-      candidates.push({ symbol, side, key, ts, eventPrice, eventNotional });
+      candidates.push({ symbol, key, ts, eventPrice, eventNotional });
     }
   }
 
   if (!candidates.length) return;
 
   candidates.sort((a, b) => a.ts - b.ts);
-  const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
+  const { symbol, key, eventPrice, eventNotional } = candidates[0];
   hasAlerted = true;
-  // Persist BEFORE Telegram send so a monitor restart cannot produce another
-  // alert inside the same :15/:45 window.
+  lastAlertWindowBySymbol[symbol] = currentWindow;
+  // Persist BEFORE Telegram send so restart cannot duplicate this window or
+  // allow the same coin in the immediately following 5m window.
   saveState();
 
   let nextMarket = null;
@@ -182,19 +192,19 @@ async function processLiquidations(feeds, now) {
   catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${symbol}: ${error.message}`); }
 
   const lines = [
-    `🔥 ${symbol} · 30M · ${displaySide(side)}`,
+    `🔥 ${symbol} · 5M · UP`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     nextMarket?.url ? '' : null,
     nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ];
 
-  enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
+  enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, key, now);
 }
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:15/:45; DISPLAY LONG=DOWN SHORT=UP; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT ONLY POLYMARKET LINK; no imbalance; no streaks`);
+  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; LONG ONLY => UP; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT ONLY POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
