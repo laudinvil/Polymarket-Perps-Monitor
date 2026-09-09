@@ -32,6 +32,7 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
+          set -e
           test -n "$CONVEX_DEPLOY_KEY"
           test -n "$CONVEX_INGEST_TOKEN"
           npx convex env set CONVEX_INGEST_TOKEN "$CONVEX_INGEST_TOKEN" --prod
@@ -40,3 +41,23 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: npx convex deploy
+
+      - name: Verify Convex health endpoint
+        env:
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+        run: |
+          set -e
+          test -n "$CONVEX_URL"
+          url="${CONVEX_URL%/}/health"
+          echo "Checking Convex health endpoint"
+          for i in 1 2 3 4 5; do
+            body=$(curl -fsS --max-time 15 "$url" || true)
+            echo "$body"
+            if printf '%s' "$body" | grep -q '"ok":true'; then
+              echo "Convex health: OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ERROR: Convex health endpoint did not return ok=true"
+          exit 1
