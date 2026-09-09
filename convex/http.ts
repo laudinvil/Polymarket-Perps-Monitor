@@ -43,6 +43,17 @@ const ingest = httpAction(async (ctx, request) => {
   }
 });
 
+const health = httpAction(async (ctx) => {
+  try {
+    const result = await ctx.runQuery(api.monitor.monitorHealth, {});
+    if (!result.ok) return Response.json(result, { status: 503 });
+    return Response.json(result, { status: 200 });
+  } catch (error) {
+    console.error("Convex health check failed", error);
+    return new Response("Health check failed", { status: 503 });
+  }
+});
+
 const latestStats = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
   const timeframe = String(url.searchParams.get("timeframe") || "").trim();
@@ -60,6 +71,7 @@ const latestStats = httpAction(async (ctx, request) => {
 });
 
 http.route({ path: "/ingest", method: "POST", handler: ingest });
+http.route({ path: "/health", method: "GET", handler: health });
 http.route({ path: "/latest-stats", method: "GET", handler: latestStats });
 
 export default http;
