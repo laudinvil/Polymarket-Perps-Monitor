@@ -6,10 +6,10 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
 // Liquidation in 5m window N creates a pending candidate; NO alert is sent in N.
-// The ENTIRE immediately following 5m window N+1 must finish before evaluation.
-// At the boundary starting N+2, if the same coin had NO liquidation anywhere in N+1,
+// The ENTIRE immediately following 5m windows N+1 AND N+2 must finish before evaluation.
+// At the boundary starting N+3, if the same coin had NO liquidation anywhere in N+1 or N+2,
 // send one alert for the next/current Polymarket market. If it liquidated at any point
-// in N+1, cancel that pending candidate. One alert total per 5m window.
+// in N+1 or N+2, cancel that pending candidate. One alert total per 5m window.
 // LONG => UP; SHORT => DOWN. No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
@@ -123,7 +123,6 @@ function collectNewLiquidations(feeds, now) {
 
 // IMPORTANT: this checks the raw feed, not seenLiquidations.
 // When called for a completed window, windowEnd must be the exact next boundary.
-// This prevents a candidate from being evaluated early in N+1.
 function hasLiquidationInWindow(feeds, symbol, windowStart, windowEnd) {
   return (feeds.get(symbol) || []).some(event => {
     const ts = normalizeTs(event?.ts);
@@ -135,6 +134,8 @@ function hasLiquidationInWindow(feeds, symbol, windowStart, windowEnd) {
 async function processLiquidations(feeds, now) {
   const currentWindow = alignedWindowStart(now);
   const previousWindow = currentWindow - FIVE_MINUTE_MS;
+  const windowNPlus1 = previousWindow - FIVE_MINUTE_MS;
+  const windowN = windowNPlus1 - FIVE_MINUTE_MS;
 
   if (alertWindowStart !== currentWindow) {
     alertWindowStart = currentWindow;
@@ -146,21 +147,20 @@ async function processLiquidations(feeds, now) {
   const newLiquidations = collectNewLiquidations(feeds, now);
   if (!initialized) { initialized = true; saveState(); return; }
 
-  // N+1 is now COMPLETE. Evaluate candidates from N only at the N+2 boundary.
-  // Therefore a liquidation anywhere in the full N+1 window cancels the candidate.
+  // N+1 and N+2 are now COMPLETE. Evaluate candidates from N ONLY at the N+3 boundary.
+  // Any liquidation anywhere in either completed window cancels the candidate.
   for (const symbol of Object.keys(pendingBySymbol)) {
     const pending = pendingBySymbol[symbol];
-    if (Number(pending.sourceWindow) !== previousWindow - FIVE_MINUTE_MS) continue;
-    const liquidatedInCompletedNextWindow = hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow);
-    if (liquidatedInCompletedNextWindow) {
-      console.log(`5M PENDING CANCEL ${symbol}: liquidation in completed next window ${new Date(previousWindow).toISOString()}`);
+    if (Number(pending.sourceWindow) !== windowN) continue;
+    const liquidatedInNPlus1 = hasLiquidationInWindow(feeds, symbol, windowNPlus1, previousWindow);
+    const liquidatedInNPlus2 = hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow);
+    if (liquidatedInNPlus1 || liquidatedInNPlus2) {
+      console.log(`5M PENDING CANCEL ${symbol}: liquidation in completed N+1/N+2 window`);
       delete pendingBySymbol[symbol];
     }
   }
 
   if (hasAlerted) {
-    // Current-window liquidations are still tracked for the next cycle, but the global
-    // one-alert-per-window gate prevents another alert during this 5m period.
     for (const [symbol, events] of newLiquidations.entries()) {
       const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
       if (!currentEvents.length) continue;
@@ -179,12 +179,11 @@ async function processLiquidations(feeds, now) {
     return;
   }
 
-  // IMPORTANT: determine N+2 eligibility BEFORE storing a new candidate from the
-  // current N+2 window. A new liquidation now must not overwrite an older candidate
-  // that has just become eligible after a clean N+1 window.
+  // Determine N+3 eligibility BEFORE storing a new candidate from the current N+3 window.
   const eligible = SYMBOLS.map(symbol => {
     const pending = pendingBySymbol[symbol];
-    if (!pending || Number(pending.sourceWindow) !== previousWindow - FIVE_MINUTE_MS) return null;
+    if (!pending || Number(pending.sourceWindow) !== windowN) return null;
+    if (hasLiquidationInWindow(feeds, symbol, windowNPlus1, previousWindow)) return null;
     if (hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow)) return null;
     return { symbol, ...pending };
   }).filter(Boolean);
@@ -215,8 +214,7 @@ async function processLiquidations(feeds, now) {
     enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
   }
 
-  // Any liquidation in the current window becomes pending for the next evaluation.
-  // This happens after N+2 eligibility so it cannot overwrite an eligible older candidate.
+  // Any liquidation in the current N+3 window becomes pending for the next evaluation.
   for (const [symbol, events] of newLiquidations.entries()) {
     const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
     if (!currentEvents.length) continue;
@@ -237,7 +235,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; EVALUATE N+1 ONLY AFTER FULL WINDOW CLOSES; IF NO LIQUIDATION IN FULL N+1 => ALERT AT N+2; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; REQUIRE FULL N+1 AND N+2 CLEAN; EVALUATE ONLY AT N+3; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
