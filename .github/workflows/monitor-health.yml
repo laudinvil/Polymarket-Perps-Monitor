@@ -103,3 +103,5 @@ jobs:
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
           MONITOR_STATUS: ${{ job.status }}
         run: timeout 20s node scripts/convex-sync.js finish "$MONITOR_STATUS" || true
+
+# Manual verification trigger: no monitor logic change.
