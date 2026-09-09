@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findNextMarket } = require('../src/polymarket');
+const { bucketStart, findNextMarket, TIMEFRAMES } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only, 5M only.
@@ -106,7 +106,14 @@ async function fetchAllFeeds() {
 }
 
 async function findNextPolymarket(symbol, eventTs) {
-  return findNextMarket(symbol, bucketStart(eventTs, TIMEFRAME), TIMEFRAME);
+  // Alert link must be +1 after the immediately-next market.
+  // findNextMarket() itself advances one bucket, so advance the input by one
+  // additional 5M bucket to produce NEXT+1 rather than the immediate NEXT.
+  const eventBucket = bucketStart(eventTs, TIMEFRAME);
+  const nextPlusOneBase = eventBucket + TIMEFRAMES[TIMEFRAME];
+  const market = await findNextMarket(symbol, nextPlusOneBase, TIMEFRAME);
+  console.log(`POLYMARKET NEXT+1 ${symbol} eventBucket=${new Date(eventBucket).toISOString()} url=${market?.url || 'NOT FOUND'}`);
+  return market;
 }
 
 function enqueueAlert(message, symbol, side, key) {
