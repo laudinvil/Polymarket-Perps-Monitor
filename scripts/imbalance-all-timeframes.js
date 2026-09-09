@@ -1,13 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findNextMarket } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// Six coins are monitored. Each 5-minute period can produce exactly ONE
+// Seven coins are monitored. Each 5-minute period can produce exactly ONE
 // alert. Alert side alternates globally and persists across workflow restarts.
-const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -29,7 +29,7 @@ function loadExpectedSide() {
     if (lastSide === 'LONG') return 'SHORT';
     if (lastSide === 'SHORT') return 'LONG';
   } catch {}
-  return 'LONG'; // known last alert was SHORT
+  return 'LONG';
 }
 
 function persistLastAlertSide(side) {
@@ -105,9 +105,9 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-async function findPreviousPolymarket(symbol, eventTs) {
-  const currentBucket = bucketStart(eventTs, TIMEFRAME);
-  return findNextMarket(symbol, currentBucket, TIMEFRAME);
+async function findCurrentPolymarket(symbol, now) {
+  const currentBucket = bucketStart(now, TIMEFRAME);
+  return findMarketByEpoch(symbol, currentBucket, TIMEFRAME);
 }
 
 function enqueueAlert(message, symbol, side, key) {
@@ -184,9 +184,11 @@ async function processLiquidations(feeds, now) {
 
   let market = null;
   try {
-    market = await findPreviousPolymarket(symbol, ts);
+    // CURRENT means the market active at the moment the alert is generated,
+    // not the market after the liquidation event timestamp.
+    market = await findCurrentPolymarket(symbol, Date.now());
   } catch (error) {
-    console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
 
   const message = [
@@ -196,14 +198,14 @@ async function processLiquidations(feeds, now) {
     `Price: ${price(eventPrice)}`,
     `Qty: ${quantity(eventQty)}`,
     market?.url ? '' : null,
-    market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null
+    market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null
   ].filter(value => value !== null).join('\n');
 
   enqueueAlert(message, symbol, side, key);
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=DISABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; last state read from ${SIDE_STATE_PATH}; other coins ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=ENABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; other coins ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
