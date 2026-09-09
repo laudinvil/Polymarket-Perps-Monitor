@@ -106,14 +106,13 @@ async function fetchAllFeeds() {
 }
 
 async function findNextPolymarket(symbol) {
-  // NEXT+1 is relative to the actual moment the alert is generated, not the
-  // liquidation event timestamp. This prevents a delayed feed event from
-  // producing an already-ended Polymarket market.
+  // NEXT is the immediately following 5M market relative to the actual
+  // moment the alert is generated. The liquidation event timestamp is ignored.
   const now = Date.now();
   const currentBucket = bucketStart(now, TIMEFRAME);
-  const nextPlusOneEpoch = currentBucket + (2 * TIMEFRAMES[TIMEFRAME]);
-  const market = await findMarketByEpoch(symbol, nextPlusOneEpoch, TIMEFRAME);
-  console.log(`POLYMARKET NEXT+1 ${symbol} now=${new Date(now).toISOString()} currentBucket=${new Date(currentBucket).toISOString()} target=${new Date(nextPlusOneEpoch).toISOString()} url=${market?.url || 'NOT FOUND'}`);
+  const nextEpoch = currentBucket + TIMEFRAMES[TIMEFRAME];
+  const market = await findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
+  console.log(`POLYMARKET NEXT ${symbol} now=${new Date(now).toISOString()} currentBucket=${new Date(currentBucket).toISOString()} target=${new Date(nextEpoch).toISOString()} url=${market?.url || 'NOT FOUND'}`);
   return market;
 }
 
