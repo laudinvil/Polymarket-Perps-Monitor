@@ -121,6 +121,17 @@ function collectNewLiquidations(feeds, now) {
   return bySymbol;
 }
 
+// IMPORTANT: this checks the raw feed, not seenLiquidations.
+// seenLiquidations is only for de-duplication. It must never decide whether
+// a coin had a liquidation in the current N+1 window.
+function hasLiquidationInWindow(feeds, symbol, windowStart, now) {
+  return (feeds.get(symbol) || []).some(event => {
+    const ts = normalizeTs(event?.ts);
+    if (!ts || ts >= now || ts < windowStart || ts >= windowStart + FIVE_MINUTE_MS) return false;
+    return eventSide(event) === 'LONG' || eventSide(event) === 'SHORT';
+  });
+}
+
 async function processLiquidations(feeds, now) {
   const currentWindow = alignedWindowStart(now);
   if (alertWindowStart !== currentWindow) {
@@ -133,11 +144,12 @@ async function processLiquidations(feeds, now) {
   const newLiquidations = collectNewLiquidations(feeds, now);
   if (!initialized) { initialized = true; saveState(); return; }
 
-  // A pending candidate is evaluated only against liquidations in its immediate next window.
+  // A pending candidate is evaluated against the RAW feed in its immediate next window.
+  // This is deliberately independent of seenLiquidations.
   for (const symbol of Object.keys(pendingBySymbol)) {
     const pending = pendingBySymbol[symbol];
     if (Number(pending.sourceWindow) !== currentWindow - FIVE_MINUTE_MS) continue;
-    const liquidatedNow = (newLiquidations.get(symbol) || []).some(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
+    const liquidatedNow = hasLiquidationInWindow(feeds, symbol, currentWindow, now);
     if (liquidatedNow) {
       console.log(`5M PENDING CANCEL ${symbol}: liquidation in next window`);
       delete pendingBySymbol[symbol];
@@ -166,7 +178,7 @@ async function processLiquidations(feeds, now) {
   const eligible = SYMBOLS.map(symbol => {
     const pending = pendingBySymbol[symbol];
     if (!pending || Number(pending.sourceWindow) !== currentWindow - FIVE_MINUTE_MS) return null;
-    if ((newLiquidations.get(symbol) || []).some(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS)) return null;
+    if (hasLiquidationInWindow(feeds, symbol, currentWindow, now)) return null;
     return { symbol, ...pending };
   }).filter(Boolean);
 
@@ -175,7 +187,6 @@ async function processLiquidations(feeds, now) {
   eligible.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
   const selected = eligible[0];
   const { symbol, side, key, eventPrice, eventNotional } = selected;
-  const direction = side === 'LONG' ? 'UP' : 'DOWN';
   hasAlerted = true;
   delete pendingBySymbol[symbol];
   saveState();
