@@ -7,6 +7,7 @@ export default defineSchema({
     githubRunId: v.string(),
     commitSha: v.string(),
     startedAt: v.number(),
+    lastHeartbeatAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
     status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
   }).index("by_run", ["runId"]).index("by_started_at", ["startedAt"]),
