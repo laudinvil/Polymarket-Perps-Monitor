@@ -4,13 +4,13 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// AUTHORITATIVE: individual liquidations only, 5M only.
-// Exactly one alert per rolling 25-minute window from the previous sent alert.
+// AUTHORITATIVE: individual LONG liquidations only, 5M only.
+// Exactly one alert per rolling 10-minute window from the previous sent alert.
 // The previous alert's coin is blocked in the immediately following window.
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
-const DEDUPE_WINDOW_MS = 25 * 60 * 1000;
+const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const QUIET_PERIOD_MS = 29 * 60 * 1000;
 const STATE_FILE = path.resolve('.liquidation-alert-state.json');
 
@@ -70,8 +70,7 @@ async function persistState() {
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
-  if (value.includes('long') || value === 'buy') return 'UP';
-  if (value.includes('short') || value === 'sell') return 'DOWN';
+  if (value.includes('long') || value === 'buy') return 'LONG';
   return null;
 }
 
@@ -106,8 +105,6 @@ async function fetchAllFeeds() {
 }
 
 async function findNextPolymarket(symbol) {
-  // NEXT is the immediately following 5M market relative to the actual
-  // moment the alert is generated. The liquidation event timestamp is ignored.
   const now = Date.now();
   const currentBucket = bucketStart(now, TIMEFRAME);
   const nextEpoch = currentBucket + TIMEFRAMES[TIMEFRAME];
@@ -164,7 +161,7 @@ async function processLiquidations(feeds, now) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts >= now || ts <= startupTs) continue;
       const side = eventSide(event);
-      if (!side) continue;
+      if (side !== 'LONG') continue;
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
@@ -179,7 +176,7 @@ async function processLiquidations(feeds, now) {
   const quietMs = previousLastObservedLiquidationTs === null ? 0 : now - previousLastObservedLiquidationTs;
   if (hasAlerted && previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
     candidates.sort((a, b) => a.ts - b.ts);
-    console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${candidates[0].symbol} side=${candidates[0].side} ts=${new Date(candidates[0].ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
+    console.log(`QUIET PERIOD EXIT; first LONG liquidation suppressed symbol=${candidates[0].symbol} ts=${new Date(candidates[0].ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
     return;
   }
 
@@ -200,8 +197,8 @@ async function processLiquidations(feeds, now) {
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
-  console.log(`25M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} eventTs=${new Date(ts).toISOString()} previousPeriodCoinBlocked=${blockedSymbol || 'none'} nextAllowed=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()}`);
-  console.log(JSON.stringify({ type: 'liquidation', timeframe: '5m', symbol, ts, side, price: eventPrice, qty: eventQty, notional: Math.abs(eventNotional), dedupeWindowStart: alertWindowStart, firstLiquidationOnly: true, periodMinutes: 25, previousPeriodCoinBlocked: blockedSymbol }));
+  console.log(`10M FIRST LONG LIQUIDATION CLAIMED symbol=${symbol} eventTs=${new Date(ts).toISOString()} previousPeriodCoinBlocked=${blockedSymbol || 'none'} nextAllowed=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()}`);
+  console.log(JSON.stringify({ type: 'liquidation', timeframe: '5m', symbol, ts, side, price: eventPrice, qty: eventQty, notional: Math.abs(eventNotional), dedupeWindowStart: alertWindowStart, firstLiquidationOnly: true, periodMinutes: 10, previousPeriodCoinBlocked: blockedSymbol }));
 
   let market = null;
   try { market = await findNextPolymarket(symbol); }
@@ -220,7 +217,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONE ALERT PER 25M ROLLING GLOBAL WINDOW; previous-period coin blocked; 29m quiet-period only after alert; no imbalance; no streaks`);
+  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ONE ALERT PER 10M ROLLING GLOBAL WINDOW; previous-period coin blocked; 29m quiet-period only after alert; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try {
