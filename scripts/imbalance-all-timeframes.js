@@ -21,6 +21,7 @@ let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 let initialized = false;
 let lastObservedLiquidationTs = null;
+let hasAlerted = false;
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
@@ -140,7 +141,10 @@ async function processLiquidations(feeds, now) {
   const quietMs = previousLastObservedLiquidationTs === null
     ? 0
     : now - previousLastObservedLiquidationTs;
-  if (previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
+  // The 29-minute quiet-period rule applies ONLY after the monitor has
+  // already sent at least one alert. Startup must never suppress the first
+  // real liquidation merely because the historical feed is older than 29m.
+  if (hasAlerted && previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
     candidates.sort((a, b) => a.ts - b.ts);
     const warmup = candidates[0];
     console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${warmup.symbol} side=${warmup.side} ts=${new Date(warmup.ts).toISOString()} quietMs=${quietMs} thresholdMs=${QUIET_PERIOD_MS}`);
@@ -151,6 +155,7 @@ async function processLiquidations(feeds, now) {
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
   lastAlertSymbol = symbol;
+  hasAlerted = true;
 
   console.log(`15M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next-period block=${symbol}`);
 
@@ -194,7 +199,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 15m period; previous-period coin blocked; 29m quiet-period warmup; other events ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 15m period; previous-period coin blocked; 29m quiet-period applies only after an alert; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
