@@ -3,9 +3,9 @@ const { bucketStart, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// All 7 coins are monitored, but only the FIRST liquidation per 25-minute
-// Polymarket period is alerted. The coin that alerted in the previous period
-// is blocked for the immediately following period.
+// All 7 coins are monitored, but only the FIRST liquidation after each
+// 25-minute rolling global alert window is alerted. The coin that alerted in
+// the previous window is blocked for the immediately following window.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
@@ -14,7 +14,7 @@ const DEDUPE_WINDOW_MS = 25 * 60 * 1000;
 const QUIET_PERIOD_MS = 29 * 60 * 1000;
 
 const seenLiquidations = new Set();
-let dedupePeriodStart = null;
+let alertWindowStart = null;
 let periodAlreadyAlerted = false;
 let lastAlertSymbol = null;
 let alertSendChain = Promise.resolve();
@@ -30,17 +30,12 @@ function eventSide(event) {
   return null;
 }
 
-function dedupeWindowStart(ts) {
-  return Math.floor(ts / DEDUPE_WINDOW_MS) * DEDUPE_WINDOW_MS;
-}
-
 function resetDedupeWindow(ts) {
-  const period = dedupeWindowStart(ts);
-  if (dedupePeriodStart === period) return;
-  dedupePeriodStart = period;
-  seenLiquidations.clear();
+  if (alertWindowStart === null) return;
+  if (ts - alertWindowStart < DEDUPE_WINDOW_MS) return;
   periodAlreadyAlerted = false;
-  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (25m; first liquidation only; previous coin blocked=${lastAlertSymbol || 'none'})`);
+  seenLiquidations.clear();
+  console.log(`LIQUIDATION PERIOD READY ${new Date(ts).toISOString()} (25m rolling window elapsed; previous coin blocked=${lastAlertSymbol || 'none'})`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -98,17 +93,17 @@ function enqueueAlert(message, symbol, side, key) {
 
 async function processLiquidations(feeds, now) {
   resetDedupeWindow(now);
-  const windowStart = dedupePeriodStart;
   const blockedSymbol = lastAlertSymbol;
   const previousLastObservedLiquidationTs = lastObservedLiquidationTs;
 
   if (periodAlreadyAlerted) return;
+  if (hasAlerted && alertWindowStart !== null && now - alertWindowStart < DEDUPE_WINDOW_MS) return;
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
-      if (!ts || ts < windowStart || ts >= now) continue;
+      if (!ts || ts >= now) continue;
 
       const side = eventSide(event);
       if (!side) continue;
@@ -121,7 +116,7 @@ async function processLiquidations(feeds, now) {
         lastObservedLiquidationTs = ts;
       }
 
-      if (symbol === blockedSymbol) continue;
+      if (symbol === blockedSymbol && alertWindowStart !== null && ts < alertWindowStart + DEDUPE_WINDOW_MS) continue;
       candidates.push({ symbol, side, key, event, ts });
     }
   }
@@ -149,11 +144,12 @@ async function processLiquidations(feeds, now) {
 
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
+  alertWindowStart = now;
   periodAlreadyAlerted = true;
   lastAlertSymbol = symbol;
   hasAlerted = true;
 
-  console.log(`25M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next-period block=${symbol}`);
+  console.log(`25M FIRST LIQUIDATION CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next alert allowed after=${new Date(alertWindowStart + DEDUPE_WINDOW_MS).toISOString()}; next-period block=${symbol}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -168,7 +164,7 @@ async function processLiquidations(feeds, now) {
     price: eventPrice,
     qty: eventQty,
     notional: Math.abs(eventNotional),
-    dedupeWindowStart: windowStart,
+    dedupeWindowStart: alertWindowStart,
     firstLiquidationOnly: true,
     periodMinutes: 25,
     previousPeriodCoinBlocked: blockedSymbol
@@ -193,7 +189,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 25m period; previous-period coin blocked; 29m quiet-period applies only after an alert; other events ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; only 5m; FIRST LIQUIDATION ONLY per 25m ROLLING GLOBAL WINDOW; previous-period coin blocked; 29m quiet-period applies only after an alert; other events ignored; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
