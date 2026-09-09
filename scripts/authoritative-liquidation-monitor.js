@@ -38,10 +38,17 @@ function displaySide(side) {
   return side === 'LONG' ? 'UP' : side === 'SHORT' ? 'DOWN' : side;
 }
 
+// Use a provider-independent fingerprint. Do not prefer provider IDs because
+// the same liquidation can be represented by different IDs across feed refreshes.
 function liquidationKey(symbol, ts, side, event) {
-  const id = event?.id ?? event?.liquidationId ?? event?.eventId ?? event?.tradeId ?? event?.txHash ?? event?.orderId;
-  if (id !== undefined && id !== null && String(id) !== '') return `${symbol}:id:${String(id)}`;
-  return [symbol, ts, side, event?.exchange ?? '', event?.price ?? '', event?.qty ?? event?.quantity ?? event?.size ?? ''].join('|');
+  return [
+    symbol,
+    Math.floor(Number(ts) / 1000),
+    side,
+    String(event?.exchange ?? '').toLowerCase(),
+    numberValue(event?.price, event?.markPrice, event?.executionPrice),
+    numberValue(event?.qty, event?.quantity, event?.size)
+  ].join('|');
 }
 
 function numberValue(...values) {
@@ -97,7 +104,8 @@ async function processLiquidations(feeds, now) {
   if (alertWindowStart !== currentWindow) {
     alertWindowStart = currentWindow;
     hasAlerted = false;
-    seenLiquidations.clear();
+    // IMPORTANT: keep seenLiquidations across window boundaries.
+    // Clearing it allowed the same feed event to become a new alert after :15/:45.
   }
 
   if (!initialized) {
