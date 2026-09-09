@@ -25,8 +25,8 @@ let hasAlerted = false;
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
-  if (value.includes('long') || value === 'buy') return 'LONG';
-  if (value.includes('short') || value === 'sell') return 'SHORT';
+  if (value.includes('long') || value === 'buy') return 'UP';
+  if (value.includes('short') || value === 'sell') return 'DOWN';
   return null;
 }
 
