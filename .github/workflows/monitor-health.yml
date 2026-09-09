@@ -18,24 +18,20 @@ jobs:
     permissions:
       contents: write
       actions: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Restore monitor history
         run: |
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
-
       - name: Verify authoritative monitor source
         run: |
           set -e
@@ -55,18 +51,20 @@ jobs:
           for (const symbol of ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE']) {
             if (!src.includes(`'${symbol}'`)) throw new Error(`Missing required symbol: ${symbol}`);
           }
-          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor market timeframe is not 5m');
-          if (!src.includes('const ALERT_WINDOW_MS = 10 * 60 * 1000')) throw new Error('10m alert window is missing');
-          if (!src.includes('Math.floor(Number(ts) / ALERT_WINDOW_MS) * ALERT_WINDOW_MS')) throw new Error('10m aligned alert boundaries are missing');
+          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor timeframe is not 5m');
+          if (!src.includes('bucketStart(ts, TIMEFRAME)')) throw new Error('5m aligned market boundaries are missing');
+          if (!src.includes('pendingBySymbol')) throw new Error('Deferred liquidation state is missing');
+          if (!src.includes('LIQUIDATION IN N => NO ALERT')) throw new Error('No-alert-in-source-window rule is missing');
+          if (!src.includes('NO LIQUIDATION IN N+1')) throw new Error('Quiet-next-window rule is missing');
+          if (!src.includes('currentWindow - FIVE_MINUTE_MS')) throw new Error('Immediate next 5m window check is missing');
+          if (!src.includes('PENDING CANCEL')) throw new Error('Pending cancellation on next-window liquidation is missing');
+          if (!src.includes('findNextMarket')) throw new Error('NEXT market lookup is missing');
+          if (!src.includes('currentBucket + FIVE_MINUTE_MS')) throw new Error('Alert link is not NEXT market');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
           if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
           if (!src.includes("side === 'LONG' ? 'UP' : 'DOWN'")) throw new Error('LONG to UP / SHORT to DOWN alert mapping is missing');
-          if (!src.includes('wasBlockedFromPreviousWindow')) throw new Error('Previous-window coin block is missing');
-          if (!src.includes('currentWindow - ALERT_WINDOW_MS')) throw new Error('Previous-window block is not aligned to 10m');
-          if (!src.includes('lastAlertWindowBySymbol')) throw new Error('Per-coin alert window state is missing');
           NODE
-          echo "Authoritative monitor source verified: 7 coins / 10m alert boundaries / LONG=>UP + SHORT=>DOWN / one alert per window / same coin blocked in next 10m window."
-
+          echo "Authoritative monitor source verified: 7 coins / 5m windows / liquidation N => no alert / quiet N+1 => alert with NEXT market / LONG=>UP + SHORT=>DOWN."
       - name: Continuous MarginPad monitor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,7 +94,6 @@ jobs:
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
-
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,7 +101,6 @@ jobs:
           name: monitor-log
           path: monitor.log
           if-no-files-found: ignore
-
       - name: Finish Convex run
         if: always()
         env:
