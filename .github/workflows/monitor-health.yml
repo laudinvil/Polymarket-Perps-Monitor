@@ -52,31 +52,24 @@ jobs:
             echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: authoritative monitor must contain exactly the 7 enabled coins: BTC ETH SOL XRP DOGE BNB HYPE"
-            exit 1
-          fi
-          if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: authoritative monitor is not 5M-only"
-            exit 1
-          fi
-          if ! grep -q "const DEDUPE_WINDOW_MS = 5 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor window is not 5 minutes"
-            exit 1
-          fi
-          if ! grep -q "loadExpectedSide" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor does not restore persistent side state"
-            exit 1
-          fi
-          if ! grep -q "persistLastAlertSide" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor does not persist the side after an alert"
-            exit 1
-          fi
-          if ! grep -q "if (periodAlreadyAlerted) return" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor does not enforce one alert per 5-minute period"
-            exit 1
-          fi
-          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE / one coin per period / alternating side persists across restarts"
+          node <<'NODE'
+          const fs = require('fs');
+          const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
+          const match = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
+          if (!match) throw new Error('ERROR: SYMBOLS configuration not found');
+          const symbols = [...match[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
+          const unique = [...new Set(symbols)];
+          if (!unique.length) throw new Error('ERROR: no monitored coins configured');
+          if (unique.length !== symbols.length) throw new Error('ERROR: duplicate monitored coin in SYMBOLS');
+          console.log(`Configured monitored coins: ${unique.join(',')}`);
+          if (!unique.includes('BTC')) throw new Error('ERROR: BTC must remain enabled');
+          if (!text.includes("const TIMEFRAME = '5m'")) throw new Error('ERROR: authoritative monitor is not 5M-only');
+          if (!text.includes('const DEDUPE_WINDOW_MS = 5 * 60 * 1000')) throw new Error('ERROR: monitor window is not 5 minutes');
+          if (!text.includes('loadExpectedSide')) throw new Error('ERROR: monitor does not restore persistent side state');
+          if (!text.includes('persistLastAlertSide')) throw new Error('ERROR: monitor does not persist the side after an alert');
+          if (!text.includes('if (periodAlreadyAlerted) return')) throw new Error('ERROR: monitor does not enforce one alert per 5-minute period');
+          console.log('Authoritative monitor verified: coin list is data-driven; adding a coin does not require verifier changes; BTC enabled / 5M / one coin per period / persistent side alternation');
+          NODE
 
       - name: Continuous MarginPad monitor
         env:
