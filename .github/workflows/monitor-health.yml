@@ -43,27 +43,31 @@ jobs:
             echo "ERROR: removed legacy monitor logic detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const SYMBOLS = \['BTC'\]" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: authoritative monitor is not BTC-only"
+          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: authoritative monitor is not configured for all 7 coins"
             exit 1
           fi
-          if ! grep -q "const TIMEFRAME = '5m'" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: authoritative monitor is not 5M-only"
+          if ! grep -q "const TIMEFRAME = '30m'" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: authoritative monitor is not 30M"
             exit 1
           fi
-          if ! grep -q "FIVE_MINUTE_MS = 5 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: alert window is not 5 minutes"
+          if ! grep -q "THIRTY_MINUTE_MS = 30 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: alert window is not 30 minutes"
             exit 1
           fi
           if ! grep -q "displaySide" scripts/authoritative-liquidation-monitor.js; then
             echo "ERROR: UP/DOWN display mapping is missing"
             exit 1
           fi
-          if ! grep -q "persistState" scripts/authoritative-liquidation-monitor.js; then
-            echo "ERROR: alert state is not persisted"
+          if ! grep -q "NEXT +1" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: NEXT +1 market link is missing"
             exit 1
           fi
-          echo "Authoritative monitor verified: BTC / ONLY 5M / individual liquidations / 5M window / next window ignored / LONG=UP SHORT=DOWN / no 29M rule / no imbalance / no streaks"
+          if grep -qE 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: minimum volume filter detected"
+            exit 1
+          fi
+          echo "Authoritative monitor verified: all 7 coins / 30M wall-clock window / one alert per 30M window / LONG=UP SHORT=DOWN / no volume minimum / NEXT +1 / individual liquidations / no imbalance / no streaks"
 
       - name: Continuous MarginPad monitor
         env:
