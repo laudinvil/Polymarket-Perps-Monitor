@@ -51,15 +51,23 @@ jobs:
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if ! grep -q "if (side !== 'SHORT') continue" scripts/imbalance-all-timeframes.js; then
-            echo "ERROR: monitor is not SHORT-only"
+          if ! grep -q "const DEDUPE_WINDOW_MS = 5 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor window is not 5 minutes"
             exit 1
           fi
-          if grep -nE '15m|1h|4h|1d' scripts/imbalance-all-timeframes.js | grep -v 'TIMEFRAMES\[TIMEFRAME\]' >/dev/null 2>&1; then
-            echo "ERROR: non-5M timeframe logic detected"
+          if ! grep -q "let expectedSide = 'LONG'" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor does not start with LONG after last SHORT"
             exit 1
           fi
-          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE / SHORT-only"
+          if ! grep -q "expectedSide = side === 'LONG' ? 'SHORT' : 'LONG'" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor does not alternate LONG/SHORT after each alert"
+            exit 1
+          fi
+          if ! grep -q "if (periodAlreadyAlerted) return" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor does not enforce one alert per 5-minute period"
+            exit 1
+          fi
+          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE / one coin per period / alternating side / last SHORT -> next LONG"
 
       - name: Continuous MarginPad monitor
         env:
