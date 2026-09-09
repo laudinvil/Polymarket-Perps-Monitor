@@ -5,15 +5,16 @@ const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarke
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
-// LONG liquidations are displayed as UP; SHORT liquidations are displayed as DOWN.
-// Alert window: exactly one 10m window aligned to UTC :00/:10/:20/:30/:40/:50 boundaries.
-// One alert total per 10m window. The coin alerted in window N is blocked in window N+1.
+// Liquidation in 5m window N creates a pending candidate; NO alert is sent in N.
+// If the same coin has NO liquidation in the immediately following 5m window N+1,
+// send one alert during N+1 for the NEXT Polymarket 5m market (N+2).
+// If the same coin liquidates in N+1, cancel that pending candidate.
+// One alert total per 5m window. LONG => UP; SHORT => DOWN.
 // No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const FIVE_MINUTE_MS = TIMEFRAMES[TIMEFRAME];
-const ALERT_WINDOW_MS = 10 * 60 * 1000;
 const STATE_FILE = path.join(__dirname, '..', '.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
@@ -21,13 +22,11 @@ const startupTs = Date.now();
 let initialized = false;
 let alertWindowStart = null;
 let hasAlerted = false;
-let lastAlertWindowBySymbol = {};
+let pendingBySymbol = {};
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
-function alignedWindowStart(ts) {
-  return Math.floor(Number(ts) / ALERT_WINDOW_MS) * ALERT_WINDOW_MS;
-}
+function alignedWindowStart(ts) { return bucketStart(ts, TIMEFRAME); }
 
 function loadState() {
   try {
@@ -37,31 +36,19 @@ function loadState() {
       alertWindowStart = currentWindow;
       hasAlerted = Boolean(state.hasAlerted);
     }
-    if (state.lastAlertWindowBySymbol && typeof state.lastAlertWindowBySymbol === 'object') {
-      lastAlertWindowBySymbol = { ...state.lastAlertWindowBySymbol };
-    }
-    for (const key of Array.isArray(state.seenLiquidations) ? state.seenLiquidations : []) {
-      if (typeof key === 'string') seenLiquidations.add(key);
-    }
-    console.log(`ALERT STATE LOADED window=${alertWindowStart ?? 'none'} hasAlerted=${hasAlerted} blockedSymbols=${Object.keys(lastAlertWindowBySymbol).length} seen=${seenLiquidations.size}`);
-  } catch (error) {
-    console.log(`ALERT STATE INIT: ${error.message}`);
-  }
+    if (state.pendingBySymbol && typeof state.pendingBySymbol === 'object') pendingBySymbol = { ...state.pendingBySymbol };
+    for (const key of Array.isArray(state.seenLiquidations) ? state.seenLiquidations : []) if (typeof key === 'string') seenLiquidations.add(key);
+    console.log(`ALERT STATE LOADED window=${alertWindowStart ?? 'none'} hasAlerted=${hasAlerted} pending=${Object.keys(pendingBySymbol).length} seen=${seenLiquidations.size}`);
+  } catch (error) { console.log(`ALERT STATE INIT: ${error.message}`); }
 }
 
 function saveState() {
   try {
-    const keys = Array.from(seenLiquidations);
     fs.writeFileSync(STATE_FILE, JSON.stringify({
-      alertWindowStart,
-      hasAlerted,
-      lastAlertWindowBySymbol,
-      seenLiquidations: keys.slice(-10000),
-      updatedAt: Date.now()
+      alertWindowStart, hasAlerted, pendingBySymbol,
+      seenLiquidations: Array.from(seenLiquidations).slice(-10000), updatedAt: Date.now()
     }, null, 2));
-  } catch (error) {
-    console.warn(`ALERT STATE SAVE FAILED: ${error.message}`);
-  }
+  } catch (error) { console.warn(`ALERT STATE SAVE FAILED: ${error.message}`); }
 }
 
 function eventSide(event) {
@@ -72,31 +59,15 @@ function eventSide(event) {
 }
 
 function liquidationKey(symbol, ts, side, event) {
-  return [
-    symbol,
-    Math.floor(Number(ts) / 1000),
-    side,
-    String(event?.exchange ?? '').toLowerCase(),
-    numberValue(event?.price, event?.markPrice, event?.executionPrice),
-    numberValue(event?.qty, event?.quantity, event?.size)
-  ].join('|');
+  return [symbol, Math.floor(Number(ts) / 1000), side, String(event?.exchange ?? '').toLowerCase(), numberValue(event?.price, event?.markPrice, event?.executionPrice), numberValue(event?.qty, event?.quantity, event?.size)].join('|');
 }
 
 function numberValue(...values) {
-  for (const value of values) {
-    const n = Number(value);
-    if (Number.isFinite(n)) return n;
-  }
+  for (const value of values) { const n = Number(value); if (Number.isFinite(n)) return n; }
   return 0;
 }
-
-function money(value) {
-  return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-}
-
-function price(value) {
-  return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
-}
+function money(value) { return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`; }
+function price(value) { return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 }); }
 
 async function fetchAllFeeds() {
   const results = await Promise.all(SYMBOLS.map(async symbol => {
@@ -107,10 +78,8 @@ async function fetchAllFeeds() {
 }
 
 async function findNextMarket(symbol) {
-  const now = Date.now();
-  const currentBucket = bucketStart(now, TIMEFRAME);
-  const nextEpoch = currentBucket + (2 * TIMEFRAMES[TIMEFRAME]);
-  return findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
+  const currentBucket = bucketStart(Date.now(), TIMEFRAME);
+  return findMarketByEpoch(symbol, currentBucket + FIVE_MINUTE_MS, TIMEFRAME);
 }
 
 function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
@@ -125,8 +94,26 @@ function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
   }).catch(error => console.warn(`5M ALERT QUEUE FAILED: ${error.message}`));
 }
 
-function wasBlockedFromPreviousWindow(symbol, currentWindow) {
-  return Number(lastAlertWindowBySymbol[symbol]) === currentWindow - ALERT_WINDOW_MS;
+function collectNewLiquidations(feeds, now) {
+  const bySymbol = new Map();
+  for (const symbol of SYMBOLS) {
+    for (const event of feeds.get(symbol) || []) {
+      const ts = normalizeTs(event?.ts);
+      if (!ts || ts >= now || ts <= startupTs) continue;
+      const side = eventSide(event);
+      if (side !== 'LONG' && side !== 'SHORT') continue;
+      const key = liquidationKey(symbol, ts, side, event);
+      if (seenLiquidations.has(key)) continue;
+      seenLiquidations.add(key);
+      const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
+      const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
+      const item = { symbol, side, key, ts, eventPrice, eventNotional: Math.abs(eventPrice * eventQty) };
+      const list = bySymbol.get(symbol) || [];
+      list.push(item);
+      bySymbol.set(symbol, list);
+    }
+  }
+  return bySymbol;
 }
 
 async function processLiquidations(feeds, now) {
@@ -135,56 +122,57 @@ async function processLiquidations(feeds, now) {
     alertWindowStart = currentWindow;
     hasAlerted = false;
     saveState();
-    console.log(`10M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
+    console.log(`5M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
   }
 
-  if (!initialized) {
-    initialized = true;
-    for (const symbol of SYMBOLS) {
-      for (const event of feeds.get(symbol) || []) {
-        const ts = normalizeTs(event?.ts);
-        if (ts && ts < now) {
-          const side = eventSide(event);
-          if (side) seenLiquidations.add(liquidationKey(symbol, ts, side, event));
-        }
-      }
-    }
-    saveState();
-    return;
-  }
+  const newLiquidations = collectNewLiquidations(feeds, now);
+  if (!initialized) { initialized = true; saveState(); return; }
 
-  if (hasAlerted) return;
-
-  const candidates = [];
-  for (const symbol of SYMBOLS) {
-    if (wasBlockedFromPreviousWindow(symbol, currentWindow)) {
-      console.log(`10M PREVIOUS-WINDOW COIN BLOCK ${symbol}`);
-      continue;
-    }
-    for (const event of feeds.get(symbol) || []) {
-      const ts = normalizeTs(event?.ts);
-      if (!ts || ts >= now || ts <= startupTs) continue;
-      const side = eventSide(event);
-      // Both directions are eligible: LONG => UP, SHORT => DOWN.
-      if (side !== 'LONG' && side !== 'SHORT') continue;
-      const key = liquidationKey(symbol, ts, side, event);
-      if (seenLiquidations.has(key)) continue;
-      seenLiquidations.add(key);
-
-      const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
-      const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-      const eventNotional = Math.abs(eventPrice * eventQty);
-      candidates.push({ symbol, side, key, ts, eventPrice, eventNotional });
+  // A pending candidate is evaluated only against liquidations in its immediate next window.
+  for (const symbol of Object.keys(pendingBySymbol)) {
+    const pending = pendingBySymbol[symbol];
+    if (Number(pending.sourceWindow) !== currentWindow - FIVE_MINUTE_MS) continue;
+    const liquidatedNow = (newLiquidations.get(symbol) || []).some(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
+    if (liquidatedNow) {
+      console.log(`5M PENDING CANCEL ${symbol}: liquidation in next window`);
+      delete pendingBySymbol[symbol];
     }
   }
 
-  if (!candidates.length) return;
+  // Any liquidation in the current window becomes pending. No alert is sent now.
+  for (const [symbol, events] of newLiquidations.entries()) {
+    const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
+    if (!currentEvents.length) continue;
+    currentEvents.sort((a, b) => a.ts - b.ts);
+    const event = currentEvents[0];
+    pendingBySymbol[symbol] = {
+      sourceWindow: currentWindow,
+      key: event.key,
+      side: event.side,
+      eventPrice: event.eventPrice,
+      eventNotional: event.eventNotional
+    };
+    console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
+  }
 
-  candidates.sort((a, b) => a.ts - b.ts);
-  const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
+  if (hasAlerted) { saveState(); return; }
+
+  // If N had a liquidation and N+1 has none for that coin, alert in N+1.
+  const eligible = SYMBOLS.map(symbol => {
+    const pending = pendingBySymbol[symbol];
+    if (!pending || Number(pending.sourceWindow) !== currentWindow - FIVE_MINUTE_MS) return null;
+    if ((newLiquidations.get(symbol) || []).some(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS)) return null;
+    return { symbol, ...pending };
+  }).filter(Boolean);
+
+  if (!eligible.length) { saveState(); return; }
+
+  eligible.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
+  const selected = eligible[0];
+  const { symbol, side, key, eventPrice, eventNotional } = selected;
   const direction = side === 'LONG' ? 'UP' : 'DOWN';
   hasAlerted = true;
-  lastAlertWindowBySymbol[symbol] = currentWindow;
+  delete pendingBySymbol[symbol];
   saveState();
 
   let nextMarket = null;
@@ -198,13 +186,12 @@ async function processLiquidations(feeds, now) {
     nextMarket?.url ? '' : null,
     nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ];
-
   enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
 }
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=10M; MARKET BOUNDARIES=:00/:10/:20/:30/:40/:50; LONG => UP; SHORT => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; IF SAME COIN HAS NO LIQUIDATION IN N+1 => ALERT IN N+1; LINK=NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
@@ -212,5 +199,4 @@ async function main() {
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
-
 main().catch(error => { console.error(`MONITOR FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
