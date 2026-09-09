@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findNextMarket, TIMEFRAMES } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only, 5M only.
@@ -105,14 +105,15 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-async function findNextPolymarket(symbol, eventTs) {
-  // Alert link must be +1 after the immediately-next market.
-  // findNextMarket() itself advances one bucket, so advance the input by one
-  // additional 5M bucket to produce NEXT+1 rather than the immediate NEXT.
-  const eventBucket = bucketStart(eventTs, TIMEFRAME);
-  const nextPlusOneBase = eventBucket + TIMEFRAMES[TIMEFRAME];
-  const market = await findNextMarket(symbol, nextPlusOneBase, TIMEFRAME);
-  console.log(`POLYMARKET NEXT+1 ${symbol} eventBucket=${new Date(eventBucket).toISOString()} url=${market?.url || 'NOT FOUND'}`);
+async function findNextPolymarket(symbol) {
+  // NEXT+1 is relative to the actual moment the alert is generated, not the
+  // liquidation event timestamp. This prevents a delayed feed event from
+  // producing an already-ended Polymarket market.
+  const now = Date.now();
+  const currentBucket = bucketStart(now, TIMEFRAME);
+  const nextPlusOneEpoch = currentBucket + (2 * TIMEFRAMES[TIMEFRAME]);
+  const market = await findMarketByEpoch(symbol, nextPlusOneEpoch, TIMEFRAME);
+  console.log(`POLYMARKET NEXT+1 ${symbol} now=${new Date(now).toISOString()} currentBucket=${new Date(currentBucket).toISOString()} target=${new Date(nextPlusOneEpoch).toISOString()} url=${market?.url || 'NOT FOUND'}`);
   return market;
 }
 
@@ -204,7 +205,7 @@ async function processLiquidations(feeds, now) {
   console.log(JSON.stringify({ type: 'liquidation', timeframe: '5m', symbol, ts, side, price: eventPrice, qty: eventQty, notional: Math.abs(eventNotional), dedupeWindowStart: alertWindowStart, firstLiquidationOnly: true, periodMinutes: 25, previousPeriodCoinBlocked: blockedSymbol }));
 
   let market = null;
-  try { market = await findNextPolymarket(symbol, ts); }
+  try { market = await findNextPolymarket(symbol); }
   catch (error) { console.warn(`POLYMARKET LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
 
   const message = [
