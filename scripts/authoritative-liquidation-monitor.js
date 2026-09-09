@@ -4,7 +4,7 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// AUTHORITATIVE: individual LONG liquidations only, 5M only.
+// AUTHORITATIVE: individual LONG/SHORT liquidations only, 5M only.
 // ALERT TIMING: send immediately when a qualifying liquidation is detected.
 // The 10-minute period is ONLY a duplicate-suppression period; it NEVER delays an alert.
 // The ONLY time-dependent Polymarket logic is the NEXT market link.
@@ -68,6 +68,7 @@ async function persistState() {
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
   if (value.includes('long') || value === 'buy') return 'LONG';
+  if (value.includes('short') || value === 'sell') return 'SHORT';
   return null;
 }
 
@@ -152,7 +153,7 @@ async function processLiquidations(feeds, now) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts >= now || ts <= startupTs) continue;
       const side = eventSide(event);
-      if (side !== 'LONG') continue;
+      if (side !== 'LONG' && side !== 'SHORT') continue;
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
@@ -167,7 +168,7 @@ async function processLiquidations(feeds, now) {
   const quietMs = previousLastObservedLiquidationTs === null ? 0 : now - previousLastObservedLiquidationTs;
   if (hasAlerted && previousLastObservedLiquidationTs !== null && quietMs >= QUIET_PERIOD_MS) {
     candidates.sort((a, b) => a.ts - b.ts);
-    console.log(`QUIET PERIOD EXIT; first LONG liquidation suppressed symbol=${candidates[0].symbol}`);
+    console.log(`QUIET PERIOD EXIT; first liquidation suppressed symbol=${candidates[0].symbol} side=${candidates[0].side}`);
     return;
   }
 
@@ -203,7 +204,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LONG LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; ONLY LONG; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY; NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
+  console.log(`SINGLE LONG/SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ONLY 5M; LONG + SHORT; ALERTS IMMEDIATE; 10M SUPPRESSION ONLY; NEXT MARKET LINK ONLY; previous-period coin blocked; 29M quiet-period after which first liquidation is ignored; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
