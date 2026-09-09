@@ -189,7 +189,7 @@ async function processLiquidations(feeds, now) {
   catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
 
   const lines = [
-    `🔥 ${symbol} · 5M · ${direction}`,
+    `🔥 ${symbol} · 5M`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
