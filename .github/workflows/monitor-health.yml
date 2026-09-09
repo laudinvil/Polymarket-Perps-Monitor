@@ -58,12 +58,12 @@ jobs:
           if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor timeframe is not 5m');
           if (!src.includes("bucketStart(ts, TIMEFRAME)")) throw new Error('5m market-boundary window is missing');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
-          if (!src.includes("if (side !== 'LONG') continue")) throw new Error('LONG-only filter is missing');
-          if (!src.includes('LONG ONLY => UP')) throw new Error('LONG to UP alert mapping is missing');
+          if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
+          if (!src.includes("side === 'LONG' ? 'UP' : 'DOWN'")) throw new Error('LONG to UP / SHORT to DOWN alert mapping is missing');
           if (!src.includes('wasBlockedFromPreviousWindow')) throw new Error('Previous-window coin block is missing');
           if (!src.includes('lastAlertWindowBySymbol')) throw new Error('Per-coin alert window state is missing');
           NODE
-          echo "Authoritative monitor source verified: 7 coins / 5m market boundaries / LONG-only => UP / one alert per window / same coin blocked in next window."
+          echo "Authoritative monitor source verified: 7 coins / 5m market boundaries / LONG=>UP + SHORT=>DOWN / one alert per window / same coin blocked in next window."
 
       - name: Continuous MarginPad monitor
         env:
@@ -91,8 +91,6 @@ jobs:
             git add monitor-history.log monitor-stats.json .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
-            # monitor-status is a generated state/log branch, so it must follow
-            # the current workflow HEAD even though it has its own prior commits.
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
