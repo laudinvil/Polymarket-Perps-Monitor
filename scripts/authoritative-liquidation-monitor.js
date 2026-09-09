@@ -6,9 +6,9 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
 // Liquidation in 5m window N creates a pending candidate; NO alert is sent in N.
-// The ENTIRE immediately following 5m windows N+1 AND N+2 must finish before evaluation.
-// At the boundary starting N+3, send one alert for the candidate from N.
-// Liquidations in N+1/N+2 do NOT cancel the N candidate; they are simply ignored for that candidate.
+// Wait through N+1 and N+2. At each later 5m boundary, check the just-completed window.
+// If the completed window is clean, send the oldest pending candidate whose waiting period is complete.
+// If the completed window contains any liquidation, do NOT send; the candidate continues waiting.
 // One alert total per 5m window. LONG => UP; SHORT => DOWN.
 // No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
@@ -44,10 +44,7 @@ function loadState() {
 
 function saveState() {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify({
-      alertWindowStart, hasAlerted, pendingBySymbol,
-      seenLiquidations: Array.from(seenLiquidations).slice(-10000), updatedAt: Date.now()
-    }, null, 2));
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ alertWindowStart, hasAlerted, pendingBySymbol, seenLiquidations: Array.from(seenLiquidations).slice(-10000), updatedAt: Date.now() }, null, 2));
   } catch (error) { console.warn(`ALERT STATE SAVE FAILED: ${error.message}`); }
 }
 
@@ -62,30 +59,17 @@ function liquidationKey(symbol, ts, side, event) {
   return [symbol, Math.floor(Number(ts) / 1000), side, String(event?.exchange ?? '').toLowerCase(), numberValue(event?.price, event?.markPrice, event?.executionPrice), numberValue(event?.qty, event?.quantity, event?.size)].join('|');
 }
 
-function numberValue(...values) {
-  for (const value of values) { const n = Number(value); if (Number.isFinite(n)) return n; }
-  return 0;
-}
+function numberValue(...values) { for (const value of values) { const n = Number(value); if (Number.isFinite(n)) return n; } return 0; }
 function money(value) { return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`; }
 function price(value) { return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 }); }
 
 async function fetchAllFeeds() {
-  const results = await Promise.all(SYMBOLS.map(async symbol => {
-    try { return [symbol, await fetchSymbolFeed(symbol)]; }
-    catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; }
-  }));
+  const results = await Promise.all(SYMBOLS.map(async symbol => { try { return [symbol, await fetchSymbolFeed(symbol)]; } catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); return [symbol, []]; } }));
   return new Map(results);
 }
 
-async function findCurrentMarket(symbol) {
-  const currentBucket = bucketStart(Date.now(), TIMEFRAME);
-  return findMarketByEpoch(symbol, currentBucket, TIMEFRAME);
-}
-
-async function findNextMarket(symbol) {
-  const currentBucket = bucketStart(Date.now(), TIMEFRAME);
-  return findMarketByEpoch(symbol, currentBucket + FIVE_MINUTE_MS, TIMEFRAME);
-}
+async function findCurrentMarket(symbol) { return findMarketByEpoch(symbol, bucketStart(Date.now(), TIMEFRAME), TIMEFRAME); }
+async function findNextMarket(symbol) { return findMarketByEpoch(symbol, bucketStart(Date.now(), TIMEFRAME) + FIVE_MINUTE_MS, TIMEFRAME); }
 
 function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
   alertSendChain = alertSendChain.then(async () => {
@@ -101,31 +85,36 @@ function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
 
 function collectNewLiquidations(feeds, now) {
   const bySymbol = new Map();
-  for (const symbol of SYMBOLS) {
-    for (const event of feeds.get(symbol) || []) {
-      const ts = normalizeTs(event?.ts);
-      if (!ts || ts >= now || ts <= startupTs) continue;
-      const side = eventSide(event);
-      if (side !== 'LONG' && side !== 'SHORT') continue;
-      const key = liquidationKey(symbol, ts, side, event);
-      if (seenLiquidations.has(key)) continue;
-      seenLiquidations.add(key);
-      const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
-      const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-      const item = { symbol, side, key, ts, eventPrice, eventNotional: Math.abs(eventPrice * eventQty) };
-      const list = bySymbol.get(symbol) || [];
-      list.push(item);
-      bySymbol.set(symbol, list);
-    }
+  for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) {
+    const ts = normalizeTs(event?.ts);
+    if (!ts || ts >= now || ts <= startupTs) continue;
+    const side = eventSide(event);
+    if (side !== 'LONG' && side !== 'SHORT') continue;
+    const key = liquidationKey(symbol, ts, side, event);
+    if (seenLiquidations.has(key)) continue;
+    seenLiquidations.add(key);
+    const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
+    const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
+    const list = bySymbol.get(symbol) || [];
+    list.push({ symbol, side, key, ts, eventPrice, eventNotional: Math.abs(eventPrice * eventQty) });
+    bySymbol.set(symbol, list);
   }
   return bySymbol;
 }
 
+function hasLiquidationInWindow(feeds, start, end) {
+  for (const symbol of SYMBOLS) for (const event of feeds.get(symbol) || []) {
+    const ts = normalizeTs(event?.ts);
+    if (!ts || ts < start || ts >= end) continue;
+    const side = eventSide(event);
+    if (side === 'LONG' || side === 'SHORT') return true;
+  }
+  return false;
+}
+
 async function processLiquidations(feeds, now) {
   const currentWindow = alignedWindowStart(now);
-  const previousWindow = currentWindow - FIVE_MINUTE_MS;
-  const windowNPlus1 = previousWindow - FIVE_MINUTE_MS;
-  const windowN = windowNPlus1 - FIVE_MINUTE_MS;
+  const completedWindow = currentWindow - FIVE_MINUTE_MS;
 
   if (alertWindowStart !== currentWindow) {
     alertWindowStart = currentWindow;
@@ -137,73 +126,56 @@ async function processLiquidations(feeds, now) {
   const newLiquidations = collectNewLiquidations(feeds, now);
   if (!initialized) { initialized = true; saveState(); return; }
 
-  // N+1 and N+2 are complete. Evaluate candidates from N ONLY at the N+3 boundary.
-  // Liquidations in N+1/N+2 do not cancel the candidate.
-  if (hasAlerted) {
-    for (const [symbol, events] of newLiquidations.entries()) {
-      const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
-      if (!currentEvents.length) continue;
-      currentEvents.sort((a, b) => a.ts - b.ts);
-      const event = currentEvents[0];
-      pendingBySymbol[symbol] = {
-        sourceWindow: currentWindow,
-        key: event.key,
-        side: event.side,
-        eventPrice: event.eventPrice,
-        eventNotional: event.eventNotional
-      };
-      console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
+  // The completed window is the decision gate. A clean completed window permits the oldest
+  // pending candidate that has already waited through its required N+1 and N+2 windows.
+  // Any liquidation in the completed window keeps the candidate pending for another check.
+  if (!hasAlerted) {
+    const candidates = SYMBOLS.map(symbol => {
+      const pending = pendingBySymbol[symbol];
+      if (!pending) return null;
+      const sourceWindow = Number(pending.sourceWindow);
+      if (!Number.isFinite(sourceWindow) || completedWindow < sourceWindow + (3 * FIVE_MINUTE_MS)) return null;
+      return { symbol, ...pending };
+    }).filter(Boolean);
+
+    if (candidates.length) {
+      if (hasLiquidationInWindow(feeds, completedWindow, currentWindow)) {
+        console.log(`5M WAIT CONTINUES completedWindow=${new Date(completedWindow).toISOString()} liquidationFound=true candidates=${candidates.map(x => x.symbol).join(',')}`);
+      } else {
+        candidates.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
+        const selected = candidates[0];
+        const { symbol, side, key, eventPrice, eventNotional } = selected;
+        hasAlerted = true;
+        delete pendingBySymbol[symbol];
+        saveState();
+
+        let currentMarket = null;
+        try { currentMarket = await findCurrentMarket(symbol); } catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${symbol}: ${error.message}`); }
+        let nextMarket = null;
+        try { nextMarket = await findNextMarket(symbol); } catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
+
+        const lines = [
+          `🔥 ${symbol} · 5M`,
+          `Volume: ${money(eventNotional)}`,
+          `Price: ${price(eventPrice)}`,
+          currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
+          nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
+        ];
+        enqueueAlert(lines.filter(Boolean).join('\n'), symbol, side, key, now);
+      }
     }
-    saveState();
-    return;
   }
 
-  const eligible = SYMBOLS.map(symbol => {
-    const pending = pendingBySymbol[symbol];
-    if (!pending || Number(pending.sourceWindow) !== windowN) return null;
-    return { symbol, ...pending };
-  }).filter(Boolean);
-
-  if (eligible.length) {
-    eligible.sort((a, b) => a.sourceWindow - b.sourceWindow || a.symbol.localeCompare(b.symbol));
-    const selected = eligible[0];
-    const { symbol, side, key, eventPrice, eventNotional } = selected;
-    hasAlerted = true;
-    delete pendingBySymbol[symbol];
-    saveState();
-
-    let currentMarket = null;
-    try { currentMarket = await findCurrentMarket(symbol); }
-    catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${symbol}: ${error.message}`); }
-
-    let nextMarket = null;
-    try { nextMarket = await findNextMarket(symbol); }
-    catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
-
-    const lines = [
-      `🔥 ${symbol} · 5M`,
-      `Volume: ${money(eventNotional)}`,
-      `Price: ${price(eventPrice)}`,
-      currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
-      nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
-    ];
-    enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
-  }
-
-  // Any liquidation in the current N+3 window becomes pending for the next evaluation.
+  // Any liquidation in the current window becomes a new pending candidate.
   for (const [symbol, events] of newLiquidations.entries()) {
     const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
     if (!currentEvents.length) continue;
     currentEvents.sort((a, b) => a.ts - b.ts);
     const event = currentEvents[0];
-    pendingBySymbol[symbol] = {
-      sourceWindow: currentWindow,
-      key: event.key,
-      side: event.side,
-      eventPrice: event.eventPrice,
-      eventNotional: event.eventNotional
-    };
-    console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
+    if (!pendingBySymbol[symbol]) {
+      pendingBySymbol[symbol] = { sourceWindow: currentWindow, key: event.key, side: event.side, eventPrice: event.eventPrice, eventNotional: event.eventNotional };
+      console.log(`5M PENDING ${symbol} sourceWindow=${new Date(currentWindow).toISOString()} side=${event.side}`);
+    }
   }
 
   saveState();
@@ -211,11 +183,10 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; WAIT FULL N+1 AND N+2; EVALUATE AT N+3; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; WAIT FULL N+1 AND N+2; IF N+3 CLEAN => ALERT; IF N+3 HAS LIQUIDATION => CONTINUE WAITING; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
-    try { await processLiquidations(await fetchAllFeeds(), now); }
-    catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
+    try { await processLiquidations(await fetchAllFeeds(), now); } catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
