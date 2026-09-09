@@ -108,7 +108,7 @@ async function fetchAllFeeds() {
 async function findNextMarket(symbol) {
   const now = Date.now();
   const currentBucket = bucketStart(now, TIMEFRAME);
-  const nextEpoch = currentBucket + TIMEFRAMES[TIMEFRAME];
+  const nextEpoch = currentBucket + (2 * TIMEFRAMES[TIMEFRAME]);
   return findMarketByEpoch(symbol, nextEpoch, TIMEFRAME);
 }
 
@@ -204,7 +204,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; SHORT ONLY => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT ONLY POLYMARKET LINK; no imbalance; no streaks`);
+  console.log(`SINGLE SHORT LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; SHORT ONLY => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
