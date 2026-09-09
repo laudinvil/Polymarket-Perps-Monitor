@@ -55,15 +55,17 @@ jobs:
           for (const symbol of ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE']) {
             if (!src.includes(`'${symbol}'`)) throw new Error(`Missing required symbol: ${symbol}`);
           }
-          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor timeframe is not 5m');
-          if (!src.includes("bucketStart(ts, TIMEFRAME)")) throw new Error('5m market-boundary window is missing');
+          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor market timeframe is not 5m');
+          if (!src.includes('const ALERT_WINDOW_MS = 10 * 60 * 1000')) throw new Error('10m alert window is missing');
+          if (!src.includes('Math.floor(Number(ts) / ALERT_WINDOW_MS) * ALERT_WINDOW_MS')) throw new Error('10m aligned alert boundaries are missing');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
           if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
           if (!src.includes("side === 'LONG' ? 'UP' : 'DOWN'")) throw new Error('LONG to UP / SHORT to DOWN alert mapping is missing');
           if (!src.includes('wasBlockedFromPreviousWindow')) throw new Error('Previous-window coin block is missing');
+          if (!src.includes('currentWindow - ALERT_WINDOW_MS')) throw new Error('Previous-window block is not aligned to 10m');
           if (!src.includes('lastAlertWindowBySymbol')) throw new Error('Per-coin alert window state is missing');
           NODE
-          echo "Authoritative monitor source verified: 7 coins / 5m market boundaries / LONG=>UP + SHORT=>DOWN / one alert per window / same coin blocked in next window."
+          echo "Authoritative monitor source verified: 7 coins / 10m alert boundaries / LONG=>UP + SHORT=>DOWN / one alert per window / same coin blocked in next 10m window."
 
       - name: Continuous MarginPad monitor
         env:
