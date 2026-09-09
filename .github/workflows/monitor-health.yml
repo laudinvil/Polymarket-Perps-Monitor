@@ -55,18 +55,20 @@ jobs:
           if (!src.includes('bucketStart(ts, TIMEFRAME)')) throw new Error('5m aligned market boundaries are missing');
           if (!src.includes('pendingBySymbol')) throw new Error('Deferred liquidation state is missing');
           if (!src.includes('LIQUIDATION IN N => NO ALERT')) throw new Error('No-alert-in-source-window rule is missing');
-          if (!src.includes('ENTIRE immediately following 5m window N+1')) throw new Error('Full N+1 wait rule is missing');
-          if (!src.includes('currentWindow - FIVE_MINUTE_MS')) throw new Error('Immediate previous 5m window boundary is missing');
-          if (!src.includes('previousWindow - FIVE_MINUTE_MS')) throw new Error('N+2 boundary evaluation is missing');
-          if (!src.includes('hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow)')) throw new Error('Completed N+1 raw-feed check is missing');
-          if (!src.includes('PENDING CANCEL')) throw new Error('Pending cancellation on next-window liquidation is missing');
+          if (!src.includes('Wait through N+1 and N+2')) throw new Error('N+1/N+2 waiting rule is missing');
+          if (!src.includes('currentWindow - FIVE_MINUTE_MS')) throw new Error('Completed 5m window boundary is missing');
+          if (!src.includes('completedWindow < sourceWindow + (3 * FIVE_MINUTE_MS)')) throw new Error('N+3 minimum waiting boundary is missing');
+          if (!src.includes('hasLiquidationInWindow(feeds, completedWindow, currentWindow)')) throw new Error('Completed-window liquidation gate is missing');
+          if (!src.includes('5M WAIT CONTINUES')) throw new Error('Candidate continuation after a dirty decision window is missing');
+          if (src.includes('PENDING CANCEL')) throw new Error('Obsolete pending cancellation logic is still present');
+          if (src.includes('NO LIQUIDATION IN N+1')) throw new Error('Obsolete N+1 cancellation gate is still present');
           if (!src.includes('findNextMarket')) throw new Error('NEXT market lookup is missing');
           if (!src.includes('currentBucket + FIVE_MINUTE_MS')) throw new Error('Alert link is not NEXT market');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
           if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
           if (!src.includes("side === 'LONG' ? 'UP' : 'DOWN'")) throw new Error('LONG to UP / SHORT to DOWN alert mapping is missing');
           NODE
-          echo "Authoritative monitor source verified: 7 coins / 5m windows / full N+1 wait / alert at N+2 / NEXT market / LONG=>UP + SHORT=>DOWN."
+          echo "Authoritative monitor source verified: 7 coins / 5m windows / N+1+N+2 wait / N+3 clean-window gate / rolling continuation / NEXT market / LONG=>UP + SHORT=>DOWN."
       - name: Continuous MarginPad monitor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
