@@ -14,7 +14,20 @@ export const startRun = internalMutation({
       .withIndex("by_run", (q) => q.eq("runId", args.runId))
       .unique();
     if (existing) return existing._id;
-    return await ctx.db.insert("monitorRuns", { ...args, status: "running" });
+    return await ctx.db.insert("monitorRuns", { ...args, lastHeartbeatAt: args.startedAt, status: "running" });
+  },
+});
+
+export const heartbeat = internalMutation({
+  args: { runId: v.number(), heartbeatAt: v.number() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("monitorRuns")
+      .withIndex("by_run", (q) => q.eq("runId", args.runId))
+      .unique();
+    if (!existing || existing.status !== "running") return null;
+    await ctx.db.patch(existing._id, { lastHeartbeatAt: args.heartbeatAt });
+    return existing._id;
   },
 });
 
@@ -148,8 +161,9 @@ export const monitorHealth = query({
       .take(1);
     const row = latest[0];
     if (!row) return { ok: false, ageMs: Number.MAX_SAFE_INTEGER };
-    const ageMs = Date.now() - row.startedAt;
-    return { ok: row.status === "running" && ageMs < 6 * 60 * 60 * 1000, ageMs };
+    const heartbeatAt = row.lastHeartbeatAt ?? row.startedAt;
+    const ageMs = Date.now() - heartbeatAt;
+    return { ok: row.status === "running" && ageMs < 3 * 60 * 1000, ageMs };
   },
 });
 
