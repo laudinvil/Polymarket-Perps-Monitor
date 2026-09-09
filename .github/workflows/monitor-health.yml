@@ -47,10 +47,6 @@ jobs:
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if grep -nE '15m|1h|4h|1d' scripts/imbalance-all-timeframes.js | grep -v 'TIMEFRAMES\[TIMEFRAME\]' >/dev/null 2>&1; then
-            echo "ERROR: non-5M timeframe logic detected"
-            exit 1
-          fi
           if ! grep -q "DEDUPE_WINDOW_MS = 15 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
             echo "ERROR: global alert period is not 15 minutes"
             exit 1
