@@ -6,13 +6,14 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
 // LONG liquidations are displayed as UP; SHORT liquidations are displayed as DOWN.
-// Alert window: exactly one active Polymarket 5m market bucket (:00/:05/:10/... UTC).
-// One alert total per 5m window. The coin alerted in window N is blocked in window N+1.
+// Alert window: exactly one 10m window aligned to UTC :00/:10/:20/:30/:40/:50 boundaries.
+// One alert total per 10m window. The coin alerted in window N is blocked in window N+1.
 // No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const FIVE_MINUTE_MS = TIMEFRAMES[TIMEFRAME];
+const ALERT_WINDOW_MS = 10 * 60 * 1000;
 const STATE_FILE = path.join(__dirname, '..', '.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
@@ -25,7 +26,7 @@ let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
 function alignedWindowStart(ts) {
-  return bucketStart(ts, TIMEFRAME);
+  return Math.floor(Number(ts) / ALERT_WINDOW_MS) * ALERT_WINDOW_MS;
 }
 
 function loadState() {
@@ -125,7 +126,7 @@ function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
 }
 
 function wasBlockedFromPreviousWindow(symbol, currentWindow) {
-  return Number(lastAlertWindowBySymbol[symbol]) === currentWindow - FIVE_MINUTE_MS;
+  return Number(lastAlertWindowBySymbol[symbol]) === currentWindow - ALERT_WINDOW_MS;
 }
 
 async function processLiquidations(feeds, now) {
@@ -134,7 +135,7 @@ async function processLiquidations(feeds, now) {
     alertWindowStart = currentWindow;
     hasAlerted = false;
     saveState();
-    console.log(`5M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
+    console.log(`10M WINDOW RESET ${new Date(currentWindow).toISOString()}`);
   }
 
   if (!initialized) {
@@ -157,7 +158,7 @@ async function processLiquidations(feeds, now) {
   const candidates = [];
   for (const symbol of SYMBOLS) {
     if (wasBlockedFromPreviousWindow(symbol, currentWindow)) {
-      console.log(`5M PREVIOUS-WINDOW COIN BLOCK ${symbol}`);
+      console.log(`10M PREVIOUS-WINDOW COIN BLOCK ${symbol}`);
       continue;
     }
     for (const event of feeds.get(symbol) || []) {
@@ -203,7 +204,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; MARKET BOUNDARIES=:00/:05/:10/...; LONG => UP; SHORT => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=10M; MARKET BOUNDARIES=:00/:10/:20/:30/:40/:50; LONG => UP; SHORT => DOWN; ONE ALERT PER WINDOW; SAME COIN BLOCKED IN NEXT WINDOW; NO MIN VOLUME; NEXT +2 POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
