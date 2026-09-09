@@ -10,7 +10,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 // The ONLY time-dependent Polymarket logic is the NEXT market link.
 // After a 29-minute quiet period, the first new liquidation is intentionally ignored.
 // The previous alert's coin is blocked in the immediately following suppression period.
-const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const FIVE_MINUTE_MS = 5 * 60 * 1000;
