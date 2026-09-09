@@ -5,7 +5,7 @@ const { bucketStart, findMarketByEpoch, TIMEFRAMES } = require('../src/polymarke
 const { sendTelegramMessage } = require('../src/telegram');
 
 // AUTHORITATIVE: individual liquidations only.
-// All monitored coins. Internal LONG/SHORT are displayed as UP/DOWN.
+// All monitored coins. Internal LONG/SHORT are displayed as DOWN/UP.
 // Alert window: 30 minutes, aligned strictly to :15 and :45.
 // Alerts are immediate. No next-period ignore. No minimum volume.
 // No imbalance. No streaks.
@@ -35,7 +35,7 @@ function eventSide(event) {
 }
 
 function displaySide(side) {
-  return side === 'LONG' ? 'UP' : side === 'SHORT' ? 'DOWN' : side;
+  return side === 'LONG' ? 'DOWN' : side === 'SHORT' ? 'UP' : side;
 }
 
 // Use a provider-independent fingerprint. Do not prefer provider IDs because
@@ -75,16 +75,11 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-async function findNextMarkets(symbol) {
+async function findNextMarket(symbol) {
   const now = Date.now();
   const currentBucket = bucketStart(now, '5m');
   const nextEpoch = currentBucket + TIMEFRAMES['5m'];
-  const nextPlusOneEpoch = nextEpoch + TIMEFRAMES['5m'];
-  const [next, nextPlusOne] = await Promise.all([
-    findMarketByEpoch(symbol, nextEpoch, '5m'),
-    findMarketByEpoch(symbol, nextPlusOneEpoch, '5m')
-  ]);
-  return { next, nextPlusOne };
+  return findMarketByEpoch(symbol, nextEpoch, '5m');
 }
 
 function enqueueAlert(message, symbol, side, key, alertDetectedAt) {
@@ -148,25 +143,23 @@ async function processLiquidations(feeds, now) {
   const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
   hasAlerted = true;
 
-  let markets = { next: null, nextPlusOne: null };
-  try { markets = await findNextMarkets(symbol); }
+  let nextMarket = null;
+  try { nextMarket = await findNextMarket(symbol); }
   catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${symbol}: ${error.message}`); }
 
   const lines = [
     `🔥 ${symbol} · 30M · ${displaySide(side)}`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    markets.next?.url ? '' : null,
-    markets.next?.url ? `➡️ NEXT · Polymarket 5M\n${markets.next.url}` : null,
-    markets.nextPlusOne?.url ? '' : null,
-    markets.nextPlusOne?.url ? `➡️ NEXT +1 · Polymarket 5M\n${markets.nextPlusOne.url}` : null
+    nextMarket?.url ? '' : null,
+    nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ];
 
   enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:15/:45; DISPLAY LONG=UP SHORT=DOWN; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT + NEXT+1 POLYMARKET LINKS; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=30M; BOUNDARIES=:15/:45; DISPLAY LONG=DOWN SHORT=UP; NO MIN VOLUME; NO NEXT-PERIOD IGNORE; NEXT ONLY POLYMARKET LINK; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
