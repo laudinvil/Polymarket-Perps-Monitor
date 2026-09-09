@@ -77,6 +77,11 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
+async function findCurrentMarket(symbol) {
+  const currentBucket = bucketStart(Date.now(), TIMEFRAME);
+  return findMarketByEpoch(symbol, currentBucket, TIMEFRAME);
+}
+
 async function findNextMarket(symbol) {
   const currentBucket = bucketStart(Date.now(), TIMEFRAME);
   return findMarketByEpoch(symbol, currentBucket + FIVE_MINUTE_MS, TIMEFRAME);
@@ -175,15 +180,19 @@ async function processLiquidations(feeds, now) {
   delete pendingBySymbol[symbol];
   saveState();
 
+  let currentMarket = null;
+  try { currentMarket = await findCurrentMarket(symbol); }
+  catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${symbol}: ${error.message}`); }
+
   let nextMarket = null;
   try { nextMarket = await findNextMarket(symbol); }
-  catch (error) { console.warn(`POLYMARKET LOOKUP FAILED ${symbol}: ${error.message}`); }
+  catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED ${symbol}: ${error.message}`); }
 
   const lines = [
     `🔥 ${symbol} · 5M · ${direction}`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    nextMarket?.url ? '' : null,
+    currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
     nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ];
   enqueueAlert(lines.filter(value => value !== null).join('\n'), symbol, side, key, now);
@@ -191,7 +200,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; IF SAME COIN HAS NO LIQUIDATION IN N+1 => ALERT IN N+1; LINK=NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; IF SAME COIN HAS NO LIQUIDATION IN N+1 => ALERT IN N+1; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
