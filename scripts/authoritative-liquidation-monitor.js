@@ -8,6 +8,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 // ONLY BTC is monitored. Internal LONG/SHORT sides are displayed as UP/DOWN.
 // ALERT TIMING: send immediately when a qualifying liquidation is detected.
 // Each alert belongs to a 5-minute window. The following 5-minute window is ignored.
+// Minimum liquidation volume: $1,500 notional.
 // The ONLY time-dependent Polymarket logic is the NEXT market link.
 // No quiet-period rule. No imbalance. No streaks.
 const SYMBOLS = ['BTC'];
@@ -15,6 +16,7 @@ const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const FIVE_MINUTE_MS = 5 * 60 * 1000;
 const SUPPRESSION_MS = 2 * FIVE_MINUTE_MS;
+const MIN_LIQUIDATION_VOLUME = 1500;
 const STATE_FILE = path.resolve('.liquidation-alert-state.json');
 
 const seenLiquidations = new Set();
@@ -158,14 +160,20 @@ async function processLiquidations(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (seenLiquidations.has(key)) continue;
       seenLiquidations.add(key);
-      candidates.push({ symbol, side, key, event, ts });
+
+      const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
+      const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
+      const eventNotional = Math.abs(eventPrice * eventQty);
+      if (eventNotional < MIN_LIQUIDATION_VOLUME) continue;
+
+      candidates.push({ symbol, side, key, event, ts, eventPrice, eventQty, eventNotional });
     }
   }
 
   if (!candidates.length) return;
 
   candidates.sort((a, b) => a.ts - b.ts);
-  const { symbol, side, key, event } = candidates[0];
+  const { symbol, side, key, eventPrice, eventNotional } = candidates[0];
   alertWindowStart = alignedWindowStart(now);
   periodAlreadyAlerted = true;
   lastAlertSymbol = symbol;
@@ -173,10 +181,6 @@ async function processLiquidations(feeds, now) {
   hasAlerted = true;
 
   await persistState();
-
-  const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
-  const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
-  const eventNotional = Math.abs(eventPrice * eventQty);
 
   let market = null;
   try { market = await findNextPolymarket(symbol); }
@@ -195,7 +199,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; ONLY 5M; DISPLAY LONG=UP SHORT=DOWN; ALERTS IMMEDIATE; 5M WINDOW + NEXT 5M WINDOW IGNORED; NEXT MARKET LINK ONLY; no quiet-period; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; ONLY 5M; MIN VOLUME=$${MIN_LIQUIDATION_VOLUME}; DISPLAY LONG=UP SHORT=DOWN; ALERTS IMMEDIATE; 5M WINDOW + NEXT 5M WINDOW IGNORED; NEXT MARKET LINK ONLY; no quiet-period; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
