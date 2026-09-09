@@ -18,58 +18,49 @@ jobs:
     permissions:
       contents: write
       actions: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - name: Restore monitor history
         run: |
           git fetch origin monitor-status:monitor-status || true
-          git checkout monitor-status -- monitor-history.log .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
+          git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
+
       - name: Verify authoritative monitor source
         run: |
-          set -e
-          test -f scripts/authoritative-liquidation-monitor.js
-          node --check scripts/authoritative-liquidation-monitor.js
-          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|QUIET_PERIOD_MS|29-minute|29M quiet' scripts package.json --exclude='*.log' 2>/dev/null; then
-            echo "ERROR: obsolete monitor logic detected in executable project files"
+          node --check scripts/imbalance-all-timeframes.js
+          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only' scripts package.json --exclude='*.log' 2>/dev/null; then
+            echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          if grep -R -n -E 'MIN_VOLUME|MIN_LIQUIDATION_VOLUME|volume.*1500|1500.*volume' scripts/authoritative-liquidation-monitor.js 2>/dev/null; then
-            echo "ERROR: obsolete minimum-volume filter detected"
+          if ! grep -q "const SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: authoritative monitor does not contain all 7 required coins"
             exit 1
           fi
-          node - <<'NODE'
-          const fs = require('fs');
-          const src = fs.readFileSync('scripts/authoritative-liquidation-monitor.js', 'utf8');
-          for (const symbol of ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE']) {
-            if (!src.includes(`'${symbol}'`)) throw new Error(`Missing required symbol: ${symbol}`);
-          }
-          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor timeframe is not 5m');
-          if (!src.includes('bucketStart(ts, TIMEFRAME)')) throw new Error('5m aligned market boundaries are missing');
-          if (!src.includes('pendingBySymbol')) throw new Error('Deferred liquidation state is missing');
-          if (!src.includes('LIQUIDATION IN N => NO ALERT')) throw new Error('No-alert-in-source-window rule is missing');
-          if (!src.includes('Wait through N+1 and N+2')) throw new Error('N+1/N+2 waiting rule is missing');
-          if (!src.includes('currentWindow - FIVE_MINUTE_MS')) throw new Error('Completed 5m window boundary is missing');
-          if (!src.includes('completedWindow < sourceWindow + (3 * FIVE_MINUTE_MS)')) throw new Error('N+3 minimum waiting boundary is missing');
-          if (!src.includes('hasLiquidationInWindow(feeds, completedWindow, currentWindow)')) throw new Error('Completed-window liquidation gate is missing');
-          if (!src.includes('5M WAIT CONTINUES')) throw new Error('Candidate continuation after a dirty decision window is missing');
-          if (src.includes('PENDING CANCEL')) throw new Error('Obsolete pending cancellation logic is still present');
-          if (src.includes('NO LIQUIDATION IN N+1')) throw new Error('Obsolete N+1 cancellation gate is still present');
-          if (!src.includes('findNextMarket')) throw new Error('NEXT market lookup is missing');
-          if (!src.includes('bucketStart(Date.now(), TIMEFRAME)')) throw new Error('Current market bucket is missing');
-          if (!src.includes('FIVE_MINUTE_MS')) throw new Error('5m market increment is missing');
-          if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
-          if (!src.includes("if (side !== 'LONG' && side !== 'SHORT') continue")) throw new Error('LONG+SHORT direction filter is missing');
-          if (!src.includes("side === 'LONG' ? 'UP' : 'DOWN'")) throw new Error('LONG to UP / SHORT to DOWN alert mapping is missing');
-          NODE
-          echo "Authoritative monitor source verified: 7 coins / 5m windows / N+1+N+2 wait / N+3 clean-window gate / rolling continuation / CURRENT+NEXT market / LONG=>UP + SHORT=>DOWN."
+          if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: authoritative monitor is not 5M-only"
+            exit 1
+          fi
+          if ! grep -q "if (side !== 'SHORT') continue" scripts/imbalance-all-timeframes.js; then
+            echo "ERROR: monitor is not SHORT-only"
+            exit 1
+          fi
+          if grep -nE '15m|1h|4h|1d' scripts/imbalance-all-timeframes.js | grep -v 'TIMEFRAMES\[TIMEFRAME\]' >/dev/null 2>&1; then
+            echo "ERROR: non-5M timeframe logic detected"
+            exit 1
+          fi
+          echo "Authoritative monitor verified: ONLY 5M / BTC ETH SOL XRP DOGE BNB HYPE / SHORT-only"
+
       - name: Continuous MarginPad monitor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +73,7 @@ jobs:
         run: |
           set -o pipefail
           timeout 20s node scripts/convex-sync.js start || true
-          node -r ./src/http-timeout.js scripts/authoritative-liquidation-monitor.js 2>&1 | tee monitor.log &
+          node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           MONITOR_STATUS=completed
           trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
@@ -93,12 +84,13 @@ jobs:
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log monitor-stats.json .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
+            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
-            git push --force origin HEAD:monitor-status || true
+            git push origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
+
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
@@ -106,6 +98,7 @@ jobs:
           name: monitor-log
           path: monitor.log
           if-no-files-found: ignore
+
       - name: Finish Convex run
         if: always()
         env:
