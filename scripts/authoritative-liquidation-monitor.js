@@ -7,10 +7,10 @@ const { sendTelegramMessage } = require('../src/telegram');
 // AUTHORITATIVE: individual liquidations only.
 // Liquidation in 5m window N creates a pending candidate; NO alert is sent in N.
 // The ENTIRE immediately following 5m windows N+1 AND N+2 must finish before evaluation.
-// At the boundary starting N+3, if the same coin had NO liquidation anywhere in N+1 or N+2,
-// send one alert for the next/current Polymarket market. If it liquidated at any point
-// in N+1 or N+2, cancel that pending candidate. One alert total per 5m window.
-// LONG => UP; SHORT => DOWN. No minimum volume. No imbalance. No streaks.
+// At the boundary starting N+3, send one alert for the candidate from N.
+// Liquidations in N+1/N+2 do NOT cancel the N candidate; they are simply ignored for that candidate.
+// One alert total per 5m window. LONG => UP; SHORT => DOWN.
+// No minimum volume. No imbalance. No streaks.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
@@ -121,16 +121,6 @@ function collectNewLiquidations(feeds, now) {
   return bySymbol;
 }
 
-// IMPORTANT: this checks the raw feed, not seenLiquidations.
-// When called for a completed window, windowEnd must be the exact next boundary.
-function hasLiquidationInWindow(feeds, symbol, windowStart, windowEnd) {
-  return (feeds.get(symbol) || []).some(event => {
-    const ts = normalizeTs(event?.ts);
-    if (!ts || ts < windowStart || ts >= windowEnd) return false;
-    return eventSide(event) === 'LONG' || eventSide(event) === 'SHORT';
-  });
-}
-
 async function processLiquidations(feeds, now) {
   const currentWindow = alignedWindowStart(now);
   const previousWindow = currentWindow - FIVE_MINUTE_MS;
@@ -147,19 +137,8 @@ async function processLiquidations(feeds, now) {
   const newLiquidations = collectNewLiquidations(feeds, now);
   if (!initialized) { initialized = true; saveState(); return; }
 
-  // N+1 and N+2 are now COMPLETE. Evaluate candidates from N ONLY at the N+3 boundary.
-  // Any liquidation anywhere in either completed window cancels the candidate.
-  for (const symbol of Object.keys(pendingBySymbol)) {
-    const pending = pendingBySymbol[symbol];
-    if (Number(pending.sourceWindow) !== windowN) continue;
-    const liquidatedInNPlus1 = hasLiquidationInWindow(feeds, symbol, windowNPlus1, previousWindow);
-    const liquidatedInNPlus2 = hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow);
-    if (liquidatedInNPlus1 || liquidatedInNPlus2) {
-      console.log(`5M PENDING CANCEL ${symbol}: liquidation in completed N+1/N+2 window`);
-      delete pendingBySymbol[symbol];
-    }
-  }
-
+  // N+1 and N+2 are complete. Evaluate candidates from N ONLY at the N+3 boundary.
+  // Liquidations in N+1/N+2 do not cancel the candidate.
   if (hasAlerted) {
     for (const [symbol, events] of newLiquidations.entries()) {
       const currentEvents = events.filter(event => event.ts >= currentWindow && event.ts < currentWindow + FIVE_MINUTE_MS);
@@ -179,12 +158,9 @@ async function processLiquidations(feeds, now) {
     return;
   }
 
-  // Determine N+3 eligibility BEFORE storing a new candidate from the current N+3 window.
   const eligible = SYMBOLS.map(symbol => {
     const pending = pendingBySymbol[symbol];
     if (!pending || Number(pending.sourceWindow) !== windowN) return null;
-    if (hasLiquidationInWindow(feeds, symbol, windowNPlus1, previousWindow)) return null;
-    if (hasLiquidationInWindow(feeds, symbol, previousWindow, currentWindow)) return null;
     return { symbol, ...pending };
   }).filter(Boolean);
 
@@ -235,7 +211,7 @@ async function processLiquidations(feeds, now) {
 
 async function main() {
   loadState();
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; REQUIRE FULL N+1 AND N+2 CLEAN; EVALUATE ONLY AT N+3; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; ALERT WINDOW=5M; LIQUIDATION IN N => NO ALERT; WAIT FULL N+1 AND N+2; EVALUATE AT N+3; LINK=CURRENT+NEXT MARKET; LONG=>UP; SHORT=>DOWN; ONE ALERT PER WINDOW; no imbalance; no streaks`);
   while (true) {
     const now = Date.now();
     try { await processLiquidations(await fetchAllFeeds(), now); }
