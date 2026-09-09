@@ -55,12 +55,15 @@ jobs:
           for (const symbol of ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE']) {
             if (!src.includes(`'${symbol}'`)) throw new Error(`Missing required symbol: ${symbol}`);
           }
-          if (!src.includes("const TIMEFRAME = '30m'")) throw new Error('Monitor timeframe is not 30m');
-          if (!src.includes("const WINDOW_OFFSET_MS = 15 * 60 * 1000")) throw new Error('Window boundaries are not aligned to :15/:45');
+          if (!src.includes("const TIMEFRAME = '5m'")) throw new Error('Monitor timeframe is not 5m');
+          if (!src.includes("bucketStart(ts, TIMEFRAME)")) throw new Error('5m market-boundary window is missing');
           if (!src.includes('hasAlerted')) throw new Error('One-alert-per-window guard is missing');
-          if (!src.includes("'UP'") || !src.includes("'DOWN'")) throw new Error('Telegram UP/DOWN mapping is missing');
+          if (!src.includes("if (side !== 'LONG') continue")) throw new Error('LONG-only filter is missing');
+          if (!src.includes('LONG ONLY => UP')) throw new Error('LONG to UP alert mapping is missing');
+          if (!src.includes('wasBlockedFromPreviousWindow')) throw new Error('Previous-window coin block is missing');
+          if (!src.includes('lastAlertWindowBySymbol')) throw new Error('Per-coin alert window state is missing');
           NODE
-          echo "Authoritative monitor source verified: current 7-coin / 30m / :15-:45 strategy and one-alert-per-window guard are present; obsolete rules are absent."
+          echo "Authoritative monitor source verified: 7 coins / 5m market boundaries / LONG-only => UP / one alert per window / same coin blocked in next window."
 
       - name: Continuous MarginPad monitor
         env:
