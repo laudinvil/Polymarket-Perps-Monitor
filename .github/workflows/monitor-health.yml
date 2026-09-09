@@ -33,29 +33,33 @@ jobs:
       - name: Restore monitor history
         run: |
           git fetch origin monitor-status:monitor-status || true
-          git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
+          git checkout monitor-status -- monitor-history.log .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
 
       - name: Verify authoritative monitor source
         run: |
-          node --check scripts/imbalance-all-timeframes.js
+          node --check scripts/authoritative-liquidation-monitor.js
           if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only' scripts package.json --exclude='*.log' 2>/dev/null; then
             echo "ERROR: legacy monitor reference detected in executable project files"
             exit 1
           fi
-          if ! grep -q "const TIMEFRAME = '5m'" scripts/imbalance-all-timeframes.js; then
+          if ! grep -q "const TIMEFRAME = '5m'" scripts/authoritative-liquidation-monitor.js; then
             echo "ERROR: authoritative monitor is not 5M-only"
             exit 1
           fi
-          if ! grep -q "DEDUPE_WINDOW_MS = 25 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
+          if ! grep -q "DEDUPE_WINDOW_MS = 25 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
             echo "ERROR: global alert period is not 25 minutes"
             exit 1
           fi
-          if ! grep -q "QUIET_PERIOD_MS = 29 \* 60 \* 1000" scripts/imbalance-all-timeframes.js; then
+          if ! grep -q "QUIET_PERIOD_MS = 29 \* 60 \* 1000" scripts/authoritative-liquidation-monitor.js; then
             echo "ERROR: quiet period is not 29 minutes"
             exit 1
           fi
-          echo "Authoritative monitor verified: configured coin list / ONLY 5M / 25M global period / 29M quiet period"
+          if ! grep -q "persistState" scripts/authoritative-liquidation-monitor.js; then
+            echo "ERROR: rolling alert state is not persisted"
+            exit 1
+          fi
+          echo "Authoritative monitor verified: 7 coins / ONLY 5M / individual liquidations / 25M rolling global window / previous coin blocked / 29M quiet period / persistent alert state"
 
       - name: Continuous MarginPad monitor
         env:
@@ -69,7 +73,7 @@ jobs:
         run: |
           set -o pipefail
           timeout 20s node scripts/convex-sync.js start || true
-          node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
+          node -r ./src/http-timeout.js scripts/authoritative-liquidation-monitor.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           MONITOR_STATUS=completed
           trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
@@ -80,7 +84,7 @@ jobs:
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git add monitor-history.log monitor-stats.json .monitor-state.json .liquidation-alert-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
             git push origin HEAD:monitor-status || true
