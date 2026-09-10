@@ -34,12 +34,13 @@ jobs:
         run: |
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
-          rm -f monitor.log monitor-live.log .convex-log-cursor
+          rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
 
       - name: Verify monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
           node --check src/polymarket.js
+          node --check scripts/build-monitor-stats.js
           node <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
@@ -48,59 +49,22 @@ jobs:
           const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
           if (symbols.length !== 1 || symbols[0] !== 'BTC') throw new Error(`ERROR: expected BTC only, found ${symbols.join(',')}`);
           console.log('Configured monitored coins: BTC only');
-
           const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
-
           const requiredPatterns = [
-            /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/,
-            /POLL_MS\s*=\s*4000/,
-            /collectCurrentPeriodEvents\s*\(/,
-            /armedAfterEmptyPeriod/,
-            /periodEventCount\s*===\s*0/,
-            /EMPTY PERIOD CONFIRMED/,
-            /first_liquidation_after_empty_5m_period/,
-            /findNextMarket\(symbol, alertNow, '5m'\)/,
-            /findCurrentMarket\(symbol, alertNow, '15m'\)/,
-            /POLYMARKET NEXT/,
-            /POLYMARKET CURRENT/,
-            /individual events only/,
-            /no imbalance/,
-            /no streaks/
+            /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/, /POLL_MS\s*=\s*4000/, /collectCurrentPeriodEvents\s*\(/,
+            /armedAfterEmptyPeriod/, /periodEventCount\s*===\s*0/, /EMPTY PERIOD CONFIRMED/,
+            /first_liquidation_after_empty_5m_period/, /findNextMarket\(symbol, alertNow, '5m'\)/,
+            /findCurrentMarket\(symbol, alertNow, '15m'\)/, /POLYMARKET NEXT/, /POLYMARKET CURRENT/,
+            /individual events only/, /no imbalance/, /no streaks/
           ];
-          requiredPatterns.forEach((pattern) => {
-            if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`);
-          });
-
+          requiredPatterns.forEach((pattern) => { if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`); });
           const poly = fs.readFileSync('src/polymarket.js', 'utf8');
           if (!/async function findCurrentMarket\(symbol, now = Date\.now\(\), timeframe = '15m'\)/.test(poly)) throw new Error('ERROR: current-market helper missing');
-          if (!/findCurrentMarket/.test(poly)) throw new Error('ERROR: current-market export missing');
-
-          const obsolete = [
-            'ACCELERATION_BUCKET_MS',
-            'MIN_LATEST_COUNT',
-            'buildAccelerationCandidates',
-            'loadExpectedSide',
-            'persistLastAlertSide',
-            'expectedSide',
-            'latest >= 4',
-            '3 rising buckets',
-            'ACTIVITY_BUCKET_MS',
-            'REQUIRED_CONSECUTIVE_BUCKETS',
-            'buildActivityCandidates',
-            'rule=collective_all_coins_at_least_one_each_30s',
-            'findClobMidpoint',
-            'CLOB MIDPOINT CURRENT',
-            'CURRENT Polymarket Price',
-            'CURRENT · Polymarket 5M',
-            'AFTER EMPTY 5M PERIOD'
-          ];
-          for (const marker of obsolete) {
-            if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
-          }
-
-          console.log('Monitor verified: BTC only; 5m; completed empty periods arm the monitor; first new liquidation triggers; one alert per armed period; current 15m + next 5m links; partial periods never qualify as empty.');
+          const obsolete = ['ACCELERATION_BUCKET_MS','MIN_LATEST_COUNT','buildAccelerationCandidates','loadExpectedSide','persistLastAlertSide','expectedSide','latest >= 4','3 rising buckets','ACTIVITY_BUCKET_MS','REQUIRED_CONSECUTIVE_BUCKETS','buildActivityCandidates','rule=collective_all_coins_at_least_one_each_30s','findClobMidpoint','CLOB MIDPOINT CURRENT','CURRENT Polymarket Price','CURRENT · Polymarket 5M','AFTER EMPTY 5M PERIOD'];
+          for (const marker of obsolete) if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
+          console.log('Monitor verified: BTC only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; current 15m + next 5m links; partial periods never qualify as empty.');
           NODE
 
       - name: Continuous MarginPad monitor
@@ -117,19 +81,18 @@ jobs:
           timeout 20s node scripts/convex-sync.js start || true
           node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
-          MONITOR_STATUS=completed
-          trap 'status=$?; if [ "$status" -ne 0 ]; then MONITOR_STATUS=failed; fi; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
+          trap 'status=$?; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
             sleep 60
             timeout 20s node scripts/convex-sync.js sync || true
-            node scripts/build-monitor-stats.js monitor-history.log
-            tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
+            node scripts/build-monitor-stats.js monitor-history.log || true
+            tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
+            git add monitor-history.log .monitor-state.json monitor-stats.md 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update monitor status" 2>/dev/null || true
-            git push --force origin HEAD:monitor-status
+            git commit -m "Update live BTC monitor status" 2>/dev/null || true
+            git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
 
