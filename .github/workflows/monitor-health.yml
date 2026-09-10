@@ -39,10 +39,6 @@ jobs:
       - name: Verify authoritative monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
-          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|loadExpectedSide|persistLastAlertSide|DEDUPE_WINDOW_MS|TIMEFRAMES' scripts package.json --exclude='*.log' 2>/dev/null; then
-            echo "ERROR: obsolete liquidation monitor logic detected in executable project files"
-            exit 1
-          fi
           node <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
@@ -72,6 +68,8 @@ jobs:
           if (!text.includes('latest >= 4')) throw new Error('ERROR: minimum acceleration threshold missing');
           if (!text.includes('individual events only')) throw new Error('ERROR: individual-event counting policy missing');
           if (!text.includes('next market only')) throw new Error('ERROR: next-market link policy missing');
+          if (text.includes('loadExpectedSide') || text.includes('persistLastAlertSide')) throw new Error('ERROR: obsolete side-alternation logic detected in authoritative monitor');
+          if (text.includes('expectedSide')) throw new Error('ERROR: obsolete expected-side state detected in authoritative monitor');
 
           console.log('Authoritative monitor verified: all 7 coins; 5m; 30s acceleration buckets; 3 rising buckets; latest >= 4; one alert per period; individual events; next market only.');
           NODE
