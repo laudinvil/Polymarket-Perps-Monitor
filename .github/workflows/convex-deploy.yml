@@ -27,15 +27,22 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Configure Convex ingest secret
+      - name: Configure Convex secrets
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+          GITHUB_WORKFLOW_TOKEN: ${{ secrets.GITHUB_WORKFLOW_TOKEN }}
         run: |
           set -e
           test -n "$CONVEX_DEPLOY_KEY"
           test -n "$CONVEX_INGEST_TOKEN"
           npx convex env set CONVEX_INGEST_TOKEN "$CONVEX_INGEST_TOKEN" --prod
+          if [ -n "$GITHUB_WORKFLOW_TOKEN" ]; then
+            npx convex env set GITHUB_WORKFLOW_TOKEN "$GITHUB_WORKFLOW_TOKEN" --prod
+            echo "Convex GitHub watchdog token configured"
+          else
+            echo "WARNING: GITHUB_WORKFLOW_TOKEN is not configured; Convex watchdog will remain inactive"
+          fi
 
       - name: Deploy Convex
         env:
