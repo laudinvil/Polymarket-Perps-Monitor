@@ -1,5 +1,5 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { findNextMarket } = require('../src/polymarket');
+const { findNextMarket, findCurrentMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative BTC-only liquidation monitor.
@@ -149,8 +149,7 @@ async function processTimeframe(feeds, now) {
     console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`);
   } catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
   try {
-    // Current 15m market: use a timestamp just inside the active bucket.
-    current15mMarket = await findNextMarket(symbol, alertNow - 1, '15m');
+    current15mMarket = await findCurrentMarket(symbol, alertNow, '15m');
     console.log(`POLYMARKET CURRENT ${symbol} 15m=${current15mMarket?.url ?? 'UNAVAILABLE'}`);
   } catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED 15m ${symbol}: ${error.message}`); }
 
