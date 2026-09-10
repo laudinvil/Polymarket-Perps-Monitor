@@ -1,5 +1,5 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findMarketByEpoch, findNextMarket, findClobMidpoint } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
@@ -47,7 +47,6 @@ function numberValue(...values) {
 }
 function money(value) { return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`; }
 function price(value) { return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 }); }
-function formatClobPrice(value) { return Number(value).toFixed(4); }
 function persistStatus() {
   const snapshot = {
     updatedAt: new Date().toISOString(), timeframe: TIMEFRAME, symbols: SYMBOLS,
@@ -127,20 +126,7 @@ async function processTimeframe(feeds, now) {
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
   console.log(`5m FIRST-LIQUIDATION CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=first_new_liquidation_each_5m_period`);
 
-  let currentMarket = null;
-  try {
-    currentMarket = await findMarketByEpoch(symbol, bucketStart(Date.now(), TIMEFRAME), TIMEFRAME);
-    console.log(`POLYMARKET CURRENT ${symbol} 5m=${currentMarket?.url ?? 'UNAVAILABLE'}`);
-  } catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
-
-  let currentMarketPrice = null;
-  try {
-    const midpoint = await findClobMidpoint(currentMarket, displaySide(side));
-    if (midpoint !== null) currentMarketPrice = formatClobPrice(midpoint);
-    console.log(`CLOB MIDPOINT CURRENT ${symbol} 5m ${displaySide(side)}=${currentMarketPrice ?? 'UNAVAILABLE'}`);
-  } catch (error) { console.warn(`CLOB MIDPOINT CURRENT FAILED 5m ${displaySide(side)}: ${error.message}`); }
-
-  // NEXT is always the market immediately following the current market at alert time.
+  // NEXT links only. No current-market URL and no current CLOB price in the alert.
   const alertNow = Date.now();
   let next5mMarket = null; let next15mMarket = null;
   try { next5mMarket = await findNextMarket(symbol, alertNow, '5m'); console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`); }
@@ -153,8 +139,6 @@ async function processTimeframe(feeds, now) {
     displaySide(side),
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    currentMarketPrice !== null ? `CURRENT Polymarket Price: ${currentMarketPrice}` : null,
-    currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
     next5mMarket?.url ? `➡️ NEXT · Polymarket 5M\n${next5mMarket.url}` : null,
     next15mMarket?.url ? `➡️ NEXT · Polymarket 15M\n${next15mMarket.url}` : null,
   ].filter(Boolean).join('\n');
@@ -162,7 +146,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; first new liquidation in each 5m period; no empty-period requirement; individual events only; no imbalance; no streaks; one global alert per 5m period; current market + live CLOB price + next 5m + next 15m market links');
+  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; first new liquidation in each 5m period; no empty-period requirement; individual events only; no imbalance; no streaks; one global alert per 5m period; next 5m + next 15m market links only');
   while (true) {
     const now = Date.now();
     try { await processTimeframe(await fetchAllFeeds(), now); } catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
