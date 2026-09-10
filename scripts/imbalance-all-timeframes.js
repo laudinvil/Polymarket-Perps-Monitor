@@ -4,46 +4,55 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { bucketStart, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// Authoritative monitor: individual liquidation events only.
-// BTC only. Each 5-minute period can produce exactly ONE alert.
-// Alert side alternates globally and persists across workflow restarts.
+// Authoritative liquidation monitor: individual liquidation events only.
+// BTC only. Independent 5m and 15m periods. Each period can produce exactly ONE alert.
+// Alert side alternates independently per timeframe and persists across workflow restarts.
 const SYMBOLS = ['BTC'];
-const TIMEFRAME = '5m';
+const TIMEFRAMES = ['5m', '15m'];
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
-const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+const TIMEFRAME_MS = { '5m': 5 * 60 * 1000, '15m': 15 * 60 * 1000 };
 const SIDE_STATE_PATH = path.resolve('.monitor-side-state.json');
 
-const seenLiquidations = new Set();
-let dedupePeriodStart = null;
-let periodAlreadyAlerted = false;
-let expectedSide = loadExpectedSide();
+const state = Object.fromEntries(TIMEFRAMES.map(timeframe => [timeframe, createTimeframeState(timeframe)]));
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
-let initialized = false;
 
-function loadExpectedSide() {
+function createTimeframeState(timeframe) {
+  return {
+    timeframe,
+    seenLiquidations: new Set(),
+    periodStart: null,
+    periodAlreadyAlerted: false,
+    expectedSide: loadExpectedSide(timeframe),
+    initialized: false,
+  };
+}
+
+function loadExpectedSide(timeframe) {
   try {
-    const state = JSON.parse(fs.readFileSync(SIDE_STATE_PATH, 'utf8'));
-    const lastSide = String(state?.lastAlertSide || '').toUpperCase();
+    const saved = JSON.parse(fs.readFileSync(SIDE_STATE_PATH, 'utf8'));
+    const lastSide = String(saved?.[timeframe]?.lastAlertSide || '').toUpperCase();
     if (lastSide === 'LONG') return 'SHORT';
     if (lastSide === 'SHORT') return 'LONG';
   } catch {}
   return 'LONG';
 }
 
-function persistLastAlertSide(side) {
-  const payload = JSON.stringify({
+function persistLastAlertSide(timeframe, side) {
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(SIDE_STATE_PATH, 'utf8')); } catch {}
+  saved[timeframe] = {
     version: 1,
     lastAlertSide: side,
     nextExpectedSide: side === 'LONG' ? 'SHORT' : 'LONG',
     updatedAt: new Date().toISOString()
-  }, null, 2) + '\n';
+  };
   try {
-    fs.writeFileSync(SIDE_STATE_PATH, payload);
-    console.log(`SIDE STATE SAVED last=${side} next=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
+    fs.writeFileSync(SIDE_STATE_PATH, JSON.stringify(saved, null, 2) + '\n');
+    console.log(`SIDE STATE SAVED timeframe=${timeframe} last=${side} next=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
   } catch (error) {
-    console.warn(`SIDE STATE SAVE FAILED: ${error.message}`);
+    console.warn(`SIDE STATE SAVE FAILED ${timeframe}: ${error.message}`);
   }
 }
 
@@ -58,17 +67,14 @@ function displaySide(side) {
   return side === 'LONG' ? 'DOWN' : 'UP';
 }
 
-function dedupeWindowStart(ts) {
-  return Math.floor(ts / DEDUPE_WINDOW_MS) * DEDUPE_WINDOW_MS;
-}
-
-function resetDedupeWindow(ts) {
-  const period = dedupeWindowStart(ts);
-  if (dedupePeriodStart === period) return;
-  dedupePeriodStart = period;
-  seenLiquidations.clear();
-  periodAlreadyAlerted = false;
-  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (5m; BTC only; expected side=${expectedSide})`);
+function resetPeriod(timeframe, now) {
+  const current = state[timeframe];
+  const period = bucketStart(now, timeframe);
+  if (current.periodStart === period) return;
+  current.periodStart = period;
+  current.seenLiquidations.clear();
+  current.periodAlreadyAlerted = false;
+  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (${timeframe}; BTC only; expected side=${current.expectedSide})`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -109,50 +115,51 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-async function findCurrentPolymarket(symbol, now) {
-  const currentBucket = bucketStart(now, TIMEFRAME);
-  return findMarketByEpoch(symbol, currentBucket, TIMEFRAME);
+async function findCurrentPolymarket(symbol, now, timeframe) {
+  return findMarketByEpoch(symbol, bucketStart(now, timeframe), timeframe);
 }
 
-function enqueueAlert(message, symbol, side, key) {
+function enqueueAlert(message, symbol, side, timeframe, key) {
   alertSendChain = alertSendChain.then(async () => {
     const waitMs = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
     if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
     try {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      expectedSide = side === 'LONG' ? 'SHORT' : 'LONG';
-      persistLastAlertSide(side);
-      console.log(`5M ALERT SENT ${symbol} ${side} display=${displaySide(side)} key=${key}; NEXT EXPECTED SIDE=${expectedSide}`);
+      const current = state[timeframe];
+      current.expectedSide = side === 'LONG' ? 'SHORT' : 'LONG';
+      persistLastAlertSide(timeframe, side);
+      console.log(`${timeframe} ALERT SENT ${symbol} ${side} display=${displaySide(side)} key=${key}; NEXT EXPECTED SIDE=${current.expectedSide}`);
     } catch (error) {
-      console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`);
+      console.warn(`${timeframe} ALERT SEND FAILED ${symbol}: ${error.message}`);
     }
-  }).catch(error => console.warn(`5M ALERT QUEUE FAILED: ${error.message}`));
+  }).catch(error => console.warn(`${timeframe} ALERT QUEUE FAILED: ${error.message}`));
 }
 
-async function processLiquidations(feeds, now) {
-  resetDedupeWindow(now);
-  if (periodAlreadyAlerted) return;
+async function processTimeframe(feeds, now, timeframe) {
+  const current = state[timeframe];
+  resetPeriod(timeframe, now);
+  if (current.periodAlreadyAlerted) return;
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
-      if (!ts || ts < dedupePeriodStart || ts >= now) continue;
+      if (!ts || ts < current.periodStart || ts >= now) continue;
 
       const side = eventSide(event);
-      if (side !== expectedSide) continue;
+      if (side !== current.expectedSide) continue;
 
       const key = liquidationKey(symbol, ts, side, event);
-      if (seenLiquidations.has(key)) continue;
-      seenLiquidations.add(key);
+      if (current.seenLiquidations.has(key)) continue;
+      current.seenLiquidations.add(key);
       candidates.push({ symbol, side, key, event, ts });
     }
   }
 
-  if (!initialized) {
-    initialized = true;
-    console.log(`INITIAL LIQUIDATION BASELINE READY; historical events suppressed=${seenLiquidations.size}; expected side=${expectedSide}`);
+  if (!current.initialized) {
+    current.initialized = true;
+    console.log(`INITIAL LIQUIDATION BASELINE READY ${timeframe}; historical events suppressed=${current.seenLiquidations.size}; expected side=${current.expectedSide}`);
     return;
   }
 
@@ -160,35 +167,27 @@ async function processLiquidations(feeds, now) {
 
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
-  periodAlreadyAlerted = true;
+  current.periodAlreadyAlerted = true;
 
-  console.log(`5M FIRST MATCH CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next expected side=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
+  console.log(`${timeframe} FIRST MATCH CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next expected side=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
 
   console.log(JSON.stringify({
-    type: 'liquidation',
-    timeframe: '5m',
-    symbol,
-    ts,
-    side,
-    displaySide: displaySide(side),
-    price: eventPrice,
-    notional: Math.abs(eventNotional),
-    dedupeWindowStart: dedupePeriodStart,
-    firstLiquidationOnly: true,
-    periodMinutes: 5,
-    alternatingSide: true,
+    type: 'liquidation', timeframe, symbol, ts, side,
+    displaySide: displaySide(side), price: eventPrice,
+    notional: Math.abs(eventNotional), periodStart: current.periodStart,
+    firstLiquidationOnly: true, alternatingSide: true,
     nextExpectedSide: side === 'LONG' ? 'SHORT' : 'LONG'
   }));
 
   let market = null;
   try {
-    market = await findCurrentPolymarket(symbol, Date.now());
+    market = await findCurrentPolymarket(symbol, Date.now(), timeframe);
   } catch (error) {
-    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+    console.warn(`POLYMARKET CURRENT LOOKUP FAILED ${timeframe} ${symbol}: ${error.message}`);
   }
 
   let marketPrice = null;
@@ -196,31 +195,31 @@ async function processLiquidations(feeds, now) {
     const outcome = displaySide(side);
     const midpoint = await findClobMidpoint(market, outcome);
     if (midpoint !== null) marketPrice = formatClobPrice(midpoint);
-    console.log(`CLOB MIDPOINT ${symbol} ${outcome}=${marketPrice ?? 'UNAVAILABLE'}`);
+    console.log(`CLOB MIDPOINT ${symbol} ${timeframe} ${outcome}=${marketPrice ?? 'UNAVAILABLE'}`);
   } catch (error) {
-    console.warn(`CLOB MIDPOINT FAILED 5m ${symbol}: ${error.message}`);
+    console.warn(`CLOB MIDPOINT FAILED ${timeframe} ${symbol}: ${error.message}`);
   }
 
   const message = [
-    `🔥 ${symbol} · 5M`,
+    `🔥 ${symbol} · ${timeframe.toUpperCase()}`,
     displaySide(side),
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
     market?.url ? '' : null,
-    market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null
+    market?.url ? `➡️ CURRENT · Polymarket ${timeframe.toUpperCase()}\n${market.url}` : null
   ].filter(value => value !== null).join('\n');
 
-  enqueueAlert(message, symbol, side, key);
+  enqueueAlert(message, symbol, side, timeframe, key);
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; CLOB midpoint price; all other coins disabled; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; timeframes=5m,15m; ONE ALERT PER PERIOD PER TIMEFRAME; SIDE ALTERNATION INDEPENDENT/PERSISTED; display LONG=>DOWN SHORT=>UP; CLOB midpoint price; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
       const feeds = await fetchAllFeeds();
-      await processLiquidations(feeds, now);
+      await Promise.all(TIMEFRAMES.map(timeframe => processTimeframe(feeds, now, timeframe)));
     } catch (error) {
       console.warn(`MONITOR LOOP FAILED: ${error.message}`);
     }
