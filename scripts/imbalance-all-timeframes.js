@@ -4,8 +4,9 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative liquidation activity monitor.
 // All supported coins. 5m periods. Individual liquidation events only.
-// Alert when there is at least one liquidation in each of three consecutive
-// 30s buckets. Maximum one alert per 5m period.
+// Activity is evaluated collectively across all coins: each of three consecutive
+// 30s buckets must contain at least one liquidation from any monitored coin.
+// The latest liquidation event becomes the alert event. Maximum one alert per 5m period.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const ACTIVITY_BUCKET_MS = 30 * 1000;
@@ -73,7 +74,7 @@ function resetPeriod(now) {
   state.periodStart = next;
   state.periodAlreadyAlerted = false;
   state.seenLiquidations.clear();
-  console.log(`LIQUIDATION ACTIVITY PERIOD RESET ${new Date(next).toISOString()} (5m; all coins)`);
+  console.log(`LIQUIDATION ACTIVITY PERIOD RESET ${new Date(next).toISOString()} (5m; all coins collectively)`);
 }
 
 async function fetchAllFeeds() {
@@ -106,43 +107,34 @@ function buildActivityCandidates(feeds, now) {
       state.seenLiquidations.add(key);
 
       const bucket = activityBucketStart(ts);
-      const bucketKey = `${symbol}:${side}:${bucket}`;
-      const row = buckets.get(bucketKey) || { symbol, side, bucket, count: 0, events: [] };
+      const row = buckets.get(bucket) || { bucket, count: 0, events: [] };
       row.count += 1;
-      row.events.push({ event, ts, key });
-      buckets.set(bucketKey, row);
+      row.events.push({ symbol, side, event, ts, key });
+      buckets.set(bucket, row);
     }
   }
 
-  const candidates = [];
   const latestBucket = currentBucket - ACTIVITY_BUCKET_MS;
-
-  for (const symbol of SYMBOLS) {
-    for (const side of ['LONG', 'SHORT']) {
-      const bucketRows = [];
-      for (let i = REQUIRED_CONSECUTIVE_BUCKETS - 1; i >= 0; i -= 1) {
-        const bucket = latestBucket - i * ACTIVITY_BUCKET_MS;
-        const row = buckets.get(`${symbol}:${side}:${bucket}`);
-        bucketRows.push({ bucket, count: row?.count || 0, events: row?.events || [] });
-      }
-
-      if (bucketRows.some(row => row.count < 1)) continue;
-
-      const latestRow = bucketRows[bucketRows.length - 1];
-      const latestEvent = [...latestRow.events].sort((a, b) => a.ts - b.ts).at(-1);
-      if (!latestEvent) continue;
-
-      candidates.push({
-        symbol,
-        side,
-        bucketCounts: bucketRows.map(row => row.count),
-        latestCount: latestRow.count,
-        latestEvent,
-      });
-    }
+  const bucketRows = [];
+  for (let i = REQUIRED_CONSECUTIVE_BUCKETS - 1; i >= 0; i -= 1) {
+    const bucket = latestBucket - i * ACTIVITY_BUCKET_MS;
+    const row = buckets.get(bucket);
+    bucketRows.push({ bucket, count: row?.count || 0, events: row?.events || [] });
   }
 
-  return candidates.sort((a, b) => b.latestCount - a.latestCount);
+  if (bucketRows.some(row => row.count < 1)) return [];
+
+  const latestRow = bucketRows[bucketRows.length - 1];
+  const latestEvent = [...latestRow.events].sort((a, b) => a.ts - b.ts).at(-1);
+  if (!latestEvent) return [];
+
+  return [{
+    symbol: latestEvent.symbol,
+    side: latestEvent.side,
+    bucketCounts: bucketRows.map(row => row.count),
+    latestCount: latestRow.count,
+    latestEvent,
+  }];
 }
 
 function enqueueAlert(message, candidate) {
@@ -181,7 +173,7 @@ async function processTimeframe(feeds, now) {
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
 
-  console.log(`5m LIQUIDATION ACTIVITY CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} buckets=${candidate.bucketCounts.join('->')} rule=at_least_one_each_30s`);
+  console.log(`5m LIQUIDATION ACTIVITY CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} buckets=${candidate.bucketCounts.join('->')} rule=collective_all_coins_at_least_one_each_30s`);
 
   let nextMarket = null;
   try {
@@ -217,7 +209,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('LIQUIDATION ACTIVITY MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; timeframe=5m; at least 1 liquidation in each 30s bucket; 3 consecutive 30s buckets required; ONE ALERT PER PERIOD; individual events only; no imbalance; no streaks; next market only');
+  console.log('LIQUIDATION ACTIVITY MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; timeframe=5m; collective all coins; at least 1 liquidation in each 30s bucket; 3 consecutive 30s buckets required; latest liquidation becomes alert; ONE ALERT PER PERIOD; individual events only; no imbalance; no streaks; next market only');
   while (true) {
     const now = Date.now();
     try {
