@@ -81,3 +81,4 @@ export const ensureMonitorRunning = action({
 });
 
 // Deployment trigger: keep watchdog source in the Convex deploy path.
+// Deployment retrigger marker: watchdog runtime must be redeployed from main.
