@@ -1,5 +1,5 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { findNextMarket, findClobMidpoint } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, findNextMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative liquidation monitor.
@@ -167,6 +167,23 @@ async function processTimeframe(feeds, now) {
 
   console.log(`5m EMPTY-PERIOD CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=first_liquidation_after_empty_5m_period`);
 
+  let currentMarket = null;
+  try {
+    currentMarket = await findMarketByEpoch(symbol, bucketStart(Date.now(), TIMEFRAME), TIMEFRAME);
+    console.log(`POLYMARKET CURRENT ${symbol} 5m=${currentMarket?.url ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+  }
+
+  let currentMarketPrice = null;
+  try {
+    const midpoint = await findClobMidpoint(currentMarket, displaySide(side));
+    if (midpoint !== null) currentMarketPrice = formatClobPrice(midpoint);
+    console.log(`CLOB MIDPOINT CURRENT ${symbol} 5m ${displaySide(side)}=${currentMarketPrice ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`CLOB MIDPOINT CURRENT FAILED 5m ${displaySide(side)}: ${error.message}`);
+  }
+
   let nextMarket = null;
   try {
     nextMarket = await findNextMarket(symbol, Date.now(), TIMEFRAME);
@@ -175,22 +192,14 @@ async function processTimeframe(feeds, now) {
     console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
 
-  let marketPrice = null;
-  try {
-    const midpoint = await findClobMidpoint(nextMarket, displaySide(side));
-    if (midpoint !== null) marketPrice = formatClobPrice(midpoint);
-    console.log(`CLOB MIDPOINT ${symbol} 5m ${displaySide(side)}=${marketPrice ?? 'UNAVAILABLE'}`);
-  } catch (error) {
-    console.warn(`CLOB MIDPOINT FAILED 5m ${displaySide(side)}: ${error.message}`);
-  }
-
   const message = [
     `🔥 ${symbol} · 5M`,
     displaySide(side),
     'AFTER EMPTY 5M PERIOD',
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
+    currentMarketPrice !== null ? `CURRENT Polymarket Price: ${currentMarketPrice}` : null,
+    currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
     nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ].filter(value => value !== null).join('\n');
 
@@ -198,7 +207,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next market only');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; current+next market');
   while (true) {
     const now = Date.now();
     try {
