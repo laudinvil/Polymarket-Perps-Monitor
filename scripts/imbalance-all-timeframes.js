@@ -2,15 +2,14 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { findNextMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// Authoritative liquidation acceleration monitor.
+// Authoritative liquidation activity monitor.
 // All supported coins. 5m periods. Individual liquidation events only.
-// Alert when liquidation-event frequency accelerates for the same side across
-// three consecutive 30s buckets: older < previous < latest, with latest >= 4.
-// Maximum one alert per 5m period.
+// Alert when there is at least one liquidation in each of three consecutive
+// 30s buckets. Maximum one alert per 5m period.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
-const ACCELERATION_BUCKET_MS = 30 * 1000;
-const MIN_LATEST_COUNT = 4;
+const ACTIVITY_BUCKET_MS = 30 * 1000;
+const REQUIRED_CONSECUTIVE_BUCKETS = 3;
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
 
@@ -27,8 +26,8 @@ function periodStart(now) {
   return Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
 }
 
-function accelerationBucketStart(ts) {
-  return Math.floor(ts / ACCELERATION_BUCKET_MS) * ACCELERATION_BUCKET_MS;
+function activityBucketStart(ts) {
+  return Math.floor(ts / ACTIVITY_BUCKET_MS) * ACTIVITY_BUCKET_MS;
 }
 
 function eventSide(event) {
@@ -74,7 +73,7 @@ function resetPeriod(now) {
   state.periodStart = next;
   state.periodAlreadyAlerted = false;
   state.seenLiquidations.clear();
-  console.log(`LIQUIDATION ACCELERATION PERIOD RESET ${new Date(next).toISOString()} (5m; all coins)`);
+  console.log(`LIQUIDATION ACTIVITY PERIOD RESET ${new Date(next).toISOString()} (5m; all coins)`);
 }
 
 async function fetchAllFeeds() {
@@ -89,9 +88,9 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-function buildAccelerationCandidates(feeds, now) {
+function buildActivityCandidates(feeds, now) {
   const buckets = new Map();
-  const currentBucket = accelerationBucketStart(now);
+  const currentBucket = activityBucketStart(now);
 
   for (const symbol of SYMBOLS) {
     const events = feeds.get(symbol) || [];
@@ -106,7 +105,7 @@ function buildAccelerationCandidates(feeds, now) {
       if (state.seenLiquidations.has(key)) continue;
       state.seenLiquidations.add(key);
 
-      const bucket = accelerationBucketStart(ts);
+      const bucket = activityBucketStart(ts);
       const bucketKey = `${symbol}:${side}:${bucket}`;
       const row = buckets.get(bucketKey) || { symbol, side, bucket, count: 0, events: [] };
       row.count += 1;
@@ -116,37 +115,34 @@ function buildAccelerationCandidates(feeds, now) {
   }
 
   const candidates = [];
+  const latestBucket = currentBucket - ACTIVITY_BUCKET_MS;
+
   for (const symbol of SYMBOLS) {
     for (const side of ['LONG', 'SHORT']) {
-      const latestBucket = currentBucket - ACCELERATION_BUCKET_MS;
-      const b2 = buckets.get(`${symbol}:${side}:${latestBucket - 2 * ACCELERATION_BUCKET_MS}`);
-      const b1 = buckets.get(`${symbol}:${side}:${latestBucket - ACCELERATION_BUCKET_MS}`);
-      const b0 = buckets.get(`${symbol}:${side}:${latestBucket}`);
-      const c2 = b2?.count || 0;
-      const c1 = b1?.count || 0;
-      const c0 = b0?.count || 0;
+      const bucketRows = [];
+      for (let i = REQUIRED_CONSECUTIVE_BUCKETS - 1; i >= 0; i -= 1) {
+        const bucket = latestBucket - i * ACTIVITY_BUCKET_MS;
+        const row = buckets.get(`${symbol}:${side}:${bucket}`);
+        bucketRows.push({ bucket, count: row?.count || 0, events: row?.events || [] });
+      }
 
-      if (!(c2 < c1 && c1 < c0 && c0 >= MIN_LATEST_COUNT)) continue;
+      if (bucketRows.some(row => row.count < 1)) continue;
 
-      const latestEvent = (b0?.events || []).sort((a, b) => a.ts - b.ts)[b0.events.length - 1];
+      const latestRow = bucketRows[bucketRows.length - 1];
+      const latestEvent = [...latestRow.events].sort((a, b) => a.ts - b.ts).at(-1);
       if (!latestEvent) continue;
 
       candidates.push({
         symbol,
         side,
-        olderCount: c2,
-        previousCount: c1,
-        latestCount: c0,
-        accelerationPercent: c1 > 0 ? ((c0 - c1) / c1) * 100 : null,
+        bucketCounts: bucketRows.map(row => row.count),
+        latestCount: latestRow.count,
         latestEvent,
       });
     }
   }
 
-  return candidates.sort((a, b) => {
-    if (b.latestCount !== a.latestCount) return b.latestCount - a.latestCount;
-    return (b.accelerationPercent || 0) - (a.accelerationPercent || 0);
-  });
+  return candidates.sort((a, b) => b.latestCount - a.latestCount);
 }
 
 function enqueueAlert(message, candidate) {
@@ -156,22 +152,22 @@ function enqueueAlert(message, candidate) {
     try {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      console.log(`5m ACCELERATION ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)} counts=${candidate.olderCount}->${candidate.previousCount}->${candidate.latestCount}`);
+      console.log(`5m ACTIVITY ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)} buckets=${candidate.bucketCounts.join('->')}`);
     } catch (error) {
-      console.warn(`5m ACCELERATION ALERT SEND FAILED ${candidate.symbol}: ${error.message}`);
+      console.warn(`5m ACTIVITY ALERT SEND FAILED ${candidate.symbol}: ${error.message}`);
     }
-  }).catch(error => console.warn(`5m ACCELERATION ALERT QUEUE FAILED: ${error.message}`));
+  }).catch(error => console.warn(`5m ACTIVITY ALERT QUEUE FAILED: ${error.message}`));
 }
 
 async function processTimeframe(feeds, now) {
   resetPeriod(now);
   if (state.periodAlreadyAlerted) return;
 
-  const candidates = buildAccelerationCandidates(feeds, now);
+  const candidates = buildActivityCandidates(feeds, now);
 
   if (!state.initialized) {
     state.initialized = true;
-    console.log('INITIAL LIQUIDATION ACCELERATION BASELINE READY 5m; historical events suppressed');
+    console.log('INITIAL LIQUIDATION ACTIVITY BASELINE READY 5m; historical events suppressed');
     return;
   }
 
@@ -185,7 +181,7 @@ async function processTimeframe(feeds, now) {
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
 
-  console.log(`5m LIQUIDATION ACCELERATION CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} counts=${candidate.olderCount}->${candidate.previousCount}->${candidate.latestCount} acceleration=${candidate.accelerationPercent?.toFixed(1) ?? 'n/a'}%`);
+  console.log(`5m LIQUIDATION ACTIVITY CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} buckets=${candidate.bucketCounts.join('->')} rule=at_least_one_each_30s`);
 
   let nextMarket = null;
   try {
@@ -207,10 +203,10 @@ async function processTimeframe(feeds, now) {
   const message = [
     `🔥 ${symbol} · 5M`,
     displaySide(side),
-    'LIQUIDATION ACCELERATION',
+    'LIQUIDATIONS EVERY 30S',
     `30s: ${candidate.latestCount}`,
-    `Previous 30s: ${candidate.previousCount}`,
-    `Acceleration: ${candidate.accelerationPercent?.toFixed(0) ?? 'n/a'}%`,
+    `Previous 30s: ${candidate.bucketCounts[1]}`,
+    `30s before: ${candidate.bucketCounts[0]}`,
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
@@ -221,7 +217,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('LIQUIDATION ACCELERATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; timeframe=5m; 30s buckets; acceleration requires 3 rising buckets; latest >= 4; ONE ALERT PER PERIOD; individual events only; no imbalance; no streaks; next market only');
+  console.log('LIQUIDATION ACTIVITY MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; timeframe=5m; at least 1 liquidation in each 30s bucket; 3 consecutive 30s buckets required; ONE ALERT PER PERIOD; individual events only; no imbalance; no streaks; next market only');
   while (true) {
     const now = Date.now();
     try {
