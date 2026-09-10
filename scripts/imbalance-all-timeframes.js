@@ -93,6 +93,12 @@ function price(value) {
   return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
 }
 
+function polymarketPrice(market, side) {
+  const value = market?.prices?.[displaySide(side)];
+  if (!Number.isFinite(Number(value))) return null;
+  return Number(value).toFixed(2);
+}
+
 async function fetchAllFeeds() {
   const results = await Promise.all(SYMBOLS.map(async symbol => {
     try {
@@ -187,11 +193,13 @@ async function processLiquidations(feeds, now) {
     console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
 
+  const marketPrice = polymarketPrice(market, side);
   const message = [
     `🔥 ${symbol} · 5M`,
     displaySide(side),
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
+    marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
     market?.url ? '' : null,
     market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null
   ].filter(value => value !== null).join('\n');
@@ -200,7 +208,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; all other coins disabled; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; Polymarket outcome price included; all other coins disabled; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
