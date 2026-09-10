@@ -39,15 +39,15 @@ jobs:
       - name: Verify monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
+          node --check src/polymarket.js
           node <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
           const symbolsMatch = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!symbolsMatch) throw new Error('ERROR: SYMBOLS configuration not found');
           const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
-          const expected = ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
-          if (symbols.length !== expected.length || symbols.some((s, i) => s !== expected[i])) throw new Error(`ERROR: expected all 7 coins, found ${symbols.join(',')}`);
-          console.log(`Configured monitored coins: ${symbols.join(',')}`);
+          if (symbols.length !== 1 || symbols[0] !== 'BTC') throw new Error(`ERROR: expected BTC only, found ${symbols.join(',')}`);
+          console.log('Configured monitored coins: BTC only');
 
           const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
@@ -61,17 +61,21 @@ jobs:
             /periodEventCount\s*===\s*0/,
             /EMPTY PERIOD CONFIRMED/,
             /first_liquidation_after_empty_5m_period/,
-            /findNextMarket\(symbol, Date\.now\(\), TIMEFRAME\)/,
+            /findNextMarket\(symbol, alertNow, '5m'\)/,
+            /findCurrentMarket\(symbol, alertNow, '15m'\)/,
             /POLYMARKET NEXT/,
+            /POLYMARKET CURRENT/,
             /individual events only/,
             /no imbalance/,
-            /no streaks/,
-            /LONG liquidation -> UP/,
-            /SHORT liquidation -> DOWN/
+            /no streaks/
           ];
           requiredPatterns.forEach((pattern) => {
             if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`);
           });
+
+          const poly = fs.readFileSync('src/polymarket.js', 'utf8');
+          if (!/async function findCurrentMarket\(symbol, now = Date\.now\(\), timeframe = '15m'\)/.test(poly)) throw new Error('ERROR: current-market helper missing');
+          if (!/findCurrentMarket/.test(poly)) throw new Error('ERROR: current-market export missing');
 
           const obsolete = [
             'ACCELERATION_BUCKET_MS',
@@ -86,10 +90,8 @@ jobs:
             'REQUIRED_CONSECUTIVE_BUCKETS',
             'buildActivityCandidates',
             'rule=collective_all_coins_at_least_one_each_30s',
-            'findMarketByEpoch',
             'findClobMidpoint',
             'CLOB MIDPOINT CURRENT',
-            'POLYMARKET CURRENT',
             'CURRENT Polymarket Price',
             'CURRENT · Polymarket 5M',
             'AFTER EMPTY 5M PERIOD'
@@ -98,7 +100,7 @@ jobs:
             if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
-          console.log('Monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual events only; UP/DOWN mapping; next market only.');
+          console.log('Monitor verified: BTC only; 5m; completed empty periods arm the monitor; first new liquidation triggers; one alert per armed period; current 15m + next 5m links; partial periods never qualify as empty.');
           NODE
 
       - name: Continuous MarginPad monitor
