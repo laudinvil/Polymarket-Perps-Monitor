@@ -238,3 +238,33 @@ export const latestStats = query({
     return rows;
   },
 });
+
+export const latestAlerts = query({
+  args: {
+    timeframe: v.optional(v.string()),
+    symbol: v.optional(v.string()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    let rows = await ctx.db
+      .query("alerts")
+      .withIndex("by_sent_at")
+      .order("desc")
+      .take(Math.min(args.limit * 5, 200));
+
+    if (args.timeframe) rows = rows.filter((row) => row.timeframe === args.timeframe);
+    if (args.symbol) rows = rows.filter((row) => row.symbol === args.symbol);
+    return rows.slice(0, args.limit);
+  },
+});
+
+export const latestMonitorRuns = query({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("monitorRuns")
+      .withIndex("by_started_at")
+      .order("desc")
+      .take(Math.min(args.limit, 50));
+  },
+});
