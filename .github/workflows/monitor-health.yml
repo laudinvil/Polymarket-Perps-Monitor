@@ -39,10 +39,10 @@ jobs:
       - name: Initialize side state
         run: |
           if [ ! -s .monitor-side-state.json ]; then
-            printf '{\n  "5m": {"version": 1, "lastAlertSide": "LONG", "nextExpectedSide": "SHORT", "updatedAt": "%s"},\n  "15m": {"version": 1, "lastAlertSide": "LONG", "nextExpectedSide": "SHORT", "updatedAt": "%s"}\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
-            echo "SIDE STATE INITIALIZED: 5m=LONG->SHORT 15m=LONG->SHORT"
+            printf '{\n  "5m": {"version": 1, "lastAlertSide": "LONG", "nextExpectedSide": "SHORT", "updatedAt": "%s"}\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
+            echo "SIDE STATE INITIALIZED: 5m=LONG->SHORT"
           else
-            node -e "const s=require('./.monitor-side-state.json'); for (const tf of ['5m','15m']) console.log('SIDE STATE RESTORED '+tf+': last='+(s[tf]?.lastAlertSide||'LONG')+' next='+(s[tf]?.nextExpectedSide||'SHORT'))"
+            node -e "const s=require('./.monitor-side-state.json'); console.log('SIDE STATE RESTORED 5m: last='+(s['5m']?.lastAlertSide||'LONG')+' next='+(s['5m']?.nextExpectedSide||'SHORT'))"
           fi
 
       - name: Verify authoritative monitor source
@@ -62,16 +62,11 @@ jobs:
           if (unique.length !== 1 || unique[0] !== 'BTC') throw new Error(`ERROR: expected BTC-only monitor, found ${unique.join(',')}`);
           console.log(`Configured monitored coins: ${unique.join(',')}`);
 
-          const tfMatch = text.match(/const TIMEFRAMES\s*=\s*\[([^\]]+)\]/);
-          if (!tfMatch) throw new Error('ERROR: TIMEFRAMES configuration not found');
-          const timeframes = [...tfMatch[1].matchAll(/['\"]([^'\"]+)['\"]/g)].map(m => m[1]);
-          if (timeframes.length !== 2 || timeframes[0] !== '5m' || timeframes[1] !== '15m') {
-            throw new Error(`ERROR: expected independent 5m + 15m timeframes, found ${timeframes.join(',')}`);
-          }
-          console.log(`Configured timeframes: ${timeframes.join(',')}`);
+          const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
+          if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m-only timeframe, found ${tfMatch?.[1] || 'missing'}`);
+          console.log('Configured timeframe: 5m');
 
           for (const required of [
-            'const TIMEFRAME_MS =',
             'loadExpectedSide',
             'persistLastAlertSide',
             'periodAlreadyAlerted',
@@ -81,12 +76,13 @@ jobs:
             if (!text.includes(required)) throw new Error(`ERROR: required monitor feature missing: ${required}`);
           }
 
-          if (text.includes('const DEDUPE_WINDOW_MS')) throw new Error('ERROR: obsolete DEDUPE_WINDOW_MS logic detected');
-          if (text.includes('const TIMEFRAME = \'5m\'')) throw new Error('ERROR: obsolete single-timeframe configuration detected');
-          if (!text.includes('ONE ALERT PER PERIOD PER TIMEFRAME')) throw new Error('ERROR: per-timeframe alert policy missing');
+          if (text.includes('TIMEFRAMES')) throw new Error('ERROR: obsolete multi-timeframe configuration detected');
+          if (text.includes('DEDUPE_WINDOW_MS')) throw new Error('ERROR: obsolete DEDUPE_WINDOW_MS logic detected');
+          if (!text.includes('ONE ALERT PER PERIOD')) throw new Error('ERROR: per-period alert policy missing');
           if (!text.includes('CLOB midpoint price')) throw new Error('ERROR: CLOB midpoint pricing policy missing');
+          if (!text.includes('no 15m')) throw new Error('ERROR: 15m removal marker missing');
 
-          console.log('Authoritative monitor verified: BTC only; independent 5m + 15m; one alert per period per timeframe; persistent side alternation; CLOB midpoint price.');
+          console.log('Authoritative monitor verified: BTC only; 5m only; one alert per period; persistent side alternation; CLOB midpoint price; no 15m.');
           NODE
 
       - name: Continuous MarginPad monitor
