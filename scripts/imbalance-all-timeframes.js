@@ -1,5 +1,5 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { findNextMarket } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, findNextMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
@@ -37,7 +37,7 @@ function eventSide(event) {
   if (value.includes('short') || value === 'sell') return 'SHORT';
   return null;
 }
-function displaySide(side) { return side === 'LONG' ? 'UP' : 'DOWN'; }
+function displaySide(side) { return side === 'LONG' ? 'DOWN' : 'UP'; }
 function liquidationKey(symbol, ts, side, event) {
   const id = event?.id ?? event?.liquidationId ?? event?.eventId ?? event?.tradeId ?? event?.txHash ?? event?.orderId;
   if (id !== undefined && id !== null && String(id) !== '') return `${symbol}:id:${String(id)}`;
@@ -49,6 +49,7 @@ function numberValue(...values) {
 }
 function money(value) { return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`; }
 function price(value) { return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 }); }
+function formatClobPrice(value) { return Number(value).toFixed(4); }
 function persistStatus() {
   const snapshot = {
     updatedAt: new Date().toISOString(), timeframe: TIMEFRAME, symbols: SYMBOLS,
@@ -133,13 +134,38 @@ async function processTimeframe(feeds, now) {
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
   console.log(`5m EMPTY-PERIOD CLAIMED GLOBAL symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=first_liquidation_after_empty_5m_period`);
+
+  let currentMarket = null;
+  try {
+    currentMarket = await findMarketByEpoch(symbol, bucketStart(Date.now(), TIMEFRAME), TIMEFRAME);
+    console.log(`POLYMARKET CURRENT ${symbol} 5m=${currentMarket?.url ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+  }
+
+  let currentMarketPrice = null;
+  try {
+    const midpoint = await findClobMidpoint(currentMarket, displaySide(side));
+    if (midpoint !== null) currentMarketPrice = formatClobPrice(midpoint);
+    console.log(`CLOB MIDPOINT CURRENT ${symbol} 5m ${displaySide(side)}=${currentMarketPrice ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`CLOB MIDPOINT CURRENT FAILED 5m ${displaySide(side)}: ${error.message}`);
+  }
+
   let next5mMarket = null; let next15mMarket = null; const alertNow = Date.now();
   try { next5mMarket = await findNextMarket(symbol, alertNow, '5m'); console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`); }
   catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
   try { next15mMarket = await findNextMarket(symbol, alertNow, '15m'); console.log(`POLYMARKET NEXT ${symbol} 15m=${next15mMarket?.url ?? 'UNAVAILABLE'}`); }
   catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED 15m ${symbol}: ${error.message}`); }
+
   const message = [
-    `🔥 ${symbol} · 5M`, displaySide(side), `Volume: ${money(eventNotional)}`, `Price: ${price(eventPrice)}`,
+    `🔥 ${symbol} · 5M`,
+    displaySide(side),
+    'AFTER EMPTY 5M PERIOD',
+    `Volume: ${money(eventNotional)}`,
+    `Price: ${price(eventPrice)}`,
+    currentMarketPrice !== null ? `CURRENT Polymarket Price: ${currentMarketPrice}` : null,
+    currentMarket?.url ? `➡️ CURRENT · Polymarket 5M\n${currentMarket.url}` : null,
     next5mMarket?.url ? `➡️ NEXT · Polymarket 5M\n${next5mMarket.url}` : null,
     next15mMarket?.url ? `➡️ NEXT · Polymarket 15M\n${next15mMarket.url}` : null,
   ].filter(Boolean).join('\n');
