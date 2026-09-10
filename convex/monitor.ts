@@ -138,12 +138,14 @@ export const pruneOldData = internalMutation({
 
     const oldAlerts = await ctx.db
       .query("alerts")
-      .withIndex("by_sent_at", (q) => q.lt("sentAt", cutoff))
+      .withIndex("by_sent_at")
       .order("asc")
       .take(500);
     for (const row of oldAlerts) {
-      await ctx.db.delete(row._id);
-      alerts += 1;
+      if (row.sentAt < cutoff) {
+        await ctx.db.delete(row._id);
+        alerts += 1;
+      }
     }
 
     return { monitorRuns, snapshots, alerts };
@@ -211,7 +213,7 @@ export const latestStats = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const symbols = ["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"];
+    const symbols = ["BTC", "ETH"];
     const rows = [];
     for (const symbol of symbols) {
       const row = await ctx.db
