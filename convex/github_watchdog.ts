@@ -79,3 +79,5 @@ export const ensureMonitorRunning = action({
     return { ok: true, action: "dispatched", mainSha, health };
   },
 });
+
+// Deployment trigger: keep watchdog source in the Convex deploy path.
