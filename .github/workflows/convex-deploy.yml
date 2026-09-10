@@ -7,6 +7,7 @@ on:
       - 'convex/**'
       - 'package.json'
       - 'package-lock.json'
+      - '.github/workflows/convex-deploy.yml'
   workflow_dispatch:
 
 permissions:
