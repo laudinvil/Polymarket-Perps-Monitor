@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, findNextMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative liquidation monitor: individual liquidation events only.
@@ -182,6 +182,14 @@ async function processTimeframe(feeds, now) {
     console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
 
+  let nextMarket = null;
+  try {
+    nextMarket = await findNextMarket(symbol, Date.now(), TIMEFRAME);
+    console.log(`POLYMARKET NEXT+1 ${symbol} 5m=${nextMarket?.url ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`POLYMARKET NEXT+1 LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+  }
+
   let marketPrice = null;
   try {
     const outcome = displaySide(side);
@@ -198,15 +206,14 @@ async function processTimeframe(feeds, now) {
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
-    market?.url ? '' : null,
-    market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null
+    nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
   ].filter(value => value !== null).join('\n');
 
   enqueueAlert(message, symbol, side, key);
 }
 
 async function main() {
-  console.log('SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; timeframe=5m; ONE ALERT PER PERIOD; SIDE ALTERNATION PERSISTED; display LONG=>DOWN SHORT=>UP; CLOB midpoint price; no streaks; no imbalance; no 15m');
+  console.log('SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; timeframe=5m; ONE ALERT PER PERIOD; SIDE ALTERNATION PERSISTED; display LONG=>DOWN SHORT=>UP; CLOB midpoint price; NEXT+1 market link only; no streaks; no imbalance; no 15m');
   while (true) {
     const now = Date.now();
     try {
