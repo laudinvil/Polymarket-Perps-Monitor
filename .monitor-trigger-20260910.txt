@@ -1,0 +1,1 @@
+Trigger MarginPad Auto Monitor after the 5m empty-period logic update in commit 2c48c11402e757608cf362f0964b5261064b00b2.
