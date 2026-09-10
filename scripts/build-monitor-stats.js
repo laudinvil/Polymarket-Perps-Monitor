@@ -16,10 +16,10 @@ const fmt = n => Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') 
 let out = '# MarginPad monitor statistics\n\n';
 out += `Updated: ${new Date().toISOString()}\n\n`;
 out += '## Active monitor\n\n';
-out += '| Symbol | Timeframe | Current period UTC | Liquidations | Armed after empty | Alerted | Last alert |\n';
-out += '|---|---|---|---:|---|---|---|\n';
+out += '| Symbol | Timeframe | Current period UTC | Liquidations | Alerted | Last alert |\n';
+out += '|---|---|---|---:|---|---|\n';
 for (const symbol of symbols) {
-  out += `| ${symbol} | 5m | ${currentStartText} | ${fmt(currentCounts[symbol])} | ${state?.armedAfterEmptyPeriod ? 'YES' : 'NO'} | ${state?.periodAlreadyAlerted ? 'YES' : 'NO'} | ${state?.lastAlertAt || '—'} |\n`;
+  out += `| ${symbol} | 5m | ${currentStartText} | ${fmt(currentCounts[symbol])} | ${state?.periodAlreadyAlerted ? 'YES' : 'NO'} | ${state?.lastAlertAt || '—'} |\n`;
 }
 out += '\n';
 out += `Completed 5m periods recorded: ${periods.length}\n`;
@@ -29,14 +29,13 @@ out += '| Period UTC | BTC | ETH | SOL | Total | Status |\n|---|---:|---:|---:|-
 const grouped = new Map();
 for (const x of periods) {
   const key = String(x.periodStart);
-  if (!grouped.has(key)) grouped.set(key, { periodStart: Number(x.periodStart), counts: { BTC: 0, ETH: 0, SOL: 0 }, empty: false });
+  if (!grouped.has(key)) grouped.set(key, { periodStart: Number(x.periodStart), counts: { BTC: 0, ETH: 0, SOL: 0 } });
   const row = grouped.get(key);
   row.counts[x.symbol] = Number(x.eventCount) || 0;
-  row.empty = Boolean(x.empty);
 }
 for (const row of [...grouped.values()].slice(-30).reverse()) {
   const total = symbols.reduce((sum, symbol) => sum + (row.counts[symbol] || 0), 0);
-  out += `| ${new Date(row.periodStart).toISOString()} | ${fmt(row.counts.BTC)} | ${fmt(row.counts.ETH)} | ${fmt(row.counts.SOL)} | ${fmt(total)} | ${row.empty ? 'EMPTY → ARMED' : 'LIQUIDATIONS'} |\n`;
+  out += `| ${new Date(row.periodStart).toISOString()} | ${fmt(row.counts.BTC)} | ${fmt(row.counts.ETH)} | ${fmt(row.counts.SOL)} | ${fmt(total)} | ${total > 0 ? 'LIQUIDATIONS' : 'NO LIQUIDATIONS'} |\n`;
 }
 out += '\n## Recent alerts\n\n';
 for (const x of alerts.slice(-30).reverse()) {
