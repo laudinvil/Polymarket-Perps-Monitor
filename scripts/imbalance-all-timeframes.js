@@ -3,11 +3,11 @@ const { findNextMarket, findCurrentMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
-// Authoritative BTC-only liquidation monitor.
+// Authoritative BTC + ETH liquidation monitor.
 // 5m periods. Individual liquidation events only.
 // Alert on the FIRST liquidation after one or more completely empty 5m periods.
 // A partial period is NEVER eligible to be confirmed as empty.
-const SYMBOLS = ['BTC'];
+const SYMBOLS = ['BTC', 'ETH'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
@@ -17,13 +17,14 @@ const HISTORY_FILE = 'monitor-history.log';
 
 const state = {
   periodStart: null,
-  periodEventCount: 0,
-  armedAfterEmptyPeriod: false,
-  periodAlreadyAlerted: false,
+  periodEventCount: { BTC: 0, ETH: 0 },
+  armedAfterEmptyPeriod: { BTC: false, ETH: false },
+  periodAlreadyAlerted: { BTC: false, ETH: false },
   initialized: false,
   seenLiquidations: new Set(),
   lastAlertAt: null,
   lastAlertSide: null,
+  lastAlertSymbol: null,
 };
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
@@ -51,7 +52,7 @@ function persistStatus() {
   const snapshot = {
     updatedAt: new Date().toISOString(),
     timeframe: TIMEFRAME,
-    symbol: 'BTC',
+    symbols: SYMBOLS,
     periodStart: state.periodStart,
     periodEventCount: state.periodEventCount,
     armedAfterEmptyPeriod: state.armedAfterEmptyPeriod,
@@ -59,6 +60,7 @@ function persistStatus() {
     initialized: state.initialized,
     lastAlertAt: state.lastAlertAt,
     lastAlertSide: state.lastAlertSide,
+    lastAlertSymbol: state.lastAlertSymbol,
   };
   fs.writeFileSync(STATE_FILE, JSON.stringify(snapshot, null, 2) + '\n');
 }
@@ -67,8 +69,12 @@ function appendHistory(record) {
 }
 
 async function fetchAllFeeds() {
-  try { return new Map([['BTC', await fetchSymbolFeed('BTC')]]); }
-  catch (error) { console.warn(`FEED BTC FAILED: ${error.message}`); return new Map([['BTC', []]]); }
+  const feeds = new Map();
+  for (const symbol of SYMBOLS) {
+    try { feeds.set(symbol, await fetchSymbolFeed(symbol)); }
+    catch (error) { console.warn(`FEED ${symbol} FAILED: ${error.message}`); feeds.set(symbol, []); }
+  }
+  return feeds;
 }
 function collectCurrentPeriodEvents(feeds, now) {
   const current = periodStart(now);
@@ -82,7 +88,7 @@ function collectCurrentPeriodEvents(feeds, now) {
       const key = liquidationKey(symbol, ts, side, event);
       if (state.seenLiquidations.has(key)) continue;
       state.seenLiquidations.add(key);
-      state.periodEventCount += 1;
+      state.periodEventCount[symbol] += 1;
       candidates.push({ symbol, side, event, ts, key });
     }
   }
@@ -98,6 +104,7 @@ function enqueueAlert(message, candidate) {
       lastAlertSentAt = Date.now();
       state.lastAlertAt = new Date(lastAlertSentAt).toISOString();
       state.lastAlertSide = candidate.side;
+      state.lastAlertSymbol = candidate.symbol;
       persistStatus();
       appendHistory({ type: 'alert', timeframe: '5m', symbol: candidate.symbol, side: candidate.side, display: displaySide(candidate.side), periodStart: state.periodStart, price: numberValue(candidate.event?.price, candidate.event?.markPrice, candidate.event?.executionPrice), notional: numberValue(candidate.event?.notional, candidate.event?.usd, candidate.event?.value, candidate.event?.amount) });
       console.log(`5m EMPTY-PERIOD ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)}`);
@@ -109,12 +116,12 @@ async function processTimeframe(feeds, now) {
   const current = periodStart(now);
   if (state.periodStart === null) {
     state.periodStart = current;
-    state.periodEventCount = 0;
-    state.armedAfterEmptyPeriod = false;
-    state.periodAlreadyAlerted = false;
+    state.periodEventCount = { BTC: 0, ETH: 0 };
+    state.armedAfterEmptyPeriod = { BTC: false, ETH: false };
+    state.periodAlreadyAlerted = { BTC: false, ETH: false };
     state.seenLiquidations.clear();
     persistStatus();
-    console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; BTC only; baseline suppresses historical events`);
+    console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; BTC+ETH; baseline suppresses historical events`);
   } else if (state.periodStart !== current) {
     const completedPeriod = state.periodStart;
     const completedPeriodEnd = completedPeriod + PERIOD_MS;
@@ -123,18 +130,20 @@ async function processTimeframe(feeds, now) {
       persistStatus();
       return;
     }
-    const wasEmpty = state.periodEventCount === 0;
-    appendHistory({ type: 'period', timeframe: '5m', symbol: 'BTC', periodStart: completedPeriod, eventCount: state.periodEventCount, empty: wasEmpty });
-    if (state.initialized && wasEmpty) {
-      state.armedAfterEmptyPeriod = true;
-      console.log(`5m EMPTY PERIOD CONFIRMED ${new Date(completedPeriod).toISOString()}; next BTC liquidation will alert`);
-    } else if (state.initialized) {
-      state.armedAfterEmptyPeriod = false;
-      console.log(`5m PERIOD HAD LIQUIDATIONS ${new Date(completedPeriod).toISOString()} count=${state.periodEventCount}; no alert armed`);
+    for (const symbol of SYMBOLS) {
+      const wasEmpty = state.periodEventCount[symbol] === 0;
+      appendHistory({ type: 'period', timeframe: '5m', symbol, periodStart: completedPeriod, eventCount: state.periodEventCount[symbol], empty: wasEmpty });
+      if (state.initialized && wasEmpty) {
+        state.armedAfterEmptyPeriod[symbol] = true;
+        console.log(`5m EMPTY PERIOD CONFIRMED ${symbol} ${new Date(completedPeriod).toISOString()}; next BTC/ETH liquidation will alert for ${symbol}`);
+      } else if (state.initialized) {
+        state.armedAfterEmptyPeriod[symbol] = false;
+        console.log(`5m PERIOD HAD LIQUIDATIONS ${symbol} ${new Date(completedPeriod).toISOString()} count=${state.periodEventCount[symbol]}; no alert armed`);
+      }
     }
     state.periodStart = current;
-    state.periodEventCount = 0;
-    state.periodAlreadyAlerted = false;
+    state.periodEventCount = { BTC: 0, ETH: 0 };
+    state.periodAlreadyAlerted = { BTC: false, ETH: false };
     state.seenLiquidations.clear();
     persistStatus();
     console.log(`5m PERIOD RESET ${new Date(current).toISOString()}`);
@@ -142,15 +151,16 @@ async function processTimeframe(feeds, now) {
   const newEvents = collectCurrentPeriodEvents(feeds, now);
   if (!state.initialized) {
     state.initialized = true;
-    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed count=${state.periodEventCount}`);
+    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed BTC=${state.periodEventCount.BTC} ETH=${state.periodEventCount.ETH}`);
     persistStatus();
     return;
   }
   persistStatus();
-  if (!state.armedAfterEmptyPeriod || state.periodAlreadyAlerted || !newEvents.length) return;
-  const candidate = newEvents[0];
-  state.periodAlreadyAlerted = true;
-  state.armedAfterEmptyPeriod = false;
+  const candidates = newEvents.filter(candidate => state.armedAfterEmptyPeriod[candidate.symbol] && !state.periodAlreadyAlerted[candidate.symbol]);
+  if (!candidates.length) return;
+  const candidate = candidates[0];
+  state.periodAlreadyAlerted[candidate.symbol] = true;
+  state.armedAfterEmptyPeriod[candidate.symbol] = false;
   const { symbol, side, event } = candidate;
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -172,7 +182,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC only; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next 5m + current 15m market links; partial periods never qualify as empty');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed coin-period; next 5m + current 15m market links; partial periods never qualify as empty');
   while (true) {
     const now = Date.now();
     try { await processTimeframe(await fetchAllFeeds(), now); }
