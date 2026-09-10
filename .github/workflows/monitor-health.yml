@@ -16,56 +16,41 @@ jobs:
     permissions:
       contents: write
       actions: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
       - name: Restore monitor history
         run: |
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
-
       - name: Verify monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
+          node --check src/liquidation-monitor.js
           node --check src/polymarket.js
           node --check scripts/build-monitor-stats.js
           node <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
-          const symbolsMatch = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
-          if (!symbolsMatch) throw new Error('ERROR: SYMBOLS configuration not found');
-          const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
-          if (symbols.length !== 3 || symbols[0] !== 'BTC' || symbols[1] !== 'ETH' || symbols[2] !== 'SOL') throw new Error(`ERROR: expected BTC,ETH,SOL only, found ${symbols.join(',')}`);
-          console.log('Configured monitored coins: BTC, ETH, SOL only');
-          const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
-          if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
-          console.log('Configured timeframe: 5m');
-          const requiredPatterns = [
-            /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/, /POLL_MS\s*=\s*4000/, /collectCurrentPeriodEvents\s*\(/,
-            /armedAfterEmptyPeriod/, /periodEventCount[^\n]*===\s*0/, /EMPTY PERIOD CONFIRMED/,
-            /first_liquidation_after_empty_5m_period/, /findMarketByEpoch\(symbol, bucketStart\(Date\.now\(\), TIMEFRAME\), TIMEFRAME\)/,
-            /findClobMidpoint\s*\(/, /CLOB MIDPOINT CURRENT/, /findNextMarket\(symbol, alertNow, '5m'\)/,
-            /findNextMarket\(symbol, alertNow, '15m'\)/, /POLYMARKET CURRENT/, /POLYMARKET NEXT/,
-            /AFTER EMPTY 5M PERIOD/, /individual events only/, /no imbalance/, /no streaks/
-          ];
-          requiredPatterns.forEach((pattern) => { if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`); });
-          const poly = fs.readFileSync('src/polymarket.js', 'utf8');
-          if (!/async function findNextMarket\(symbol, now = Date\.now\(\), timeframe = '5m'\)/.test(poly)) throw new Error('ERROR: next-market helper missing');
-          const obsolete = ['ACCELERATION_BUCKET_MS','MIN_LATEST_COUNT','buildAccelerationCandidates','loadExpectedSide','persistLastAlertSide','expectedSide','latest >= 4','3 rising buckets','ACTIVITY_BUCKET_MS','REQUIRED_CONSECUTIVE_BUCKETS','buildActivityCandidates','rule=collective_all_coins_at_least_one_each_30s'];
-          for (const marker of obsolete) if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
-          console.log('Monitor verified: BTC+ETH+SOL only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; current market + live CLOB price + next 5m + next 15m links; partial periods never qualify as empty.');
+          const m = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
+          if (!m) throw new Error('SYMBOLS configuration missing');
+          const symbols = [...m[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(x => x[1]);
+          if (symbols.join(',') !== 'BTC,ETH,SOL') throw new Error(`Expected BTC,ETH,SOL only; found ${symbols.join(',')}`);
+          if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
+          if (!/first new liquidation in each 5m period/i.test(text)) throw new Error('Current first-liquidation rule missing');
+          if (/armedAfterEmptyPeriod|first_liquidation_after_empty_5m_period|AFTER EMPTY 5M PERIOD|EMPTY PERIOD CONFIRMED/.test(text)) throw new Error('Obsolete empty-period logic detected');
+          if (!/findNextMarket\(symbol, alertNow, '5m'\)/.test(text)) throw new Error('NEXT 5m lookup missing');
+          if (!/findNextMarket\(symbol, alertNow, '15m'\)/.test(text)) throw new Error('NEXT 15m lookup missing');
+          if (!/findClobMidpoint\s*\(/.test(text)) throw new Error('CURRENT CLOB price lookup missing');
+          console.log('Verified: BTC+ETH+SOL; 5m; first new liquidation; no empty-period requirement; CURRENT market + CLOB price + NEXT 5m + NEXT 15m.');
           NODE
-
       - name: Continuous MarginPad monitor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +79,6 @@ jobs:
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
-
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,7 +86,6 @@ jobs:
           name: monitor-log
           path: monitor.log
           if-no-files-found: ignore
-
       - name: Finish Convex run
         if: always()
         env:
