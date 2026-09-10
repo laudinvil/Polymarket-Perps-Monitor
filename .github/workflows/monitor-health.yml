@@ -36,20 +36,11 @@ jobs:
           git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
 
-      - name: Initialize side state
-        run: |
-          if [ ! -s .monitor-side-state.json ]; then
-            printf '{\n  "5m": {"version": 1, "lastAlertSide": "LONG", "nextExpectedSide": "SHORT", "updatedAt": "%s"}\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .monitor-side-state.json
-            echo "SIDE STATE INITIALIZED: 5m=LONG->SHORT"
-          else
-            node -e "const s=require('./.monitor-side-state.json'); console.log('SIDE STATE RESTORED 5m: last='+(s['5m']?.lastAlertSide||'LONG')+' next='+(s['5m']?.nextExpectedSide||'SHORT'))"
-          fi
-
       - name: Verify authoritative monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
-          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only' scripts package.json --exclude='*.log' 2>/dev/null; then
-            echo "ERROR: legacy monitor reference detected in executable project files"
+          if grep -R -n -E 'first-liquidation-5m|imbalance-5m-only|loadExpectedSide|persistLastAlertSide|DEDUPE_WINDOW_MS|TIMEFRAMES' scripts package.json --exclude='*.log' 2>/dev/null; then
+            echo "ERROR: obsolete liquidation monitor logic detected in executable project files"
             exit 1
           fi
           node <<'NODE'
@@ -58,31 +49,31 @@ jobs:
           const symbolsMatch = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!symbolsMatch) throw new Error('ERROR: SYMBOLS configuration not found');
           const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
-          const unique = [...new Set(symbols)];
-          if (unique.length !== 1 || unique[0] !== 'BTC') throw new Error(`ERROR: expected BTC-only monitor, found ${unique.join(',')}`);
-          console.log(`Configured monitored coins: ${unique.join(',')}`);
+          const expected = ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
+          if (symbols.length !== expected.length || symbols.some((s, i) => s !== expected[i])) throw new Error(`ERROR: expected all 7 coins, found ${symbols.join(',')}`);
+          console.log(`Configured monitored coins: ${symbols.join(',')}`);
 
           const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
-          if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m-only timeframe, found ${tfMatch?.[1] || 'missing'}`);
+          if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
 
           for (const required of [
-            'loadExpectedSide',
-            'persistLastAlertSide',
-            'periodAlreadyAlerted',
+            'ACCELERATION_BUCKET_MS',
+            'MIN_LATEST_COUNT',
+            'buildAccelerationCandidates',
+            'ONE ALERT PER PERIOD',
             'findClobMidpoint',
             'displaySide(side)'
           ]) {
-            if (!text.includes(required)) throw new Error(`ERROR: required monitor feature missing: ${required}`);
+            if (!text.includes(required)) throw new Error(`ERROR: required acceleration feature missing: ${required}`);
           }
 
-          if (text.includes('TIMEFRAMES')) throw new Error('ERROR: obsolete multi-timeframe configuration detected');
-          if (text.includes('DEDUPE_WINDOW_MS')) throw new Error('ERROR: obsolete DEDUPE_WINDOW_MS logic detected');
-          if (!text.includes('ONE ALERT PER PERIOD')) throw new Error('ERROR: per-period alert policy missing');
-          if (!text.includes('CLOB midpoint price')) throw new Error('ERROR: CLOB midpoint pricing policy missing');
-          if (!text.includes('no 15m')) throw new Error('ERROR: 15m removal marker missing');
+          if (!text.includes('3 rising buckets')) throw new Error('ERROR: three-bucket acceleration rule missing');
+          if (!text.includes('latest >= 4')) throw new Error('ERROR: minimum acceleration threshold missing');
+          if (!text.includes('individual events only')) throw new Error('ERROR: individual-event counting policy missing');
+          if (!text.includes('next market only')) throw new Error('ERROR: next-market link policy missing');
 
-          console.log('Authoritative monitor verified: BTC only; 5m only; one alert per period; persistent side alternation; CLOB midpoint price; no 15m.');
+          console.log('Authoritative monitor verified: all 7 coins; 5m; 30s acceleration buckets; 3 rising buckets; latest >= 4; one alert per period; individual events; next market only.');
           NODE
 
       - name: Continuous MarginPad monitor
@@ -108,7 +99,7 @@ jobs:
             tail -n 300 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log monitor-stats.json .monitor-state.json .monitor-side-state.json 2>/dev/null || true
+            git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
             git push origin HEAD:monitor-status || true
