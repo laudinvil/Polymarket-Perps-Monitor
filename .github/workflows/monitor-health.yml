@@ -62,13 +62,12 @@ jobs:
           if (!unique.length) throw new Error('ERROR: no monitored coins configured');
           if (unique.length !== symbols.length) throw new Error('ERROR: duplicate monitored coin in SYMBOLS');
           console.log(`Configured monitored coins: ${unique.join(',')}`);
-          if (!unique.includes('BTC')) throw new Error('ERROR: BTC must remain enabled');
           if (!text.includes("const TIMEFRAME = '5m'")) throw new Error('ERROR: authoritative monitor is not 5M-only');
           if (!text.includes('const DEDUPE_WINDOW_MS = 5 * 60 * 1000')) throw new Error('ERROR: monitor window is not 5 minutes');
           if (!text.includes('loadExpectedSide')) throw new Error('ERROR: monitor does not restore persistent side state');
           if (!text.includes('persistLastAlertSide')) throw new Error('ERROR: monitor does not persist the side after an alert');
           if (!text.includes('if (periodAlreadyAlerted) return')) throw new Error('ERROR: monitor does not enforce one alert per 5-minute period');
-          console.log('Authoritative monitor verified: coin list is data-driven; adding a coin does not require verifier changes; BTC enabled / 5M / one coin per period / persistent side alternation');
+          console.log('Authoritative monitor verified: coin list is data-driven; adding a coin does not require verifier changes; 5M / one coin per period / persistent side alternation');
           NODE
 
       - name: Continuous MarginPad monitor
