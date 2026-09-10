@@ -60,18 +60,16 @@ jobs:
             /ONE ALERT PER PERIOD/,
             /findClobMidpoint\s*\(/,
             /displaySide\s*\(side\)/,
-            /collectively across all coins/,
-            /latest liquidation event becomes the alert event/,
-            /individual liquidation events only/,
-            /next market only/,
-            /at least one liquidation in each 30s bucket/,
-            /rule=collective_all_coins_at_least_one_each_30s/,
+            /SYMBOLS\.map\(async symbol =>/,
+            /row\.count\s*\+=\s*1/,
+            /const latestEvent = \[\.\.\.latestRow\.events\]\.sort\(\(a, b\) => a\.ts - b\.ts\)\.at\(-1\)/,
             /const currentBucket = activityBucketStart\(now\)/,
-            /row\.count < 1/,
-            /const latestEvent = \[\.\.\.latestRow\.events\]\.sort\(\(a, b\) => a\.ts - b\.ts\)\.at\(-1\)/
+            /bucketRows\.some\(row => row\.count < 1\)/,
+            /findNextMarket\(symbol, Date\.now\(\), TIMEFRAME\)/,
+            /rule=collective_all_coins_at_least_one_each_30s/
           ];
           requiredPatterns.forEach((pattern) => {
-            if (!pattern.test(text)) throw new Error(`ERROR: required activity feature missing: ${pattern}`);
+            if (!pattern.test(text)) throw new Error(`ERROR: required activity structure missing: ${pattern}`);
           });
 
           const obsolete = [
@@ -88,7 +86,7 @@ jobs:
             if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
-          console.log('Authoritative monitor verified: collective all 7 coins; 5m; completed 30s buckets; 3 consecutive buckets; latest liquidation is alert; one alert per period; individual events; next market only.');
+          console.log('Authoritative monitor verified: collective all 7 coins; 5m; completed 30s buckets; 3 consecutive buckets; latest event selected from latest bucket; one alert per period; individual event counting; next market only.');
           NODE
 
       - name: Continuous MarginPad monitor
