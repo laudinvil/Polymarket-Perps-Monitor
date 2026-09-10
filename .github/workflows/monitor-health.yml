@@ -77,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           timeout 20s node scripts/convex-sync.js start || true
-          node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
+          timeout 330m node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           trap 'status=$?; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
@@ -87,9 +87,9 @@ jobs:
             tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log .monitor-state.json monitor-stats.md 2>/dev/null || true
+            git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update live BTC monitor status" 2>/dev/null || true
+            git commit -m "Update live BTC+ETH monitor status" 2>/dev/null || true
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
