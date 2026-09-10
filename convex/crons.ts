@@ -17,4 +17,5 @@ crons.interval(
   {},
 );
 
+// Deploy watchdog runtime from current main so it can launch monitor-health.
 export default crons;
