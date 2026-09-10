@@ -176,12 +176,24 @@ async function processTimeframe(feeds, now) {
 
   console.log(`5m EMPTY-PERIOD CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=first_liquidation_after_empty_5m_period`);
 
-  let nextMarket = null;
+  let next5mMarket = null;
+  let current15mMarket = null;
   try {
-    nextMarket = await findNextMarket(symbol, Date.now(), TIMEFRAME);
-    console.log(`POLYMARKET NEXT ${symbol} 5m=${nextMarket?.url ?? 'UNAVAILABLE'}`);
+    // 5m link: next 5m market, calculated from the actual alert time.
+    next5mMarket = await findNextMarket(symbol, Date.now(), '5m');
+    console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`);
   } catch (error) {
     console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
+  }
+
+  try {
+    // 15m link: current active 15m market, calculated from the actual alert time.
+    const alertNow = Date.now();
+    const next15m = await findNextMarket(symbol, alertNow - 1, '15m');
+    current15mMarket = next15m;
+    console.log(`POLYMARKET CURRENT ${symbol} 15m=${current15mMarket?.url ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 15m ${symbol}: ${error.message}`);
   }
 
   const message = [
@@ -189,14 +201,15 @@ async function processTimeframe(feeds, now) {
     displaySide(side),
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
-    nextMarket?.url ? `➡️ NEXT · Polymarket 5M\n${nextMarket.url}` : null
+    next5mMarket?.url ? `➡️ NEXT · Polymarket 5M\n${next5mMarket.url}` : null,
+    current15mMarket?.url ? `➡️ CURRENT · Polymarket 15M\n${current15mMarket.url}` : null
   ].filter(value => value !== null).join('\n');
 
   enqueueAlert(message, candidate);
 }
 
 async function main() {
-  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next market only; partial periods never qualify as empty');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next 5m + current 15m market links; partial periods never qualify as empty');
   while (true) {
     const now = Date.now();
     try {
