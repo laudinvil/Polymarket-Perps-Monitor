@@ -52,7 +52,7 @@ jobs:
           console.log('Configured timeframe: 5m');
           const requiredPatterns = [
             /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/, /POLL_MS\s*=\s*4000/, /collectCurrentPeriodEvents\s*\(/,
-            /armedAfterEmptyPeriod/, /periodEventCount\s*===\s*0/, /EMPTY PERIOD CONFIRMED/,
+            /armedAfterEmptyPeriod/, /periodEventCount\[[^\]]+\]\s*===\s*0/, /EMPTY PERIOD CONFIRMED/,
             /first_liquidation_after_empty_5m_period/, /findNextMarket\(symbol, alertNow, '5m'\)/,
             /findCurrentMarket\(symbol, alertNow, '15m'\)/, /POLYMARKET NEXT/, /POLYMARKET CURRENT/,
             /individual events only/, /no imbalance/, /no streaks/
