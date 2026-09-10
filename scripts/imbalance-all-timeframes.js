@@ -2,34 +2,28 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { findNextMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// Authoritative liquidation activity monitor.
+// Authoritative liquidation monitor.
 // All supported coins. 5m periods. Individual liquidation events only.
-// Activity is evaluated collectively across all coins: each of three consecutive
-// 30s buckets must contain at least one liquidation from any monitored coin.
-// The latest liquidation event becomes the alert event. Maximum one alert per 5m period.
+// Alert on the FIRST liquidation after one or more completely empty 5m periods.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
-const ACTIVITY_BUCKET_MS = 30 * 1000;
-const REQUIRED_CONSECUTIVE_BUCKETS = 3;
+const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
 
 const state = {
   periodStart: null,
+  periodEventCount: 0,
+  armedAfterEmptyPeriod: false,
   periodAlreadyAlerted: false,
   initialized: false,
   seenLiquidations: new Set(),
-  activityBuckets: new Map(),
 };
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
 function periodStart(now) {
-  return Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
-}
-
-function activityBucketStart(ts) {
-  return Math.floor(ts / ACTIVITY_BUCKET_MS) * ACTIVITY_BUCKET_MS;
+  return Math.floor(now / PERIOD_MS) * PERIOD_MS;
 }
 
 function eventSide(event) {
@@ -69,16 +63,6 @@ function formatClobPrice(value) {
   return Number(value).toFixed(4);
 }
 
-function resetPeriod(now) {
-  const next = periodStart(now);
-  if (state.periodStart === next) return;
-  state.periodStart = next;
-  state.periodAlreadyAlerted = false;
-  state.seenLiquidations.clear();
-  state.activityBuckets.clear();
-  console.log(`LIQUIDATION ACTIVITY PERIOD RESET ${new Date(next).toISOString()} (5m; all coins collectively)`);
-}
-
 async function fetchAllFeeds() {
   const results = await Promise.all(SYMBOLS.map(async symbol => {
     try {
@@ -91,14 +75,15 @@ async function fetchAllFeeds() {
   return new Map(results);
 }
 
-function buildActivityCandidates(feeds, now) {
-  const currentBucket = activityBucketStart(now);
+function collectCurrentPeriodEvents(feeds, now) {
+  const current = periodStart(now);
+  const candidates = [];
 
   for (const symbol of SYMBOLS) {
     const events = feeds.get(symbol) || [];
     for (const event of events) {
       const ts = normalizeTs(event?.ts);
-      if (!ts || ts < state.periodStart || ts >= currentBucket) continue;
+      if (!ts || ts < current || ts >= current + PERIOD_MS) continue;
 
       const side = eventSide(event);
       if (!side) continue;
@@ -107,43 +92,14 @@ function buildActivityCandidates(feeds, now) {
       if (state.seenLiquidations.has(key)) continue;
       state.seenLiquidations.add(key);
 
-      const bucket = activityBucketStart(ts);
-      const row = state.activityBuckets.get(bucket) || { bucket, count: 0, events: [] };
-      row.count += 1;
-      row.events.push({ symbol, side, event, ts, key });
-      state.activityBuckets.set(bucket, row);
+      const item = { symbol, side, event, ts, key };
+      state.periodEventCount += 1;
+      candidates.push(item);
     }
   }
 
-  // Retain only buckets inside the current 5m period so the running state
-  // cannot leak across period boundaries or grow indefinitely.
-  for (const bucket of state.activityBuckets.keys()) {
-    if (bucket < state.periodStart || bucket >= currentBucket) state.activityBuckets.delete(bucket);
-  }
-
-  const latestBucket = currentBucket - ACTIVITY_BUCKET_MS;
-  const bucketRows = [];
-  for (let i = REQUIRED_CONSECUTIVE_BUCKETS - 1; i >= 0; i -= 1) {
-    const bucket = latestBucket - i * ACTIVITY_BUCKET_MS;
-    const row = state.activityBuckets.get(bucket);
-    bucketRows.push({ bucket, count: row?.count || 0, events: row?.events || [] });
-  }
-
-  console.log(`LIQUIDATION ACTIVITY BUCKETS ${bucketRows.map(row => `${new Date(row.bucket).toISOString()}=${row.count}`).join(' | ')}`);
-
-  if (bucketRows.some(row => row.count < 1)) return [];
-
-  const latestRow = bucketRows[bucketRows.length - 1];
-  const latestEvent = [...latestRow.events].sort((a, b) => a.ts - b.ts).at(-1);
-  if (!latestEvent) return [];
-
-  return [{
-    symbol: latestEvent.symbol,
-    side: latestEvent.side,
-    bucketCounts: bucketRows.map(row => row.count),
-    latestCount: latestRow.count,
-    latestEvent,
-  }];
+  candidates.sort((a, b) => a.ts - b.ts);
+  return candidates;
 }
 
 function enqueueAlert(message, candidate) {
@@ -153,36 +109,63 @@ function enqueueAlert(message, candidate) {
     try {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
-      console.log(`5m ACTIVITY ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)} buckets=${candidate.bucketCounts.join('->')}`);
+      console.log(`5m EMPTY-PERIOD ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)}`);
     } catch (error) {
-      console.warn(`5m ACTIVITY ALERT SEND FAILED ${candidate.symbol}: ${error.message}`);
+      console.warn(`5m EMPTY-PERIOD ALERT SEND FAILED ${candidate.symbol}: ${error.message}`);
     }
-  }).catch(error => console.warn(`5m ACTIVITY ALERT QUEUE FAILED: ${error.message}`));
+  }).catch(error => console.warn(`5m EMPTY-PERIOD ALERT QUEUE FAILED: ${error.message}`));
 }
 
 async function processTimeframe(feeds, now) {
-  resetPeriod(now);
-  if (state.periodAlreadyAlerted) return;
+  const current = periodStart(now);
 
-  const candidates = buildActivityCandidates(feeds, now);
+  if (state.periodStart === null) {
+    state.periodStart = current;
+    state.periodEventCount = 0;
+    state.armedAfterEmptyPeriod = false;
+    state.periodAlreadyAlerted = false;
+    state.seenLiquidations.clear();
+    console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; baseline suppresses historical events`);
+  } else if (state.periodStart !== current) {
+    const completedPeriod = state.periodStart;
+    const wasEmpty = state.periodEventCount === 0;
+
+    if (state.initialized && wasEmpty) {
+      state.armedAfterEmptyPeriod = true;
+      console.log(`5m EMPTY PERIOD CONFIRMED ${new Date(completedPeriod).toISOString()}; next liquidation will alert`);
+    } else if (state.initialized) {
+      state.armedAfterEmptyPeriod = false;
+      console.log(`5m PERIOD HAD LIQUIDATIONS ${new Date(completedPeriod).toISOString()} count=${state.periodEventCount}; no alert armed`);
+    }
+
+    state.periodStart = current;
+    state.periodEventCount = 0;
+    state.periodAlreadyAlerted = false;
+    state.seenLiquidations.clear();
+    console.log(`5m PERIOD RESET ${new Date(current).toISOString()}`);
+  }
+
+  const newEvents = collectCurrentPeriodEvents(feeds, now);
 
   if (!state.initialized) {
     state.initialized = true;
-    console.log('INITIAL LIQUIDATION ACTIVITY BASELINE READY 5m; historical events suppressed');
+    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed count=${state.periodEventCount}`);
     return;
   }
 
-  if (!candidates.length) return;
+  if (!state.armedAfterEmptyPeriod || state.periodAlreadyAlerted || !newEvents.length) return;
 
-  const candidate = candidates[0];
+  // The first newly observed liquidation after one or more empty 5m periods triggers.
+  const candidate = newEvents[0];
   state.periodAlreadyAlerted = true;
-  const { symbol, side, latestEvent } = candidate;
-  const event = latestEvent.event;
+  state.armedAfterEmptyPeriod = false;
+
+  const { symbol, side, event } = candidate;
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
 
-  console.log(`5m LIQUIDATION ACTIVITY CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} buckets=${candidate.bucketCounts.join('->')} rule=collective_all_coins_at_least_one_each_30s`);
+  console.log(`5m EMPTY-PERIOD CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=first_liquidation_after_empty_5m_period`);
 
   let nextMarket = null;
   try {
@@ -204,10 +187,7 @@ async function processTimeframe(feeds, now) {
   const message = [
     `🔥 ${symbol} · 5M`,
     displaySide(side),
-    'LIQUIDATIONS EVERY 30S',
-    `30s: ${candidate.latestCount}`,
-    `Previous 30s: ${candidate.bucketCounts[1]}`,
-    `30s before: ${candidate.bucketCounts[0]}`,
+    'AFTER EMPTY 5M PERIOD',
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     marketPrice !== null ? `Polymarket Price: ${marketPrice}` : null,
@@ -218,7 +198,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('LIQUIDATION ACTIVITY MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; timeframe=5m; collective all coins; at least 1 liquidation in each 30s bucket; 3 consecutive 30s buckets required; latest liquidation becomes alert; ONE ALERT PER PERIOD; individual events only; no imbalance; no streaks; next market only');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next market only');
   while (true) {
     const now = Date.now();
     try {
