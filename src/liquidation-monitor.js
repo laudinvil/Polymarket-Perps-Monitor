@@ -3,7 +3,7 @@ const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 const HISTORICAL_URL = 'https://marginpad.io/api/v1/liquidations/recent';
 const DEFAULT_SYMBOLS = ['BTC'];
 const POLL_MS = 4000;
-const FALLBACK_REFRESH_MS = 15000;
+const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -46,8 +46,6 @@ function installHistoricalFetchNormalizer() {
     if (requestUrl && requestUrl.includes(HISTORICAL_URL)) {
       const parsed = new URL(requestUrl);
       const minutes = Number(parsed.searchParams.get('minutes') || 1440);
-      // 1d must use MarginPad's real historical histogram. The live-event
-      // compatibility layer remains unchanged for 15m/1h/4h.
       if (minutes >= 1440) return originalFetch(...args);
       const symbol = parsed.searchParams.get('symbol');
       const liveUrl = `${LIVE_URL}?symbol=${encodeURIComponent(symbol || 'BTC')}&limit=400`;
