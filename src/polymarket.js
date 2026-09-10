@@ -74,4 +74,12 @@ async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
   if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {} };
   return null;
 }
-module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket, findClobMidpoint };
+async function findCurrentMarket(symbol, now = Date.now(), timeframe = '15m') {
+  const start = bucketStart(now, timeframe);
+  const market = await findMarketByEpoch(symbol, start, timeframe);
+  if (market) return market;
+  const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {} };
+  return null;
+}
+module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket, findCurrentMarket, findClobMidpoint };
