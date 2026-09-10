@@ -45,8 +45,8 @@ jobs:
           const symbolsMatch = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!symbolsMatch) throw new Error('ERROR: SYMBOLS configuration not found');
           const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
-          if (symbols.length !== 1 || symbols[0] !== 'BTC') throw new Error(`ERROR: expected BTC only, found ${symbols.join(',')}`);
-          console.log('Configured monitored coins: BTC only');
+          if (symbols.length !== 2 || symbols[0] !== 'BTC' || symbols[1] !== 'ETH') throw new Error(`ERROR: expected BTC,ETH only, found ${symbols.join(',')}`);
+          console.log('Configured monitored coins: BTC, ETH only');
           const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
@@ -62,7 +62,7 @@ jobs:
           if (!/async function findCurrentMarket\(symbol, now = Date\.now\(\), timeframe = '15m'\)/.test(poly)) throw new Error('ERROR: current-market helper missing');
           const obsolete = ['ACCELERATION_BUCKET_MS','MIN_LATEST_COUNT','buildAccelerationCandidates','loadExpectedSide','persistLastAlertSide','expectedSide','latest >= 4','3 rising buckets','ACTIVITY_BUCKET_MS','REQUIRED_CONSECUTIVE_BUCKETS','buildActivityCandidates','rule=collective_all_coins_at_least_one_each_30s','findClobMidpoint','CLOB MIDPOINT CURRENT','CURRENT Polymarket Price','CURRENT · Polymarket 5M','AFTER EMPTY 5M PERIOD'];
           for (const marker of obsolete) if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
-          console.log('Monitor verified: BTC only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; current 15m + next 5m links; partial periods never qualify as empty.');
+          console.log('Monitor verified: BTC+ETH only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; current 15m + next 5m links; partial periods never qualify as empty.');
           NODE
 
       - name: Continuous MarginPad monitor
