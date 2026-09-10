@@ -7,7 +7,7 @@ const fs = require('fs');
 // 5m periods. Individual liquidation events only.
 // Alert on the FIRST NEW liquidation in a 5m period ONLY when the immediately
 // preceding 5m period was completely empty.
-// If the current period is empty, keep waiting; its first liquidation arms the alert.
+// If the current period is empty, keep waiting; its first NEW liquidation can alert.
 const SYMBOLS = ['BTC', 'ETH', 'SOL'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
@@ -71,6 +71,18 @@ async function fetchAllFeeds() {
   }
   return feeds;
 }
+function countPeriodEvents(feeds, start) {
+  const counts = { BTC: 0, ETH: 0, SOL: 0 };
+  for (const symbol of SYMBOLS) {
+    for (const event of feeds.get(symbol) || []) {
+      const ts = normalizeTs(event?.ts);
+      if (!ts || ts < start || ts >= start + PERIOD_MS) continue;
+      if (!eventSide(event)) continue;
+      counts[symbol] += 1;
+    }
+  }
+  return counts;
+}
 function collectCurrentPeriodEvents(feeds, now) {
   const current = periodStart(now); const candidates = [];
   for (const symbol of SYMBOLS) {
@@ -85,18 +97,6 @@ function collectCurrentPeriodEvents(feeds, now) {
     }
   }
   candidates.sort((a, b) => a.ts - b.ts); return candidates;
-}
-function countPeriodEvents(feeds, start) {
-  const counts = { BTC: 0, ETH: 0, SOL: 0 };
-  for (const symbol of SYMBOLS) {
-    for (const event of feeds.get(symbol) || []) {
-      const ts = normalizeTs(event?.ts);
-      if (!ts || ts < start || ts >= start + PERIOD_MS) continue;
-      if (!eventSide(event)) continue;
-      counts[symbol] += 1;
-    }
-  }
-  return counts;
 }
 function enqueueAlert(message, candidate) {
   alertSendChain = alertSendChain.then(async () => {
@@ -119,20 +119,23 @@ async function processTimeframe(feeds, now) {
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
 
-    // On a fresh start, establish whether the immediately preceding period was empty.
+    // Fresh start: establish predecessor from feed history, not from an assumed empty state.
     const previousCounts = countPeriodEvents(feeds, current - PERIOD_MS);
     state.previousPeriodWasEmpty = !periodHasEvents(previousCounts);
     console.log(`5m MONITOR START ${new Date(current).toISOString()}; BTC+ETH+SOL; predecessor=${state.previousPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'}`);
   } else if (state.periodStart !== current) {
-    // The period just closed becomes the predecessor for the new period.
-    const closedPeriodWasEmpty = !periodHasEvents(state.periodEventCount);
+    // The monitor may have been stopped/restarted before seeing the period boundary.
+    // Recount the CLOSED period directly from the feed so an unobserved liquidation
+    // during the final minutes can never be mistaken for an empty predecessor.
+    const closedPeriodCounts = countPeriodEvents(feeds, state.periodStart);
+    const closedPeriodWasEmpty = !periodHasEvents(closedPeriodCounts);
     state.previousPeriodWasEmpty = closedPeriodWasEmpty;
     state.periodStart = current;
     state.periodEventCount = { BTC: 0, ETH: 0, SOL: 0 };
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
     persistStatus();
-    console.log(`5m PERIOD RESET ${new Date(current).toISOString()} predecessor=${closedPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'}; waiting_for_first_liquidation=true`);
+    console.log(`5m PERIOD RESET ${new Date(current).toISOString()} predecessor=${closedPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'} source=feed_recount; waiting_for_first_new_liquidation=true`);
   }
 
   const newEvents = collectCurrentPeriodEvents(feeds, now);
@@ -146,7 +149,7 @@ async function processTimeframe(feeds, now) {
   persistStatus();
   if (state.periodAlreadyAlerted || !newEvents.length) return;
 
-  // A first liquidation only qualifies when the immediately preceding period was empty.
+  // A first NEW liquidation only qualifies when the immediately preceding period was empty.
   if (!state.previousPeriodWasEmpty) {
     console.log(`5m LIQUIDATION IGNORED ${newEvents.length} new event(s); predecessor was NOT empty; current period remains unalerted`);
     return;
@@ -180,7 +183,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; empty current period waits; individual events only; no imbalance; no streaks; one global alert per 5m period; next 5m + next 15m market links only');
+  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; empty current period waits; closed periods are feed-recounted across restarts; individual events only; no imbalance; no streaks; one global alert per 5m period; next 5m + next 15m market links only');
   while (true) {
     const now = Date.now();
     try { await processTimeframe(await fetchAllFeeds(), now); } catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
