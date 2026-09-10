@@ -61,19 +61,18 @@ jobs:
             /periodEventCount\s*===\s*0/,
             /EMPTY PERIOD CONFIRMED/,
             /first_liquidation_after_empty_5m_period/,
-            /findMarketByEpoch\(symbol, bucketStart\(Date\.now\(\), TIMEFRAME\), TIMEFRAME\)/,
-            /findClobMidpoint\s*\(/,
-            /CLOB MIDPOINT CURRENT/,
             /findNextMarket\(symbol, Date\.now\(\), TIMEFRAME\)/,
-            /POLYMARKET CURRENT/,
             /POLYMARKET NEXT/,
-            /AFTER EMPTY 5M PERIOD/,
             /individual events only/,
             /no imbalance/,
-            /no streaks/
+            /no streaks/,
+            /LONG liquidation -> UP/,
+            /SHORT liquidation -> DOWN/,
+            /`UP`/,
+            /`DOWN`/
           ];
           requiredPatterns.forEach((pattern) => {
-            if (!pattern.test(text)) throw new Error(`ERROR: required empty-5m structure missing: ${pattern}`);
+            if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`);
           });
 
           const obsolete = [
@@ -88,13 +87,20 @@ jobs:
             'ACTIVITY_BUCKET_MS',
             'REQUIRED_CONSECUTIVE_BUCKETS',
             'buildActivityCandidates',
-            'rule=collective_all_coins_at_least_one_each_30s'
+            'rule=collective_all_coins_at_least_one_each_30s',
+            'findMarketByEpoch',
+            'findClobMidpoint',
+            'CLOB MIDPOINT CURRENT',
+            'POLYMARKET CURRENT',
+            'CURRENT Polymarket Price',
+            'CURRENT · Polymarket 5M',
+            'AFTER EMPTY 5M PERIOD'
           ];
           for (const marker of obsolete) {
             if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
-          console.log('Authoritative monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual liquidation events only; current market + live CLOB price + next market.');
+          console.log('Authoritative monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual liquidation events only; UP/DOWN mapping; next market only.');
           NODE
 
       - name: Continuous MarginPad monitor
