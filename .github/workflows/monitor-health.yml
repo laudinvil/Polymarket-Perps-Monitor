@@ -47,12 +47,13 @@ jobs:
           if (symbols.join(',') !== 'BTC,ETH,SOL') throw new Error(`Expected BTC,ETH,SOL only; found ${symbols.join(',')}`);
           if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
           if (!/FIRST-LIQUIDATION ALERT SENT/i.test(text)) throw new Error('Current first-liquidation alert path missing');
-          if (!/periodAlreadyAlerted/.test(text)) throw new Error('Per-period alert guard missing');
+          if (!/previousPeriodWasEmpty/.test(text)) throw new Error('Empty-predecessor guard missing');
+          if (!/feed_recount/.test(text)) throw new Error('Closed-period feed recount missing');
           if (!/findNextMarket\(symbol, alertNow, '5m'\)/.test(text)) throw new Error('NEXT 5m lookup missing');
           if (!/findNextMarket\(symbol, alertNow, '15m'\)/.test(text)) throw new Error('NEXT 15m lookup missing');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/CURRENT\s+Polymarket|CURRENT\s+market/i.test(text)) throw new Error('Obsolete CURRENT market alert content detected');
-          console.log('Verified: BTC+ETH+SOL; 5m; per-period first liquidation; NEXT 5m + NEXT 15m only; no current market/price lookup.');
+          console.log('Verified: BTC+ETH+SOL; 5m; EMPTY predecessor + FIRST NEW liquidation; closed periods feed-recounted; NEXT 5m + NEXT 15m only.');
           NODE
       - name: Continuous MarginPad monitor
         env:
@@ -66,7 +67,7 @@ jobs:
         run: |
           set -o pipefail
           timeout 20s node scripts/convex-sync.js start || true
-          timeout 330m node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
+          timeout 350m node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
           MONITOR_PID=$!
           trap 'status=$?; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
           while kill -0 "$MONITOR_PID" 2>/dev/null; do
