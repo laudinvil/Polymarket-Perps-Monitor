@@ -115,7 +115,7 @@ jobs:
             git add monitor-history.log monitor-stats.json .monitor-state.json 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
             git commit -m "Update monitor status" 2>/dev/null || true
-            git push origin HEAD:monitor-status || true
+            git push --force origin HEAD:monitor-status
           done
           wait "$MONITOR_PID"
 
