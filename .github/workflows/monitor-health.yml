@@ -53,28 +53,28 @@ jobs:
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
 
-          for (const required of [
-            'ACTIVITY_BUCKET_MS',
-            'REQUIRED_CONSECUTIVE_BUCKETS',
-            'buildActivityCandidates',
-            'ONE ALERT PER PERIOD',
-            'findClobMidpoint',
-            'displaySide(side)',
-            'collectively across all coins',
-            'latest liquidation event becomes the alert event',
-            'individual liquidation events only',
-            'next market only',
-            'at least one liquidation in each 30s bucket'
-          ]) {
-            if (!text.includes(required)) throw new Error(`ERROR: required activity feature missing: ${required}`);
-          }
+          const requiredPatterns = [
+            /ACTIVITY_BUCKET_MS\s*=\s*30\s*\*\s*1000/,
+            /REQUIRED_CONSECUTIVE_BUCKETS\s*=\s*3/,
+            /function\s+buildActivityCandidates\s*\(/,
+            /ONE ALERT PER PERIOD/,
+            /findClobMidpoint\s*\(/,
+            /displaySide\s*\(side\)/,
+            /collectively across all coins/,
+            /latest liquidation event becomes the alert event/,
+            /individual liquidation events only/,
+            /next market only/,
+            /at least one liquidation in each 30s bucket/,
+            /rule=collective_all_coins_at_least_one_each_30s/,
+            /const currentBucket = activityBucketStart\(now\)/,
+            /row\.count < 1/,
+            /const latestEvent = \[\.\.\.latestRow\.events\]\.sort\(\(a, b\) => a\.ts - b\.ts\)\.at\(-1\)/
+          ];
+          requiredPatterns.forEach((pattern) => {
+            if (!pattern.test(text)) throw new Error(`ERROR: required activity feature missing: ${pattern}`);
+          });
 
-          if (!text.includes('rule=collective_all_coins_at_least_one_each_30s')) throw new Error('ERROR: collective all-coins rule missing');
-          if (!text.includes('const currentBucket = activityBucketStart(now)')) throw new Error('ERROR: completed 30s bucket boundary missing');
-          if (!text.includes('row.count < 1')) throw new Error('ERROR: minimum one liquidation per bucket missing');
-          if (!text.includes('const latestEvent = [...latestRow.events].sort((a, b) => a.ts - b.ts).at(-1)')) throw new Error('ERROR: latest liquidation selection missing');
-
-          for (const obsolete of [
+          const obsolete = [
             'ACCELERATION_BUCKET_MS',
             'MIN_LATEST_COUNT',
             'buildAccelerationCandidates',
@@ -83,8 +83,9 @@ jobs:
             'expectedSide',
             'latest >= 4',
             '3 rising buckets'
-          ]) {
-            if (text.includes(obsolete)) throw new Error(`ERROR: obsolete monitor logic detected: ${obsolete}`);
+          ];
+          for (const marker of obsolete) {
+            if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
           console.log('Authoritative monitor verified: collective all 7 coins; 5m; completed 30s buckets; 3 consecutive buckets; latest liquidation is alert; one alert per period; individual events; next market only.');
