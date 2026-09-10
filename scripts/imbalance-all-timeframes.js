@@ -19,6 +19,7 @@ const state = {
   periodAlreadyAlerted: false,
   initialized: false,
   seenLiquidations: new Set(),
+  activityBuckets: new Map(),
 };
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
@@ -74,6 +75,7 @@ function resetPeriod(now) {
   state.periodStart = next;
   state.periodAlreadyAlerted = false;
   state.seenLiquidations.clear();
+  state.activityBuckets.clear();
   console.log(`LIQUIDATION ACTIVITY PERIOD RESET ${new Date(next).toISOString()} (5m; all coins collectively)`);
 }
 
@@ -90,7 +92,6 @@ async function fetchAllFeeds() {
 }
 
 function buildActivityCandidates(feeds, now) {
-  const buckets = new Map();
   const currentBucket = activityBucketStart(now);
 
   for (const symbol of SYMBOLS) {
@@ -107,20 +108,28 @@ function buildActivityCandidates(feeds, now) {
       state.seenLiquidations.add(key);
 
       const bucket = activityBucketStart(ts);
-      const row = buckets.get(bucket) || { bucket, count: 0, events: [] };
+      const row = state.activityBuckets.get(bucket) || { bucket, count: 0, events: [] };
       row.count += 1;
       row.events.push({ symbol, side, event, ts, key });
-      buckets.set(bucket, row);
+      state.activityBuckets.set(bucket, row);
     }
+  }
+
+  // Retain only buckets inside the current 5m period so the running state
+  // cannot leak across period boundaries or grow indefinitely.
+  for (const bucket of state.activityBuckets.keys()) {
+    if (bucket < state.periodStart || bucket >= currentBucket) state.activityBuckets.delete(bucket);
   }
 
   const latestBucket = currentBucket - ACTIVITY_BUCKET_MS;
   const bucketRows = [];
   for (let i = REQUIRED_CONSECUTIVE_BUCKETS - 1; i >= 0; i -= 1) {
     const bucket = latestBucket - i * ACTIVITY_BUCKET_MS;
-    const row = buckets.get(bucket);
+    const row = state.activityBuckets.get(bucket);
     bucketRows.push({ bucket, count: row?.count || 0, events: row?.events || [] });
   }
+
+  console.log(`LIQUIDATION ACTIVITY BUCKETS ${bucketRows.map(row => `${new Date(row.bucket).toISOString()}=${row.count}`).join(' | ')}`);
 
   if (bucketRows.some(row => row.count < 1)) return [];
 
@@ -189,7 +198,7 @@ async function processTimeframe(feeds, now) {
     if (midpoint !== null) marketPrice = formatClobPrice(midpoint);
     console.log(`CLOB MIDPOINT ${symbol} 5m ${displaySide(side)}=${marketPrice ?? 'UNAVAILABLE'}`);
   } catch (error) {
-    console.warn(`CLOB MIDPOINT FAILED 5m ${symbol}: ${error.message}`);
+    console.warn(`CLOB MIDPOINT FAILED 5m ${displaySide(side)}: ${error.message}`);
   }
 
   const message = [
