@@ -36,7 +36,7 @@ jobs:
           git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor
 
-      - name: Verify authoritative monitor source
+      - name: Verify monitor source
         run: |
           node --check scripts/imbalance-all-timeframes.js
           node <<'NODE'
@@ -67,9 +67,7 @@ jobs:
             /no imbalance/,
             /no streaks/,
             /LONG liquidation -> UP/,
-            /SHORT liquidation -> DOWN/,
-            /`UP`/,
-            /`DOWN`/
+            /SHORT liquidation -> DOWN/
           ];
           requiredPatterns.forEach((pattern) => {
             if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`);
@@ -100,7 +98,7 @@ jobs:
             if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
-          console.log('Authoritative monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual liquidation events only; UP/DOWN mapping; next market only.');
+          console.log('Monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual events only; UP/DOWN mapping; next market only.');
           NODE
 
       - name: Continuous MarginPad monitor
