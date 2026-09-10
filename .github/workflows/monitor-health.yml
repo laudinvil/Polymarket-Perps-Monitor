@@ -45,8 +45,8 @@ jobs:
           const symbolsMatch = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!symbolsMatch) throw new Error('ERROR: SYMBOLS configuration not found');
           const symbols = [...symbolsMatch[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(m => m[1]);
-          if (symbols.length !== 2 || symbols[0] !== 'BTC' || symbols[1] !== 'ETH') throw new Error(`ERROR: expected BTC,ETH only, found ${symbols.join(',')}`);
-          console.log('Configured monitored coins: BTC, ETH only');
+          if (symbols.length !== 3 || symbols[0] !== 'BTC' || symbols[1] !== 'ETH' || symbols[2] !== 'SOL') throw new Error(`ERROR: expected BTC,ETH,SOL only, found ${symbols.join(',')}`);
+          console.log('Configured monitored coins: BTC, ETH, SOL only');
           const tfMatch = text.match(/const TIMEFRAME\s*=\s*['\"]([^'\"]+)['\"]/);
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
@@ -54,15 +54,15 @@ jobs:
             /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/, /POLL_MS\s*=\s*4000/, /collectCurrentPeriodEvents\s*\(/,
             /armedAfterEmptyPeriod/, /periodEventCount\[[^\]]+\]\s*===\s*0/, /EMPTY PERIOD CONFIRMED/,
             /first_liquidation_after_empty_5m_period/, /findNextMarket\(symbol, alertNow, '5m'\)/,
-            /findCurrentMarket\(symbol, alertNow, '15m'\)/, /POLYMARKET NEXT/, /POLYMARKET CURRENT/,
+            /findNextMarket\(symbol, alertNow, '15m'\)/, /POLYMARKET NEXT/,
             /individual events only/, /no imbalance/, /no streaks/
           ];
           requiredPatterns.forEach((pattern) => { if (!pattern.test(text)) throw new Error(`ERROR: required monitor structure missing: ${pattern}`); });
           const poly = fs.readFileSync('src/polymarket.js', 'utf8');
-          if (!/async function findCurrentMarket\(symbol, now = Date\.now\(\), timeframe = '15m'\)/.test(poly)) throw new Error('ERROR: current-market helper missing');
+          if (!/async function findNextMarket\(symbol, now = Date\.now\(\), timeframe = '5m'\)/.test(poly)) throw new Error('ERROR: next-market helper missing');
           const obsolete = ['ACCELERATION_BUCKET_MS','MIN_LATEST_COUNT','buildAccelerationCandidates','loadExpectedSide','persistLastAlertSide','expectedSide','latest >= 4','3 rising buckets','ACTIVITY_BUCKET_MS','REQUIRED_CONSECUTIVE_BUCKETS','buildActivityCandidates','rule=collective_all_coins_at_least_one_each_30s','findClobMidpoint','CLOB MIDPOINT CURRENT','CURRENT Polymarket Price','CURRENT · Polymarket 5M','AFTER EMPTY 5M PERIOD'];
           for (const marker of obsolete) if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
-          console.log('Monitor verified: BTC+ETH only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; current 15m + next 5m links; partial periods never qualify as empty.');
+          console.log('Monitor verified: BTC+ETH+SOL only; 5m; empty completed periods arm; first new liquidation triggers; live state/history/statistics; next 5m + next 15m links; partial periods never qualify as empty.');
           NODE
 
       - name: Continuous MarginPad monitor
@@ -89,7 +89,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update live BTC+ETH monitor status" 2>/dev/null || true
+            git commit -m "Update live BTC+ETH+SOL monitor status" 2>/dev/null || true
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
