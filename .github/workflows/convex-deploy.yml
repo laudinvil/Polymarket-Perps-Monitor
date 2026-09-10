@@ -77,7 +77,6 @@ jobs:
         run: |
           set -e
           mkdir -p .github/deploy-status
-          health=$(cat "$HEALTH_BODY_FILE")
           node -e '
             const fs = require("fs");
             const out = {
@@ -87,15 +86,13 @@ jobs:
               run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
               commit_sha: process.env.GITHUB_SHA,
               deployed_at: new Date().toISOString(),
-              convex_health: JSON.parse(process.env.HEALTH_BODY)
+              convex_health: JSON.parse(fs.readFileSync(process.env.HEALTH_BODY_FILE, "utf8"))
             };
             fs.writeFileSync(".github/deploy-status/convex.json", JSON.stringify(out, null, 2) + "\n");
-          ' 
+          '
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/deploy-status/convex.json
           git diff --cached --quiet && exit 0
           git commit -m "Record successful Convex deployment"
           git push origin HEAD:main
-        env:
-          HEALTH_BODY: ${{ env.HEALTH_BODY }}
