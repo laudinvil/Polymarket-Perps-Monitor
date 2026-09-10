@@ -5,9 +5,9 @@ const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
-// Six coins are monitored. Each 5-minute period can produce exactly ONE
-// alert. Alert side alternates globally and persists across workflow restarts.
-const SYMBOLS = ['ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+// BTC only. Each 5-minute period can produce exactly ONE alert.
+// Alert side alternates globally and persists across workflow restarts.
+const SYMBOLS = ['BTC'];
 const TIMEFRAME = '5m';
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
@@ -64,7 +64,7 @@ function resetDedupeWindow(ts) {
   dedupePeriodStart = period;
   seenLiquidations.clear();
   periodAlreadyAlerted = false;
-  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (5m; one coin only; expected side=${expectedSide})`);
+  console.log(`LIQUIDATION PERIOD RESET ${new Date(period).toISOString()} (5m; BTC only; expected side=${expectedSide})`);
 }
 
 function liquidationKey(symbol, ts, side, event) {
@@ -150,8 +150,6 @@ async function processLiquidations(feeds, now) {
 
   if (!candidates.length) return;
 
-  // One coin per 5-minute period. The earliest matching liquidation wins;
-  // every other coin/event in this period is ignored.
   candidates.sort((a, b) => a.ts - b.ts);
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
@@ -179,8 +177,6 @@ async function processLiquidations(feeds, now) {
 
   let market = null;
   try {
-    // CURRENT means the market active at the moment the alert is generated,
-    // not the market after the liquidation event timestamp.
     market = await findCurrentPolymarket(symbol, Date.now());
   } catch (error) {
     console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
@@ -199,7 +195,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=${SYMBOLS.join(',')}; BTC=DISABLED; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; other coins ignored; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; all other coins disabled; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
