@@ -5,6 +5,8 @@ const { sendTelegramMessage } = require('../src/telegram');
 // Authoritative liquidation monitor.
 // All supported coins. 5m periods. Individual liquidation events only.
 // Alert on the FIRST liquidation after one or more completely empty 5m periods.
+// A partial period (including the final partial period before the 355-minute job limit)
+// is NEVER eligible to be confirmed as empty.
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
@@ -126,6 +128,15 @@ async function processTimeframe(feeds, now) {
     console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; baseline suppresses historical events`);
   } else if (state.periodStart !== current) {
     const completedPeriod = state.periodStart;
+    const completedPeriodEnd = completedPeriod + PERIOD_MS;
+
+    // Hard guard: only a period whose full 5 minutes have elapsed may be evaluated.
+    // This prevents the job's final partial window from ever being treated as empty.
+    if (completedPeriodEnd > now) {
+      console.log(`5m PERIOD STILL PARTIAL ${new Date(completedPeriod).toISOString()}-${new Date(completedPeriodEnd).toISOString()}; no empty confirmation`);
+      return;
+    }
+
     const wasEmpty = state.periodEventCount === 0;
 
     if (state.initialized && wasEmpty) {
@@ -185,7 +196,7 @@ async function processTimeframe(feeds, now) {
 }
 
 async function main() {
-  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next market only');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next market only; partial periods never qualify as empty');
   while (true) {
     const now = Date.now();
     try {
