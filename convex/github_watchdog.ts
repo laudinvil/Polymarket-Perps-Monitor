@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 const OWNER = "laudinvil";
 const REPO = "Polymarket-Perps-Monitor";
 const WORKFLOW = "monitor-health.yml";
+const DEPLOY_WORKFLOW = "convex-deploy.yml";
 const BRANCH = "main";
 const GITHUB_API = "https://api.github.com";
 
