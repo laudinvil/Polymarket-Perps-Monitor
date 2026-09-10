@@ -22,6 +22,16 @@ export const ensureMonitorRunning = action({
       "x-github-api-version": "2022-11-28",
     };
 
+    const refUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}`;
+    const refResponse = await fetch(refUrl, { headers });
+    if (!refResponse.ok) {
+      const body = await refResponse.text();
+      throw new Error(`GitHub main ref lookup failed: ${refResponse.status} ${body.slice(0, 300)}`);
+    }
+    const ref = await refResponse.json();
+    const mainSha = ref?.object?.sha;
+    if (!mainSha) throw new Error("GitHub main ref lookup returned no SHA");
+
     const runsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?branch=${BRANCH}&per_page=20`;
     const runsResponse = await fetch(runsUrl, { headers });
     if (!runsResponse.ok) {
@@ -35,10 +45,22 @@ export const ensureMonitorRunning = action({
     );
 
     const health = await ctx.runQuery(internal.monitor.monitorHealth, {});
+    const stale = active.filter((run: any) => run.head_sha !== mainSha);
 
-    if (active.length > 0) {
-      console.log(`WATCHDOG: active workflow run ${active[0].id}; health=${health.ok}; no dispatch`);
-      return { ok: true, action: "already_running", runId: active[0].id, health };
+    for (const run of stale) {
+      const cancelUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/runs/${run.id}/cancel`;
+      const cancelResponse = await fetch(cancelUrl, { method: "POST", headers });
+      if (!cancelResponse.ok && cancelResponse.status !== 409) {
+        const body = await cancelResponse.text();
+        throw new Error(`GitHub stale-run cancel failed for ${run.id}: ${cancelResponse.status} ${body.slice(0, 300)}`);
+      }
+      console.log(`WATCHDOG: cancelled stale run ${run.id}; head=${run.head_sha}; main=${mainSha}`);
+    }
+
+    const current = active.filter((run: any) => run.head_sha === mainSha);
+    if (current.length > 0) {
+      console.log(`WATCHDOG: current workflow run ${current[0].id} matches main=${mainSha}; health=${health.ok}; no dispatch`);
+      return { ok: true, action: "already_running", runId: current[0].id, mainSha, health };
     }
 
     const dispatchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`;
@@ -53,7 +75,7 @@ export const ensureMonitorRunning = action({
       throw new Error(`GitHub workflow dispatch failed: ${dispatchResponse.status} ${body.slice(0, 300)}`);
     }
 
-    console.log(`WATCHDOG: dispatched ${WORKFLOW} on ${BRANCH}; previous health=${health.ok} ageMs=${health.ageMs}`);
-    return { ok: true, action: "dispatched", health };
+    console.log(`WATCHDOG: dispatched ${WORKFLOW} on ${BRANCH}; main=${mainSha}; previous health=${health.ok} ageMs=${health.ageMs}`);
+    return { ok: true, action: "dispatched", mainSha, health };
   },
 });
