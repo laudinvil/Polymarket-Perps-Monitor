@@ -2,12 +2,12 @@ const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
 const { findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-// Authoritative liquidation monitor.
-// All supported coins. 5m periods. Individual liquidation events only.
+// Authoritative BTC-only liquidation monitor.
+// 5m periods. Individual liquidation events only.
 // Alert on the FIRST liquidation after one or more completely empty 5m periods.
 // A partial period (including the final partial period before the 355-minute job limit)
 // is NEVER eligible to be confirmed as empty.
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['BTC'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
@@ -24,9 +24,7 @@ const state = {
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
-function periodStart(now) {
-  return Math.floor(now / PERIOD_MS) * PERIOD_MS;
-}
+function periodStart(now) { return Math.floor(now / PERIOD_MS) * PERIOD_MS; }
 
 function eventSide(event) {
   const value = String(event?.side || event?.direction || '').toLowerCase();
@@ -35,11 +33,7 @@ function eventSide(event) {
   return null;
 }
 
-function displaySide(side) {
-  // Polymarket direction mapping requested by the user:
-  // LONG liquidation -> UP, SHORT liquidation -> DOWN.
-  return side === 'LONG' ? 'UP' : 'DOWN';
-}
+function displaySide(side) { return side === 'LONG' ? 'UP' : 'DOWN'; }
 
 function liquidationKey(symbol, ts, side, event) {
   const id = event?.id ?? event?.liquidationId ?? event?.eventId ?? event?.tradeId ?? event?.txHash ?? event?.orderId;
@@ -55,49 +49,30 @@ function numberValue(...values) {
   return 0;
 }
 
-function money(value) {
-  return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-}
-
-function price(value) {
-  return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
-}
+function money(value) { return `$${Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`; }
+function price(value) { return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 }); }
 
 async function fetchAllFeeds() {
-  const results = await Promise.all(SYMBOLS.map(async symbol => {
-    try {
-      return [symbol, await fetchSymbolFeed(symbol)];
-    } catch (error) {
-      console.warn(`FEED ${symbol} FAILED: ${error.message}`);
-      return [symbol, []];
-    }
-  }));
-  return new Map(results);
+  try { return new Map([['BTC', await fetchSymbolFeed('BTC')]]); }
+  catch (error) { console.warn(`FEED BTC FAILED: ${error.message}`); return new Map([['BTC', []]]); }
 }
 
 function collectCurrentPeriodEvents(feeds, now) {
   const current = periodStart(now);
   const candidates = [];
-
   for (const symbol of SYMBOLS) {
-    const events = feeds.get(symbol) || [];
-    for (const event of events) {
+    for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
       if (!ts || ts < current || ts >= current + PERIOD_MS) continue;
-
       const side = eventSide(event);
       if (!side) continue;
-
       const key = liquidationKey(symbol, ts, side, event);
       if (state.seenLiquidations.has(key)) continue;
       state.seenLiquidations.add(key);
-
-      const item = { symbol, side, event, ts, key };
       state.periodEventCount += 1;
-      candidates.push(item);
+      candidates.push({ symbol, side, event, ts, key });
     }
   }
-
   candidates.sort((a, b) => a.ts - b.ts);
   return candidates;
 }
@@ -110,9 +85,7 @@ function enqueueAlert(message, candidate) {
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
       console.log(`5m EMPTY-PERIOD ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)}`);
-    } catch (error) {
-      console.warn(`5m EMPTY-PERIOD ALERT SEND FAILED ${candidate.symbol}: ${error.message}`);
-    }
+    } catch (error) { console.warn(`5m EMPTY-PERIOD ALERT SEND FAILED ${candidate.symbol}: ${error.message}`); }
   }).catch(error => console.warn(`5m EMPTY-PERIOD ALERT QUEUE FAILED: ${error.message}`));
 }
 
@@ -125,23 +98,19 @@ async function processTimeframe(feeds, now) {
     state.armedAfterEmptyPeriod = false;
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
-    console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; baseline suppresses historical events`);
+    console.log(`5m EMPTY-PERIOD MONITOR START ${new Date(current).toISOString()}; BTC only; baseline suppresses historical events`);
   } else if (state.periodStart !== current) {
     const completedPeriod = state.periodStart;
     const completedPeriodEnd = completedPeriod + PERIOD_MS;
-
-    // Hard guard: only a period whose full 5 minutes have elapsed may be evaluated.
-    // This prevents the job's final partial window from ever being treated as empty.
     if (completedPeriodEnd > now) {
       console.log(`5m PERIOD STILL PARTIAL ${new Date(completedPeriod).toISOString()}-${new Date(completedPeriodEnd).toISOString()}; no empty confirmation`);
       return;
     }
 
     const wasEmpty = state.periodEventCount === 0;
-
     if (state.initialized && wasEmpty) {
       state.armedAfterEmptyPeriod = true;
-      console.log(`5m EMPTY PERIOD CONFIRMED ${new Date(completedPeriod).toISOString()}; next liquidation will alert`);
+      console.log(`5m EMPTY PERIOD CONFIRMED ${new Date(completedPeriod).toISOString()}; next BTC liquidation will alert`);
     } else if (state.initialized) {
       state.armedAfterEmptyPeriod = false;
       console.log(`5m PERIOD HAD LIQUIDATIONS ${new Date(completedPeriod).toISOString()} count=${state.periodEventCount}; no alert armed`);
@@ -155,20 +124,16 @@ async function processTimeframe(feeds, now) {
   }
 
   const newEvents = collectCurrentPeriodEvents(feeds, now);
-
   if (!state.initialized) {
     state.initialized = true;
     console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed count=${state.periodEventCount}`);
     return;
   }
-
   if (!state.armedAfterEmptyPeriod || state.periodAlreadyAlerted || !newEvents.length) return;
 
-  // The first newly observed liquidation after one or more empty 5m periods triggers.
   const candidate = newEvents[0];
   state.periodAlreadyAlerted = true;
   state.armedAfterEmptyPeriod = false;
-
   const { symbol, side, event } = candidate;
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -178,23 +143,16 @@ async function processTimeframe(feeds, now) {
 
   let next5mMarket = null;
   let current15mMarket = null;
+  const alertNow = Date.now();
   try {
-    // 5m link: next 5m market, calculated from the actual alert time.
-    next5mMarket = await findNextMarket(symbol, Date.now(), '5m');
+    next5mMarket = await findNextMarket(symbol, alertNow, '5m');
     console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`);
-  } catch (error) {
-    console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
-  }
-
+  } catch (error) { console.warn(`POLYMARKET NEXT LOOKUP FAILED 5m ${symbol}: ${error.message}`); }
   try {
-    // 15m link: current active 15m market, calculated from the actual alert time.
-    const alertNow = Date.now();
-    const next15m = await findNextMarket(symbol, alertNow - 1, '15m');
-    current15mMarket = next15m;
+    // Current 15m market: use a timestamp just inside the active bucket.
+    current15mMarket = await findNextMarket(symbol, alertNow - 1, '15m');
     console.log(`POLYMARKET CURRENT ${symbol} 15m=${current15mMarket?.url ?? 'UNAVAILABLE'}`);
-  } catch (error) {
-    console.warn(`POLYMARKET CURRENT LOOKUP FAILED 15m ${symbol}: ${error.message}`);
-  }
+  } catch (error) { console.warn(`POLYMARKET CURRENT LOOKUP FAILED 15m ${symbol}: ${error.message}`); }
 
   const message = [
     `🔥 ${symbol} · 5M`,
@@ -202,22 +160,17 @@ async function processTimeframe(feeds, now) {
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     next5mMarket?.url ? `➡️ NEXT · Polymarket 5M\n${next5mMarket.url}` : null,
-    current15mMarket?.url ? `➡️ CURRENT · Polymarket 15M\n${current15mMarket.url}` : null
-  ].filter(value => value !== null).join('\n');
-
+    current15mMarket?.url ? `➡️ CURRENT · Polymarket 15M\n${current15mMarket.url}` : null,
+  ].filter(Boolean).join('\n');
   enqueueAlert(message, candidate);
 }
 
 async function main() {
-  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP,DOGE,BNB,HYPE; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next 5m + current 15m market links; partial periods never qualify as empty');
+  console.log('5m EMPTY-PERIOD LIQUIDATION MONITOR STARTED; coins=BTC only; first liquidation after one or more empty 5m periods; individual events only; no imbalance; no streaks; one alert per armed period; next 5m + current 15m market links; partial periods never qualify as empty');
   while (true) {
     const now = Date.now();
-    try {
-      const feeds = await fetchAllFeeds();
-      await processTimeframe(feeds, now);
-    } catch (error) {
-      console.warn(`MONITOR LOOP FAILED: ${error.message}`);
-    }
+    try { await processTimeframe(await fetchAllFeeds(), now); }
+    catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
