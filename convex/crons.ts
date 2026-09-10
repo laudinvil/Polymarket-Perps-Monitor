@@ -6,7 +6,7 @@ const crons = cronJobs();
 crons.interval(
   "watchdog github monitor",
   { minutes: 1 },
-  internal.githubWatchdog.ensureMonitorRunning,
+  internal.github_watchdog.ensureMonitorRunning,
   {},
 );
 
