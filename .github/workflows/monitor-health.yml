@@ -54,22 +54,26 @@ jobs:
           console.log('Configured timeframe: 5m');
 
           const requiredPatterns = [
-            /ACTIVITY_BUCKET_MS\s*=\s*30\s*\*\s*1000/,
-            /REQUIRED_CONSECUTIVE_BUCKETS\s*=\s*3/,
-            /function\s+buildActivityCandidates\s*\(/,
-            /ONE ALERT PER PERIOD/,
+            /PERIOD_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/,
+            /POLL_MS\s*=\s*4000/,
+            /collectCurrentPeriodEvents\s*\(/,
+            /armedAfterEmptyPeriod/,
+            /periodEventCount\s*===\s*0/,
+            /EMPTY PERIOD CONFIRMED/,
+            /first_liquidation_after_empty_5m_period/,
+            /findMarketByEpoch\(symbol, bucketStart\(Date\.now\(\), TIMEFRAME\), TIMEFRAME\)/,
             /findClobMidpoint\s*\(/,
-            /displaySide\s*\(side\)/,
-            /SYMBOLS\.map\(async symbol =>/,
-            /row\.count\s*\+=\s*1/,
-            /const latestEvent = \[\.\.\.latestRow\.events\]\.sort\(\(a, b\) => a\.ts - b\.ts\)\.at\(-1\)/,
-            /const currentBucket = activityBucketStart\(now\)/,
-            /bucketRows\.some\(row => row\.count < 1\)/,
+            /CLOB MIDPOINT CURRENT/,
             /findNextMarket\(symbol, Date\.now\(\), TIMEFRAME\)/,
-            /rule=collective_all_coins_at_least_one_each_30s/
+            /POLYMARKET CURRENT/,
+            /POLYMARKET NEXT/,
+            /AFTER EMPTY 5M PERIOD/,
+            /individual events only/,
+            /no imbalance/,
+            /no streaks/
           ];
           requiredPatterns.forEach((pattern) => {
-            if (!pattern.test(text)) throw new Error(`ERROR: required activity structure missing: ${pattern}`);
+            if (!pattern.test(text)) throw new Error(`ERROR: required empty-5m structure missing: ${pattern}`);
           });
 
           const obsolete = [
@@ -80,13 +84,17 @@ jobs:
             'persistLastAlertSide',
             'expectedSide',
             'latest >= 4',
-            '3 rising buckets'
+            '3 rising buckets',
+            'ACTIVITY_BUCKET_MS',
+            'REQUIRED_CONSECUTIVE_BUCKETS',
+            'buildActivityCandidates',
+            'rule=collective_all_coins_at_least_one_each_30s'
           ];
           for (const marker of obsolete) {
             if (text.includes(marker)) throw new Error(`ERROR: obsolete monitor logic detected: ${marker}`);
           }
 
-          console.log('Authoritative monitor verified: collective all 7 coins; 5m; completed 30s buckets; 3 consecutive buckets; latest event selected from latest bucket; one alert per period; individual event counting; next market only.');
+          console.log('Authoritative monitor verified: all 7 coins; 5m; empty completed periods arm the monitor; first new liquidation triggers; one alert per armed period; individual liquidation events only; current market + live CLOB price + next market.');
           NODE
 
       - name: Continuous MarginPad monitor
