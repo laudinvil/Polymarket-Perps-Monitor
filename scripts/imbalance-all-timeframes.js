@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 // Authoritative monitor: individual liquidation events only.
@@ -93,10 +93,8 @@ function price(value) {
   return Math.abs(numberValue(value)).toLocaleString('en-US', { maximumFractionDigits: 8 });
 }
 
-function polymarketPrice(market, side) {
-  const value = market?.prices?.[displaySide(side)];
-  if (!Number.isFinite(Number(value))) return null;
-  return Number(value).toFixed(2);
+function formatClobPrice(value) {
+  return Number(value).toFixed(4);
 }
 
 async function fetchAllFeeds() {
@@ -193,7 +191,16 @@ async function processLiquidations(feeds, now) {
     console.warn(`POLYMARKET CURRENT LOOKUP FAILED 5m ${symbol}: ${error.message}`);
   }
 
-  const marketPrice = polymarketPrice(market, side);
+  let marketPrice = null;
+  try {
+    const outcome = displaySide(side);
+    const midpoint = await findClobMidpoint(market, outcome);
+    if (midpoint !== null) marketPrice = formatClobPrice(midpoint);
+    console.log(`CLOB MIDPOINT ${symbol} ${outcome}=${marketPrice ?? 'UNAVAILABLE'}`);
+  } catch (error) {
+    console.warn(`CLOB MIDPOINT FAILED 5m ${symbol}: ${error.message}`);
+  }
+
   const message = [
     `🔥 ${symbol} · 5M`,
     displaySide(side),
@@ -208,7 +215,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; Polymarket outcome price included; all other coins disabled; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; CLOB midpoint price; all other coins disabled; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
