@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "monitor": "node scripts/authoritative-liquidation-monitor.js",
+    "monitor": "node scripts/imbalance-all-timeframes.js",
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
