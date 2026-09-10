@@ -54,6 +54,10 @@ function eventSide(event) {
   return null;
 }
 
+function displaySide(side) {
+  return side === 'LONG' ? 'DOWN' : 'UP';
+}
+
 function dedupeWindowStart(ts) {
   return Math.floor(ts / DEDUPE_WINDOW_MS) * DEDUPE_WINDOW_MS;
 }
@@ -115,7 +119,7 @@ function enqueueAlert(message, symbol, side, key) {
       lastAlertSentAt = Date.now();
       expectedSide = side === 'LONG' ? 'SHORT' : 'LONG';
       persistLastAlertSide(side);
-      console.log(`5M ALERT SENT ${symbol} ${side} key=${key}; NEXT EXPECTED SIDE=${expectedSide}`);
+      console.log(`5M ALERT SENT ${symbol} ${side} display=${displaySide(side)} key=${key}; NEXT EXPECTED SIDE=${expectedSide}`);
     } catch (error) {
       console.warn(`5M ALERT SEND FAILED ${symbol}: ${error.message}`);
     }
@@ -154,7 +158,7 @@ async function processLiquidations(feeds, now) {
   const { symbol, side, key, event, ts } = candidates[0];
   periodAlreadyAlerted = true;
 
-  console.log(`5M FIRST MATCH CLAIMED symbol=${symbol} side=${side} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next expected side=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
+  console.log(`5M FIRST MATCH CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} ts=${new Date(ts).toISOString()} ignored=${Math.max(0, candidates.length - 1)}; next expected side=${side === 'LONG' ? 'SHORT' : 'LONG'}`);
 
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
@@ -166,6 +170,7 @@ async function processLiquidations(feeds, now) {
     symbol,
     ts,
     side,
+    displaySide: displaySide(side),
     price: eventPrice,
     notional: Math.abs(eventNotional),
     dedupeWindowStart: dedupePeriodStart,
@@ -184,7 +189,7 @@ async function processLiquidations(feeds, now) {
 
   const message = [
     `🔥 ${symbol} · 5M`,
-    side,
+    displaySide(side),
     `Volume: ${money(eventNotional)}`,
     `Price: ${price(eventPrice)}`,
     market?.url ? '' : null,
@@ -195,7 +200,7 @@ async function processLiquidations(feeds, now) {
 }
 
 async function main() {
-  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; all other coins disabled; no streaks; no imbalance`);
+  console.log(`SINGLE LIQUIDATION MONITOR STARTED; coins=BTC; only 5m; ONE COIN PER PERIOD; SIDE ALTERNATION PERSISTED; CURRENT Polymarket links; display LONG=>DOWN SHORT=>UP; all other coins disabled; no streaks; no imbalance`);
   while (true) {
     const now = Date.now();
     try {
