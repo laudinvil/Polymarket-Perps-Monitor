@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Restore monitor history
         run: |
@@ -53,25 +53,39 @@ jobs:
           if (!tfMatch || tfMatch[1] !== '5m') throw new Error(`ERROR: expected 5m timeframe, found ${tfMatch?.[1] || 'missing'}`);
           console.log('Configured timeframe: 5m');
 
-          for (const required of [
+          const required = [
             'ACTIVITY_BUCKET_MS',
             'REQUIRED_CONSECUTIVE_BUCKETS',
             'buildActivityCandidates',
             'ONE ALERT PER PERIOD',
             'findClobMidpoint',
-            'displaySide(side)'
-          ]) {
-            if (!text.includes(required)) throw new Error(`ERROR: required activity feature missing: ${required}`);
+            'displaySide(side)',
+            'collective all coins',
+            'latest liquidation becomes alert',
+            'individual events only',
+            'next market only'
+          ];
+          for (const marker of required) {
+            if (!text.includes(marker)) throw new Error(`ERROR: required activity feature missing: ${marker}`);
           }
 
-          if (!text.includes('at least one liquidation in each of three consecutive')) throw new Error('ERROR: 30s activity rule missing');
-          if (!text.includes('at_least_one_each_30s')) throw new Error('ERROR: 30s bucket qualification missing');
-          if (!text.includes('individual events only')) throw new Error('ERROR: individual-event counting policy missing');
-          if (!text.includes('next market only')) throw new Error('ERROR: next-market link policy missing');
-          if (text.includes('ACCELERATION_BUCKET_MS') || text.includes('MIN_LATEST_COUNT') || text.includes('buildAccelerationCandidates')) throw new Error('ERROR: obsolete acceleration logic detected in authoritative monitor');
-          if (text.includes('loadExpectedSide') || text.includes('persistLastAlertSide') || text.includes('expectedSide')) throw new Error('ERROR: obsolete side-alternation logic detected in authoritative monitor');
+          if (!text.includes('at least one liquidation in each 30s bucket')) throw new Error('ERROR: 30s activity rule missing');
+          if (!text.includes('collective_all_coins_at_least_one_each_30s')) throw new Error('ERROR: collective all-coins rule missing');
 
-          console.log('Authoritative monitor verified: all 7 coins; 5m; 3 consecutive 30s buckets; >=1 liquidation in each; one alert per period; individual events; next market only.');
+          for (const obsolete of [
+            'ACCELERATION_BUCKET_MS',
+            'MIN_LATEST_COUNT',
+            'buildAccelerationCandidates',
+            'loadExpectedSide',
+            'persistLastAlertSide',
+            'expectedSide',
+            'latest >= 4',
+            '3 rising buckets'
+          ]) {
+            if (text.includes(obsolete)) throw new Error(`ERROR: obsolete monitor logic detected: ${obsolete}`);
+          }
+
+          console.log('Authoritative monitor verified: collective all 7 coins; 5m; 30s buckets; 3 consecutive buckets; latest liquidation is alert; one alert per period; individual events; next market only.');
           NODE
 
       - name: Continuous MarginPad monitor
