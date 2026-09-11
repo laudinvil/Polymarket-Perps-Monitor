@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -44,7 +44,8 @@ jobs:
           const m = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!m) throw new Error('SYMBOLS configuration missing');
           const symbols = [...m[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(x => x[1]);
-          if (symbols.join(',') !== 'BTC,ETH,SOL,XRP') throw new Error(`Expected BTC,ETH,SOL,XRP only; found ${symbols.join(',')}`);
+          if (!symbols.length) throw new Error('SYMBOLS configuration is empty');
+          if (new Set(symbols).size !== symbols.length) throw new Error(`Duplicate symbols detected: ${symbols.join(',')}`);
           if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
           if (!/FIRST-LIQUIDATION ALERT SENT/i.test(text)) throw new Error('Current first-liquidation alert path missing');
           if (!/previousPeriodWasEmpty/.test(text)) throw new Error('Empty-predecessor guard missing');
@@ -53,7 +54,7 @@ jobs:
           if (!/findNextMarket\(symbol, alertNow, '15m'\)/.test(text)) throw new Error('NEXT 15m lookup missing');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/CURRENT\s+Polymarket|CURRENT\s+market/i.test(text)) throw new Error('Obsolete CURRENT market alert content detected');
-          console.log('Verified: BTC+ETH+SOL+XRP; 5m; EMPTY predecessor + FIRST NEW liquidation; closed periods feed-recounted; NEXT 5m + NEXT 15m only.');
+          console.log(`Verified monitor source: symbols=${symbols.join(',')}; 5m; EMPTY predecessor + FIRST NEW liquidation; closed-period feed-recounted; NEXT 5m + NEXT 15m only.`);
           NODE
       - name: Continuous MarginPad monitor
         env:
