@@ -1,4 +1,4 @@
-const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
+const { findCurrentMarket, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
@@ -13,16 +13,16 @@ const STATE_FILE = '.monitor-state.json';
 const HISTORY_FILE = 'monitor-history.log';
 const CHAINLINK_SYMBOLS = Object.fromEntries(SYMBOLS.map(symbol => [symbol, `${symbol.toLowerCase()}/usd`]));
 
-// Primary signal: Chainlink 60s TWAP move >= 0.15% after the first 60 seconds
-// while Polymarket still prices the matching side at 52%-55%.
-const MOMENTUM_THRESHOLD_PCT = 0.15;
-const MOMENTUM_MIN_MARKET_PCT = 52;
+// Primary signal: Chainlink 60s TWAP move >= 0.10% after the first 60 seconds
+// while Polymarket still prices the matching side at 51%-55%.
+const MOMENTUM_THRESHOLD_PCT = 0.10;
+const MOMENTUM_MIN_MARKET_PCT = 51;
 const MOMENTUM_MAX_MARKET_PCT = 55;
 
-// Divergence signal: Chainlink 60s TWAP move >= 0.20% while Polymarket
-// still prices the matching side at <=51%.
-const DIVERGENCE_THRESHOLD_PCT = 0.20;
-const DIVERGENCE_MAX_MARKET_PCT = 51;
+// Divergence signal: Chainlink 60s TWAP move >= 0.15% while Polymarket
+// still prices the matching side at <=52%.
+const DIVERGENCE_THRESHOLD_PCT = 0.15;
+const DIVERGENCE_MAX_MARKET_PCT = 52;
 
 const state = {
   periodStart: null,
@@ -31,6 +31,9 @@ const state = {
   periodAlreadyAlerted: false,
   lastAlertAt: null,
   lastAlertSymbol: null,
+  lastAlertPeriodStart: null,
+  lastOutcomeCheckedPeriod: null,
+  lastAlertDirection: null,
   initialized: false,
 };
 
@@ -135,6 +138,9 @@ function persistState() {
       periodAlreadyAlerted: state.periodAlreadyAlerted,
       lastAlertAt: state.lastAlertAt,
       lastAlertSymbol: state.lastAlertSymbol,
+      lastAlertPeriodStart: state.lastAlertPeriodStart,
+      lastOutcomeCheckedPeriod: state.lastOutcomeCheckedPeriod,
+      lastAlertDirection: state.lastAlertDirection,
       initialized: state.initialized,
     }, null, 2) + '\n',
   );
@@ -155,6 +161,9 @@ function restoreState() {
     state.periodAlreadyAlerted = Boolean(saved.periodAlreadyAlerted);
     state.lastAlertAt = saved.lastAlertAt ?? null;
     state.lastAlertSymbol = saved.lastAlertSymbol ?? null;
+    state.lastAlertPeriodStart = Number.isFinite(Number(saved.lastAlertPeriodStart)) ? Number(saved.lastAlertPeriodStart) : null;
+    state.lastOutcomeCheckedPeriod = Number.isFinite(Number(saved.lastOutcomeCheckedPeriod)) ? Number(saved.lastOutcomeCheckedPeriod) : null;
+    state.lastAlertDirection = saved.lastAlertDirection ?? null;
     state.initialized = Boolean(saved.initialized);
     console.log(`STATE RESTORED momentum period=${new Date(state.periodStart).toISOString()} source=${saved.priceSource || 'legacy'} baseline=${JSON.stringify(state.baselinePrices)} alerted=${state.periodAlreadyAlerted}`);
   } catch (error) {
@@ -184,6 +193,49 @@ async function readMarketSide(symbol, direction, now) {
   if (!Number.isFinite(price)) price = Number(market?.prices?.[outcome]);
   if (!Number.isFinite(price)) return null;
   return { market, outcome, pricePct: price * 100 };
+}
+
+async function recordPreviousAlertOutcome(currentPeriod) {
+  const alertPeriod = Number(state.lastAlertPeriodStart);
+  const symbol = state.lastAlertSymbol;
+  if (!Number.isFinite(alertPeriod) || !symbol) return;
+  if (state.lastOutcomeCheckedPeriod === alertPeriod) return;
+  if (alertPeriod >= currentPeriod) return;
+
+  try {
+    const market = await findMarketByEpoch(symbol, alertPeriod, '5m');
+    if (!market) {
+      console.log(`5m MARKET OUTCOME ${symbol} period=${new Date(alertPeriod).toISOString()} unavailable`);
+      return;
+    }
+
+    const winner = market.winner || null;
+    const resolved = Boolean(market.resolved);
+    const closed = Boolean(market.closed);
+    console.log(`5m MARKET OUTCOME ${symbol} period=${new Date(alertPeriod).toISOString()} closed=${closed} resolved=${resolved} winner=${winner || 'NA'} prices=${JSON.stringify(market.outcomePrices || [])}`);
+
+    if (!closed && !resolved) return;
+
+    state.lastOutcomeCheckedPeriod = alertPeriod;
+    persistState();
+    appendHistory({
+      type: 'polymarket_5m_outcome',
+      timeframe: '5m',
+      symbol,
+      periodStart: alertPeriod,
+      expectedDirection: state.lastAlertDirection,
+      marketUrl: market.url || null,
+      closed,
+      resolved,
+      winner,
+      outcomes: market.outcomes || [],
+      outcomePrices: market.outcomePrices || [],
+      closedTime: market.closedTime || null,
+      signalResult: winner && state.lastAlertDirection ? (winner === state.lastAlertDirection ? 'WIN' : 'LOSS') : 'UNDETERMINED',
+    });
+  } catch (error) {
+    console.warn(`5m MARKET OUTCOME CHECK FAILED ${symbol}: ${error.message}`);
+  }
 }
 
 async function evaluateSignals(currentPrices, now) {
@@ -234,6 +286,8 @@ async function evaluateSignals(currentPrices, now) {
   const signal = candidates[0];
   state.periodAlreadyAlerted = true;
   state.lastAlertSymbol = signal.symbol;
+  state.lastAlertPeriodStart = state.periodStart;
+  state.lastAlertDirection = signal.direction;
   persistState();
   enqueueAlert(signal, state.periodStart);
 }
@@ -259,6 +313,8 @@ function enqueueAlert(signal, currentPeriod) {
       lastAlertSentAt = Date.now();
       state.lastAlertAt = new Date(lastAlertSentAt).toISOString();
       state.lastAlertSymbol = signal.symbol;
+      state.lastAlertPeriodStart = currentPeriod;
+      state.lastAlertDirection = signal.direction;
       persistState();
       appendHistory({
         type: 'polymarket_5m_momentum',
@@ -271,6 +327,7 @@ function enqueueAlert(signal, currentPeriod) {
         polymarketPricePct: signal.marketSide.pricePct,
         currentPeriod,
         marketUrl: market?.url || null,
+        expectedOutcome: signal.direction,
       });
       console.log(`5m MOMENTUM ALERT SENT symbol=${signal.symbol} type=${signal.signalType} direction=${signal.direction} move=${signal.movePct.toFixed(3)}% polymarket=${signal.marketSide.pricePct.toFixed(2)}% market=${market?.url || 'NONE'}`);
     } catch (error) {
@@ -281,6 +338,9 @@ function enqueueAlert(signal, currentPeriod) {
 
 async function processPeriod(now) {
   const current = periodStart(now);
+  const changedPeriod = state.periodStart !== current;
+
+  if (changedPeriod) await recordPreviousAlertOutcome(current);
   resetPeriod(current);
 
   const prices = getCurrentPrices();
@@ -307,7 +367,7 @@ async function processPeriod(now) {
 function main() {
   restoreState();
   startRtds();
-  console.log(`5m POLYMARKET MOMENTUM MONITOR STARTED; symbols=${SYMBOLS.join(',')}; price_source=Polymarket RTDS Chainlink 60s TWAP; baseline=period-start; evaluation=+60s; momentum=0.15% + Polymarket 52-55%; divergence=0.20% + Polymarket <=51%; one alert per 5m period.`);
+  console.log(`5m POLYMARKET MOMENTUM MONITOR STARTED; symbols=${SYMBOLS.join(',')}; price_source=Polymarket RTDS Chainlink 60s TWAP; baseline=period-start; evaluation=+60s; momentum=0.10% + Polymarket 51-55%; divergence=0.15% + Polymarket <=52%; one alert per 5m period; previous alert outcome recorded after close.`);
 
   (async () => {
     while (true) {
