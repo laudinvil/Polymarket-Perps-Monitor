@@ -1,0 +1,33 @@
+const fs = require('fs');
+const path = require('path');
+const { sendTelegramMessage } = require('../src/telegram');
+
+const TOKEN = String(process.env.PANDASCORE_TOKEN || '').trim();
+const PS = 'https://api.pandascore.co';
+const PM = 'https://gamma-api.polymarket.com';
+const POLL = Math.max(300000, Number(process.env.ESPORTS_POLL_SECONDS || 600) * 1000);
+const LOOKAHEAD = Math.max(1, Number(process.env.ESPORTS_LOOKAHEAD_HOURS || 24));
+const MAX_MATCHES = Math.min(50, Math.max(1, Number(process.env.ESPORTS_MAX_MATCHES || 25)));
+const HISTORY = 5;
+const EDGE = Number(process.env.ESPORTS_MOMENTUM_EDGE || 5);
+const STATE = path.resolve('.esports-momentum-state.json');
+const LOG = path.resolve('esports-momentum-history.log');
+if (!TOKEN) throw new Error('PANDASCORE_TOKEN is not configured');
+const state = { alerted: {}, pm: {} };
+try { Object.assign(state, JSON.parse(fs.readFileSync(STATE, 'utf8'))); } catch {}
+const save = () => fs.writeFileSync(STATE, JSON.stringify(state, null, 2) + '\n');
+const log = x => fs.appendFileSync(LOG, JSON.stringify({ ts: new Date().toISOString(), ...x }) + '\n');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function get(base, p, params = {}) { const u = new URL(base + p); for (const [k,v] of Object.entries(params)) if (v !== undefined) u.searchParams.set(k, String(v)); const r = await fetch(u, { headers: { accept: 'application/json' } }); const t = await r.text(); if (!r.ok) throw new Error(`${p} ${r.status}: ${t.slice(0,180)}`); return JSON.parse(t); }
+function norm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function teams(m) { return (m.opponents || []).map(x => x.opponent).filter(Boolean).map(x => ({ id: Number(x.id), name: x.name })); }
+function result(m, id) { const r = (m.results || []).find(x => Number(x.team_id) === id); const o = (m.results || []).find(x => Number(x.team_id) !== id); if (Number.isFinite(Number(r?.score)) && Number.isFinite(Number(o?.score))) return { win: Number(r.score) > Number(o.score), diff: Number(r.score) - Number(o.score) }; if (Number(m.winner_id) === id) return { win: true, diff: 1 }; if (m.winner_id) return { win: false, diff: -1 }; return null; }
+async function history(team) { const a = await get(PS, `/teams/${team.id}/matches`, { sort: '-begin_at', per_page: 20, token: TOKEN }); return (Array.isArray(a) ? a : []).filter(m => Date.parse(m.begin_at || '') < Date.now()).map(m => ({ m, r: result(m, team.id) })).filter(x => x.r).slice(0, HISTORY); }
+function stats(h) { const wins = h.filter(x => x.r.win).length; const losses = h.length - wins; const diff = h.reduce((n,x) => n + x.r.diff, 0); let streak = 0; let type = null; for (const x of h) { const t = x.r.win ? 'W' : 'L'; if (!type) type = t; if (t !== type) break; streak++; } return { wins, losses, diff, streak, type, sample: h.length }; }
+function score(s) { return s.wins * 2 - s.losses * 2 + Math.max(-2, Math.min(2, s.diff)); }
+async function polymarket(a,b,when) { const key = `${norm(a.name)}|${norm(b.name)}`; if (state.pm[key] && Date.now()-state.pm[key].at < 1800000) return state.pm[key].event; const q = `${a.name} ${b.name}`; const d = await get(PM, '/public-search', { q, limit_per_type: 20, page: 1, keep_closed_markets: 0 }); const na = norm(a.name), nb = norm(b.name), mt = Date.parse(when || ''); const c = (d?.events || []).map(e => { const title = norm(`${e.title || ''} ${e.subtitle || ''}`); if (!title.includes(na) || !title.includes(nb)) return null; const et = Date.parse(e.startDate || ''); return { e, delta: Number.isFinite(mt) && Number.isFinite(et) ? Math.abs(mt-et) : 1e15 }; }).filter(Boolean).sort((x,y)=>x.delta-y.delta); const event = c[0]?.e || null; state.pm[key] = { at: Date.now(), event }; save(); return event; }
+function alertText(m,a,b,s,url) { return [`🎮 ${String(m.videogame?.name || 'ESPORTS').toUpperCase()} · MOMENTUM`,'',`${a.name}: ${a.s.wins}-${a.s.losses} last 5 · diff ${a.s.diff >= 0 ? '+' : ''}${a.s.diff} · ${a.s.streak}${a.s.type || ''}`,'',`${b.name}: ${b.s.wins}-${b.s.losses} last 5 · diff ${b.s.diff >= 0 ? '+' : ''}${b.s.diff} · ${b.s.streak}${b.s.type || ''}`,'',`EDGE: ${s.edge.toFixed(1)}`,`➡️ SIGNAL: ${s.team.name}`,'','➡️ Polymarket',url].join('\n'); }
+async function inspect(m) { const ts = teams(m); if (ts.length !== 2) return; const [ha,hb] = await Promise.all(ts.map(history)); if (ha.length < HISTORY || hb.length < HISTORY) return; const a={...ts[0],s:stats(ha)}, b={...ts[1],s:stats(hb)}; const e=score(a.s)-score(b.s); const s=e>=EDGE?{team:a,edge:e}:e<=-EDGE?{team:b,edge:-e}:null; console.log(JSON.stringify({matchId:m.id,game:m.videogame?.slug,beginAt:m.begin_at,teams:[a.name,b.name],a:a.s,b:b.s,edge:e,signal:s?.team.name || null})); log({type:'match',matchId:m.id,game:m.videogame?.slug,beginAt:m.begin_at,teams:[a.name,b.name],a:a.s,b:b.s,edge:e,signal:s?.team.name || null}); if (!s || state.alerted[m.id]) return; const event=await polymarket(a,b,m.begin_at); const url=event?.slug ? `https://polymarket.com/event/${event.slug}` : null; if (!url) { console.log(`NO POLYMARKET ${a.name} vs ${b.name}`); return; } await sendTelegramMessage(alertText(m,a,b,s,url)); state.alerted[m.id]={at:Date.now(),team:s.team.name,url}; save(); log({type:'alert',matchId:m.id,team:s.team.name,edge:s.edge,url}); console.log(`ALERT ${a.name} vs ${b.name} ${s.team.name} ${url}`); }
+async function poll() { const now=Date.now(), from=new Date(now).toISOString(), to=new Date(now+LOOKAHEAD*3600000).toISOString(); const ms=await get(PS,'/matches/upcoming',{'range[begin_at]':`${from},${to}`,sort:'begin_at',per_page:MAX_MATCHES,token:TOKEN}); console.log(`UPCOMING ${Array.isArray(ms)?ms.length:0}`); for(const m of (Array.isArray(ms)?ms:[])) try{await inspect(m);}catch(e){console.error(`MATCH ${m.id} FAILED ${e.message}`);} save(); }
+async function main(){ console.log(`ESPORTS MOMENTUM MONITOR STARTED poll=${POLL/1000}s lookahead=${LOOKAHEAD}h`); while(true){const t=Date.now();try{await poll();}catch(e){console.error(`LOOP FAILED ${e.stack||e.message}`);}await sleep(Math.max(1000,POLL-(Date.now()-t)));} }
+main().catch(e=>{console.error(e);process.exitCode=1;});
