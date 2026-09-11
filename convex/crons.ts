@@ -17,5 +17,5 @@ crons.interval(
   {},
 );
 
-// Deploy watchdog runtime from current main so it can launch monitor-health.
+// Permanent launcher: Convex checks every minute and dispatches monitor-health when no current run exists.
 export default crons;
