@@ -27,9 +27,12 @@ jobs:
           node-version: 24
       - name: Restore monitor history
         run: |
-          git fetch origin monitor-status:monitor-status || true
-          git checkout monitor-status -- monitor-history.log .monitor-state.json 2>/dev/null || true
+          set -euo pipefail
+          git fetch origin monitor-status:monitor-status
+          git checkout monitor-status -- monitor-history.log .monitor-state.json
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
+          test -s .monitor-state.json
+          node -e 'const s=require("./.monitor-state.json"); if(s.strategy!=="polymarket-5m-resolved-outcome-imbalance") throw new Error("Invalid monitor state strategy"); if(!Number.isInteger(Number(s.upCount))||!Number.isInteger(Number(s.downCount))) throw new Error("Invalid cumulative counts"); console.log(`Restored cumulative state: UP=${s.upCount} DOWN=${s.downCount} IMBALANCE=${s.imbalance}`);'
       - name: Verify outcome monitor source
         run: |
           set -e
