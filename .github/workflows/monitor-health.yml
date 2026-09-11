@@ -44,21 +44,21 @@ jobs:
           const m = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
           if (!m) throw new Error('SYMBOLS configuration missing');
           const symbols = [...m[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(x => x[1]);
-          if (!symbols.length) throw new Error('SYMBOLS configuration is empty');
+          const expected = ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
+          if (symbols.join(',') !== expected.join(',')) throw new Error(`Expected all 7 symbols ${expected.join(',')}, got: ${symbols.join(',')}`);
           if (new Set(symbols).size !== symbols.length) throw new Error(`Duplicate symbols detected: ${symbols.join(',')}`);
-          if (symbols.length !== 1 || symbols[0] !== 'BTC') throw new Error(`Expected BTC-only monitor, got: ${symbols.join(',')}`);
           if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
-          if (!/const ALERT_MAX_VOLUME\s*=\s*250000/.test(text)) throw new Error('Expected max alert volume $250,000');
-          if (!/alertPeriodStart/.test(text)) throw new Error('Durable alertPeriodStart lock missing');
-          if (!/previousPeriodHadAlert/.test(text)) throw new Error('Previous-period alert lock missing');
-          if (!/periodHadLiquidations/.test(text)) throw new Error('Durable period liquidation state missing');
-          if (!/GLOBAL_PERIOD_LOCK=CLOSED/.test(text)) throw new Error('Global period lock claim missing');
-          if (!/findNextMarket\(['\"]BTC['\"],\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('NEXT 5m BTC lookup missing');
-          if (/['\"]15m['\"]/.test(text)) throw new Error('15m market link/lookup must be removed');
+          if (!/function findContrarian\s*\(/.test(text)) throw new Error('Contrarian detector missing');
+          if (!/active\.length === SYMBOLS\.length - 1/.test(text)) throw new Error('Contrarian detector must require all other coins to have liquidations');
+          if (!/missing\.length === 1/.test(text)) throw new Error('Contrarian detector must require exactly one missing coin');
+          if (!/5m PERIOD CHECK/.test(text)) throw new Error('Boundary period check missing');
+          if (!/findNextMarket\(symbol,\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('NEXT 5m market lookup missing');
+          if (/['\"]15m['\"]/.test(text)) throw new Error('15m market lookup must be removed');
+          if (/ALERT_MAX_VOLUME/.test(text)) throw new Error('Old volume alert gate must be removed');
           if (/findCurrentMarket/.test(text)) throw new Error('Obsolete CURRENT market resolver detected');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/feed_recount/.test(text)) throw new Error('Obsolete feed-recount alert gate detected');
-          console.log('Verified BTC-only 5m monitor: durable global period lock; previous-period alert suppresses the next period; NEXT 5m market only; max alert volume $250,000; no 15m market lookup.');
+          console.log('Verified 5m contrarian monitor: BTC/ETH/SOL/XRP/DOGE/BNB/HYPE; exactly one zero-liquidation coin; all other six must have liquidations; evaluated at period boundary; NEXT 5m market only; one alert per period.');
           NODE
       - name: Continuous MarginPad monitor
         env:
@@ -84,7 +84,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update live BTC 5m monitor status" 2>/dev/null || true
+            git commit -m "Update live contrarian 5m monitor status" 2>/dev/null || true
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
