@@ -116,7 +116,7 @@ function enqueueAlert(symbol, closedPeriod, previousCounts, currentCounts) {
       // market that has just started, not the following market.
       const market = await findCurrentMarket(symbol, Date.now(), '5m');
       const message = [
-        `🔥 LIQUIDATION DISAPPEARANCE · ${symbol} · 5M`,
+        `🔥 ${symbol} · 5M`,
         `Previous: ${previousCounts[symbol]} liquidations`,
         'Current: 0 liquidations',
         `Period: ${new Date(closedPeriod).toLocaleString('en-GB', { timeZone: 'Europe/Kyiv', hour12: false })}`,
