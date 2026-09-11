@@ -20,20 +20,27 @@ function parseJsonArray(value) {
   try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : null; } catch { return null; }
 }
 function parseMarketData(market) {
-  const outcomes = parseJsonArray(market?.outcomes);
-  const outcomePrices = parseJsonArray(market?.outcomePrices);
-  const clobTokenIds = parseJsonArray(market?.clobTokenIds);
+  const outcomes = parseJsonArray(market?.outcomes) || [];
+  const outcomePrices = parseJsonArray(market?.outcomePrices) || [];
+  const clobTokenIds = parseJsonArray(market?.clobTokenIds) || [];
   const prices = {};
   const tokenIds = {};
-  if (outcomes) {
-    outcomes.forEach((outcome, index) => {
-      const name = String(outcome).toUpperCase();
-      const value = Number(outcomePrices?.[index]);
-      if (Number.isFinite(value)) prices[name] = value;
-      if (clobTokenIds?.[index]) tokenIds[name] = String(clobTokenIds[index]);
-    });
+  outcomes.forEach((outcome, index) => {
+    const name = String(outcome).toUpperCase();
+    const value = Number(outcomePrices[index]);
+    if (Number.isFinite(value)) prices[name] = value;
+    if (clobTokenIds[index]) tokenIds[name] = String(clobTokenIds[index]);
+  });
+  let winner = null;
+  if (outcomes.length === 2 && outcomePrices.length === 2) {
+    const resolvedIndex = outcomePrices.findIndex(value => Number(value) >= 0.999);
+    const otherIndex = resolvedIndex === 0 ? 1 : 0;
+    if (resolvedIndex >= 0 && Number(outcomePrices[otherIndex]) <= 0.001) winner = String(outcomes[resolvedIndex]).toUpperCase();
   }
-  return { prices, tokenIds };
+  const closed = Boolean(market?.closed);
+  const closedTime = market?.closedTime || market?.closedTimeIso || null;
+  const resolved = Boolean(winner) || Boolean(market?.resolved);
+  return { prices, tokenIds, outcomes, outcomePrices, closed, closedTime, resolved, winner };
 }
 async function findMarketBySlug(slug) {
   const market = await getJson(`${GAMMA_BASE_URL}/markets/slug/${encodeURIComponent(slug)}`);
@@ -47,6 +54,12 @@ async function findMarketBySlug(slug) {
     endDate: market.endDate || market.endDateIso || null,
     prices: data.prices,
     tokenIds: data.tokenIds,
+    outcomes: data.outcomes,
+    outcomePrices: data.outcomePrices,
+    closed: data.closed,
+    closedTime: data.closedTime,
+    resolved: data.resolved,
+    winner: data.winner,
   };
 }
 async function clobMidpoint(tokenId) {
@@ -71,7 +84,7 @@ async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
     if (market) return market;
   }
   const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
-  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {} };
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null };
   return null;
 }
 async function findCurrentMarket(symbol, now = Date.now(), timeframe = '15m') {
@@ -79,7 +92,7 @@ async function findCurrentMarket(symbol, now = Date.now(), timeframe = '15m') {
   const market = await findMarketByEpoch(symbol, start, timeframe);
   if (market) return market;
   const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
-  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {} };
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null };
   return null;
 }
 module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket, findCurrentMarket, findClobMidpoint };
