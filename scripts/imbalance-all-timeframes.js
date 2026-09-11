@@ -7,18 +7,20 @@ const PERIOD_MS = 5 * 60 * 1000;
 const SNAPSHOT_DELAY_MS = 60 * 1000;
 const POLL_MS = 4000;
 const ALERT_MIN_GAP_MS = 5000;
-const SPOT_URL = 'https://api.binance.com/api/v3/ticker/price';
+const RTDS_URL = 'wss://ws-live-data.polymarket.com';
+const RTDS_TOPIC = 'crypto_prices_twap_sixty';
 const STATE_FILE = '.monitor-state.json';
 const HISTORY_FILE = 'monitor-history.log';
+const CHAINLINK_SYMBOLS = Object.fromEntries(SYMBOLS.map(symbol => [symbol, `${symbol.toLowerCase()}/usd`]));
 
-// Primary signal: real spot move >= 0.15% after the first 60 seconds while
-// Polymarket still prices the matching side at 52%-55%.
+// Primary signal: Chainlink 60s TWAP move >= 0.15% after the first 60 seconds
+// while Polymarket still prices the matching side at 52%-55%.
 const MOMENTUM_THRESHOLD_PCT = 0.15;
 const MOMENTUM_MIN_MARKET_PCT = 52;
 const MOMENTUM_MAX_MARKET_PCT = 55;
 
-// Divergence signal: real spot move >= 0.20% while Polymarket still prices
-// the matching side at <=51%.
+// Divergence signal: Chainlink 60s TWAP move >= 0.20% while Polymarket
+// still prices the matching side at <=51%.
 const DIVERGENCE_THRESHOLD_PCT = 0.20;
 const DIVERGENCE_MAX_MARKET_PCT = 51;
 
@@ -32,6 +34,10 @@ const state = {
   initialized: false,
 };
 
+const chainlinkPrices = {};
+let rtdsSocket = null;
+let rtdsReconnectTimer = null;
+let rtdsReady = false;
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
 
@@ -39,21 +45,78 @@ function periodStart(now) {
   return Math.floor(now / PERIOD_MS) * PERIOD_MS;
 }
 
-async function fetchSpotPrices() {
-  const response = await fetch(SPOT_URL, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`Binance HTTP ${response.status}`);
-  const rows = await response.json();
-  const wanted = new Set(SYMBOLS.map(symbol => `${symbol}USDT`));
-  const prices = {};
-  for (const row of rows) {
-    if (wanted.has(row?.symbol)) {
-      const symbol = String(row.symbol).replace(/USDT$/, '');
-      const price = Number(row.price);
-      if (Number.isFinite(price) && price > 0) prices[symbol] = price;
-    }
+function startRtds() {
+  if (rtdsReconnectTimer) {
+    clearTimeout(rtdsReconnectTimer);
+    rtdsReconnectTimer = null;
   }
+
+  try {
+    rtdsSocket = new WebSocket(RTDS_URL);
+  } catch (error) {
+    console.warn(`CHAINLINK RTDS CONNECT FAILED: ${error.message}`);
+    scheduleRtdsReconnect();
+    return;
+  }
+
+  rtdsSocket.addEventListener('open', () => {
+    rtdsReady = true;
+    const subscriptions = SYMBOLS.map(symbol => ({
+      topic: RTDS_TOPIC,
+      type: 'update',
+      filters: JSON.stringify({ symbol: CHAINLINK_SYMBOLS[symbol] }),
+    }));
+    rtdsSocket.send(JSON.stringify({ action: 'subscribe', subscriptions }));
+    console.log(`CHAINLINK RTDS CONNECTED topic=${RTDS_TOPIC} symbols=${SYMBOLS.join(',')}`);
+  });
+
+  rtdsSocket.addEventListener('message', event => {
+    try {
+      const message = JSON.parse(String(event.data || ''));
+      if (message?.message) {
+        console.warn(`CHAINLINK RTDS MESSAGE: ${message.message}`);
+        return;
+      }
+      if (message?.topic !== RTDS_TOPIC) return;
+      const payload = message?.payload || {};
+      const symbol = SYMBOLS.find(item => CHAINLINK_SYMBOLS[item] === String(payload.symbol || '').toLowerCase());
+      if (!symbol) return;
+      const rawValue = payload.full_accuracy_value ?? payload.value;
+      const price = Number(rawValue);
+      if (!Number.isFinite(price) || price <= 0) return;
+      chainlinkPrices[symbol] = price;
+      console.log(`CHAINLINK TWAP60 ${symbol}=${price} ts=${payload.timestamp || message.timestamp || 'NA'}`);
+    } catch (error) {
+      console.warn(`CHAINLINK RTDS PARSE FAILED: ${error.message}`);
+    }
+  });
+
+  rtdsSocket.addEventListener('error', event => {
+    console.warn(`CHAINLINK RTDS ERROR: ${event?.message || 'socket error'}`);
+  });
+
+  rtdsSocket.addEventListener('close', () => {
+    rtdsReady = false;
+    rtdsSocket = null;
+    console.warn('CHAINLINK RTDS CLOSED; reconnecting');
+    scheduleRtdsReconnect();
+  });
+}
+
+function scheduleRtdsReconnect() {
+  if (rtdsReconnectTimer) return;
+  rtdsReconnectTimer = setTimeout(() => {
+    rtdsReconnectTimer = null;
+    startRtds();
+  }, 2000);
+}
+
+function getCurrentPrices() {
+  const prices = {};
   for (const symbol of SYMBOLS) {
-    if (!Number.isFinite(prices[symbol])) throw new Error(`Missing Binance spot price for ${symbol}`);
+    const price = Number(chainlinkPrices[symbol]);
+    if (!Number.isFinite(price) || price <= 0) return null;
+    prices[symbol] = price;
   }
   return prices;
 }
@@ -64,6 +127,7 @@ function persistState() {
     JSON.stringify({
       updatedAt: new Date().toISOString(),
       strategy: 'polymarket-5m-momentum',
+      priceSource: 'polymarket-rtds-chainlink-twap-60s',
       symbols: SYMBOLS,
       periodStart: state.periodStart,
       baselinePrices: state.baselinePrices,
@@ -92,7 +156,7 @@ function restoreState() {
     state.lastAlertAt = saved.lastAlertAt ?? null;
     state.lastAlertSymbol = saved.lastAlertSymbol ?? null;
     state.initialized = Boolean(saved.initialized);
-    console.log(`STATE RESTORED momentum period=${new Date(state.periodStart).toISOString()} baseline=${JSON.stringify(state.baselinePrices)} alerted=${state.periodAlreadyAlerted}`);
+    console.log(`STATE RESTORED momentum period=${new Date(state.periodStart).toISOString()} source=${saved.priceSource || 'legacy'} baseline=${JSON.stringify(state.baselinePrices)} alerted=${state.periodAlreadyAlerted}`);
   } catch (error) {
     console.log(`STATE RESTORE: no usable momentum state (${error.message}); starting fresh`);
   }
@@ -151,9 +215,7 @@ async function evaluateSignals(currentPrices, now) {
       }
 
       console.log(`5m SIGNAL CHECK ${symbol} move=${movePct.toFixed(3)}% direction=${direction} market_${direction}=${marketSide.pricePct.toFixed(2)}% signal=${signalType || 'none'}`);
-      if (signalType) {
-        candidates.push({ symbol, direction, movePct, marketSide, signalType });
-      }
+      if (signalType) candidates.push({ symbol, direction, movePct, marketSide, signalType });
     } catch (error) {
       console.warn(`5m MARKET CHECK FAILED ${symbol}: ${error.message}`);
     }
@@ -163,20 +225,20 @@ async function evaluateSignals(currentPrices, now) {
   persistState();
 
   if (!candidates.length) {
-    console.log(`5m NO SIGNAL period=${new Date(state.periodStart).toISOString()} after=60s`);
+    console.log(`5m NO SIGNAL period=${new Date(state.periodStart).toISOString()} after=60s source=chainlink-twap-60s`);
     return;
   }
 
-  // One alert globally per 5m period. Prefer the largest absolute spot move.
+  // One alert globally per 5m period. Prefer the largest absolute price move.
   candidates.sort((a, b) => Math.abs(b.movePct) - Math.abs(a.movePct));
   const signal = candidates[0];
   state.periodAlreadyAlerted = true;
   state.lastAlertSymbol = signal.symbol;
   persistState();
-  enqueueAlert(signal, state.periodStart, now);
+  enqueueAlert(signal, state.periodStart);
 }
 
-function enqueueAlert(signal, currentPeriod, now) {
+function enqueueAlert(signal, currentPeriod) {
   alertSendChain = alertSendChain.then(async () => {
     const wait = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
     if (wait) await new Promise(resolve => setTimeout(resolve, wait));
@@ -187,7 +249,7 @@ function enqueueAlert(signal, currentPeriod, now) {
         `🔥 ${signal.symbol} · 5M`,
         signal.signalType === 'MOMENTUM' ? 'MOMENTUM SIGNAL' : 'PRICE / POLYMARKET DIVERGENCE',
         `Direction: ${signal.direction}`,
-        `Spot move: ${signal.movePct >= 0 ? '+' : ''}${signal.movePct.toFixed(3)}%`,
+        `Chainlink TWAP60 move: ${signal.movePct >= 0 ? '+' : ''}${signal.movePct.toFixed(3)}%`,
         `Polymarket ${signal.direction}: ${signal.marketSide.pricePct.toFixed(2)}%`,
         `Period: ${new Date(currentPeriod).toLocaleString('en-GB', { timeZone: 'Europe/Kyiv', hour12: false })} UTC+3`,
         market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null,
@@ -204,6 +266,7 @@ function enqueueAlert(signal, currentPeriod, now) {
         symbol: signal.symbol,
         direction: signal.direction,
         signalType: signal.signalType,
+        priceSource: 'polymarket-rtds-chainlink-twap-60s',
         spotMovePct: signal.movePct,
         polymarketPricePct: signal.marketSide.pricePct,
         currentPeriod,
@@ -211,7 +274,6 @@ function enqueueAlert(signal, currentPeriod, now) {
       });
       console.log(`5m MOMENTUM ALERT SENT symbol=${signal.symbol} type=${signal.signalType} direction=${signal.direction} move=${signal.movePct.toFixed(3)}% polymarket=${signal.marketSide.pricePct.toFixed(2)}% market=${market?.url || 'NONE'}`);
     } catch (error) {
-      // Keep the period lock. A transient Telegram failure must not create duplicate signals.
       console.warn(`5m MOMENTUM ALERT FAILED ${signal.symbol}: ${error.message}`);
     }
   }).catch(error => console.warn(`5m ALERT QUEUE FAILED: ${error.message}`));
@@ -221,18 +283,22 @@ async function processPeriod(now) {
   const current = periodStart(now);
   resetPeriod(current);
 
-  const prices = await fetchSpotPrices();
+  const prices = getCurrentPrices();
+  if (!prices) {
+    console.log(`5m WAITING FOR CHAINLINK TWAP60 symbols=${SYMBOLS.filter(symbol => !Number.isFinite(Number(chainlinkPrices[symbol]))).join(',') || 'none'} rtds=${rtdsReady ? 'connected' : 'disconnected'}`);
+    return;
+  }
 
   if (!Object.keys(state.baselinePrices).length) {
     state.baselinePrices = prices;
     persistState();
-    console.log(`5m BASELINE SNAPSHOT period=${new Date(current).toISOString()} prices=${JSON.stringify(prices)}`);
+    console.log(`5m BASELINE SNAPSHOT source=chainlink-twap-60s period=${new Date(current).toISOString()} prices=${JSON.stringify(prices)}`);
   }
 
   if (!state.initialized) {
     state.initialized = true;
     persistState();
-    console.log(`INITIAL 5m MOMENTUM BASELINE READY symbols=${SYMBOLS.join(',')}`);
+    console.log(`INITIAL 5m MOMENTUM BASELINE READY source=chainlink-twap-60s symbols=${SYMBOLS.join(',')}`);
   }
 
   await evaluateSignals(prices, now);
@@ -240,7 +306,8 @@ async function processPeriod(now) {
 
 function main() {
   restoreState();
-  console.log(`5m POLYMARKET MOMENTUM MONITOR STARTED; symbols=${SYMBOLS.join(',')}; baseline=period-start; evaluation=+60s; momentum=0.15% + Polymarket 52-55%; divergence=0.20% + Polymarket <=51%; one alert per 5m period.`);
+  startRtds();
+  console.log(`5m POLYMARKET MOMENTUM MONITOR STARTED; symbols=${SYMBOLS.join(',')}; price_source=Polymarket RTDS Chainlink 60s TWAP; baseline=period-start; evaluation=+60s; momentum=0.15% + Polymarket 52-55%; divergence=0.20% + Polymarket <=51%; one alert per 5m period.`);
 
   (async () => {
     while (true) {
