@@ -101,7 +101,33 @@ repairZero1dState();
 
 async function fetchLiveFeed(fetchImpl = fetch) { const now = Date.now(); if (liveFeedPromise) return liveFeedPromise; if (now - liveFeedCache.fetchedAt < 3000) return [...liveFeedCache.events.values()]; liveFeedPromise = (async () => { const json = await fetchJson(FEED_URL, fetchImpl); const events = extractEvents(json); if (!events) throw new Error('MarginPad live feed: invalid response shape'); const merged = new Map(liveFeedCache.events); for (const event of events) merged.set(eventKey(event), event); const cutoff = Date.now() - FEED_RETENTION_MS; for (const [key, event] of merged) { const ts = normalizeTs(event.ts); if (!ts || ts < cutoff) merged.delete(key); } liveFeedCache = { fetchedAt: Date.now(), events: merged }; return [...merged.values()]; })(); try { return await liveFeedPromise; } finally { liveFeedPromise = null; } }
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) { const normalized = normalizeSymbol(symbol); const url = `${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`; const json = await fetchJson(url, fetchImpl); return (extractEvents(json) || []).filter(event => normalizeSymbol(event.symbol) === normalized); }
-async function fetchSymbolFeed(symbol, fetchImpl = fetch) { const normalized = normalizeSymbol(symbol); let events = []; try { events = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized); } catch (error) { console.warn(`MarginPad feed ${normalized} failed: ${error.message}`); } if (events.length) return events; const now = Date.now(); const cached = fallbackCache.eventsBySymbol.get(normalized); if (cached && now - fallbackCache.fetchedAt < FALLBACK_REFRESH_MS) return cached; try { const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl); const map = new Map(fallbackCache.eventsBySymbol); map.set(normalized, fresh); fallbackCache = { fetchedAt: now, eventsBySymbol: map }; console.log(`MarginPad live fallback ${normalized}: events=${fresh.length}`); return fresh; } catch (error) { console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`); return cached || []; } }
+function mergeUniqueEvents(primary, secondary) { const merged = new Map(); for (const event of [...(primary || []), ...(secondary || [])]) merged.set(eventKey(event), event); return [...merged.values()]; }
+async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
+  const normalized = normalizeSymbol(symbol);
+  let feedEvents = [];
+  try { feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized); }
+  catch (error) { console.warn(`MarginPad feed ${normalized} failed: ${error.message}`); }
+
+  const now = Date.now();
+  const cached = fallbackCache.eventsBySymbol.get(normalized);
+  const cachedEvents = cached?.events || [];
+  const cachedAt = Number(cached?.fetchedAt || 0);
+
+  if (now - cachedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cachedEvents);
+
+  try {
+    const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
+    const map = new Map(fallbackCache.eventsBySymbol);
+    map.set(normalized, { fetchedAt: Date.now(), events: fresh });
+    fallbackCache = { fetchedAt: Date.now(), eventsBySymbol: map };
+    const merged = mergeUniqueEvents(feedEvents, fresh);
+    console.log(`MarginPad symbol merge ${normalized}: feed=${feedEvents.length} live=${fresh.length} merged=${merged.length}`);
+    return merged;
+  } catch (error) {
+    console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
+    return mergeUniqueEvents(feedEvents, cachedEvents);
+  }
+}
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch, now = Date.now()) { const results = await Promise.all(symbols.map(async symbol => [normalizeSymbol(symbol), await fetchSymbolFeed(symbol, fetchImpl)])); return results.flatMap(([, events]) => events); }
 function aggregateEvents(events, symbols=DEFAULT_SYMBOLS, now=Date.now()) { const allowed=new Set(symbols.map(normalizeSymbol)); const current=bucketStart(now); const rows=new Map(); for(const event of events||[]){const ts=normalizeTs(event.ts),symbol=normalizeSymbol(event.symbol);if(!ts||!allowed.has(symbol))continue;const bucket=bucketStart(ts);if(bucket>=current)continue;const key=`${bucket}:${symbol}`;if(!rows.has(key))rows.set(key,{bucket,symbol,events:0,longEvents:0,shortEvents:0});const row=rows.get(key);const side=String(event.side||'').toLowerCase();if(!(side.includes('long')||side.includes('short')||side==='buy'||side==='sell'))continue;row.events+=1;if(side.includes('long')||side==='buy')row.longEvents+=1;else row.shortEvents+=1;}return [...rows.values()].sort((a,b)=>b.events-a.events); }
 function selectWinner(rows,bucket){return rows.filter(row=>row.bucket===bucket).sort((a,b)=>b.events-a.events)[0]||null;}
