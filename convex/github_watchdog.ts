@@ -88,8 +88,19 @@ export const ensureMonitorRunning = action({
     const activeEsports = (esportsRuns.workflow_runs || []).filter((run: any) =>
       run.status === "queued" || run.status === "in_progress" || run.status === "waiting" || run.status === "requested",
     );
-    const currentEsports = activeEsports.filter((run: any) => run.head_sha === mainSha);
+    const staleEsports = activeEsports.filter((run: any) => run.head_sha !== mainSha);
 
+    for (const run of staleEsports) {
+      const cancelUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/runs/${run.id}/cancel`;
+      const cancelResponse = await fetch(cancelUrl, { method: "POST", headers });
+      if (!cancelResponse.ok && cancelResponse.status !== 409) {
+        const body = await cancelResponse.text();
+        throw new Error(`GitHub stale esports run cancel failed for ${run.id}: ${cancelResponse.status} ${body.slice(0, 300)}`);
+      }
+      console.log(`WATCHDOG: cancelled stale esports run ${run.id}; head=${run.head_sha}; main=${mainSha}`);
+    }
+
+    const currentEsports = activeEsports.filter((run: any) => run.head_sha === mainSha);
     if (currentEsports.length > 0) {
       console.log(`WATCHDOG: esports workflow run ${currentEsports[0].id} is already active on main=${mainSha}; no dispatch`);
       return {
