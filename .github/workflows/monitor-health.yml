@@ -48,9 +48,10 @@ jobs:
           if (symbols.join(',') !== expected.join(',')) throw new Error(`Expected all 7 symbols ${expected.join(',')}, got: ${symbols.join(',')}`);
           if (new Set(symbols).size !== symbols.length) throw new Error(`Duplicate symbols detected: ${symbols.join(',')}`);
           if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
-          if (!/function findDisappearance\s*\(/.test(text)) throw new Error('Liquidation disappearance detector missing');
-          if (!/previousCounts\?\.\[symbol\].*?> 0/.test(text)) throw new Error('Detector must require previous period liquidation count > 0');
-          if (!/currentCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require next period liquidation count = 0');
+          if (!/function findDisappearance\s*\(beforePreviousCounts,\s*previousCounts,\s*currentCounts\)/.test(text)) throw new Error('Two-empty-period disappearance detector missing');
+          if (!/beforePreviousCounts\?\.\[symbol\].*?> 0/.test(text)) throw new Error('Detector must require liquidation count > 0 two periods before alert');
+          if (!/previousCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require first empty period');
+          if (!/currentCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require second empty period');
           if (!/5m PERIOD CHECK/.test(text)) throw new Error('Boundary period check missing');
           if (!/findCurrentMarket\(symbol,\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('CURRENT 5m market lookup missing');
           if (/['\"]15m['\"]/.test(text)) throw new Error('15m market lookup must be removed');
@@ -60,7 +61,7 @@ jobs:
           if (/findNextMarket/.test(text)) throw new Error('Obsolete NEXT market resolver detected');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/feed_recount/.test(text)) throw new Error('Obsolete feed-recount alert gate detected');
-          console.log('Verified 5m liquidation disappearance monitor: any coin with >=1 liquidation in one period and 0 in the immediately following period; evaluated at boundary; CURRENT 5m market only; one alert per period.');
+          console.log('Verified 5m disappearance monitor: >=1 liquidation period followed by two consecutive empty 5m periods; boundary check; CURRENT 5m market only; one alert per period.');
           NODE
       - name: Continuous MarginPad monitor
         env:
