@@ -4,7 +4,6 @@ import { internal } from "./_generated/api";
 const OWNER = "laudinvil";
 const REPO = "Polymarket-Perps-Monitor";
 const WORKFLOW = "monitor-health.yml";
-const DEPLOY_WORKFLOW = "convex-deploy.yml";
 const BRANCH = "main";
 const GITHUB_API = "https://api.github.com";
 
@@ -32,41 +31,6 @@ export const ensureMonitorRunning = action({
     const ref = await refResponse.json();
     const mainSha = ref?.object?.sha;
     if (!mainSha) throw new Error("GitHub main ref lookup returned no SHA");
-
-    const deployRunsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${DEPLOY_WORKFLOW}/runs?branch=${BRANCH}&per_page=20`;
-    const deployRunsResponse = await fetch(deployRunsUrl, { headers });
-    if (!deployRunsResponse.ok) {
-      const body = await deployRunsResponse.text();
-      throw new Error(`GitHub Convex deploy lookup failed: ${deployRunsResponse.status} ${body.slice(0, 300)}`);
-    }
-
-    const deployRuns = await deployRunsResponse.json();
-    const deployList = deployRuns.workflow_runs || [];
-    const activeDeploy = deployList.find((run: any) =>
-      run.status === "queued" || run.status === "in_progress" || run.status === "waiting" || run.status === "requested",
-    );
-    const latestSuccessfulDeploy = deployList.find((run: any) =>
-      run.status === "completed" && run.conclusion === "success",
-    );
-
-    if (activeDeploy) {
-      console.log(`WATCHDOG: Convex deploy already running id=${activeDeploy.id}; head=${activeDeploy.head_sha}; main=${mainSha}`);
-    } else if (latestSuccessfulDeploy?.head_sha !== mainSha) {
-      const deployDispatchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${DEPLOY_WORKFLOW}/dispatches`;
-      const deployDispatchResponse = await fetch(deployDispatchUrl, {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ ref: BRANCH }),
-      });
-
-      if (!deployDispatchResponse.ok) {
-        const body = await deployDispatchResponse.text();
-        throw new Error(`GitHub Convex deploy dispatch failed: ${deployDispatchResponse.status} ${body.slice(0, 300)}`);
-      }
-      console.log(`WATCHDOG: dispatched ${DEPLOY_WORKFLOW}; deployed=${latestSuccessfulDeploy?.head_sha ?? "none"}; main=${mainSha}`);
-    } else {
-      console.log(`WATCHDOG: Convex deployment is current at main=${mainSha}`);
-    }
 
     const runsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?branch=${BRANCH}&per_page=20`;
     const runsResponse = await fetch(runsUrl, { headers });
@@ -115,6 +79,3 @@ export const ensureMonitorRunning = action({
     return { ok: true, action: "dispatched", mainSha, health };
   },
 });
-
-// Deployment trigger: keep watchdog source in the Convex deploy path.
-// Deployment retrigger marker: watchdog runtime must be redeployed from main.
