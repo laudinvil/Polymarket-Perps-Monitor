@@ -14,7 +14,7 @@ const emptyCounts = () => Object.fromEntries(SYMBOLS.map(s => [s, 0]));
 const state = {
   periodStart: null,
   periodEventCount: emptyCounts(),
-  periodHadLiquidations: false,
+  previousPeriodCounts: null,
   periodAlreadyAlerted: false,
   lastEvaluatedPeriod: null,
   initialized: false,
@@ -44,7 +44,7 @@ function persistStatus() {
     symbols: SYMBOLS,
     periodStart: state.periodStart,
     periodEventCount: state.periodEventCount,
-    periodHadLiquidations: state.periodHadLiquidations,
+    previousPeriodCounts: state.previousPeriodCounts,
     periodAlreadyAlerted: state.periodAlreadyAlerted,
     lastEvaluatedPeriod: state.lastEvaluatedPeriod,
     seenLiquidations: [...state.seenLiquidations].slice(-3000),
@@ -63,14 +63,17 @@ function restoreState() {
     state.periodStart = Number(s.periodStart);
     state.periodEventCount = emptyCounts();
     for (const symbol of SYMBOLS) state.periodEventCount[symbol] = Number(s?.periodEventCount?.[symbol] || 0);
-    state.periodHadLiquidations = Boolean(s?.periodHadLiquidations) || Object.values(state.periodEventCount).some(Number);
+    if (s?.previousPeriodCounts && typeof s.previousPeriodCounts === 'object') {
+      state.previousPeriodCounts = emptyCounts();
+      for (const symbol of SYMBOLS) state.previousPeriodCounts[symbol] = Number(s.previousPeriodCounts?.[symbol] || 0);
+    }
     state.periodAlreadyAlerted = Boolean(s?.periodAlreadyAlerted);
     state.lastEvaluatedPeriod = Number.isFinite(Number(s?.lastEvaluatedPeriod)) ? Number(s.lastEvaluatedPeriod) : null;
     state.seenLiquidations = new Set(Array.isArray(s?.seenLiquidations) ? s.seenLiquidations : []);
     state.initialized = Boolean(s?.initialized);
     state.lastAlertAt = s?.lastAlertAt ?? null;
     state.lastAlertSymbol = s?.lastAlertSymbol ?? null;
-    console.log(`STATE RESTORED 5m period=${new Date(state.periodStart).toISOString()} counts=${JSON.stringify(state.periodEventCount)} evaluated=${state.lastEvaluatedPeriod === null ? 'none' : new Date(state.lastEvaluatedPeriod).toISOString()} seen=${state.seenLiquidations.size}`);
+    console.log(`STATE RESTORED 5m period=${new Date(state.periodStart).toISOString()} counts=${JSON.stringify(state.periodEventCount)} previous=${state.previousPeriodCounts ? JSON.stringify(state.previousPeriodCounts) : 'none'} evaluated=${state.lastEvaluatedPeriod === null ? 'none' : new Date(state.lastEvaluatedPeriod).toISOString()} seen=${state.seenLiquidations.size}`);
   } catch (e) {
     console.log(`STATE RESTORE: no usable state (${e.message}); starting fresh`);
   }
@@ -95,27 +98,26 @@ function collectCurrentPeriodEvents(feeds, now) {
       if (state.seenLiquidations.has(key)) continue;
       state.seenLiquidations.add(key);
       state.periodEventCount[symbol]++;
-      state.periodHadLiquidations = true;
       added++;
     }
   }
   return added;
 }
-function findContrarian(counts) {
-  const missing = SYMBOLS.filter(symbol => Number(counts?.[symbol] || 0) === 0);
-  const active = SYMBOLS.filter(symbol => Number(counts?.[symbol] || 0) > 0);
-  return active.length === SYMBOLS.length - 1 && missing.length === 1 ? missing[0] : null;
+function findDisappearance(previousCounts, currentCounts) {
+  if (!previousCounts) return null;
+  return SYMBOLS.find(symbol => Number(previousCounts?.[symbol] || 0) > 0 && Number(currentCounts?.[symbol] || 0) === 0) || null;
 }
-function enqueueAlert(symbol, closedPeriod, counts) {
+function enqueueAlert(symbol, closedPeriod, previousCounts, currentCounts) {
   alertSendChain = alertSendChain.then(async () => {
     const wait = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
     if (wait) await new Promise(r => setTimeout(r, wait));
     try {
       const market = await findNextMarket(symbol, Date.now(), '5m');
       const message = [
-        `🔥 CONTRARIAN · ${symbol} · 5M`,
-        'Liquidations: 0',
-        `Others: ${SYMBOLS.filter(s => s !== symbol).map(s => `${s} ${counts[s]}`).join(' · ')}`,
+        `🔥 LIQUIDATION DISAPPEARANCE · ${symbol} · 5M`,
+        `Previous: ${previousCounts[symbol]} liquidations`,
+        'Current: 0 liquidations',
+        `Period: ${new Date(closedPeriod).toLocaleString('en-GB', { timeZone: 'Europe/Kyiv', hour12: false })}`,
         market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null,
       ].filter(Boolean).join('\n');
       await sendTelegramMessage(message);
@@ -123,10 +125,10 @@ function enqueueAlert(symbol, closedPeriod, counts) {
       state.lastAlertAt = new Date(lastAlertSentAt).toISOString();
       state.lastAlertSymbol = symbol;
       persistStatus();
-      appendHistory({ type: 'contrarian_alert', timeframe: '5m', symbol, closedPeriod, counts, marketUrl: market?.url || null });
-      console.log(`5m CONTRARIAN ALERT SENT symbol=${symbol} closedPeriod=${new Date(closedPeriod).toISOString()}`);
+      appendHistory({ type: 'liquidation_disappearance_alert', timeframe: '5m', symbol, closedPeriod, previousCount: previousCounts[symbol], currentCount: currentCounts[symbol], previousCounts, currentCounts, marketUrl: market?.url || null });
+      console.log(`5m DISAPPEARANCE ALERT SENT symbol=${symbol} closedPeriod=${new Date(closedPeriod).toISOString()} previous=${previousCounts[symbol]} current=0 GLOBAL_PERIOD_LOCK=CLOSED`);
     } catch (e) {
-      console.warn(`5m CONTRARIAN ALERT FAILED ${symbol}: ${e.message}`);
+      console.warn(`5m DISAPPEARANCE ALERT FAILED ${symbol}: ${e.message}`);
     }
   }).catch(e => console.warn(`5m ALERT QUEUE FAILED: ${e.message}`));
 }
@@ -134,7 +136,6 @@ function initializePeriod(current) {
   if (state.periodStart === null) {
     state.periodStart = current;
     state.periodEventCount = emptyCounts();
-    state.periodHadLiquidations = false;
     state.periodAlreadyAlerted = false;
     state.lastEvaluatedPeriod = null;
     state.seenLiquidations.clear();
@@ -146,20 +147,21 @@ function initializePeriod(current) {
 
   const closed = state.periodStart;
   const closedCounts = { ...state.periodEventCount };
-  const contrarian = findContrarian(closedCounts);
+  const previousCounts = state.previousPeriodCounts;
+  const disappearance = findDisappearance(previousCounts, closedCounts);
   state.lastEvaluatedPeriod = closed;
+  state.previousPeriodCounts = closedCounts;
   state.periodStart = current;
   state.periodEventCount = emptyCounts();
-  state.periodHadLiquidations = false;
   state.periodAlreadyAlerted = false;
   state.seenLiquidations.clear();
   persistStatus();
-  console.log(`5m PERIOD CHECK closed=${new Date(closed).toISOString()} counts=${JSON.stringify(closedCounts)} contrarian=${contrarian || 'NONE'} next=${new Date(current).toISOString()}`);
-  if (contrarian) {
+  console.log(`5m PERIOD CHECK closed=${new Date(closed).toISOString()} previous=${previousCounts ? JSON.stringify(previousCounts) : 'NONE'} current=${JSON.stringify(closedCounts)} disappearance=${disappearance || 'NONE'} next=${new Date(current).toISOString()}`);
+  if (disappearance) {
     state.periodAlreadyAlerted = true;
     persistStatus();
-    console.log(`5m CONTRARIAN CLAIMED symbol=${contrarian} closedPeriod=${new Date(closed).toISOString()} GLOBAL_PERIOD_LOCK=CLOSED`);
-    enqueueAlert(contrarian, closed, closedCounts);
+    console.log(`5m DISAPPEARANCE CLAIMED symbol=${disappearance} closedPeriod=${new Date(closed).toISOString()} GLOBAL_PERIOD_LOCK=CLOSED`);
+    enqueueAlert(disappearance, closed, previousCounts, closedCounts);
   }
 }
 async function processTimeframe(feeds, now) {
@@ -169,14 +171,14 @@ async function processTimeframe(feeds, now) {
   if (!state.initialized) {
     state.initialized = true;
     persistStatus();
-    console.log(`INITIAL 5m CONTRARIAN BASELINE READY current=${new Date(current).toISOString()} observed=${state.periodHadLiquidations}`);
+    console.log(`INITIAL 5m DISAPPEARANCE BASELINE READY current=${new Date(current).toISOString()}`);
     return;
   }
   if (added) persistStatus();
 }
 function main() {
   restoreState();
-  console.log(`5m CONTRARIAN MONITOR STARTED; symbols=${SYMBOLS.join(',')}; alert when exactly one coin has 0 liquidations and all other coins have >=1 in the just-closed 5m period; boundary check; one alert per period.`);
+  console.log(`5m DISAPPEARANCE MONITOR STARTED; symbols=${SYMBOLS.join(',')}; alert when a coin had >=1 liquidation in one 5m period and 0 in the immediately following 5m period; boundary check; one alert per period.`);
   (async () => {
     while (true) {
       const now = Date.now();
