@@ -96,63 +96,86 @@ async function fetchPreviousPeriodOutcomes(currentPeriod) {
   outcomeCheckInFlight = true;
 
   try {
-    for (const symbol of SYMBOLS) {
-      const key = `${symbol}:${targetPeriod}`;
-      if (state.processedMarkets[key]) continue;
+    const pendingSymbols = SYMBOLS.filter(symbol => !state.processedMarkets[`${symbol}:${targetPeriod}`]);
 
+    const results = await Promise.all(pendingSymbols.map(async symbol => {
       try {
         const market = await findMarketByEpoch(symbol, targetPeriod, '5m');
         if (!market) {
           console.log(`5m OUTCOME ${symbol} period=${new Date(targetPeriod).toISOString()} market=NOT_FOUND`);
-          continue;
+          return { symbol, market: null, winner: null };
         }
 
         const winner = getWinner(market);
         if (!winner) {
           console.log(`5m OUTCOME WAIT ${symbol} period=${new Date(targetPeriod).toISOString()} closed=${Boolean(market.closed)} resolved=${Boolean(market.resolved)} prices=${JSON.stringify(market.outcomePrices || [])}`);
-          continue;
         }
-
-        const beforeUp = state.upCount;
-        const beforeDown = state.downCount;
-        const beforeImbalance = state.imbalance;
-        const beforeLeader = state.leader;
-
-        if (winner === 'UP') state.upCount += 1;
-        else state.downCount += 1;
-        state.imbalance = state.upCount - state.downCount;
-        const afterLeader = state.imbalance > 0 ? 'UP' : state.imbalance < 0 ? 'DOWN' : null;
-        const crossedToNewLeader = Boolean(afterLeader && beforeLeader && afterLeader !== beforeLeader);
-
-        state.processedMarkets[key] = { symbol, periodStart: targetPeriod, winner, marketUrl: market.url || null, processedAt: new Date().toISOString() };
-
-        appendHistory({
-          type: 'polymarket_5m_resolved_outcome',
-          timeframe: '5m', symbol, periodStart: targetPeriod, winner,
-          marketUrl: market.url || null,
-          closed: Boolean(market.closed), resolved: Boolean(market.resolved),
-          outcomes: market.outcomes || [], outcomePrices: market.outcomePrices || [],
-          beforeUp, beforeDown, beforeImbalance,
-          afterUp: state.upCount, afterDown: state.downCount, afterImbalance: state.imbalance,
-          beforeLeader, afterLeader, crossedToNewLeader,
-        });
-
-        console.log(`5m OUTCOME COUNTED ${symbol}=${winner} | UP ${beforeUp}->${state.upCount} DOWN ${beforeDown}->${state.downCount} IMBALANCE ${beforeImbalance}->${state.imbalance} LEADER ${beforeLeader || '0'}->${afterLeader || '0'}`);
-
-        if (crossedToNewLeader) {
-          state.lastTransitionPeriod = targetPeriod;
-          state.lastTransitionSymbol = symbol;
-          state.lastTransitionDirection = winner;
-          console.log(`5m IMBALANCE FLIP ${symbol} caused ${beforeLeader}->${afterLeader} | UP=${state.upCount} DOWN=${state.downCount} IMBALANCE=${state.imbalance}`);
-          await sendTransitionAlert(symbol, winner, targetPeriod, state.upCount, state.downCount, state.imbalance, market.url || null);
-        }
-
-        state.leader = afterLeader;
-        state.initialized = true;
-        persistState();
+        return { symbol, market, winner };
       } catch (error) {
         console.warn(`5m OUTCOME CHECK FAILED ${symbol}: ${error.message}`);
+        return { symbol, market: null, winner: null, error };
       }
+    }));
+
+    // Prefer actual resolution/close time when the API provides it; otherwise keep a stable symbol order.
+    results.sort((a, b) => {
+      const aTime = Date.parse(a.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
+      const bTime = Date.parse(b.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
+      if (aTime !== bTime) return aTime - bTime;
+      return SYMBOLS.indexOf(a.symbol) - SYMBOLS.indexOf(b.symbol);
+    });
+
+    for (const { symbol, market, winner } of results) {
+      if (!market || !winner) continue;
+
+      const key = `${symbol}:${targetPeriod}`;
+      if (state.processedMarkets[key]) continue;
+
+      const beforeUp = state.upCount;
+      const beforeDown = state.downCount;
+      const beforeImbalance = state.imbalance;
+      const beforeLeader = state.leader;
+
+      if (winner === 'UP') state.upCount += 1;
+      else state.downCount += 1;
+      state.imbalance = state.upCount - state.downCount;
+      const afterLeader = state.imbalance > 0 ? 'UP' : state.imbalance < 0 ? 'DOWN' : null;
+      const crossedToNewLeader = Boolean(afterLeader && beforeLeader && afterLeader !== beforeLeader);
+
+      state.processedMarkets[key] = {
+        symbol,
+        periodStart: targetPeriod,
+        winner,
+        marketUrl: market.url || null,
+        closedTime: market.closedTime || null,
+        processedAt: new Date().toISOString(),
+      };
+
+      appendHistory({
+        type: 'polymarket_5m_resolved_outcome',
+        timeframe: '5m', symbol, periodStart: targetPeriod, winner,
+        marketUrl: market.url || null,
+        closed: Boolean(market.closed), resolved: Boolean(market.resolved),
+        closedTime: market.closedTime || null,
+        outcomes: market.outcomes || [], outcomePrices: market.outcomePrices || [],
+        beforeUp, beforeDown, beforeImbalance,
+        afterUp: state.upCount, afterDown: state.downCount, afterImbalance: state.imbalance,
+        beforeLeader, afterLeader, crossedToNewLeader,
+      });
+
+      console.log(`5m OUTCOME COUNTED ${symbol}=${winner} | UP ${beforeUp}->${state.upCount} DOWN ${beforeDown}->${state.downCount} IMBALANCE ${beforeImbalance}->${state.imbalance} LEADER ${beforeLeader || '0'}->${afterLeader || '0'}`);
+
+      if (crossedToNewLeader) {
+        state.lastTransitionPeriod = targetPeriod;
+        state.lastTransitionSymbol = symbol;
+        state.lastTransitionDirection = winner;
+        console.log(`5m IMBALANCE FLIP ${symbol} caused ${beforeLeader}->${afterLeader} | UP=${state.upCount} DOWN=${state.downCount} IMBALANCE=${state.imbalance}`);
+        await sendTransitionAlert(symbol, winner, targetPeriod, state.upCount, state.downCount, state.imbalance, market.url || null);
+      }
+
+      state.leader = afterLeader;
+      state.initialized = true;
+      persistState();
     }
 
     cleanupProcessedMarkets();
