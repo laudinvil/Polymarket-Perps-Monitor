@@ -14,6 +14,7 @@ const HISTORY_FILE = 'monitor-history.log';
 const state = {
   periodStart: null, longCount: 0, shortCount: 0, periodAlreadyAlerted: false,
   seenLiquidations: new Set(), initialized: false, lastAlertAt: null, lastAlertSymbol: null,
+  lastNonZeroSign: null,
 };
 let alertSendChain = Promise.resolve();
 let lastAlertSentAt = 0;
@@ -30,7 +31,7 @@ function liquidationKey(symbol, ts, side, e) {
   return [symbol, ts, side, e?.exchange ?? '', e?.price ?? '', e?.qty ?? e?.quantity ?? e?.size ?? '', e?.notional ?? e?.usd ?? e?.value ?? e?.amount ?? ''].join('|');
 }
 function persistStatus() {
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ updatedAt:new Date().toISOString(), timeframe:TIMEFRAME, symbols:SYMBOLS, periodStart:state.periodStart, longCount:state.longCount, shortCount:state.shortCount, periodAlreadyAlerted:state.periodAlreadyAlerted, seenLiquidations:[...state.seenLiquidations].slice(-5000), initialized:state.initialized, lastAlertAt:state.lastAlertAt, lastAlertSymbol:state.lastAlertSymbol }, null, 2)+'\n');
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ updatedAt:new Date().toISOString(), timeframe:TIMEFRAME, symbols:SYMBOLS, periodStart:state.periodStart, longCount:state.longCount, shortCount:state.shortCount, periodAlreadyAlerted:state.periodAlreadyAlerted, seenLiquidations:[...state.seenLiquidations].slice(-5000), initialized:state.initialized, lastAlertAt:state.lastAlertAt, lastAlertSymbol:state.lastAlertSymbol, lastNonZeroSign:state.lastNonZeroSign }, null, 2)+'\n');
 }
 function appendHistory(record) { fs.appendFileSync(HISTORY_FILE, JSON.stringify({ts:new Date().toISOString(),...record})+'\n'); }
 function restoreState() {
@@ -39,7 +40,8 @@ function restoreState() {
     if(saved?.timeframe!==TIMEFRAME || !Array.isArray(saved?.symbols) || saved.symbols.join(',')!==SYMBOLS.join(',')) return;
     if(!Number.isFinite(Number(saved?.periodStart))) return;
     state.periodStart=Number(saved.periodStart); state.longCount=Number(saved.longCount||0); state.shortCount=Number(saved.shortCount||0); state.periodAlreadyAlerted=Boolean(saved.periodAlreadyAlerted); state.seenLiquidations=new Set(Array.isArray(saved.seenLiquidations)?saved.seenLiquidations:[]); state.initialized=Boolean(saved.initialized); state.lastAlertAt=saved.lastAlertAt??null; state.lastAlertSymbol=saved.lastAlertSymbol??null;
-    console.log(`STATE RESTORED 5m global imbalance period=${new Date(state.periodStart).toISOString()} long=${state.longCount} short=${state.shortCount}`);
+    const restoredSign=Number(saved?.lastNonZeroSign); state.lastNonZeroSign=(restoredSign===1||restoredSign===-1)?restoredSign:null;
+    console.log(`STATE RESTORED 5m global imbalance period=${new Date(state.periodStart).toISOString()} long=${state.longCount} short=${state.shortCount} sign=${state.lastNonZeroSign??'none'}`);
   } catch(error) { console.log(`STATE RESTORE: no usable state (${error.message}); starting fresh`); }
 }
 async function fetchAllFeeds() {
@@ -67,14 +69,23 @@ function collectCurrentPeriodEvents(feeds, now) {
     state.seenLiquidations.add(item.key);
     const beforeLong=state.longCount, beforeShort=state.shortCount;
     if(item.side==='LONG') state.longCount++; else state.shortCount++;
-    console.log(`5m EVENT ${new Date(item.ts).toISOString()} ${item.symbol} ${item.side} GLOBAL=${state.longCount}/${state.shortCount}`);
-    const crossedLong=beforeLong<beforeShort && state.longCount>state.shortCount;
-    const crossedShort=beforeShort<beforeLong && state.shortCount>state.longCount;
-    if(!state.periodAlreadyAlerted&&(crossedLong||crossedShort)){
-      const direction=crossedLong?'LONG':'SHORT';
-      state.periodAlreadyAlerted=true; persistStatus();
+    const imbalance=state.longCount-state.shortCount;
+    const previousSign=state.lastNonZeroSign;
+    const currentSign=imbalance>0?1:imbalance<0?-1:0;
+    console.log(`5m EVENT ${new Date(item.ts).toISOString()} ${item.symbol} ${item.side} GLOBAL=${state.longCount}/${state.shortCount} IMBALANCE=${imbalance}`);
+
+    // A discrete +/-1 count cannot jump directly from positive to negative: it must
+    // pass through zero. Keep the last non-zero sign and alert when the next non-zero
+    // sign is opposite. This detects both positive->negative and negative->positive flips.
+    if(currentSign!==0 && previousSign===null) state.lastNonZeroSign=currentSign;
+    const crossed=previousSign!==null && currentSign!==0 && previousSign!==currentSign;
+    if(!state.periodAlreadyAlerted&&crossed){
+      const direction=currentSign>0?'LONG':'SHORT';
+      state.periodAlreadyAlerted=true; state.lastNonZeroSign=currentSign; persistStatus();
       console.log(`5m IMBALANCE CROSS symbol=${item.symbol} direction=${direction} before=${beforeLong}/${beforeShort} after=${state.longCount}/${state.shortCount} GLOBAL_PERIOD_LOCK=CLOSED`);
       enqueueAlert(item.symbol,direction,current,beforeLong,beforeShort,state.longCount,state.shortCount);
+    } else if(currentSign!==0) {
+      state.lastNonZeroSign=currentSign;
     }
   }
   return events.length;
@@ -90,10 +101,10 @@ function enqueueAlert(symbol,direction,currentPeriod,beforeLong,beforeShort,long
   }).catch(error=>console.warn(`5m ALERT QUEUE FAILED: ${error.message}`));
 }
 function initializePeriod(current){
-  if(state.periodStart===null){state.periodStart=current;state.longCount=0;state.shortCount=0;state.periodAlreadyAlerted=false;state.seenLiquidations.clear();persistStatus();console.log(`5m GLOBAL IMBALANCE START ${new Date(current).toISOString()} symbols=${SYMBOLS.join(',')}`);return;}
+  if(state.periodStart===null){state.periodStart=current;state.longCount=0;state.shortCount=0;state.periodAlreadyAlerted=false;state.seenLiquidations.clear();state.lastNonZeroSign=null;persistStatus();console.log(`5m GLOBAL IMBALANCE START ${new Date(current).toISOString()} symbols=${SYMBOLS.join(',')}`);return;}
   if(state.periodStart===current)return;
-  console.log(`5m PERIOD CLOSE period=${new Date(state.periodStart).toISOString()} long=${state.longCount} short=${state.shortCount}`); state.periodStart=current;state.longCount=0;state.shortCount=0;state.periodAlreadyAlerted=false;state.seenLiquidations.clear();persistStatus();console.log(`5m PERIOD RESET next=${new Date(current).toISOString()}`);
+  console.log(`5m PERIOD CLOSE period=${new Date(state.periodStart).toISOString()} long=${state.longCount} short=${state.shortCount}`); state.periodStart=current;state.longCount=0;state.shortCount=0;state.periodAlreadyAlerted=false;state.seenLiquidations.clear();state.lastNonZeroSign=null;persistStatus();console.log(`5m PERIOD RESET next=${new Date(current).toISOString()}`);
 }
 async function processTimeframe(feeds,now){const current=periodStart(now);initializePeriod(current);const added=collectCurrentPeriodEvents(feeds,now);if(!state.initialized){state.initialized=true;persistStatus();console.log(`INITIAL 5m GLOBAL IMBALANCE BASELINE READY current=${new Date(current).toISOString()} long=${state.longCount} short=${state.shortCount}`);}else if(added)persistStatus();}
-function main(){restoreState();console.log(`5m GLOBAL LIQUIDATION IMBALANCE MONITOR STARTED; symbols=${SYMBOLS.join(',')}; event-count based; alert only on strict crossing of global LONG/SHORT counts; one alert per 5m period.`);(async()=>{while(true){const now=Date.now();try{await processTimeframe(await fetchAllFeeds(),now);}catch(error){console.warn(`MONITOR LOOP FAILED: ${error.message}`);}await new Promise(r=>setTimeout(r,POLL_MS));}})().catch(error=>{console.error(`MONITOR FATAL: ${error.stack||error.message}`);process.exitCode=1;});}
+function main(){restoreState();console.log(`5m GLOBAL LIQUIDATION IMBALANCE MONITOR STARTED; symbols=${SYMBOLS.join(',')}; event-count based; alert on zero-crossing of global LONG/SHORT event counts; one alert per 5m period.`);(async()=>{while(true){const now=Date.now();try{await processTimeframe(await fetchAllFeeds(),now);}catch(error){console.warn(`MONITOR LOOP FAILED: ${error.message}`);}await new Promise(r=>setTimeout(r,POLL_MS));}})().catch(error=>{console.error(`MONITOR FATAL: ${error.stack||error.message}`);process.exitCode=1;});}
 main();
