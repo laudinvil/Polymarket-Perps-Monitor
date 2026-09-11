@@ -72,24 +72,45 @@ jobs:
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: |
-          set -o pipefail
+          set -uo pipefail
           timeout 20s node scripts/convex-sync.js start || true
-          timeout 350m node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee monitor.log &
-          MONITOR_PID=$!
-          trap 'status=$?; kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true' EXIT
-          while kill -0 "$MONITOR_PID" 2>/dev/null; do
-            sleep 60
-            timeout 20s node scripts/convex-sync.js sync || true
-            node scripts/build-monitor-stats.js monitor-history.log || true
-            tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
-            git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update live liquidation disappearance monitor status" 2>/dev/null || true
-            git push --force origin HEAD:monitor-status || true
+          START_TS=$(date +%s)
+          DEADLINE=$((START_TS + 21000))
+          MONITOR_PID=""
+          stop_monitor() {
+            if [ -n "$MONITOR_PID" ]; then
+              kill "$MONITOR_PID" 2>/dev/null || true
+              wait "$MONITOR_PID" 2>/dev/null || true
+              MONITOR_PID=""
+            fi
+          }
+          trap 'stop_monitor' EXIT TERM INT
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            REMAINING=$((DEADLINE - $(date +%s)))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            echo "[WATCHDOG] starting MarginPad monitor; remaining=${REMAINING}s"
+            timeout "$REMAINING" node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor.log &
+            MONITOR_PID=$!
+            while kill -0 "$MONITOR_PID" 2>/dev/null; do
+              sleep 60
+              timeout 20s node scripts/convex-sync.js sync || true
+              node scripts/build-monitor-stats.js monitor-history.log || true
+              tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
+              git add -f monitor-live.log 2>/dev/null || true
+              git commit -m "Update live liquidation disappearance monitor status" 2>/dev/null || true
+              git push --force origin HEAD:monitor-status || true
+            done
+            wait "$MONITOR_PID" || true
+            MONITOR_PID=""
+            if [ "$(date +%s)" -lt "$DEADLINE" ]; then
+              echo "[WATCHDOG] MarginPad monitor stopped unexpectedly; restarting without resetting state"
+              sleep 5
+            fi
           done
-          wait "$MONITOR_PID"
+          echo "[WATCHDOG] 355-minute monitor window completed"
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
