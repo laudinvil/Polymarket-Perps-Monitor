@@ -3,7 +3,7 @@ const { findCurrentMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'HYPE'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
