@@ -47,6 +47,7 @@ function persistStatus() {
     periodHadLiquidations: state.periodHadLiquidations,
     periodAlreadyAlerted: state.periodAlreadyAlerted,
     lastEvaluatedPeriod: state.lastEvaluatedPeriod,
+    seenLiquidations: [...state.seenLiquidations].slice(-3000),
     initialized: state.initialized,
     lastAlertAt: state.lastAlertAt,
     lastAlertSymbol: state.lastAlertSymbol,
@@ -65,10 +66,11 @@ function restoreState() {
     state.periodHadLiquidations = Boolean(s?.periodHadLiquidations) || Object.values(state.periodEventCount).some(Number);
     state.periodAlreadyAlerted = Boolean(s?.periodAlreadyAlerted);
     state.lastEvaluatedPeriod = Number.isFinite(Number(s?.lastEvaluatedPeriod)) ? Number(s.lastEvaluatedPeriod) : null;
+    state.seenLiquidations = new Set(Array.isArray(s?.seenLiquidations) ? s.seenLiquidations : []);
     state.initialized = Boolean(s?.initialized);
     state.lastAlertAt = s?.lastAlertAt ?? null;
     state.lastAlertSymbol = s?.lastAlertSymbol ?? null;
-    console.log(`STATE RESTORED 5m period=${new Date(state.periodStart).toISOString()} counts=${JSON.stringify(state.periodEventCount)} evaluated=${state.lastEvaluatedPeriod === null ? 'none' : new Date(state.lastEvaluatedPeriod).toISOString()}`);
+    console.log(`STATE RESTORED 5m period=${new Date(state.periodStart).toISOString()} counts=${JSON.stringify(state.periodEventCount)} evaluated=${state.lastEvaluatedPeriod === null ? 'none' : new Date(state.lastEvaluatedPeriod).toISOString()} seen=${state.seenLiquidations.size}`);
   } catch (e) {
     console.log(`STATE RESTORE: no usable state (${e.message}); starting fresh`);
   }
@@ -138,9 +140,9 @@ function initializePeriod(current) {
     state.seenLiquidations.clear();
     persistStatus();
     console.log(`5m MONITOR START ${new Date(current).toISOString()} symbols=${SYMBOLS.join(',')}`);
-    return null;
+    return;
   }
-  if (state.periodStart === current) return null;
+  if (state.periodStart === current) return;
 
   const closed = state.periodStart;
   const closedCounts = { ...state.periodEventCount };
@@ -159,7 +161,6 @@ function initializePeriod(current) {
     console.log(`5m CONTRARIAN CLAIMED symbol=${contrarian} closedPeriod=${new Date(closed).toISOString()} GLOBAL_PERIOD_LOCK=CLOSED`);
     enqueueAlert(contrarian, closed, closedCounts);
   }
-  return contrarian;
 }
 async function processTimeframe(feeds, now) {
   const current = periodStart(now);
