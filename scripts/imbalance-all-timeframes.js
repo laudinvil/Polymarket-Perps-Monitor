@@ -3,13 +3,13 @@ const { findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
-// Authoritative BTC + ETH + SOL liquidation monitor.
+// Authoritative BTC + ETH + SOL + XRP liquidation monitor.
 // 5m periods. Individual liquidation events only.
 // Alert on the FIRST NEW liquidation in a 5m period ONLY when the immediately
 // preceding 5m period was completely empty.
 // GLOBAL RULE: exactly ONE alert maximum for the entire 5m period, regardless
 // of which coin triggered it. Once claimed, every later event/coin is suppressed.
-const SYMBOLS = ['BTC', 'ETH', 'SOL'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
@@ -19,7 +19,7 @@ const HISTORY_FILE = 'monitor-history.log';
 
 const state = {
   periodStart: null,
-  periodEventCount: { BTC: 0, ETH: 0, SOL: 0 },
+  periodEventCount: { BTC: 0, ETH: 0, SOL: 0, XRP: 0 },
   previousPeriodWasEmpty: false,
   periodAlreadyAlerted: false,
   initialized: false,
@@ -75,6 +75,7 @@ function restoreState() {
       BTC: Number(saved?.periodEventCount?.BTC || 0),
       ETH: Number(saved?.periodEventCount?.ETH || 0),
       SOL: Number(saved?.periodEventCount?.SOL || 0),
+      XRP: Number(saved?.periodEventCount?.XRP || 0),
     };
     state.previousPeriodWasEmpty = Boolean(saved?.previousPeriodWasEmpty);
     state.periodAlreadyAlerted = Boolean(saved?.periodAlreadyAlerted);
@@ -97,7 +98,7 @@ async function fetchAllFeeds() {
   return feeds;
 }
 function countPeriodEvents(feeds, start) {
-  const counts = { BTC: 0, ETH: 0, SOL: 0 };
+  const counts = { BTC: 0, ETH: 0, SOL: 0, XRP: 0 };
   for (const symbol of SYMBOLS) {
     for (const event of feeds.get(symbol) || []) {
       const ts = normalizeTs(event?.ts);
@@ -140,23 +141,18 @@ async function processTimeframe(feeds, now) {
   const current = periodStart(now);
   if (state.periodStart === null) {
     state.periodStart = current;
-    state.periodEventCount = { BTC: 0, ETH: 0, SOL: 0 };
+    state.periodEventCount = { BTC: 0, ETH: 0, SOL: 0, XRP: 0 };
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
-
-    // Fresh start: establish predecessor from feed history, not from an assumed empty state.
     const previousCounts = countPeriodEvents(feeds, current - PERIOD_MS);
     state.previousPeriodWasEmpty = !periodHasEvents(previousCounts);
-    console.log(`5m MONITOR START ${new Date(current).toISOString()}; BTC+ETH+SOL; predecessor=${state.previousPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'}`);
+    console.log(`5m MONITOR START ${new Date(current).toISOString()}; BTC+ETH+SOL+XRP; predecessor=${state.previousPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'}`);
   } else if (state.periodStart !== current) {
-    // The monitor may have been stopped/restarted before seeing the period boundary.
-    // Recount the CLOSED period directly from the feed so an unobserved liquidation
-    // during the final minutes can never be mistaken for an empty predecessor.
     const closedPeriodCounts = countPeriodEvents(feeds, state.periodStart);
     const closedPeriodWasEmpty = !periodHasEvents(closedPeriodCounts);
     state.previousPeriodWasEmpty = closedPeriodWasEmpty;
     state.periodStart = current;
-    state.periodEventCount = { BTC: 0, ETH: 0, SOL: 0 };
+    state.periodEventCount = { BTC: 0, ETH: 0, SOL: 0, XRP: 0 };
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
     persistStatus();
@@ -166,9 +162,7 @@ async function processTimeframe(feeds, now) {
   const newEvents = collectCurrentPeriodEvents(feeds, now);
   if (!state.initialized) {
     state.initialized = true;
-    // Suppress events already present when the monitor starts. They are historical
-    // for this process, not NEW liquidations arriving after initialization.
-    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed BTC=${state.periodEventCount.BTC} ETH=${state.periodEventCount.ETH} SOL=${state.periodEventCount.SOL}; predecessorEmpty=${state.previousPeriodWasEmpty}; globalAlertLock=${state.periodAlreadyAlerted ? 'CLOSED' : 'OPEN'}`);
+    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed BTC=${state.periodEventCount.BTC} ETH=${state.periodEventCount.ETH} SOL=${state.periodEventCount.SOL} XRP=${state.periodEventCount.XRP}; predecessorEmpty=${state.previousPeriodWasEmpty}; globalAlertLock=${state.periodAlreadyAlerted ? 'CLOSED' : 'OPEN'}`);
     persistStatus(); return;
   }
   persistStatus();
@@ -177,16 +171,12 @@ async function processTimeframe(feeds, now) {
     return;
   }
   if (!newEvents.length) return;
-
-  // A first NEW liquidation only qualifies when the immediately preceding period was empty.
   if (!state.previousPeriodWasEmpty) {
     console.log(`5m LIQUIDATION IGNORED ${newEvents.length} new event(s); predecessor was NOT empty; current period remains unalerted`);
     return;
   }
 
-  // CLAIM THE GLOBAL PERIOD LOCK BEFORE any async Telegram/API work. This makes
-  // the one-alert rule atomic inside the process and persists it immediately so a
-  // restart cannot produce a second alert for the same 5m period.
+  // Claim the global period lock before async Telegram/Polymarket work.
   const candidate = newEvents[0];
   state.periodAlreadyAlerted = true;
   persistStatus();
@@ -196,8 +186,6 @@ async function processTimeframe(feeds, now) {
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
   console.log(`5m FIRST-LIQUIDATION CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=empty_predecessor_then_first_new_liquidation GLOBAL_PERIOD_LOCK=CLOSED`);
 
-  // NEXT links only. No current-market URL and no current CLOB price in the alert.
-  // Calculate both NEXT markets from the actual alert-generation time.
   const alertNow = Date.now();
   let next5mMarket = null; let next15mMarket = null;
   try { next5mMarket = await findNextMarket(symbol, alertNow, '5m'); console.log(`POLYMARKET NEXT ${symbol} 5m=${next5mMarket?.url ?? 'UNAVAILABLE'}`); }
@@ -218,7 +206,7 @@ async function processTimeframe(feeds, now) {
 
 function main() {
   restoreState();
-  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; EMPTY current period waits; CLOSED periods are feed-recounted across restarts; INDIVIDUAL events only; NO imbalance; NO streaks; EXACTLY ONE GLOBAL ALERT PER 5m PERIOD across ALL coins; later same-coin and other-coin alerts suppressed; next 5m + next 15m market links only');
+  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL,XRP; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; EMPTY current period waits; CLOSED periods are feed-recounted across restarts; INDIVIDUAL events only; NO imbalance; NO streaks; EXACTLY ONE GLOBAL ALERT PER 5m PERIOD across ALL coins; later same-coin and other-coin alerts suppressed; next 5m + next 15m market links only');
   (async () => {
     while (true) {
       const now = Date.now();
