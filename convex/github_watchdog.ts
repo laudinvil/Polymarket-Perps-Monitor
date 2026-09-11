@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 const OWNER = "laudinvil";
 const REPO = "Polymarket-Perps-Monitor";
 const WORKFLOW = "monitor-health.yml";
+const ESPORTS_WORKFLOW = "esports-momentum-monitor.yml";
 const BRANCH = "main";
 const GITHUB_API = "https://api.github.com";
 
@@ -60,22 +61,67 @@ export const ensureMonitorRunning = action({
     const current = active.filter((run: any) => run.head_sha === mainSha);
     if (current.length > 0) {
       console.log(`WATCHDOG: current workflow run ${current[0].id} matches main=${mainSha}; health=${health.ok}; no dispatch`);
-      return { ok: true, action: "already_running", runId: current[0].id, mainSha, health };
+    } else {
+      const dispatchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`;
+      const dispatchResponse = await fetch(dispatchUrl, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ ref: BRANCH }),
+      });
+
+      if (!dispatchResponse.ok) {
+        const body = await dispatchResponse.text();
+        throw new Error(`GitHub workflow dispatch failed: ${dispatchResponse.status} ${body.slice(0, 300)}`);
+      }
+
+      console.log(`WATCHDOG: dispatched ${WORKFLOW} on ${BRANCH}; main=${mainSha}; previous health=${health.ok} ageMs=${health.ageMs}`);
     }
 
-    const dispatchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`;
-    const dispatchResponse = await fetch(dispatchUrl, {
+    const esportsRunsUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${ESPORTS_WORKFLOW}/runs?branch=${BRANCH}&per_page=20`;
+    const esportsRunsResponse = await fetch(esportsRunsUrl, { headers });
+    if (!esportsRunsResponse.ok) {
+      const body = await esportsRunsResponse.text();
+      throw new Error(`GitHub esports workflow lookup failed: ${esportsRunsResponse.status} ${body.slice(0, 300)}`);
+    }
+
+    const esportsRuns = await esportsRunsResponse.json();
+    const activeEsports = (esportsRuns.workflow_runs || []).filter((run: any) =>
+      run.status === "queued" || run.status === "in_progress" || run.status === "waiting" || run.status === "requested",
+    );
+    const currentEsports = activeEsports.filter((run: any) => run.head_sha === mainSha);
+
+    if (currentEsports.length > 0) {
+      console.log(`WATCHDOG: esports workflow run ${currentEsports[0].id} is already active on main=${mainSha}; no dispatch`);
+      return {
+        ok: true,
+        action: "already_running",
+        runId: currentEsports[0].id,
+        mainSha,
+        health,
+        esportsRunId: currentEsports[0].id,
+        esportsAction: "already_running",
+      };
+    }
+
+    const esportsDispatchUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/actions/workflows/${ESPORTS_WORKFLOW}/dispatches`;
+    const esportsDispatchResponse = await fetch(esportsDispatchUrl, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({ ref: BRANCH }),
     });
 
-    if (!dispatchResponse.ok) {
-      const body = await dispatchResponse.text();
-      throw new Error(`GitHub workflow dispatch failed: ${dispatchResponse.status} ${body.slice(0, 300)}`);
+    if (!esportsDispatchResponse.ok) {
+      const body = await esportsDispatchResponse.text();
+      throw new Error(`GitHub esports workflow dispatch failed: ${esportsDispatchResponse.status} ${body.slice(0, 300)}`);
     }
 
-    console.log(`WATCHDOG: dispatched ${WORKFLOW} on ${BRANCH}; main=${mainSha}; previous health=${health.ok} ageMs=${health.ageMs}`);
-    return { ok: true, action: "dispatched", mainSha, health };
+    console.log(`WATCHDOG: dispatched ${ESPORTS_WORKFLOW} on ${BRANCH}; main=${mainSha}`);
+    return {
+      ok: true,
+      action: current.length > 0 ? "esports_dispatched" : "dispatched_and_esports_dispatched",
+      mainSha,
+      health,
+      esportsAction: "dispatched",
+    };
   },
 });
