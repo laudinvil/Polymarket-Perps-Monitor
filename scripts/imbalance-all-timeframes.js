@@ -1,5 +1,5 @@
 const { fetchSymbolFeed, normalizeTs } = require('../src/liquidation-monitor');
-const { findNextMarket } = require('../src/polymarket');
+const { findCurrentMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const fs = require('fs');
 
@@ -112,13 +112,15 @@ function enqueueAlert(symbol, closedPeriod, previousCounts, currentCounts) {
     const wait = Math.max(0, ALERT_MIN_GAP_MS - (Date.now() - lastAlertSentAt));
     if (wait) await new Promise(r => setTimeout(r, wait));
     try {
-      const market = await findNextMarket(symbol, Date.now(), '5m');
+      // The alert is emitted exactly at the new 5m boundary, so link to the
+      // market that has just started, not the following market.
+      const market = await findCurrentMarket(symbol, Date.now(), '5m');
       const message = [
         `🔥 LIQUIDATION DISAPPEARANCE · ${symbol} · 5M`,
         `Previous: ${previousCounts[symbol]} liquidations`,
         'Current: 0 liquidations',
         `Period: ${new Date(closedPeriod).toLocaleString('en-GB', { timeZone: 'Europe/Kyiv', hour12: false })}`,
-        market?.url ? `➡️ NEXT · Polymarket 5M\n${market.url}` : null,
+        market?.url ? `➡️ CURRENT · Polymarket 5M\n${market.url}` : null,
       ].filter(Boolean).join('\n');
       await sendTelegramMessage(message);
       lastAlertSentAt = Date.now();
@@ -126,7 +128,7 @@ function enqueueAlert(symbol, closedPeriod, previousCounts, currentCounts) {
       state.lastAlertSymbol = symbol;
       persistStatus();
       appendHistory({ type: 'liquidation_disappearance_alert', timeframe: '5m', symbol, closedPeriod, previousCount: previousCounts[symbol], currentCount: currentCounts[symbol], previousCounts, currentCounts, marketUrl: market?.url || null });
-      console.log(`5m DISAPPEARANCE ALERT SENT symbol=${symbol} closedPeriod=${new Date(closedPeriod).toISOString()} previous=${previousCounts[symbol]} current=0 GLOBAL_PERIOD_LOCK=CLOSED`);
+      console.log(`5m DISAPPEARANCE ALERT SENT symbol=${symbol} closedPeriod=${new Date(closedPeriod).toISOString()} previous=${previousCounts[symbol]} current=0 GLOBAL_PERIOD_LOCK=CLOSED market=${market?.url || 'NONE'} marketType=CURRENT`);
     } catch (e) {
       console.warn(`5m DISAPPEARANCE ALERT FAILED ${symbol}: ${e.message}`);
     }
@@ -178,7 +180,7 @@ async function processTimeframe(feeds, now) {
 }
 function main() {
   restoreState();
-  console.log(`5m DISAPPEARANCE MONITOR STARTED; symbols=${SYMBOLS.join(',')}; alert when a coin had >=1 liquidation in one 5m period and 0 in the immediately following 5m period; boundary check; one alert per period.`);
+  console.log(`5m DISAPPEARANCE MONITOR STARTED; symbols=${SYMBOLS.join(',')}; alert when a coin had >=1 liquidation in one 5m period and 0 in the immediately following 5m period; boundary check; one alert per period; alert link=current market.`);
   (async () => {
     while (true) {
       const now = Date.now();
