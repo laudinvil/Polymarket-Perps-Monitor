@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: marginpad-auto-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
