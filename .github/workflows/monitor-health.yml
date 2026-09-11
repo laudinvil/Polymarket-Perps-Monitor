@@ -48,17 +48,19 @@ jobs:
           if (symbols.join(',') !== expected.join(',')) throw new Error(`Expected all 7 symbols ${expected.join(',')}, got: ${symbols.join(',')}`);
           if (new Set(symbols).size !== symbols.length) throw new Error(`Duplicate symbols detected: ${symbols.join(',')}`);
           if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
-          if (!/function findContrarian\s*\(/.test(text)) throw new Error('Contrarian detector missing');
-          if (!/active\.length === SYMBOLS\.length - 1/.test(text)) throw new Error('Contrarian detector must require all other coins to have liquidations');
-          if (!/missing\.length === 1/.test(text)) throw new Error('Contrarian detector must require exactly one missing coin');
+          if (!/function findDisappearance\s*\(/.test(text)) throw new Error('Liquidation disappearance detector missing');
+          if (!/previousCounts\?\.\[symbol\].*?> 0/.test(text)) throw new Error('Detector must require previous period liquidation count > 0');
+          if (!/currentCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require next period liquidation count = 0');
           if (!/5m PERIOD CHECK/.test(text)) throw new Error('Boundary period check missing');
           if (!/findNextMarket\(symbol,\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('NEXT 5m market lookup missing');
           if (/['\"]15m['\"]/.test(text)) throw new Error('15m market lookup must be removed');
+          if (/findContrarian\s*\(/.test(text)) throw new Error('Obsolete contrarian detector detected');
+          if (/active\.length === SYMBOLS\.length - 1/.test(text)) throw new Error('Obsolete all-other-coins gate detected');
           if (/ALERT_MAX_VOLUME/.test(text)) throw new Error('Old volume alert gate must be removed');
           if (/findCurrentMarket/.test(text)) throw new Error('Obsolete CURRENT market resolver detected');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/feed_recount/.test(text)) throw new Error('Obsolete feed-recount alert gate detected');
-          console.log('Verified 5m contrarian monitor: BTC/ETH/SOL/XRP/DOGE/BNB/HYPE; exactly one zero-liquidation coin; all other six must have liquidations; evaluated at period boundary; NEXT 5m market only; one alert per period.');
+          console.log('Verified 5m liquidation disappearance monitor: any coin with >=1 liquidation in one period and 0 in the immediately following period; evaluated at boundary; NEXT 5m market only; one alert per period.');
           NODE
       - name: Continuous MarginPad monitor
         env:
@@ -84,7 +86,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
             git add -f monitor-live.log 2>/dev/null || true
-            git commit -m "Update live contrarian 5m monitor status" 2>/dev/null || true
+            git commit -m "Update live liquidation disappearance monitor status" 2>/dev/null || true
             git push --force origin HEAD:monitor-status || true
           done
           wait "$MONITOR_PID"
