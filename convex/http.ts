@@ -12,32 +12,16 @@ function authorized(request: Request) {
 }
 
 const ingest = httpAction(async (ctx, request) => {
-  if (!authorized(request)) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
+  if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   let body: any;
+  try { body = await request.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
   try {
-    body = await request.json();
-  } catch {
-    return new Response("Invalid JSON", { status: 400 });
-  }
-
-  try {
-    if (body.type === "run.start") {
-      await ctx.runMutation(internal.monitor.startRun, body.data);
-    } else if (body.type === "run.heartbeat") {
-      await ctx.runMutation(internal.monitor.heartbeat, body.data);
-    } else if (body.type === "run.finish") {
-      await ctx.runMutation(internal.monitor.finishRun, body.data);
-    } else if (body.type === "snapshot") {
-      await ctx.runMutation(internal.monitor.saveSnapshot, body.data);
-    } else if (body.type === "alert") {
-      await ctx.runMutation(internal.monitor.saveAlert, body.data);
-    } else {
-      return new Response("Unknown event type", { status: 400 });
-    }
-
+    if (body.type === "run.start") await ctx.runMutation(internal.monitor.startRun, body.data);
+    else if (body.type === "run.heartbeat") await ctx.runMutation(internal.monitor.heartbeat, body.data);
+    else if (body.type === "run.finish") await ctx.runMutation(internal.monitor.finishRun, body.data);
+    else if (body.type === "snapshot") await ctx.runMutation(internal.monitor.saveSnapshot, body.data);
+    else if (body.type === "alert") await ctx.runMutation(internal.monitor.saveAlert, body.data);
+    else return new Response("Unknown event type", { status: 400 });
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Convex ingest failed", error);
@@ -59,10 +43,7 @@ const health = httpAction(async (ctx) => {
 const latestStats = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
   const timeframe = String(url.searchParams.get("timeframe") || "").trim();
-  if (!["5m", "15m", "1h", "4h"].includes(timeframe)) {
-    return new Response("Invalid timeframe", { status: 400 });
-  }
-
+  if (!["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
   try {
     const rows = await ctx.runQuery(api.monitor.latestStats, { timeframe });
     return Response.json(rows);
@@ -72,8 +53,42 @@ const latestStats = httpAction(async (ctx, request) => {
   }
 });
 
+const snapshots = httpAction(async (ctx, request) => {
+  const url = new URL(request.url);
+  const timeframe = String(url.searchParams.get("timeframe") || "5m").trim();
+  const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
+  const requestedLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 200);
+  if (!["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
+  try {
+    const rows = await ctx.runQuery(api.monitor.latestSnapshots, { timeframe, symbol, limit });
+    return Response.json(rows);
+  } catch (error) {
+    console.error("Convex snapshots query failed", error);
+    return new Response("Snapshots query failed", { status: 500 });
+  }
+});
+
+const alerts = httpAction(async (ctx, request) => {
+  const url = new URL(request.url);
+  const timeframe = String(url.searchParams.get("timeframe") || "").trim() || undefined;
+  const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
+  const requestedLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
+  if (timeframe && !["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
+  try {
+    const rows = await ctx.runQuery(api.monitor.latestAlerts, { timeframe, symbol, limit });
+    return Response.json(rows);
+  } catch (error) {
+    console.error("Convex alerts query failed", error);
+    return new Response("Alerts query failed", { status: 500 });
+  }
+});
+
 http.route({ path: "/ingest", method: "POST", handler: ingest });
 http.route({ path: "/health", method: "GET", handler: health });
 http.route({ path: "/latest-stats", method: "GET", handler: latestStats });
+http.route({ path: "/snapshots", method: "GET", handler: snapshots });
+http.route({ path: "/alerts", method: "GET", handler: alerts });
 
 export default http;
