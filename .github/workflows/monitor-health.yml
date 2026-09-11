@@ -51,11 +51,11 @@ jobs:
           if (!/periodHadLiquidations/.test(text)) throw new Error('Durable period liquidation state missing');
           if (!/GLOBAL_PERIOD_LOCK=CLOSED/.test(text)) throw new Error('Global period lock claim missing');
           if (!/findNextMarket\(['\"]BTC['\"],\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('NEXT 5m BTC lookup missing');
-          if (!/findCurrentMarket\(['\"]BTC['\"],\s*Date\.now\(\),\s*['\"]15m['\"]\)/.test(text)) throw new Error('CURRENT 15m BTC lookup missing');
-          if (!/findCurrentMarket/.test(text)) throw new Error('Current 15m market resolver is not imported/used');
+          if (!/findNextMarket\(['\"]BTC['\"],\s*Date\.now\(\),\s*['\"]15m['\"]\)/.test(text)) throw new Error('NEXT 15m BTC lookup missing');
+          if (/findCurrentMarket/.test(text)) throw new Error('Obsolete CURRENT 15m market resolver detected');
           if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
           if (/feed_recount/.test(text)) throw new Error('Obsolete feed-recount alert gate detected');
-          console.log('Verified BTC-only 5m monitor: durable global period lock; previous-period alert suppresses the next period; NEXT 5m market; CURRENT 15m market; no feed recount can reopen a locked period.');
+          console.log('Verified BTC-only 5m monitor: durable global period lock; previous-period alert suppresses the next period; NEXT 5m market; NEXT 15m market; no feed recount can reopen a locked period.');
           NODE
       - name: Continuous MarginPad monitor
         env:
