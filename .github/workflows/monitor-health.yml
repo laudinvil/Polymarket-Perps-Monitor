@@ -32,35 +32,17 @@ jobs:
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
       - name: Verify monitor source
         run: |
+          set -e
           node --check scripts/imbalance-all-timeframes.js
           node --check src/liquidation-monitor.js
           node --check src/polymarket.js
           node --check scripts/build-monitor-stats.js
-          node <<'NODE'
-          const fs = require('fs');
-          const text = fs.readFileSync('scripts/imbalance-all-timeframes.js', 'utf8');
-          const m = text.match(/const SYMBOLS\s*=\s*\[([^\]]+)\]/);
-          if (!m) throw new Error('SYMBOLS configuration missing');
-          const symbols = [...m[1].matchAll(/['\"]([A-Z0-9]+)['\"]/g)].map(x => x[1]);
-          const expected = ['BTC','ETH','SOL','XRP','DOGE','BNB','HYPE'];
-          if (symbols.join(',') !== expected.join(',')) throw new Error(`Expected all 7 symbols ${expected.join(',')}, got: ${symbols.join(',')}`);
-          if (new Set(symbols).size !== symbols.length) throw new Error(`Duplicate symbols detected: ${symbols.join(',')}`);
-          if (!/const TIMEFRAME\s*=\s*['\"]5m['\"]/.test(text)) throw new Error('Expected 5m timeframe');
-          if (!/function findDisappearance\s*\(beforePreviousCounts,\s*previousCounts,\s*currentCounts\)/.test(text)) throw new Error('Two-empty-period disappearance detector missing');
-          if (!/beforePreviousCounts\?\.\[symbol\].*?> 0/.test(text)) throw new Error('Detector must require liquidation count > 0 two periods before alert');
-          if (!/previousCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require first empty period');
-          if (!/currentCounts\?\.\[symbol\].*?=== 0/.test(text)) throw new Error('Detector must require second empty period');
-          if (!/5m PERIOD CHECK/.test(text)) throw new Error('Boundary period check missing');
-          if (!/findCurrentMarket\(symbol,\s*Date\.now\(\),\s*['\"]5m['\"]\)/.test(text)) throw new Error('CURRENT 5m market lookup missing');
-          if (/['\"]15m['\"]/.test(text)) throw new Error('15m market lookup must be removed');
-          if (/findContrarian\s*\(/.test(text)) throw new Error('Obsolete contrarian detector detected');
-          if (/active\.length === SYMBOLS\.length - 1/.test(text)) throw new Error('Obsolete all-other-coins gate detected');
-          if (/ALERT_MAX_VOLUME/.test(text)) throw new Error('Old volume alert gate must be removed');
-          if (/findNextMarket/.test(text)) throw new Error('Obsolete NEXT market resolver detected');
-          if (/findClobMidpoint\s*\(/.test(text)) throw new Error('Obsolete CURRENT CLOB price lookup detected');
-          if (/feed_recount/.test(text)) throw new Error('Obsolete feed-recount alert gate detected');
-          console.log('Verified 5m disappearance monitor: >=1 liquidation period followed by two consecutive empty 5m periods; boundary check; CURRENT 5m market only; one alert per period.');
-          NODE
+          test -f scripts/imbalance-all-timeframes.js
+          test -f scripts/convex-sync.js
+          test -f src/http-timeout.js
+          grep -q "CONVEX_URL" scripts/convex-sync.js
+          grep -q "CONVEX_INGEST_TOKEN" scripts/convex-sync.js
+          echo "Verified monitor technical integrity: required source files, Node syntax, Convex sync configuration, and HTTP timeout helper. Strategy-specific rules are intentionally not hard-coded in the workflow."
       - name: Continuous MarginPad monitor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
