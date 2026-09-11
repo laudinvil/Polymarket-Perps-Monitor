@@ -16,4 +16,7 @@ export default defineSchema({
   lineAlerts: defineTable({
     runId:v.number(), eventId:v.string(), home:v.string(), away:v.string(), market:v.string(), selection:v.string(), line:v.number(), movePercent:v.number(), bookmakers:v.any(), polymarketUrl:v.optional(v.string()), sentAt:v.number(),
   }).index("by_sent_at",["sentAt"]).index("by_event",["eventId"]),
+  esportsAlerts: defineTable({
+    fingerprint: v.string(), strategy: v.string(), team: v.string(), url: v.string(), matchId: v.string(), sentAt: v.number(),
+  }).index("by_fingerprint", ["fingerprint"]),
 });
