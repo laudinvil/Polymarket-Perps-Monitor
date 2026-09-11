@@ -1,4 +1,4 @@
-name: Line Movement Monitor
+name: MarginPad Auto Monitor
 
 on:
   schedule:
@@ -30,49 +30,79 @@ jobs:
           git fetch origin monitor-status:monitor-status || true
           git checkout monitor-status -- monitor-history.log .monitor-state.json .monitor-side-state.json 2>/dev/null || true
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
-      - name: Verify line movement source
+      - name: Verify monitor source
         run: |
           set -e
           node --check scripts/imbalance-all-timeframes.js
-          node --check scripts/line-movement-monitor.js
-          node --check scripts/convex-sync.js
-          node --check src/telegram.js
-      - name: Continuous line movement monitor
+          node --check src/liquidation-monitor.js
+          node --check src/polymarket.js
+          node --check scripts/build-monitor-stats.js
+          test -f scripts/imbalance-all-timeframes.js
+          test -f scripts/convex-sync.js
+          test -f src/http-timeout.js
+          grep -q "CONVEX_URL" scripts/convex-sync.js
+          grep -q "CONVEX_INGEST_TOKEN" scripts/convex-sync.js
+          echo "Verified MarginPad liquidation monitor source and Convex sync configuration."
+      - name: Continuous MarginPad monitor
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MARGINPAD_API_KEY: ${{ secrets.MARGINPAD_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
-          ODDS_SPORT: football
-          ODDS_LEAGUE: england-premier-league
-          ODDS_BOOKMAKERS: Bet365,Unibet
-          ODDS_MARKET: Totals
-          ODDS_SELECTION: over
-          ODDS_LINE: 2.5
-          ODDS_MOVE_THRESHOLD_PERCENT: 5
-          ODDS_MIN_BOOKMAKERS: 2
-          ODDS_POLL_SECONDS: 600
-          ODDS_EVENTS_REFRESH_MINUTES: 30
-          ODDS_LOOKAHEAD_HOURS: 48
-          ODDS_MAX_EVENTS: 10
         run: |
           set -uo pipefail
-          test -n "$ODDS_API_KEY"
           timeout 20s node scripts/convex-sync.js start || true
           START_TS=$(date +%s)
           DEADLINE=$((START_TS + 21000))
-          timeout "$((DEADLINE - $(date +%s)))" node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor.log
+          MONITOR_PID=""
+          stop_monitor() {
+            if [ -n "$MONITOR_PID" ]; then
+              kill "$MONITOR_PID" 2>/dev/null || true
+              wait "$MONITOR_PID" 2>/dev/null || true
+              MONITOR_PID=""
+            fi
+          }
+          trap 'stop_monitor' EXIT TERM INT
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            REMAINING=$((DEADLINE - $(date +%s)))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            echo "[WATCHDOG] starting MarginPad monitor; remaining=${REMAINING}s"
+            timeout "$REMAINING" node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor.log &
+            MONITOR_PID=$!
+            while kill -0 "$MONITOR_PID" 2>/dev/null; do
+              sleep 60
+              timeout 20s node scripts/convex-sync.js sync || true
+              node scripts/build-monitor-stats.js monitor-history.log || true
+              tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add monitor-history.log .monitor-state.json .monitor-side-state.json monitor-stats.md 2>/dev/null || true
+              git add -f monitor-live.log 2>/dev/null || true
+              git commit -m "Update live liquidation monitor status" 2>/dev/null || true
+              git push --force origin HEAD:monitor-status || true
+            done
+            wait "$MONITOR_PID" || true
+            MONITOR_PID=""
+            if [ "$(date +%s)" -lt "$DEADLINE" ]; then
+              echo "[WATCHDOG] MarginPad monitor stopped unexpectedly; restarting without resetting state"
+              sleep 5
+            fi
+          done
+          echo "[WATCHDOG] 355-minute monitor window completed"
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: line-movement-log
+          name: monitor-log
           path: monitor.log
           if-no-files-found: ignore
       - name: Finish Convex run
         if: always()
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
           MONITOR_STATUS: ${{ job.status }}
