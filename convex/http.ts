@@ -29,6 +29,26 @@ const ingest = httpAction(async (ctx, request) => {
   }
 });
 
+const claimEsportsAlert = httpAction(async (ctx, request) => {
+  if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
+  let body: any;
+  try { body = await request.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
+  try {
+    const claimed = await ctx.runMutation(internal.monitor.claimEsportsAlert, {
+      fingerprint: String(body.fingerprint || ""),
+      strategy: String(body.strategy || ""),
+      team: String(body.team || ""),
+      url: String(body.url || ""),
+      matchId: String(body.matchId || ""),
+      sentAt: Number(body.sentAt || Date.now()),
+    });
+    return Response.json({ claimed });
+  } catch (error) {
+    console.error("Convex esports claim failed", error);
+    return new Response("Esports claim failed", { status: 500 });
+  }
+});
+
 const health = httpAction(async (ctx) => {
   try {
     const result = await ctx.runQuery(api.monitor.monitorHealth, {});
@@ -44,48 +64,28 @@ const latestStats = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
   const timeframe = String(url.searchParams.get("timeframe") || "").trim();
   if (!["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
-  try {
-    const rows = await ctx.runQuery(api.monitor.latestStats, { timeframe });
-    return Response.json(rows);
-  } catch (error) {
-    console.error("Convex latest stats failed", error);
-    return new Response("Stats query failed", { status: 500 });
-  }
+  try { return Response.json(await ctx.runQuery(api.monitor.latestStats, { timeframe })); }
+  catch (error) { console.error("Convex latest stats failed", error); return new Response("Stats query failed", { status: 500 }); }
 });
 
 const snapshots = httpAction(async (ctx, request) => {
-  const url = new URL(request.url);
-  const timeframe = String(url.searchParams.get("timeframe") || "5m").trim();
-  const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
-  const requestedLimit = Number(url.searchParams.get("limit") || 50);
-  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 200);
+  const url = new URL(request.url); const timeframe = String(url.searchParams.get("timeframe") || "5m").trim(); const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
+  const requestedLimit = Number(url.searchParams.get("limit") || 50); const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 200);
   if (!["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
-  try {
-    const rows = await ctx.runQuery(api.monitor.latestSnapshots, { timeframe, symbol, limit });
-    return Response.json(rows);
-  } catch (error) {
-    console.error("Convex snapshots query failed", error);
-    return new Response("Snapshots query failed", { status: 500 });
-  }
+  try { return Response.json(await ctx.runQuery(api.monitor.latestSnapshots, { timeframe, symbol, limit })); }
+  catch (error) { console.error("Convex snapshots query failed", error); return new Response("Snapshots query failed", { status: 500 }); }
 });
 
 const alerts = httpAction(async (ctx, request) => {
-  const url = new URL(request.url);
-  const timeframe = String(url.searchParams.get("timeframe") || "").trim() || undefined;
-  const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
-  const requestedLimit = Number(url.searchParams.get("limit") || 50);
-  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
+  const url = new URL(request.url); const timeframe = String(url.searchParams.get("timeframe") || "").trim() || undefined; const symbol = String(url.searchParams.get("symbol") || "").trim() || undefined;
+  const requestedLimit = Number(url.searchParams.get("limit") || 50); const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
   if (timeframe && !["5m", "15m", "1h", "4h"].includes(timeframe)) return new Response("Invalid timeframe", { status: 400 });
-  try {
-    const rows = await ctx.runQuery(api.monitor.latestAlerts, { timeframe, symbol, limit });
-    return Response.json(rows);
-  } catch (error) {
-    console.error("Convex alerts query failed", error);
-    return new Response("Alerts query failed", { status: 500 });
-  }
+  try { return Response.json(await ctx.runQuery(api.monitor.latestAlerts, { timeframe, symbol, limit })); }
+  catch (error) { console.error("Convex alerts query failed", error); return new Response("Alerts query failed", { status: 500 }); }
 });
 
 http.route({ path: "/ingest", method: "POST", handler: ingest });
+http.route({ path: "/claim-esports-alert", method: "POST", handler: claimEsportsAlert });
 http.route({ path: "/health", method: "GET", handler: health });
 http.route({ path: "/latest-stats", method: "GET", handler: latestStats });
 http.route({ path: "/snapshots", method: "GET", handler: snapshots });
