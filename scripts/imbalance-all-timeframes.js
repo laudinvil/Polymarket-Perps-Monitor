@@ -7,7 +7,8 @@ const fs = require('fs');
 // 5m periods. Individual liquidation events only.
 // Alert on the FIRST NEW liquidation in a 5m period ONLY when the immediately
 // preceding 5m period was completely empty.
-// If the current period is empty, keep waiting; its first NEW liquidation can alert.
+// GLOBAL RULE: exactly ONE alert maximum for the entire 5m period, regardless
+// of which coin triggered it. Once claimed, every later event/coin is suppressed.
 const SYMBOLS = ['BTC', 'ETH', 'SOL'];
 const TIMEFRAME = '5m';
 const PERIOD_MS = 5 * 60 * 1000;
@@ -63,6 +64,30 @@ function persistStatus() {
 }
 function appendHistory(record) { fs.appendFileSync(HISTORY_FILE, JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n'); }
 
+function restoreState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (saved?.timeframe !== TIMEFRAME) return;
+    if (Array.isArray(saved?.symbols) && saved.symbols.join(',') !== SYMBOLS.join(',')) return;
+    if (Number.isFinite(Number(saved?.periodStart))) state.periodStart = Number(saved.periodStart);
+    if (state.periodStart === null) return;
+    state.periodEventCount = {
+      BTC: Number(saved?.periodEventCount?.BTC || 0),
+      ETH: Number(saved?.periodEventCount?.ETH || 0),
+      SOL: Number(saved?.periodEventCount?.SOL || 0),
+    };
+    state.previousPeriodWasEmpty = Boolean(saved?.previousPeriodWasEmpty);
+    state.periodAlreadyAlerted = Boolean(saved?.periodAlreadyAlerted);
+    state.initialized = Boolean(saved?.initialized);
+    state.lastAlertAt = saved?.lastAlertAt ?? null;
+    state.lastAlertSide = saved?.lastAlertSide ?? null;
+    state.lastAlertSymbol = saved?.lastAlertSymbol ?? null;
+    console.log(`STATE RESTORED period=${new Date(state.periodStart).toISOString()} alreadyAlerted=${state.periodAlreadyAlerted} previousEmpty=${state.previousPeriodWasEmpty}`);
+  } catch (error) {
+    console.log(`STATE RESTORE: no usable state (${error.message}); starting fresh`);
+  }
+}
+
 async function fetchAllFeeds() {
   const feeds = new Map();
   for (const symbol of SYMBOLS) {
@@ -106,7 +131,7 @@ function enqueueAlert(message, candidate) {
       await sendTelegramMessage(message); lastAlertSentAt = Date.now();
       state.lastAlertAt = new Date(lastAlertSentAt).toISOString(); state.lastAlertSide = candidate.side; state.lastAlertSymbol = candidate.symbol;
       persistStatus(); appendHistory({ type: 'alert', timeframe: '5m', symbol: candidate.symbol, side: candidate.side, display: displaySide(candidate.side), periodStart: state.periodStart, price: numberValue(candidate.event?.price, candidate.event?.markPrice, candidate.event?.executionPrice), notional: numberValue(candidate.event?.notional, candidate.event?.usd, candidate.event?.value, candidate.event?.amount) });
-      console.log(`5m FIRST-LIQUIDATION ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)} predecessorEmpty=true`);
+      console.log(`5m FIRST-LIQUIDATION ALERT SENT ${candidate.symbol} ${candidate.side} display=${displaySide(candidate.side)} predecessorEmpty=true GLOBAL_PERIOD_LOCK=true`);
     } catch (error) { console.warn(`5m ALERT SEND FAILED ${candidate.symbol}: ${error.message}`); }
   }).catch(error => console.warn(`5m ALERT QUEUE FAILED: ${error.message}`));
 }
@@ -135,7 +160,7 @@ async function processTimeframe(feeds, now) {
     state.periodAlreadyAlerted = false;
     state.seenLiquidations.clear();
     persistStatus();
-    console.log(`5m PERIOD RESET ${new Date(current).toISOString()} predecessor=${closedPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'} source=feed_recount; waiting_for_first_new_liquidation=true`);
+    console.log(`5m PERIOD RESET ${new Date(current).toISOString()} predecessor=${closedPeriodWasEmpty ? 'EMPTY' : 'NON_EMPTY'} source=feed_recount; waiting_for_first_new_liquidation=true; global_alert_lock=OPEN`);
   }
 
   const newEvents = collectCurrentPeriodEvents(feeds, now);
@@ -143,11 +168,15 @@ async function processTimeframe(feeds, now) {
     state.initialized = true;
     // Suppress events already present when the monitor starts. They are historical
     // for this process, not NEW liquidations arriving after initialization.
-    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed BTC=${state.periodEventCount.BTC} ETH=${state.periodEventCount.ETH} SOL=${state.periodEventCount.SOL}; predecessorEmpty=${state.previousPeriodWasEmpty}`);
+    console.log(`INITIAL 5m BASELINE READY; current-period historical events suppressed BTC=${state.periodEventCount.BTC} ETH=${state.periodEventCount.ETH} SOL=${state.periodEventCount.SOL}; predecessorEmpty=${state.previousPeriodWasEmpty}; globalAlertLock=${state.periodAlreadyAlerted ? 'CLOSED' : 'OPEN'}`);
     persistStatus(); return;
   }
   persistStatus();
-  if (state.periodAlreadyAlerted || !newEvents.length) return;
+  if (state.periodAlreadyAlerted) {
+    if (newEvents.length) console.log(`5m ALERT SUPPRESSED ${newEvents.length} new event(s); GLOBAL PERIOD ALREADY ALERTED symbol=${state.lastAlertSymbol || 'unknown'} period=${new Date(state.periodStart).toISOString()}`);
+    return;
+  }
+  if (!newEvents.length) return;
 
   // A first NEW liquidation only qualifies when the immediately preceding period was empty.
   if (!state.previousPeriodWasEmpty) {
@@ -155,12 +184,17 @@ async function processTimeframe(feeds, now) {
     return;
   }
 
-  const candidate = newEvents[0]; state.periodAlreadyAlerted = true;
+  // CLAIM THE GLOBAL PERIOD LOCK BEFORE any async Telegram/API work. This makes
+  // the one-alert rule atomic inside the process and persists it immediately so a
+  // restart cannot produce a second alert for the same 5m period.
+  const candidate = newEvents[0];
+  state.periodAlreadyAlerted = true;
+  persistStatus();
   const { symbol, side, event } = candidate;
   const eventPrice = numberValue(event?.price, event?.markPrice, event?.executionPrice);
   const eventQty = numberValue(event?.qty, event?.quantity, event?.size);
   const eventNotional = numberValue(event?.notional, event?.usd, event?.value, event?.amount, eventPrice * eventQty);
-  console.log(`5m FIRST-LIQUIDATION CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=empty_predecessor_then_first_new_liquidation`);
+  console.log(`5m FIRST-LIQUIDATION CLAIMED symbol=${symbol} side=${side} display=${displaySide(side)} currentPeriod=${new Date(state.periodStart).toISOString()} rule=empty_predecessor_then_first_new_liquidation GLOBAL_PERIOD_LOCK=CLOSED`);
 
   // NEXT links only. No current-market URL and no current CLOB price in the alert.
   // Calculate both NEXT markets from the actual alert-generation time.
@@ -182,12 +216,15 @@ async function processTimeframe(feeds, now) {
   enqueueAlert(message, candidate);
 }
 
-async function main() {
-  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; empty current period waits; closed periods are feed-recounted across restarts; individual events only; no imbalance; no streaks; one global alert per 5m period; next 5m + next 15m market links only');
-  while (true) {
-    const now = Date.now();
-    try { await processTimeframe(await fetchAllFeeds(), now); } catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS));
-  }
+function main() {
+  restoreState();
+  console.log('5m LIQUIDATION MONITOR STARTED; coins=BTC,ETH,SOL; require EMPTY preceding 5m period; then FIRST NEW liquidation alerts once; EMPTY current period waits; CLOSED periods are feed-recounted across restarts; INDIVIDUAL events only; NO imbalance; NO streaks; EXACTLY ONE GLOBAL ALERT PER 5m PERIOD across ALL coins; later same-coin and other-coin alerts suppressed; next 5m + next 15m market links only');
+  (async () => {
+    while (true) {
+      const now = Date.now();
+      try { await processTimeframe(await fetchAllFeeds(), now); } catch (error) { console.warn(`MONITOR LOOP FAILED: ${error.message}`); }
+      await new Promise(resolve => setTimeout(resolve, POLL_MS));
+    }
+  })().catch(error => { console.error(`MONITOR FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
 }
-main().catch(error => { console.error(`MONITOR FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
+main();
