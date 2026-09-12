@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchFeed, eventKey, normalizeTs, DEFAULT_SYMBOLS, POLL_MS } = require('../src/liquidation-monitor');
-const { findNextMarket } = require('../src/polymarket');
+const { findNextMarket, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
@@ -66,7 +66,7 @@ function paperOutcomeFromLiquidation(event) {
 }
 
 async function getPaperMarket(symbol, marketStart) {
-  return findNextMarket(symbol, marketStart - 1, '5m');
+  return findMarketByEpoch(symbol, marketStart, '5m');
 }
 
 async function getPaperEntry(nextMarket, outcome) {
@@ -85,7 +85,10 @@ async function getPaperEntry(nextMarket, outcome) {
 async function settlePaperTrade(trade, now) {
   if (!trade || now < trade.marketStart + 300000) return false;
   const market = await getPaperMarket(trade.symbol, trade.marketStart);
-  if (!market || !market.resolved || !market.winner) return false;
+  if (!market || !market.resolved || !market.winner) {
+    console.log(`[10M] PAPER settlement pending symbol=${trade?.symbol || 'UNKNOWN'} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'}`);
+    return false;
+  }
 
   const winner = String(market.winner).toUpperCase();
   const win = winner === trade.outcome;
@@ -130,7 +133,6 @@ async function alertForEvent(event, state) {
   const symbol = String(event.symbol || '').toUpperCase();
   const currentPeriod = periodStart(ts);
 
-  // Hard global one-alert-per-10m-period gate.
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) {
     console.log(`[10M] SUPPRESSED duplicate period=${formatTime(currentPeriod)} symbol=${symbol}`);
     return false;
@@ -157,8 +159,6 @@ async function alertForEvent(event, state) {
     nextUrl,
   ].join('\n');
 
-  // Reserve the period before sending so a concurrent loop/process cannot
-  // logically pass the gate after this point in the same state file.
   state.lastAlertPeriod = currentPeriod;
   saveState(state);
 
@@ -175,8 +175,6 @@ async function alertForEvent(event, state) {
     }
     saveState(state);
   } catch (error) {
-    // Do not reopen the period: one-alert-per-period is stricter than retrying
-    // and risking a duplicate Telegram alert.
     console.error(`[10M] Telegram send failed; period remains reserved: ${error.message}`);
     return false;
   }
