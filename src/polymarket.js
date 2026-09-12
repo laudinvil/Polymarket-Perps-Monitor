@@ -34,9 +34,9 @@ function parseMarketData(market) {
   let winner = null;
   if (outcomes.length === 2 && outcomePrices.length === 2) {
     const numericPrices = outcomePrices.map(Number);
-    const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.95);
+    const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.995);
     const otherIndex = resolvedIndex === 0 ? 1 : 0;
-    if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.05) {
+    if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.005) {
       winner = String(outcomes[resolvedIndex]).toUpperCase();
     }
   }
