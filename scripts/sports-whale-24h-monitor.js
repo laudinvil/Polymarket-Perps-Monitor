@@ -2,13 +2,13 @@ const DATA_API = 'https://data-api.polymarket.com/trades';
 const GAMMA_API = 'https://gamma-api.polymarket.com/events';
 const POLL_MS = 2 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+const ALERT_RECENCY_MS = 150 * 1000;
 const PAGE_SIZE = 10000;
 const MAX_PAGES = 2;
 const TZ_LABEL = 'UTC+3';
 const seen = new Map();
 let sportsSlugs = new Set();
 let lastAlertTrade = null;
-let initialized = false;
 
 function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
 function nowMs() { return Date.now(); }
@@ -100,33 +100,27 @@ async function evaluate() {
   ingest(trades);
   const best = largest();
   if (!best) { log(`STATS: sportsTrades24h=${seen.size}; largest=none`); return; }
-  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`);
+  const bestAgeMs = nowMs() - Number(best.timestamp) * 1000;
+  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s`);
+  if (bestAgeMs > ALERT_RECENCY_MS) return;
   const key = tradeKey(best);
-  if (!initialized) {
-    lastAlertTrade = { timestamp: best.timestamp, usd: best.usd, key };
-    initialized = true;
-    log(`BASELINE: ${fmtUsd(best.usd)} | ${best.title} | no startup alert`);
-    return;
-  }
-  if (lastAlertTrade?.key === key) return;
-  if (!lastAlertTrade || best.usd > Number(lastAlertTrade.usd || 0)) {
-    const text = [
-      'SPORTS WHALE ALERT',
-      '',
-      `Event: ${best.title || best.eventSlug || 'Unknown'}`,
-      `Market: ${best.outcome || 'Unknown'}`,
-      `Largest bet: ${fmtUsd(best.usd)}`,
-      `Side: ${best.side || 'UNKNOWN'}`,
-      `Price: ${Number(best.price).toFixed(4)}`,
-      `Time: ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`,
-      '',
-      'Rolling window: 24H',
-      `Polymarket: ${marketUrl(best)}`
-    ].join('\n');
-    await sendTelegram(text);
-    lastAlertTrade = { timestamp: best.timestamp, usd: best.usd, key };
-    log(`ALERT: ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome}`);
-  }
+  if (lastAlertTrade === key) return;
+  const text = [
+    'SPORTS WHALE ALERT',
+    '',
+    `Event: ${best.title || best.eventSlug || 'Unknown'}`,
+    `Market: ${best.outcome || 'Unknown'}`,
+    `Largest bet: ${fmtUsd(best.usd)}`,
+    `Side: ${best.side || 'UNKNOWN'}`,
+    `Price: ${Number(best.price).toFixed(4)}`,
+    `Time: ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`,
+    '',
+    'Rolling window: 24H',
+    `Polymarket: ${marketUrl(best)}`
+  ].join('\n');
+  await sendTelegram(text);
+  lastAlertTrade = key;
+  log(`ALERT: ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome}`);
 }
 
 async function main() {
