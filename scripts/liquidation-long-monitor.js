@@ -118,9 +118,9 @@ async function settlePaperTrade(trade, now) {
   return true;
 }
 
-function isFreshEvent(event, startedAt, currentPeriod, closedPeriod, seenEvents) {
+function isFreshEvent(event, currentPeriod, closedPeriod, seenEvents) {
   const ts = normalizeTs(event?.ts);
-  if (!ts || ts < startedAt) return false;
+  if (!ts) return false;
   const eventPeriod = periodStart(ts);
   if (eventPeriod !== currentPeriod && eventPeriod !== closedPeriod) return false;
   const key = eventKey(event);
@@ -188,7 +188,6 @@ async function alertForEvent(event, state, closedPeriod) {
 async function main() {
   console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
-  const startedAt = Date.now();
   const seenEvents = new Set();
 
   while (true) {
@@ -202,7 +201,7 @@ async function main() {
       const currentPeriod = periodStart(now);
       const closedPeriod = currentPeriod - PERIOD_MS;
       const fresh = events
-        .filter(event => isFreshEvent(event, startedAt, currentPeriod, closedPeriod, seenEvents))
+        .filter(event => isFreshEvent(event, currentPeriod, closedPeriod, seenEvents))
         .sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
 
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < closedPeriod) {
