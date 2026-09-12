@@ -206,7 +206,8 @@ function formatPct(value) {
 }
 
 function marketUrl(symbol) {
-  return `${POLYMARKET_BASE}/${encodeURIComponent(symbol.toLowerCase())}`;
+  const slug = String(symbol || '').trim().toLowerCase().replace(/-usd$/, '');
+  return `${POLYMARKET_BASE}/${encodeURIComponent(slug)}`;
 }
 
 async function sendTelegram(text) {
@@ -350,8 +351,13 @@ function shutdown() {
   clearInterval(paperLogTimer);
   clearTimeout(reconnectTimer);
   logSnapshot(log);
-  try { ws?.close(); } catch {}
+  if (ws) ws.close();
 }
+
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-main().catch(error => { console.error(error); process.exitCode = 1; });
+
+main().catch(error => {
+  log(`Fatal: ${error.message}`);
+  process.exit(1);
+});
