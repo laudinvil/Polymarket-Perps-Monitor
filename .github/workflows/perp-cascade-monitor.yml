@@ -9,10 +9,14 @@ on:
     paths:
       - '.github/workflows/perp-cascade-monitor.yml'
       - 'scripts/perp-cascade-monitor.js'
+      - 'scripts/paper-trading.js'
 
 concurrency:
   group: polymarket-perp-cascade-monitor
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   monitor:
@@ -29,14 +33,24 @@ jobs:
         with:
           node-version: 24
 
+      - name: Restore paper portfolio cache
+        uses: actions/cache@v4
+        with:
+          path: paper-state.json
+          key: perp-paper-state-${{ github.run_id }}
+          restore-keys: |
+            perp-paper-state-
+
       - name: Verify monitor source
         run: |
           set -e
           node --check scripts/perp-cascade-monitor.js
+          node --check scripts/paper-trading.js
           grep -q "api.perpetuals.polymarket.com" scripts/perp-cascade-monitor.js
           grep -q "ws.perpetuals.polymarket.com/v1/ws" scripts/perp-cascade-monitor.js
           grep -q "Cascade Exhaustion" scripts/perp-cascade-monitor.js
-          echo "Verified Polymarket Perps Cascade Exhaustion Monitor."
+          test -f paper-state.json
+          echo "Verified Perps monitor and paper portfolio state."
 
       - name: Run Perps cascade monitor
         env:
