@@ -10,12 +10,12 @@ on:
       - 'src/telegram.js'
       - 'scripts/liquidation-long-monitor.js'
   schedule:
-    - cron: '* * * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: polymarket-outcome-imbalance-monitor
-  cancel-in-progress: true
+  group: marginpad-long-liquidation-monitor
+  cancel-in-progress: false
 
 jobs:
   monitor:
