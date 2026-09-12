@@ -1,19 +1,19 @@
 {
-  "lastAlertPeriod": null,
+  "lastAlertPeriod": 1789246500000,
   "paperTrade": {
     "market": {
-      "slug": "btc-updown-5m-1789246200",
-      "url": "https://polymarket.com/event/btc-updown-5m-1789246200",
-      "question": "Bitcoin Up or Down - September 12, 4:50PM-4:55PM ET",
-      "startDate": "2026-09-11T21:04:07.224617Z",
-      "endDate": "2026-09-12T20:55:00Z",
+      "slug": "btc-updown-5m-1789246800",
+      "url": "https://polymarket.com/event/btc-updown-5m-1789246800",
+      "question": "Bitcoin Up or Down - September 12, 5:00PM-5:05PM ET",
+      "startDate": "2026-09-11T21:16:53.490834Z",
+      "endDate": "2026-09-12T21:05:00Z",
       "prices": {
         "UP": 0.505,
         "DOWN": 0.495
       },
       "tokenIds": {
-        "UP": "8580797072813007176195907248584667420531353049450075605486373631997004088392",
-        "DOWN": "99115975374864760915540531274780401705897511012002946211817060985834735056665"
+        "UP": "113446299639267087367068218392480176609651227145103693250834680276117421059262",
+        "DOWN": "18463011516868004990304783808744377608877085150056755687962264894093166792153"
       },
       "outcomes": [
         "Up",
@@ -28,13 +28,13 @@
       "resolved": false,
       "winner": null
     },
-    "marketStart": 1789246200000,
-    "outcome": "DOWN",
+    "marketStart": 1789246800000,
+    "outcome": "UP",
     "entryPrice": 0.505,
     "shares": 1.9801980198019802,
     "symbol": "BTC",
-    "alertTs": 1789245672338,
-    "sourceMessageId": 1660,
+    "alertTs": 1789246624332,
+    "sourceMessageId": 1661,
     "settled": false
   }
 }

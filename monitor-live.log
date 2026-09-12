@@ -56,3 +56,33 @@ MarginPad liquidation monitor started; symbols=BTC,SOL; timeframe=5m; Polymarket
 [5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
 [5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
 [5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=0 alert=WAITING_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=12/09/2026 23:50:00 resolved=false winner=N/A closed=false
+[5M] PAPER entry NEXT market=btc-updown-5m-1789246800 outcome=UP clob_mid=0.505 gamma=0.505 selected=0.505
+[5M] ALERT BTC side=LONG paper=UP entry=0.505 sourceMessageId=1661 liquidation=12/09/2026 23:57:04 period=12/09/2026 23:55:00 next=https://polymarket.com/event/btc-updown-5m-1789246800
+[5M] current=12/09/2026 23:55:00 total_current=1 alert=DONE_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=13/09/2026 00:00:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=1 alert=DONE_CURRENT_PERIOD paper=OPEN
+[5M] PAPER settlement pending symbol=BTC marketStart=13/09/2026 00:00:00 resolved=false winner=N/A closed=false
+[5M] current=12/09/2026 23:55:00 total_current=1 alert=DONE_CURRENT_PERIOD paper=OPEN
