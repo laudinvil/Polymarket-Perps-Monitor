@@ -82,10 +82,10 @@ async function getPaperEntry(nextMarket, outcome) {
 }
 
 async function settlePaperTrade(trade, now) {
-  if (!trade || now < trade.marketStart + 300000) return false;
+  if (!trade) return false;
   const market = await getPaperMarket(trade.symbol, trade.marketStart);
   if (!market || !market.resolved || !market.winner) {
-    console.log(`[10M] PAPER settlement pending symbol=${trade?.symbol || 'UNKNOWN'} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'}`);
+    console.log(`[10M] PAPER settlement pending symbol=${trade?.symbol || 'UNKNOWN'} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'} closed=${market?.closed ?? 'N/A'}`);
     return false;
   }
 
