@@ -1,6 +1,6 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
-const DEFAULT_SYMBOLS = ['BTC', 'SOL'];
+const DEFAULT_SYMBOLS = ['BTC'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
@@ -36,7 +36,6 @@ async function fetchJson(url, fetchImpl = fetch) {
   if (!response.ok) throw new Error(`MarginPad HTTP ${response.status}`);
   return response.json();
 }
-
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
   if (liveFeedPromise) return liveFeedPromise;
@@ -55,7 +54,6 @@ async function fetchLiveFeed(fetchImpl = fetch) {
   })();
   try { return await liveFeedPromise; } finally { liveFeedPromise = null; }
 }
-
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
@@ -74,11 +72,9 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
   }
-
   const now = Date.now();
   const cached = fallbackCache.eventsBySymbol.get(normalized);
   if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
-
   try {
     const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
     fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
@@ -92,12 +88,10 @@ async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const results = await Promise.all(symbols.map(async symbol => [normalizeSymbol(symbol), await fetchSymbolFeed(symbol, fetchImpl)]));
   return results.flatMap(([, events]) => events);
 }
-
 function isLong(event) {
   const side = String(event?.side || event?.direction || '').toLowerCase();
   return side.includes('long') || side === 'buy';
 }
-
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
   const allowed = new Set(symbols.map(normalizeSymbol));
   const current = bucketStart(now);
@@ -114,7 +108,6 @@ function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
   }
   return [...rows.values()].sort((a, b) => b.bucket - a.bucket || b.longEvents - a.longEvents || a.symbol.localeCompare(b.symbol));
 }
-
 function selectWinner(rows, bucket) {
   const candidates = rows.filter(row => row.bucket === bucket);
   if (!candidates.length) return null;
@@ -123,7 +116,6 @@ function selectWinner(rows, bucket) {
   if (winners.length !== 1) return null;
   return winners[0];
 }
-
 module.exports = {
   FEED_URL,
   LIVE_URL,
