@@ -57,14 +57,16 @@ jobs:
           grep -q "current-period alerts" scripts/liquidation-long-monitor.js
           grep -q "all liquidation sides" scripts/liquidation-long-monitor.js
           grep -q "one alert per current 5m period" scripts/liquidation-long-monitor.js
-          grep -q "findCurrentMarket" scripts/liquidation-long-monitor.js
-          grep -q "CURRENT · Polymarket 5M" scripts/liquidation-long-monitor.js
+          grep -q "findNextMarket" scripts/liquidation-long-monitor.js
+          grep -q "NEXT · Polymarket 5M" scripts/liquidation-long-monitor.js
+          grep -q "entry from NEXT 5m market" scripts/liquidation-long-monitor.js
+          grep -q "next-market link" scripts/liquidation-long-monitor.js
           grep -q "skipPeriod" scripts/liquidation-long-monitor.js
           grep -q "WIN skips next 5m period" scripts/liquidation-long-monitor.js
           ! grep -q "closed-period alerts only" scripts/liquidation-long-monitor.js
-          ! grep -q "findNextMarket" scripts/liquidation-long-monitor.js
+          ! grep -q "findCurrentMarket" scripts/liquidation-long-monitor.js
           ! grep -q "10M" scripts/liquidation-long-monitor.js
-          echo "Verified MarginPad BTC/SOL all-liquidation monitor with immediate current 5M alerts and WIN skip."
+          echo "Verified MarginPad BTC/SOL all-liquidation monitor with immediate current-period alerts and NEXT 5M market link."
       - name: Continuous MarginPad liquidation monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -85,7 +87,7 @@ jobs:
           while [ "$(date +%s)" -lt "$DEADLINE" ]; do
             REMAINING=$((DEADLINE - $(date +%s)))
             if [ "$REMAINING" -le 0 ]; then break; fi
-            echo "[WATCHDOG] starting MarginPad BTC/SOL all-liquidation monitor with immediate current 5M alerts; remaining=${REMAINING}s"
+            echo "[WATCHDOG] starting MarginPad BTC/SOL all-liquidation monitor with immediate current 5M alerts; NEXT 5M market link; remaining=${REMAINING}s"
             timeout "$REMAINING" node -r ./src/http-timeout.js scripts/liquidation-long-monitor.js 2>&1 | tee -a monitor.log &
             MONITOR_PID=$!
             while kill -0 "$MONITOR_PID" 2>/dev/null; do
