@@ -6,6 +6,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
 const TZ = 'Europe/Kyiv';
+const MIN_LONG_LIQUIDATIONS = 2;
 
 function loadState() {
   try {
@@ -33,11 +34,16 @@ async function processClosedBucket(bucket, state) {
   const rows = aggregateEvents(events, DEFAULT_SYMBOLS, now);
   const winner = selectWinner(rows, bucket);
 
-  if (!winner) {
+  if (!winner || winner.longEvents < MIN_LONG_LIQUIDATIONS) {
     const candidates = rows.filter(row => row.bucket === bucket);
     const max = candidates.length ? Math.max(...candidates.map(row => row.longEvents)) : 0;
-    if (max > 0) console.log(`[5M] ${formatTime(bucket)} tie for max LONG=${max}; no alert`);
-    else console.log(`[5M] ${formatTime(bucket)} no LONG liquidations; no alert`);
+    if (winner && winner.longEvents < MIN_LONG_LIQUIDATIONS) {
+      console.log(`[5M] ${formatTime(bucket)} max LONG=${winner.longEvents} below minimum ${MIN_LONG_LIQUIDATIONS}; no alert`);
+    } else if (max > 0) {
+      console.log(`[5M] ${formatTime(bucket)} tie for max LONG=${max}; no alert`);
+    } else {
+      console.log(`[5M] ${formatTime(bucket)} no LONG liquidations; no alert`);
+    }
     state.lastProcessedBucket = bucket;
     saveState(state);
     return;
@@ -60,7 +66,7 @@ async function processClosedBucket(bucket, state) {
 }
 
 async function main() {
-  console.log(`MarginPad LONG-only liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; alert=unique maximum LONG; ties suppressed; boundary alerts only`);
+  console.log(`MarginPad LONG-only liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; min LONG=${MIN_LONG_LIQUIDATIONS}; alert=unique maximum LONG; ties suppressed; boundary alerts only`);
   const state = loadState();
   let lastObservedBucket = bucketStart(Date.now());
 
