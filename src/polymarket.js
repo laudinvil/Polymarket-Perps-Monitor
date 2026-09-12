@@ -32,15 +32,19 @@ function parseMarketData(market) {
     if (clobTokenIds[index]) tokenIds[name] = String(clobTokenIds[index]);
   });
   const closed = Boolean(market?.closed);
-  const apiResolved = Boolean(market?.resolved);
+  const apiResolved = Boolean(market?.resolved || market?.umaResolutionStatus === 'resolved');
   let winner = null;
-  if ((closed || apiResolved) && outcomes.length === 2 && outcomePrices.length === 2) {
+  if (outcomes.length === 2 && outcomePrices.length === 2) {
     const numericPrices = outcomePrices.map(Number);
     const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.995);
     const otherIndex = resolvedIndex === 0 ? 1 : 0;
     if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.005) {
       winner = String(outcomes[resolvedIndex]).toUpperCase();
     }
+  }
+  if (!winner && Array.isArray(market?.tokens)) {
+    const winningToken = market.tokens.find(token => token?.winner === true);
+    if (winningToken?.outcome) winner = String(winningToken.outcome).toUpperCase();
   }
   const closedTime = market?.closedTime || market?.closedTimeIso || null;
   const resolved = Boolean(winner) || apiResolved;
