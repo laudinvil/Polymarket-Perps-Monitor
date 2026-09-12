@@ -8,6 +8,7 @@ const TZ_LABEL = 'UTC+3';
 const seen = new Map();
 let sportsSlugs = new Set();
 let lastAlertTrade = null;
+let initialized = false;
 
 function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
 function nowMs() { return Date.now(); }
@@ -15,7 +16,7 @@ function tradeUsd(t) { return Number(t.size) * Number(t.price); }
 function tradeKey(t) { return `${t.transactionHash || ''}|${t.conditionId || ''}|${t.asset || ''}|${t.timestamp || ''}|${t.size || ''}|${t.price || ''}`; }
 function fmtUsd(v) { return `$${Math.round(v).toLocaleString('en-US')}`; }
 function fmtTime(ts) { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Kyiv', dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(ts)); }
-function marketUrl(t) { return t.eventSlug ? `https://polymarket.com/event/${t.eventSlug}` : `https://polymarket.com/`; }
+function marketUrl(t) { return t.eventSlug ? `https://polymarket.com/event/${t.eventSlug}` : 'https://polymarket.com/'; }
 
 async function getJson(url) {
   const r = await fetch(url, { headers: { accept: 'application/json' } });
@@ -101,8 +102,14 @@ async function evaluate() {
   if (!best) { log(`STATS: sportsTrades24h=${seen.size}; largest=none`); return; }
   log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`);
   const key = tradeKey(best);
-  if (lastAlertTrade === key) return;
-  if (!lastAlertTrade || Number(best.timestamp) * 1000 > Number(lastAlertTrade.timestamp || 0) || best.usd > Number(lastAlertTrade.usd || 0)) {
+  if (!initialized) {
+    lastAlertTrade = { timestamp: best.timestamp, usd: best.usd, key };
+    initialized = true;
+    log(`BASELINE: ${fmtUsd(best.usd)} | ${best.title} | no startup alert`);
+    return;
+  }
+  if (lastAlertTrade?.key === key) return;
+  if (!lastAlertTrade || best.usd > Number(lastAlertTrade.usd || 0)) {
     const text = [
       'SPORTS WHALE ALERT',
       '',
