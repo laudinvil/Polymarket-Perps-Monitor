@@ -2,9 +2,11 @@ const PERPS_REST = 'https://api.perpetuals.polymarket.com';
 const PERPS_WS = 'wss://ws.perpetuals.polymarket.com/v1/ws';
 const TELEGRAM_API = 'https://api.telegram.org';
 const POLYMARKET_BASE = 'https://polymarket.com/perps/asset';
+const { openPaperBuy, updateMark, logSnapshot } = require('./paper-trading');
 
 const BUCKET_MS = 5 * 60 * 1000;
 const EVAL_MS = 15 * 1000;
+const PAPER_LOG_MS = 60 * 1000;
 const RECONNECT_MS = 3000;
 const MIN_CASCADE_NOTIONAL = 10_000;
 const MIN_ACCELERATION = 1.8;
@@ -21,6 +23,7 @@ let ws = null;
 let stopping = false;
 let reconnectTimer = null;
 let evaluationTimer = null;
+let paperLogTimer = null;
 
 function log(message) {
   console.log(`[${new Date().toISOString()}] ${message}`);
@@ -123,6 +126,7 @@ function ingestTicker(data) {
     if (current.firstPrice === null) current.firstPrice = price;
     current.lastPrice = price;
     state.lastPrice = price;
+    updateMark(iid, price);
   }
 }
 
@@ -235,6 +239,19 @@ async function evaluate(now = Date.now()) {
     return;
   }
   lastAlerts.set(candidate.iid, now);
+
+  const paperPosition = openPaperBuy({
+    iid: candidate.iid,
+    symbol: candidate.symbol,
+    price: candidate.price,
+    signalSide: candidate.signalSide,
+    alertTime: now,
+  });
+  if (!paperPosition) {
+    log(`PAPER BUY skipped: invalid entry price for ${candidate.symbol}.`);
+    return;
+  }
+
   const period = `${new Date(candidate.periodStart).toISOString()} → ${new Date(candidate.periodEnd).toISOString()}`;
   const message = [
     `⚡ ${candidate.symbol} · PERP CASCADE EXHAUSTION`,
@@ -247,11 +264,15 @@ async function evaluate(now = Date.now()) {
     `Price extension: ${formatPct(candidate.extensionPct)}`,
     `Score: ${candidate.score.toFixed(1)}`,
     `Period: ${period} UTC`,
+    `PAPER BUY: $1.00 @ ${candidate.price}`,
+    `Paper position: ${paperPosition.id}`,
     `➡️ Polymarket Perp`,
     marketUrl(candidate.symbol),
   ].join('\n');
   await sendTelegram(message);
   log(`ALERT ${candidate.symbol} ${candidate.signalSide} score=${candidate.score.toFixed(1)} oiDrop=${formatPct(candidate.oiDropPct)} extension=${formatPct(candidate.extensionPct)}`);
+  log(`PAPER BUY ${paperPosition.id}: ${candidate.symbol} $1.00 @ ${candidate.price}; open positions are now tracked from live ticker marks.`);
+  logSnapshot(log);
 }
 
 function scheduleEvaluation() {
@@ -263,6 +284,11 @@ function scheduleEvaluation() {
     if (msIntoBucket < 20_000) evaluate(now).catch(error => log(`Evaluation error: ${error.message}`));
     for (const state of states.values()) pruneBuckets(state, now);
   }, EVAL_MS);
+}
+
+function schedulePaperLogging() {
+  if (paperLogTimer) clearInterval(paperLogTimer);
+  paperLogTimer = setInterval(() => logSnapshot(log), PAPER_LOG_MS);
 }
 
 function connect() {
@@ -309,8 +335,11 @@ function connect() {
 async function main() {
   await loadInstruments();
   scheduleEvaluation();
+  schedulePaperLogging();
   connect();
   log(`Perp Cascade Exhaustion Monitor started: 15m setup, all ${instruments.size} live instruments.`);
+  log('Paper trading: every alert executes a simulated BUY for exactly $1.00 at the alert price; no real order is sent.');
+  log('Paper positions remain open and are marked to live ticker prices until the monitor process stops.');
   log(`Rules: acceleration >= ${MIN_ACCELERATION}x; exhaustion <= ${MAX_EXHAUSTION_RATIO * 100}%; OI drop >= ${MIN_OI_DROP_PCT}%; price extension <= ${MAX_PRICE_EXTENSION_PCT}%; cooldown=${COOLDOWN_MS / 60000}m.`);
   log('Liquidations are not exposed in the public Perps market-data stream; the strategy therefore uses directional flow + OI contraction as a liquidation-pressure proxy.');
 }
@@ -318,7 +347,9 @@ async function main() {
 function shutdown() {
   stopping = true;
   clearInterval(evaluationTimer);
+  clearInterval(paperLogTimer);
   clearTimeout(reconnectTimer);
+  logSnapshot(log);
   try { ws?.close(); } catch {}
 }
 process.on('SIGINT', shutdown);
