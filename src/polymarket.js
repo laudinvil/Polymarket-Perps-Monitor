@@ -31,8 +31,10 @@ function parseMarketData(market) {
     if (Number.isFinite(value)) prices[name] = value;
     if (clobTokenIds[index]) tokenIds[name] = String(clobTokenIds[index]);
   });
+  const closed = Boolean(market?.closed);
+  const apiResolved = Boolean(market?.resolved);
   let winner = null;
-  if (outcomes.length === 2 && outcomePrices.length === 2) {
+  if ((closed || apiResolved) && outcomes.length === 2 && outcomePrices.length === 2) {
     const numericPrices = outcomePrices.map(Number);
     const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.995);
     const otherIndex = resolvedIndex === 0 ? 1 : 0;
@@ -40,9 +42,8 @@ function parseMarketData(market) {
       winner = String(outcomes[resolvedIndex]).toUpperCase();
     }
   }
-  const closed = Boolean(market?.closed);
   const closedTime = market?.closedTime || market?.closedTimeIso || null;
-  const resolved = Boolean(winner) || Boolean(market?.resolved);
+  const resolved = Boolean(winner) || apiResolved;
   return { prices, tokenIds, outcomes, outcomePrices, closed, closedTime, resolved, winner };
 }
 async function findMarketBySlug(slug) {
