@@ -8,13 +8,14 @@ const BUCKET_MS = 5 * 60 * 1000;
 const EVAL_MS = 15 * 1000;
 const PAPER_LOG_MS = 60 * 1000;
 const RECONNECT_MS = 3000;
-const MIN_CASCADE_NOTIONAL = 25_000;
-const MIN_ACCELERATION = 2.5;
-const MAX_EXHAUSTION_RATIO = 0.35;
-const MIN_OI_DROP_PCT = 1.00;
-const MAX_PRICE_EXTENSION_PCT = 0.20;
-const MIN_TRADES = 10;
-const COOLDOWN_MS = 60 * 60 * 1000;
+const MIN_CASCADE_NOTIONAL = 50_000;
+const MIN_ACCELERATION = 3.0;
+const MAX_EXHAUSTION_RATIO = 0.25;
+const MIN_OI_DROP_PCT = 2.00;
+const MAX_PRICE_EXTENSION_PCT = 0.10;
+const MIN_TRADES = 15;
+const MIN_SCORE = 10;
+const COOLDOWN_MS = 90 * 60 * 1000;
 const MAX_BUCKETS_PER_INSTRUMENT = 12;
 
 const instruments = new Map();
@@ -26,9 +27,7 @@ let reconnectTimer = null;
 let evaluationTimer = null;
 let paperLogTimer = null;
 
-function log(message) {
-  console.log(`[${new Date().toISOString()}] ${message}`);
-}
+function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
 
 async function getJson(path) {
   const response = await fetch(`${PERPS_REST}${path}`, { headers: { accept: 'application/json' } });
@@ -49,9 +48,7 @@ async function loadInstruments() {
   log(`Symbols: ${Array.from(instruments.values()).map(x => x.symbol).join(', ')}`);
 }
 
-function bucketStart(ts) {
-  return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
-}
+function bucketStart(ts) { return Math.floor(ts / BUCKET_MS) * BUCKET_MS; }
 
 function getState(iid) {
   let state = states.get(iid);
@@ -90,13 +87,8 @@ function ingestTrade(trade) {
   if (bucket.firstPrice === null) bucket.firstPrice = price;
   bucket.lastPrice = price;
   bucket.trades += 1;
-  if (side === 'long') {
-    bucket.longNotional += notional;
-    bucket.longQty += qty;
-  } else {
-    bucket.shortNotional += notional;
-    bucket.shortQty += qty;
-  }
+  if (side === 'long') { bucket.longNotional += notional; bucket.longQty += qty; }
+  else { bucket.shortNotional += notional; bucket.shortQty += qty; }
 }
 
 function ingestTicker(data) {
@@ -105,8 +97,7 @@ function ingestTicker(data) {
   const price = Number(data?.mark ?? data?.mark_price ?? data?.markPrice ?? data?.last ?? data?.last_price ?? data?.lastPrice);
   if (!Number.isInteger(iid) || !instruments.has(iid)) return;
   const state = getState(iid);
-  const ts = Date.now();
-  const current = getBucket(iid, bucketStart(ts));
+  const current = getBucket(iid, bucketStart(Date.now()));
   if (Number.isFinite(oi)) {
     if (current.oiOpen === null) current.oiOpen = oi;
     current.oiClose = oi;
@@ -150,8 +141,7 @@ function analyzeCandidate(iid, now) {
     const oiBefore = b2.oiClose ?? b2.oiOpen;
     const oiAfter = b3.oiClose ?? b3.oiOpen;
     const oiDropPct = Number.isFinite(oiBefore) && oiBefore > 0 && Number.isFinite(oiAfter)
-      ? ((oiBefore - oiAfter) / oiBefore) * 100
-      : null;
+      ? ((oiBefore - oiAfter) / oiBefore) * 100 : null;
     const extensionPct = priceExtensionPct(flow.side, b2, b3);
     if (flow.c < MIN_CASCADE_NOTIONAL) continue;
     if (acceleration < MIN_ACCELERATION) continue;
@@ -163,21 +153,15 @@ function analyzeCandidate(iid, now) {
       + Math.min(3, (1 - exhaustionRatio) / (1 - MAX_EXHAUSTION_RATIO))
       + Math.min(3, oiDropPct / MIN_OI_DROP_PCT)
       + Math.min(2, Math.max(0, MAX_PRICE_EXTENSION_PCT - extensionPct) / MAX_PRICE_EXTENSION_PCT);
+    if (score < MIN_SCORE) continue;
 
     const candidate = {
-      iid,
-      symbol: instruments.get(iid).symbol,
+      iid, symbol: instruments.get(iid).symbol,
       cascadeSide: flow.side,
       signalSide: flow.side === 'long' ? 'LONG' : 'SHORT',
-      cascadeNotional: flow.c,
-      acceleration,
-      exhaustionRatio,
-      oiDropPct,
-      extensionPct,
+      cascadeNotional: flow.c, acceleration, exhaustionRatio, oiDropPct, extensionPct,
       price: b3.lastPrice ?? b3.firstPrice,
-      periodStart: b1.start,
-      periodEnd: b3.start + BUCKET_MS,
-      score,
+      periodStart: b1.start, periodEnd: b3.start + BUCKET_MS, score,
     };
     if (!best || candidate.score > best.score) best = candidate;
   }
@@ -190,11 +174,7 @@ function formatUsd(value) {
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
 }
-
-function formatPct(value) {
-  return Number.isFinite(value) ? `${value.toFixed(2)}%` : 'n/a';
-}
-
+function formatPct(value) { return Number.isFinite(value) ? `${value.toFixed(2)}%` : 'n/a'; }
 function marketUrl(symbol) {
   const slug = String(symbol || '').trim().toLowerCase().replace(/-usd$/, '');
   return `${POLYMARKET_BASE}/${encodeURIComponent(slug)}`;
@@ -219,7 +199,7 @@ async function evaluate(now = Date.now()) {
   }
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) {
-    log('No strict cascade-exhaustion setup in the latest closed 15m window.');
+    log('No ultra-strict cascade-exhaustion setup in the latest closed 15m window.');
     return;
   }
   const candidate = candidates[0];
@@ -231,10 +211,7 @@ async function evaluate(now = Date.now()) {
   lastAlerts.set(candidate.iid, now);
 
   const paperPosition = openPaperBuy({ iid: candidate.iid, symbol: candidate.symbol, price: candidate.price, signalSide: candidate.signalSide, alertTime: now });
-  if (!paperPosition) {
-    log(`PAPER BUY skipped: invalid entry price for ${candidate.symbol}.`);
-    return;
-  }
+  if (!paperPosition) { log(`PAPER BUY skipped: invalid entry price for ${candidate.symbol}.`); return; }
 
   const period = `${new Date(candidate.periodStart).toISOString()} → ${new Date(candidate.periodEnd).toISOString()}`;
   const message = [
@@ -325,10 +302,10 @@ async function main() {
   scheduleEvaluation();
   schedulePaperLogging();
   connect();
-  log(`Perp Cascade Exhaustion Monitor started: strict 15m setup, all ${instruments.size} live instruments.`);
+  log(`Perp Cascade Exhaustion Monitor started: ultra-strict 15m setup, all ${instruments.size} live instruments.`);
   log('Paper trading: every alert executes a simulated BUY for exactly $1.00 at the alert price; no real order is sent.');
   log('Paper positions remain open and are marked to live ticker prices until the monitor process stops.');
-  log(`Strict rules: notional >= $${MIN_CASCADE_NOTIONAL.toLocaleString()}; acceleration >= ${MIN_ACCELERATION}x; exhaustion <= ${MAX_EXHAUSTION_RATIO * 100}%; OI drop >= ${MIN_OI_DROP_PCT}%; price extension <= ${MAX_PRICE_EXTENSION_PCT}%; trades >= ${MIN_TRADES}; cooldown=${COOLDOWN_MS / 60000}m.`);
+  log(`Ultra-strict rules: notional >= $${MIN_CASCADE_NOTIONAL.toLocaleString()}; acceleration >= ${MIN_ACCELERATION}x; exhaustion <= ${MAX_EXHAUSTION_RATIO * 100}%; OI drop >= ${MIN_OI_DROP_PCT}%; price extension <= ${MAX_PRICE_EXTENSION_PCT}%; trades >= ${MIN_TRADES}; score >= ${MIN_SCORE}; cooldown=${COOLDOWN_MS / 60000}m.`);
   log('Liquidations are not exposed in the public Perps market-data stream; the strategy therefore uses directional flow + OI contraction as a liquidation-pressure proxy.');
 }
 
