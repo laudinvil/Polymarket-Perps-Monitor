@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   monitor:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
