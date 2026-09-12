@@ -28,7 +28,7 @@ function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
   } catch {
-    return { lastAlertPeriod: null, paperTrade: null };
+    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null };
   }
 }
 
@@ -85,7 +85,7 @@ async function getPaperEntry(currentMarket, outcome) {
   return { market: currentMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
-async function settlePaperTrade(trade, now) {
+async function settlePaperTrade(trade, state, now) {
   if (!trade) return false;
   const market = await getPaperMarket(trade.symbol, trade.marketStart);
   if (!market || !market.resolved || !market.winner) {
@@ -119,6 +119,13 @@ async function settlePaperTrade(trade, now) {
   trade.result = result;
   trade.winner = winner;
   trade.pnl = pnl;
+
+  if (win) {
+    const nextPeriod = periodStart(now);
+    state.skipPeriod = nextPeriod;
+    console.log(`[10M] PAPER WIN; skipping next 10M period=${formatTime(nextPeriod)}`);
+  }
+
   return true;
 }
 
@@ -139,6 +146,10 @@ async function alertForEvent(event, state, closedPeriod) {
   const currentPeriod = periodStart(ts);
 
   if (currentPeriod !== closedPeriod) return false;
+  if (state.skipPeriod !== null && Number(state.skipPeriod) === closedPeriod) {
+    console.log(`[10M] SUPPRESSED WIN cooldown period=${formatTime(closedPeriod)} symbol=${symbol}`);
+    return false;
+  }
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) {
     console.log(`[10M] SUPPRESSED duplicate period=${formatTime(currentPeriod)} symbol=${symbol}`);
     return false;
@@ -191,7 +202,7 @@ async function alertForEvent(event, state, closedPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from CURRENT 5m market; CLOB midpoint entry; result replies to source alert; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from CURRENT 5m market; CLOB midpoint entry; WIN skips next 10m period; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
   const seenEvents = new Set();
 
@@ -199,7 +210,7 @@ async function main() {
     try {
       const now = Date.now();
       if (state.paperTrade && !state.paperTrade.settled) {
-        if (await settlePaperTrade(state.paperTrade, now)) saveState(state);
+        if (await settlePaperTrade(state.paperTrade, state, now)) saveState(state);
       }
 
       const events = await fetchFeed(DEFAULT_SYMBOLS);
@@ -211,6 +222,12 @@ async function main() {
 
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < closedPeriod) {
         state.lastAlertPeriod = null;
+        saveState(state);
+      }
+
+      if (state.skipPeriod !== null && Number(state.skipPeriod) < closedPeriod) {
+        console.log(`[10M] WIN cooldown completed period=${formatTime(state.skipPeriod)}`);
+        state.skipPeriod = null;
         saveState(state);
       }
 
@@ -227,7 +244,7 @@ async function main() {
         const ts = normalizeTs(event?.ts);
         return ts && periodStart(ts) === closedPeriod;
       }).length;
-      console.log(`[10M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
+      console.log(`[10M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.skipPeriod === closedPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) {
       console.error(`[10M] monitor error: ${error.message}`);
     }
