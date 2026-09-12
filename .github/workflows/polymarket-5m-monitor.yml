@@ -1,0 +1,107 @@
+name: Polymarket 5M Monitor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/polymarket-5m-monitor.yml'
+      - 'scripts/imbalance-all-timeframes.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+
+concurrency:
+  group: polymarket-5m-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Restore 5M monitor state
+        run: |
+          set -euo pipefail
+          git fetch origin monitor-status:monitor-status || true
+          if git cat-file -e monitor-status:.monitor-state.json 2>/dev/null; then
+            git show monitor-status:.monitor-state.json > .monitor-state.json
+            echo "Restored 5M monitor state."
+          else
+            rm -f .monitor-state.json
+            echo "No saved 5M monitor state; monitor will start clean."
+          fi
+          rm -f monitor-history.log
+
+      - name: Verify 5M monitor source
+        run: |
+          set -e
+          node --check scripts/imbalance-all-timeframes.js
+          node --check src/polymarket.js
+          node --check src/telegram.js
+          grep -q "PAPER_STAKE_USD = 1" scripts/imbalance-all-timeframes.js
+          grep -q "replyToMessageId" scripts/imbalance-all-timeframes.js
+          echo "Verified 5M unanimous monitor with $1 paper trading and outcome reply."
+
+      - name: Continuous 5M monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          START_TS=$(date +%s)
+          DEADLINE=$((START_TS + 21000))
+          MONITOR_PID=""
+          stop_monitor() {
+            if [ -n "$MONITOR_PID" ]; then
+              kill "$MONITOR_PID" 2>/dev/null || true
+              wait "$MONITOR_PID" 2>/dev/null || true
+              MONITOR_PID=""
+            fi
+          }
+          trap 'stop_monitor' EXIT TERM INT
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            REMAINING=$((DEADLINE - $(date +%s)))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            echo "[WATCHDOG] starting Polymarket 5M monitor; remaining=${REMAINING}s"
+            timeout "$REMAINING" node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor-history.log &
+            MONITOR_PID=$!
+            while kill -0 "$MONITOR_PID" 2>/dev/null; do
+              sleep 60
+              tail -n 500 monitor-history.log > monitor-live.log 2>/dev/null || true
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add .monitor-state.json 2>/dev/null || true
+              git add -f monitor-live.log 2>/dev/null || true
+              git commit -m "Update 5M paper trading state" 2>/dev/null || true
+              git push --force origin HEAD:monitor-status || true
+            done
+            wait "$MONITOR_PID" || true
+            MONITOR_PID=""
+            if [ "$(date +%s)" -lt "$DEADLINE" ]; then
+              echo "[WATCHDOG] 5M monitor stopped unexpectedly; restarting without resetting state"
+              sleep 5
+            fi
+          done
+          echo "[WATCHDOG] 355-minute 5M monitor window completed"
+
+      - name: Upload 5M monitor log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: polymarket-5m-monitor-log
+          path: monitor-history.log
+          if-no-files-found: ignore
