@@ -2,10 +2,24 @@ name: Sports Whale 24H Monitor
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 jobs:
   monitor:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Sports Whale 24H Monitor disabled"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run sports whale monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: timeout 240 node scripts/sports-whale-24h-monitor.js 2>&1 | tee sports-whale-24h.log
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        with:
+          name: sports-whale-24h-log
+          path: sports-whale-24h.log
