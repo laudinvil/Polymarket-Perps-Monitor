@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchFeed, eventKey, normalizeTs, DEFAULT_SYMBOLS, POLL_MS } = require('../src/liquidation-monitor');
-const { findNextMarket, findMarketByEpoch } = require('../src/polymarket');
+const { findNextMarket } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
@@ -46,18 +46,18 @@ function liquidationSide(event) {
   return side.toUpperCase() || 'UNKNOWN';
 }
 
-function normalizeOutcome(value) {
-  const text = String(value || '').trim().toUpperCase();
-  return text === 'UP' || text === 'DOWN' ? text : null;
+function paperOutcomeFromLiquidation(event) {
+  const side = liquidationSide(event);
+  return side === 'SHORT' ? 'DOWN' : side === 'LONG' ? 'UP' : null;
 }
 
-function paperOutcomeFromLiquidation(event) {
-  return liquidationSide(event) === 'SHORT' ? 'DOWN' : liquidationSide(event) === 'LONG' ? 'UP' : null;
+async function getPaperMarket(symbol, marketStart) {
+  return findNextMarket(symbol, marketStart - 1, '5m');
 }
 
 async function getPaperEntry(symbol, ts, outcome) {
   const marketStart = Math.floor(ts / 300000) * 300000;
-  const market = await findMarketByEpoch(symbol, marketStart, '5m');
+  const market = await getPaperMarket(symbol, marketStart);
   if (!market) return null;
   const price = Number(market.prices?.[outcome]);
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
@@ -66,10 +66,10 @@ async function getPaperEntry(symbol, ts, outcome) {
 
 async function settlePaperTrade(trade, now) {
   if (!trade || now < trade.marketStart + 300000) return false;
-  const market = await findMarketByEpoch(trade.symbol, trade.marketStart, '5m');
-  if (!market || !market.resolved || !normalizeOutcome(market.winner)) return false;
+  const market = await getPaperMarket(trade.symbol, trade.marketStart);
+  if (!market || !market.resolved || !market.winner) return false;
 
-  const winner = normalizeOutcome(market.winner);
+  const winner = String(market.winner).toUpperCase();
   const win = winner === trade.outcome;
   const payout = win ? PAPER_USD / trade.entryPrice : 0;
   const pnl = payout - PAPER_USD;
@@ -84,7 +84,7 @@ async function settlePaperTrade(trade, now) {
     `P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
     `Period: ${formatTime(trade.marketStart)} → ${formatTime(trade.marketStart + 300000)} UTC+3`,
     `➡️ MARKET`,
-    trade.market.url,
+    market.url,
   ].join('\n');
 
   await sendTelegramMessage(message);
