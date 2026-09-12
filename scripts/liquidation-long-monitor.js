@@ -8,15 +8,20 @@ const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
 const TZ = 'Europe/Kyiv';
 const PERIOD_MS = 10 * 60 * 1000;
 const PAPER_USD = 1;
+const PERIOD_ANCHOR_MINUTE = 5;
 
-// 10-minute periods are anchored to minutes 05, 15, 25, 35, 45, 55 (UTC+3).
 function periodStart(ts) {
-  const d = new Date(Number(ts));
-  const minutes = d.getUTCMinutes();
-  const anchoredMinute = 5 + Math.floor((minutes - 5 + 60) / 10) * 10;
+  const n = Number(ts);
+  if (!Number.isFinite(n)) return NaN;
+  const d = new Date(n);
+  const utcMinutes = d.getUTCMinutes();
+  const utcHour = d.getUTCHours();
+  const totalMinutes = utcHour * 60 + utcMinutes;
+  const anchor = PERIOD_ANCHOR_MINUTE;
+  const startTotal = Math.floor((totalMinutes - anchor) / 10) * 10 + anchor;
   const start = new Date(d);
-  start.setUTCMinutes(anchoredMinute, 0, 0);
-  if (minutes < 5) start.setUTCHours(start.getUTCHours() - 1, 55, 0, 0);
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCMinutes(startTotal, 0, 0);
   return start.getTime();
 }
 
@@ -124,9 +129,13 @@ async function alertForEvent(event, state) {
   const ts = normalizeTs(event.ts);
   const symbol = String(event.symbol || '').toUpperCase();
   const currentPeriod = periodStart(ts);
-  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) return false;
 
-  // The paper trade is opened in the NEXT 5m Polymarket market, not the market containing the liquidation.
+  // Hard global one-alert-per-10m-period gate.
+  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) {
+    console.log(`[10M] SUPPRESSED duplicate period=${formatTime(currentPeriod)} symbol=${symbol}`);
+    return false;
+  }
+
   const nextMarket = await findNextMarket(symbol, ts, '5m');
   const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((Math.floor(ts / 300000) * 300000 + 300000) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(event);
@@ -148,19 +157,31 @@ async function alertForEvent(event, state) {
     nextUrl,
   ].join('\n');
 
-  const sentMessage = await sendTelegramMessage(message);
+  // Reserve the period before sending so a concurrent loop/process cannot
+  // logically pass the gate after this point in the same state file.
   state.lastAlertPeriod = currentPeriod;
-  if (paperTrade) {
-    state.paperTrade = {
-      ...paperTrade,
-      symbol,
-      alertTs: ts,
-      sourceMessageId: Number(sentMessage?.message_id),
-      settled: false,
-    };
-  }
   saveState(state);
-  console.log(`[10M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${sentMessage?.message_id || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)}`);
+
+  try {
+    const sentMessage = await sendTelegramMessage(message);
+    if (paperTrade) {
+      state.paperTrade = {
+        ...paperTrade,
+        symbol,
+        alertTs: ts,
+        sourceMessageId: Number(sentMessage?.message_id),
+        settled: false,
+      };
+    }
+    saveState(state);
+  } catch (error) {
+    // Do not reopen the period: one-alert-per-period is stricter than retrying
+    // and risking a duplicate Telegram alert.
+    console.error(`[10M] Telegram send failed; period remains reserved: ${error.message}`);
+    return false;
+  }
+
+  console.log(`[10M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)}`);
   return true;
 }
 
