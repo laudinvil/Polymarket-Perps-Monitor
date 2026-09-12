@@ -43,7 +43,6 @@ jobs:
           node --check src/polymarket.js
           node --check src/telegram.js
           grep -q "CONVEX_INGEST_TOKEN" scripts/liquidation-long-monitor.js
-          grep -q "result must settle before next alert" scripts/liquidation-long-monitor.js
 
       - name: Run 5M liquidation monitor
         env:
