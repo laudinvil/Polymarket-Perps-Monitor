@@ -8,11 +8,12 @@ const BUCKET_MS = 5 * 60 * 1000;
 const EVAL_MS = 15 * 1000;
 const PAPER_LOG_MS = 60 * 1000;
 const RECONNECT_MS = 3000;
-const MIN_CASCADE_NOTIONAL = 10_000;
-const MIN_ACCELERATION = 1.8;
-const MAX_EXHAUSTION_RATIO = 0.50;
-const MIN_OI_DROP_PCT = 0.50;
-const MAX_PRICE_EXTENSION_PCT = 0.35;
+const MIN_CASCADE_NOTIONAL = 25_000;
+const MIN_ACCELERATION = 2.5;
+const MAX_EXHAUSTION_RATIO = 0.35;
+const MIN_OI_DROP_PCT = 1.00;
+const MAX_PRICE_EXTENSION_PCT = 0.20;
+const MIN_TRADES = 10;
 const COOLDOWN_MS = 60 * 60 * 1000;
 const MAX_BUCKETS_PER_INSTRUMENT = 12;
 
@@ -65,18 +66,7 @@ function getBucket(iid, start) {
   const state = getState(iid);
   let bucket = state.buckets.get(start);
   if (!bucket) {
-    bucket = {
-      start,
-      longNotional: 0,
-      shortNotional: 0,
-      longQty: 0,
-      shortQty: 0,
-      trades: 0,
-      firstPrice: null,
-      lastPrice: null,
-      oiOpen: null,
-      oiClose: null,
-    };
+    bucket = { start, longNotional: 0, shortNotional: 0, longQty: 0, shortQty: 0, trades: 0, firstPrice: null, lastPrice: null, oiOpen: null, oiClose: null };
     state.buckets.set(start, bucket);
   }
   return bucket;
@@ -145,7 +135,7 @@ function analyzeCandidate(iid, now) {
   const starts = [currentStart - 3 * BUCKET_MS, currentStart - 2 * BUCKET_MS, currentStart - BUCKET_MS];
   const [b1, b2, b3] = starts.map(start => state.buckets.get(start));
   if (!b1 || !b2 || !b3) return null;
-  if (b1.trades + b2.trades + b3.trades < 6) return null;
+  if (b1.trades + b2.trades + b3.trades < MIN_TRADES) return null;
 
   const directions = [
     { side: 'long', a: b1.longNotional, c: b2.longNotional, e: b3.longNotional },
@@ -215,8 +205,7 @@ async function sendTelegram(text) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) throw new Error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required');
   const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: false }),
   });
   if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
@@ -230,7 +219,7 @@ async function evaluate(now = Date.now()) {
   }
   candidates.sort((a, b) => b.score - a.score);
   if (candidates.length === 0) {
-    log('No cascade-exhaustion setup in the latest closed 15m window.');
+    log('No strict cascade-exhaustion setup in the latest closed 15m window.');
     return;
   }
   const candidate = candidates[0];
@@ -241,13 +230,7 @@ async function evaluate(now = Date.now()) {
   }
   lastAlerts.set(candidate.iid, now);
 
-  const paperPosition = openPaperBuy({
-    iid: candidate.iid,
-    symbol: candidate.symbol,
-    price: candidate.price,
-    signalSide: candidate.signalSide,
-    alertTime: now,
-  });
+  const paperPosition = openPaperBuy({ iid: candidate.iid, symbol: candidate.symbol, price: candidate.price, signalSide: candidate.signalSide, alertTime: now });
   if (!paperPosition) {
     log(`PAPER BUY skipped: invalid entry price for ${candidate.symbol}.`);
     return;
@@ -263,6 +246,7 @@ async function evaluate(now = Date.now()) {
     `Exhaustion: ${(candidate.exhaustionRatio * 100).toFixed(0)}% of peak`,
     `OI drop: ${formatPct(candidate.oiDropPct)}`,
     `Price extension: ${formatPct(candidate.extensionPct)}`,
+    `Trades: ${b3TradeCount(candidate)}`,
     `Score: ${candidate.score.toFixed(1)}`,
     `Period: ${period} UTC`,
     `PAPER BUY: $1.00 @ ${candidate.price}`,
@@ -274,6 +258,12 @@ async function evaluate(now = Date.now()) {
   log(`ALERT ${candidate.symbol} ${candidate.signalSide} score=${candidate.score.toFixed(1)} oiDrop=${formatPct(candidate.oiDropPct)} extension=${formatPct(candidate.extensionPct)}`);
   log(`PAPER BUY ${paperPosition.id}: ${candidate.symbol} $1.00 @ ${candidate.price}; open positions are now tracked from live ticker marks.`);
   logSnapshot(log);
+}
+
+function b3TradeCount(candidate) {
+  const state = states.get(candidate.iid);
+  const bucket = state?.buckets.get(candidate.periodEnd - BUCKET_MS);
+  return bucket?.trades ?? 0;
 }
 
 function scheduleEvaluation() {
@@ -312,11 +302,8 @@ function connect() {
         if (!Array.isArray(frame.data)) return;
         for (const trade of frame.data) ingestTrade(trade);
       } else if (channel.startsWith('tickers::')) {
-        if (Array.isArray(frame.data)) {
-          for (const ticker of frame.data) ingestTicker(ticker);
-        } else {
-          ingestTicker(frame.data);
-        }
+        if (Array.isArray(frame.data)) frame.data.forEach(ingestTicker);
+        else ingestTicker(frame.data);
       }
     };
     ws.onerror = () => log('Perps WebSocket error.');
@@ -338,10 +325,10 @@ async function main() {
   scheduleEvaluation();
   schedulePaperLogging();
   connect();
-  log(`Perp Cascade Exhaustion Monitor started: 15m setup, all ${instruments.size} live instruments.`);
+  log(`Perp Cascade Exhaustion Monitor started: strict 15m setup, all ${instruments.size} live instruments.`);
   log('Paper trading: every alert executes a simulated BUY for exactly $1.00 at the alert price; no real order is sent.');
   log('Paper positions remain open and are marked to live ticker prices until the monitor process stops.');
-  log(`Rules: acceleration >= ${MIN_ACCELERATION}x; exhaustion <= ${MAX_EXHAUSTION_RATIO * 100}%; OI drop >= ${MIN_OI_DROP_PCT}%; price extension <= ${MAX_PRICE_EXTENSION_PCT}%; cooldown=${COOLDOWN_MS / 60000}m.`);
+  log(`Strict rules: notional >= $${MIN_CASCADE_NOTIONAL.toLocaleString()}; acceleration >= ${MIN_ACCELERATION}x; exhaustion <= ${MAX_EXHAUSTION_RATIO * 100}%; OI drop >= ${MIN_OI_DROP_PCT}%; price extension <= ${MAX_PRICE_EXTENSION_PCT}%; trades >= ${MIN_TRADES}; cooldown=${COOLDOWN_MS / 60000}m.`);
   log('Liquidations are not exposed in the public Perps market-data stream; the strategy therefore uses directional flow + OI contraction as a liquidation-pressure proxy.');
 }
 
