@@ -1,8 +1,7 @@
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const GAMMA_API = 'https://gamma-api.polymarket.com/events';
-const POLL_MS = 2 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const ALERT_RECENCY_MS = 330 * 1000;
+const ALERT_RECENCY_MS = 300 * 1000;
 const PAGE_SIZE = 10000;
 const EVENT_BATCH_SIZE = 50;
 const TZ_LABEL = 'UTC+3';
@@ -33,7 +32,9 @@ async function loadSportsEvents() {
     let offset = 0;
     let tagCount = 0;
     for (let page = 0; page < 10; page++) {
-      const url = `${GAMMA_API}?closed=false&limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
+      // Do not restrict to open events: a bet remains relevant for the rolling
+      // 24h window even when its event resolved during that window.
+      const url = `${GAMMA_API}?limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
       const data = await getJson(url);
       const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
       for (const e of events) {
@@ -45,7 +46,7 @@ async function loadSportsEvents() {
     counts[tag] = tagCount;
   }
   sportsEventIds = ids;
-  log(`SPORTS EVENTS: ${sportsEventIds.size} unique OPEN event IDs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
+  log(`SPORTS EVENTS: ${sportsEventIds.size} unique events in 24h scope; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
 }
 
 async function fetchRecentTrades() {
@@ -110,17 +111,28 @@ async function evaluate() {
   const trades = await fetchRecentTrades();
   ingest(trades);
   const best = largest();
-  if (!best) { log(`STATS: sportsTrades24h=${seen.size}; largest=none`); return; }
+
+  if (!best) {
+    log(`STATS: sportsTrades24h=${seen.size}; largest=none`);
+    return;
+  }
+
   const bestAgeMs = nowMs() - Number(best.timestamp) * 1000;
   log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s`);
+
+  // Alert only when the current rolling 24h maximum is a newly placed trade.
+  // The workflow runs once every 5 minutes, so this prevents the same whale
+  // from being alerted again on the next scheduled run.
   if (bestAgeMs > ALERT_RECENCY_MS) {
     log(`NO ALERT: current 24h maximum is older than ${ALERT_RECENCY_MS / 1000}s.`);
     return;
   }
+
   const key = tradeKey(best);
   if (lastAlertTrade === key) return;
+
   const text = [
-    'SPORTS WHALE ALERT',
+    '🐋 SPORTS WHALE · 24H',
     '',
     `Event: ${best.title || best.eventSlug || 'Unknown'}`,
     `Market: ${best.outcome || 'Unknown'}`,
@@ -129,17 +141,26 @@ async function evaluate() {
     `Price: ${Number(best.price).toFixed(4)}`,
     `Time: ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`,
     '',
-    'Rolling window: 24H',
+    'Rolling window: last 24 hours',
     `Polymarket: ${marketUrl(best)}`
   ].join('\n');
+
   await sendTelegram(text);
   lastAlertTrade = key;
-  log(`ALERT: ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome}`);
+  log(`ALERT: NEW 24H WHALE ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome}`);
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; open events only; event-scoped trades; paginated trade scan.');
-  try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); }
-  setInterval(async () => { try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); } }, POLL_MS);
+  log('Sports Whale 24H monitor started; rolling window=24h; sports + esports; resolved events included; one scan per workflow run.');
+  try {
+    await evaluate();
+  } catch (e) {
+    log(`EVALUATION ERROR: ${e.message}`);
+    process.exitCode = 1;
+  }
 }
-main().catch(e => { log(`FATAL: ${e.stack || e.message}`); process.exitCode = 1; });
+
+main().catch(e => {
+  log(`FATAL: ${e.stack || e.message}`);
+  process.exitCode = 1;
+});
