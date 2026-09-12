@@ -4,11 +4,11 @@ const POLL_MS = 2 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const ALERT_RECENCY_MS = 150 * 1000;
 const PAGE_SIZE = 10000;
-const MAX_PAGES = 2;
+const EVENT_BATCH_SIZE = 50;
 const TZ_LABEL = 'UTC+3';
 const SPORT_TAGS = ['sports', 'esports'];
 const seen = new Map();
-let sportsSlugs = new Set();
+let sportsEventIds = new Set();
 let lastAlertTrade = null;
 
 function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
@@ -27,42 +27,41 @@ async function getJson(url) {
 
 async function loadSportsEvents() {
   const cutoff = new Date(nowMs() - WINDOW_MS).toISOString();
-  const slugs = new Set();
+  const ids = new Set();
   const counts = {};
   for (const tag of SPORT_TAGS) {
     let offset = 0;
     let tagCount = 0;
     for (let page = 0; page < 10; page++) {
-      const url = `${GAMMA_API}?closed=false&limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
+      const url = `${GAMMA_API}?limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
       const data = await getJson(url);
       const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
-      for (const e of events) if (e?.slug) { slugs.add(String(e.slug)); tagCount++; }
+      for (const e of events) {
+        if (e?.id != null) { ids.add(Number(e.id)); tagCount++; }
+      }
       if (events.length < 500) break;
       offset += 500;
     }
     counts[tag] = tagCount;
   }
-  sportsSlugs = slugs;
-  log(`SPORTS EVENTS: ${sportsSlugs.size} unique active/recent event slugs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
+  sportsEventIds = ids;
+  log(`SPORTS EVENTS: ${sportsEventIds.size} unique event IDs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
 }
 
 async function fetchRecentTrades() {
-  const cutoff = Math.floor((nowMs() - WINDOW_MS) / 1000);
+  const start = Math.floor((nowMs() - WINDOW_MS) / 1000);
+  const end = Math.floor(nowMs() / 1000);
+  const ids = [...sportsEventIds];
   const all = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const offset = page * PAGE_SIZE;
-    const url = `${DATA_API}?limit=${PAGE_SIZE}&offset=${offset}`;
+  for (let i = 0; i < ids.length; i += EVENT_BATCH_SIZE) {
+    const batch = ids.slice(i, i + EVENT_BATCH_SIZE);
+    const url = `${DATA_API}?eventId=${batch.join(',')}&start=${start}&end=${end}&limit=${PAGE_SIZE}&offset=0`;
     const data = await getJson(url);
     const trades = Array.isArray(data) ? data : [];
-    if (!trades.length) break;
-    let oldest = Infinity;
     for (const t of trades) {
       const ts = Number(t.timestamp);
-      if (!Number.isFinite(ts)) continue;
-      oldest = Math.min(oldest, ts);
-      if (ts >= cutoff && sportsSlugs.has(String(t.eventSlug || ''))) all.push(t);
+      if (Number.isFinite(ts) && ts >= start && ts <= end) all.push(t);
     }
-    if (oldest < cutoff || trades.length < PAGE_SIZE) break;
   }
   return all;
 }
@@ -130,7 +129,7 @@ async function evaluate() {
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports.');
+  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; event-scoped trades.');
   try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); }
   setInterval(async () => { try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); } }, POLL_MS);
 }
