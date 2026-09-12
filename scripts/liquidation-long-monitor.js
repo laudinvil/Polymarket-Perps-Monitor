@@ -48,9 +48,12 @@ async function loadPersistentPaperTrade(state) {
     result: trade.result,
     winner: trade.winner,
     pnl: trade.pnl,
+    closedPrice: trade.closedPrice,
+    closeTs: trade.closeTs,
+    closePnl: trade.closePnl,
   };
   saveState(state);
-  console.log(`[5M] RESTORED OPEN PAPER TRADE symbol=${trade.symbol} market=${formatTime(trade.marketStart)} outcome=${trade.outcome}`);
+  console.log(`[5M] RESTORED PAPER TRADE symbol=${trade.symbol} market=${formatTime(trade.marketStart)} outcome=${trade.outcome} closed=${trade.closedPrice ?? 'N/A'} settled=${Boolean(trade.settled)}`);
   return true;
 }
 
@@ -62,7 +65,9 @@ async function persistPaperTrade(trade) {
       symbol: trade.symbol, marketStart: trade.marketStart, outcome: trade.outcome,
       entryPrice: trade.entryPrice, shares: trade.shares, alertTs: trade.alertTs,
       sourceMessageId: Number.isInteger(trade.sourceMessageId) ? trade.sourceMessageId : undefined,
-      settled: Boolean(trade.settled), result: trade.result, winner: trade.winner, pnl: trade.pnl, updatedAt: Date.now(),
+      settled: Boolean(trade.settled), result: trade.result, winner: trade.winner, pnl: trade.pnl,
+      closedPrice: trade.closedPrice, closeTs: trade.closeTs, closePnl: trade.closePnl,
+      updatedAt: Date.now(),
     }}),
   });
 }
@@ -104,26 +109,74 @@ async function getPaperEntry(nextMarket, outcome) {
 }
 
 async function settlePaperTrade(trade, state) {
-  if (!trade) return false;
+  if (!trade || trade.settled) return false;
+  const now = Date.now();
+  const endTs = Number(trade.marketStart) + PERIOD_MS;
+  if (!Number.isFinite(endTs) || now < endTs) return false;
+
   const market = await findMarketByEpoch(trade.symbol, trade.marketStart, '5m');
-  if (!market || !market.resolved || !market.winner) {
-    console.log(`[5M] PAPER settlement pending symbol=${trade.symbol} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'} closed=${market?.closed ?? 'N/A'}`);
+  if (!market) {
+    console.log(`[5M] PAPER market lookup pending symbol=${trade.symbol} marketStart=${formatTime(trade.marketStart)}`);
     return false;
+  }
+
+  let changed = false;
+
+  // First close the paper position at the market end using the CLOB midpoint.
+  // This is independent from official resolution, which may appear later.
+  if (!Number.isFinite(Number(trade.closedPrice))) {
+    const closePrice = await findClobMidpoint(market, trade.outcome);
+    if (Number.isFinite(closePrice) && closePrice >= 0 && closePrice <= 1) {
+      const value = trade.shares * closePrice;
+      const closePnl = value - PAPER_USD;
+      trade.closedPrice = closePrice;
+      trade.closeTs = endTs;
+      trade.closePnl = closePnl;
+      changed = true;
+
+      const closeMessage = [
+        `📊 PAPER CLOSE · ${trade.symbol} · 5M`,
+        `BUY $${PAPER_USD.toFixed(2)} ${trade.outcome} @ ${trade.entryPrice.toFixed(4)}`,
+        `CLOSE @ ${closePrice.toFixed(4)}`,
+        `Value: $${value.toFixed(2)}`,
+        `P&L: ${closePnl >= 0 ? '+' : ''}$${closePnl.toFixed(2)}`,
+        `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`,
+        `➡️ MARKET`,
+        market.url,
+      ].join('\n');
+      const options = Number.isInteger(trade.sourceMessageId) ? { replyToMessageId: trade.sourceMessageId } : {};
+      await sendTelegramMessage(closeMessage, options);
+      console.log(`[5M] PAPER CLOSE symbol=${trade.symbol} outcome=${trade.outcome} entry=${trade.entryPrice} close=${closePrice} pnl=${closePnl}`);
+    } else {
+      console.log(`[5M] PAPER close price pending symbol=${trade.symbol} marketStart=${formatTime(trade.marketStart)} outcome=${trade.outcome}`);
+    }
+  }
+
+  if (changed) {
+    await persistPaperTrade(trade);
+    saveState(state);
+  }
+
+  // Official resolution can lag the market end. Keep the trade open until winner is known.
+  if (!market.resolved || !market.winner) {
+    console.log(`[5M] PAPER final settlement pending symbol=${trade.symbol} marketStart=${formatTime(trade.marketStart)} resolved=${market.resolved ?? 'N/A'} winner=${market.winner ?? 'N/A'} closed=${trade.closedPrice ?? 'N/A'}`);
+    return changed;
   }
 
   const winner = String(market.winner).toUpperCase();
   const win = winner === trade.outcome;
-  const payout = win ? PAPER_USD / trade.entryPrice : 0;
+  const payout = win ? trade.shares : 0;
   const pnl = payout - PAPER_USD;
   const result = win ? 'WIN' : 'LOSS';
   const message = [
-    `📊 PAPER RESULT · ${trade.symbol} · 5M`,
+    `🏁 FINAL PAPER RESULT · ${trade.symbol} · 5M`,
     `BUY $${PAPER_USD.toFixed(2)} ${trade.outcome} @ ${trade.entryPrice.toFixed(4)}`,
+    ...(Number.isFinite(Number(trade.closedPrice)) ? [`CLOSE @ ${Number(trade.closedPrice).toFixed(4)}`, `Close P&L: ${Number(trade.closePnl).toFixed(2) >= 0 ? '+' : ''}$${Number(trade.closePnl).toFixed(2)}`] : []),
     `Result: ${result}`,
     `Winner: ${winner}`,
     `Payout: $${payout.toFixed(2)}`,
-    `P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
-    `Period: ${formatTime(trade.marketStart)} → ${formatTime(trade.marketStart + PERIOD_MS)} UTC+3`,
+    `Final P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
+    `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`,
     `➡️ MARKET`,
     market.url,
   ].join('\n');
@@ -134,10 +187,11 @@ async function settlePaperTrade(trade, state) {
   trade.winner = winner;
   trade.pnl = pnl;
   if (win) {
-    state.skipPeriod = trade.marketStart + PERIOD_MS;
+    state.skipPeriod = endTs;
     console.log(`[5M] PAPER WIN; skipping next 5M period=${formatTime(state.skipPeriod)}`);
   }
   await persistPaperTrade(trade);
+  saveState(state);
   return true;
 }
 
@@ -200,8 +254,13 @@ async function alertForEvent(event, state, currentPeriod) {
   return true;
 }
 
+function isCurrentPeriodEvent(event, currentPeriod) {
+  const ts = normalizeTs(event?.ts);
+  return Boolean(ts && periodStart(ts) === currentPeriod);
+}
+
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; current-period alerts; one alert per current 5m period; persistent Convex paper state; result must settle before next alert; WIN skips next 5m period; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; current-period alerts; one alert per current 5m period; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState();
   const seenEvents = new Set();
 
@@ -238,7 +297,7 @@ async function main() {
         if (await alertForEvent(event, state, currentPeriod)) break;
       }
 
-      const totalCurrent = events.filter(event => { const ts = normalizeTs(event?.ts); return ts && periodStart(ts) === currentPeriod; }).length;
+      const totalCurrent = events.filter(event => isCurrentPeriodEvent(event, currentPeriod)).length;
       console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'DONE_CURRENT_PERIOD' : 'WAITING_CURRENT_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) {
       console.error(`[5M] monitor error: ${error.message}`);
