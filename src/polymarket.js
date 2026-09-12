@@ -33,9 +33,12 @@ function parseMarketData(market) {
   });
   let winner = null;
   if (outcomes.length === 2 && outcomePrices.length === 2) {
-    const resolvedIndex = outcomePrices.findIndex(value => Number(value) >= 0.999);
+    const numericPrices = outcomePrices.map(Number);
+    const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.95);
     const otherIndex = resolvedIndex === 0 ? 1 : 0;
-    if (resolvedIndex >= 0 && Number(outcomePrices[otherIndex]) <= 0.001) winner = String(outcomes[resolvedIndex]).toUpperCase();
+    if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.05) {
+      winner = String(outcomes[resolvedIndex]).toUpperCase();
+    }
   }
   const closed = Boolean(market?.closed);
   const closedTime = market?.closedTime || market?.closedTimeIso || null;
