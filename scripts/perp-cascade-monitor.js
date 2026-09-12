@@ -279,11 +279,17 @@ function connect() {
     ws.onmessage = event => {
       let frame;
       try { frame = JSON.parse(String(event.data)); } catch { return; }
-      if (!frame || !frame.ch || !Array.isArray(frame.data)) return;
-      if (String(frame.ch).startsWith('trades::')) {
+      if (!frame || !frame.ch) return;
+      const channel = String(frame.ch);
+      if (channel.startsWith('trades::')) {
+        if (!Array.isArray(frame.data)) return;
         for (const trade of frame.data) ingestTrade(trade);
-      } else if (String(frame.ch).startsWith('tickers::')) {
-        ingestTicker(frame.data);
+      } else if (channel.startsWith('tickers::')) {
+        if (Array.isArray(frame.data)) {
+          for (const ticker of frame.data) ingestTicker(ticker);
+        } else {
+          ingestTicker(frame.data);
+        }
       }
     };
     ws.onerror = () => log('Perps WebSocket error.');
