@@ -24,7 +24,11 @@ async function polymarket(a,b,when){const key=`${norm(a.name)}|${norm(b.name)}`;
 function alertText(m,a,b,s){const t=s.team,o=t===a?b:a;return[`🎮 ${String(m.videogame?.name||'ESPORTS').toUpperCase()} · ${s.strategy}`,'',`${t.name}: ${t.s.recent5.wins}-${t.s.recent5.losses} last 5 · streak ${t.s.streak}${t.s.type||''}`,`Recent 3: ${t.s.recent3.wins}-${t.s.recent3.losses}`,`Prior 5: ${t.s.prior5.wins}-${t.s.prior5.losses}`,'',`${o.name}: ${o.s.recent5.wins}-${o.s.recent5.losses} last 5`,'',`➡️ SIGNAL: ${t.name}`,'','➡️ Polymarket',s.url].join('\n');}
 function alertFingerprint(m,a,b,s,url){return[s.strategy,norm(a.name),norm(b.name),norm(s.team.name),url].join('|');}
 async function claimPersistent(fingerprint,s,m,url){
-  if(!CONVEX_URL||!CONVEX_TOKEN)return true;
+  if(!CONVEX_URL||!CONVEX_TOKEN){
+    console.log('PERSISTENT DEDUPE UNAVAILABLE: using local dedupe');
+    log({type:'persistent_dedupe_unavailable',matchId:m.id,team:s.team.name,strategy:s.strategy,url,fingerprint,reason:'not_configured'});
+    return true;
+  }
   try{
     const r=await fetch(`${CONVEX_URL}/claim-esports-alert`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fingerprint,strategy:s.strategy,team:s.team.name,url,matchId:String(m.id),sentAt:Date.now()})});
     if(!r.ok)throw new Error(`persistent dedupe ${r.status}`);
