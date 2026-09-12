@@ -13,8 +13,12 @@ async function sendTelegramMessage(text, options = {}) {
     text,
     disable_web_page_preview: false,
   };
+
   if (Number.isInteger(options.replyToMessageId)) {
-    body.reply_to_message_id = options.replyToMessageId;
+    body.reply_parameters = {
+      message_id: options.replyToMessageId,
+      allow_sending_without_reply: false,
+    };
   }
 
   const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
