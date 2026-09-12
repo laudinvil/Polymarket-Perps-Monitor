@@ -17,8 +17,7 @@ function periodStart(ts) {
   const utcMinutes = d.getUTCMinutes();
   const utcHour = d.getUTCHours();
   const totalMinutes = utcHour * 60 + utcMinutes;
-  const anchor = PERIOD_ANCHOR_MINUTE;
-  const startTotal = Math.floor((totalMinutes - anchor) / 10) * 10 + anchor;
+  const startTotal = Math.floor((totalMinutes - PERIOD_ANCHOR_MINUTE) / 10) * 10 + PERIOD_ANCHOR_MINUTE;
   const start = new Date(d);
   start.setUTCHours(0, 0, 0, 0);
   start.setUTCMinutes(startTotal, 0, 0);
@@ -128,11 +127,12 @@ function isFreshEvent(event, startedAt, currentPeriod, seenEvents) {
   return true;
 }
 
-async function alertForEvent(event, state) {
+async function alertForEvent(event, state, closedPeriod) {
   const ts = normalizeTs(event.ts);
   const symbol = String(event.symbol || '').toUpperCase();
   const currentPeriod = periodStart(ts);
 
+  if (currentPeriod !== closedPeriod) return false;
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) {
     console.log(`[10M] SUPPRESSED duplicate period=${formatTime(currentPeriod)} symbol=${symbol}`);
     return false;
@@ -184,7 +184,7 @@ async function alertForEvent(event, state) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; result replies to source alert; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
   const startedAt = Date.now();
   const seenEvents = new Set();
@@ -192,31 +192,36 @@ async function main() {
   while (true) {
     try {
       const now = Date.now();
-
       if (state.paperTrade && !state.paperTrade.settled) {
         if (await settlePaperTrade(state.paperTrade, now)) saveState(state);
       }
 
       const events = await fetchFeed(DEFAULT_SYMBOLS);
       const currentPeriod = periodStart(now);
+      const closedPeriod = currentPeriod - PERIOD_MS;
       const fresh = events
         .filter(event => isFreshEvent(event, startedAt, currentPeriod, seenEvents))
         .sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
 
-      if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < currentPeriod) {
+      if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < closedPeriod) {
         state.lastAlertPeriod = null;
         saveState(state);
       }
 
-      for (const event of fresh) {
-        if (await alertForEvent(event, state)) break;
+      const closedEvents = fresh.filter(event => periodStart(normalizeTs(event.ts)) === closedPeriod);
+      for (const event of closedEvents) {
+        if (await alertForEvent(event, state, closedPeriod)) break;
       }
 
       const totalCurrent = events.filter(event => {
         const ts = normalizeTs(event?.ts);
         return ts && periodStart(ts) === currentPeriod;
       }).length;
-      console.log(`[10M] current=${formatTime(currentPeriod)} total_liquidations=${totalCurrent} alert=${state.lastAlertPeriod === currentPeriod ? 'SUPPRESSED_AFTER_FIRST' : 'WAITING_FOR_FIRST'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
+      const totalClosed = events.filter(event => {
+        const ts = normalizeTs(event?.ts);
+        return ts && periodStart(ts) === closedPeriod;
+      }).length;
+      console.log(`[10M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) {
       console.error(`[10M] monitor error: ${error.message}`);
     }
