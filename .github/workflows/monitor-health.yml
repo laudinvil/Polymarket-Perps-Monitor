@@ -58,9 +58,10 @@ jobs:
           grep -q "closed-period alerts only" scripts/liquidation-long-monitor.js
           grep -q "findNextMarket" scripts/liquidation-long-monitor.js
           grep -q "NEXT · Polymarket 5M" scripts/liquidation-long-monitor.js
-          ! grep -q "skipPeriod" scripts/liquidation-long-monitor.js
+          grep -q "skipPeriod" scripts/liquidation-long-monitor.js
+          grep -q "WIN skips next 5m period" scripts/liquidation-long-monitor.js
           ! grep -q "10M" scripts/liquidation-long-monitor.js
-          echo "Verified MarginPad BTC/SOL all-liquidation monitor on Polymarket 5M periods with NEXT-market links."
+          echo "Verified MarginPad BTC/SOL all-liquidation monitor on Polymarket 5M periods with NEXT-market links and WIN skip."
       - name: Continuous MarginPad liquidation monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
