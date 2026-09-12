@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   monitor:
-    if: true
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
@@ -55,7 +55,7 @@ jobs:
           node --check src/telegram.js
           grep -q "PAPER_STAKE_USD = 1" scripts/imbalance-all-timeframes.js
           grep -q "replyToMessageId" scripts/imbalance-all-timeframes.js
-          echo "Verified 5M unanimous monitor with $1 paper trading and outcome reply."
+          echo "Verified 5M monitor source; workflow currently disabled."
 
       - name: Continuous 5M monitor
         env:
