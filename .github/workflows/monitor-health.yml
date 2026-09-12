@@ -1,17 +1,21 @@
-name: Polymarket Outcome Imbalance Monitor
+name: MarginPad Long Liquidation Monitor
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/monitor-health.yml'
+      - 'src/liquidation-monitor.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+      - 'scripts/liquidation-long-monitor.js'
   schedule:
     - cron: '* * * * *'
   workflow_dispatch:
 
 concurrency:
   group: polymarket-outcome-imbalance-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
@@ -29,36 +33,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Restore monitor history
+      - name: Restore liquidation history
         run: |
           set -euo pipefail
-          git fetch origin monitor-status:monitor-status
-          if git cat-file -e monitor-status:monitor-history.log 2>/dev/null; then
-            git show monitor-status:monitor-history.log > monitor-history.log
-            echo "Restored monitor history."
+          git fetch origin monitor-status:monitor-status || true
+          if git cat-file -e monitor-status:.liquidation-state.json 2>/dev/null; then
+            git show monitor-status:.liquidation-state.json > .liquidation-state.json
+            echo "Restored liquidation state."
           else
-            : > monitor-history.log
-            echo "No monitor-history.log on monitor-status; starting with empty history."
+            printf '{"lastProcessedBucket":null}\n' > .liquidation-state.json
+            echo "No saved liquidation state; starting clean."
           fi
-          git show monitor-status:.monitor-state.json > .monitor-state.json
-          rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
-          test -s .monitor-state.json
-          node -e 'const s=require("./.monitor-state.json"); if(!s || typeof s!=="object") throw new Error("Invalid monitor state JSON"); console.log(`Restored state strategy: ${s.strategy || "legacy/unknown"}`);'
-      - name: Verify outcome monitor source
+          rm -f monitor.log monitor-live.log
+      - name: Verify liquidation monitor source
         run: |
           set -e
-          node --check scripts/imbalance-all-timeframes.js
+          node --check src/liquidation-monitor.js
+          node --check scripts/liquidation-long-monitor.js
           node --check src/polymarket.js
-          test -f scripts/imbalance-all-timeframes.js
-          test -f src/polymarket.js
-          grep -q "polymarket-5m-seven-coin-unanimous-direction" scripts/imbalance-all-timeframes.js
-          grep -q "findMarketByEpoch" scripts/imbalance-all-timeframes.js
-          echo "Verified unanimous seven-coin Polymarket 5M monitor source."
-      - name: Continuous Polymarket outcome monitor
+          grep -q "DEFAULT_SYMBOLS = \['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'\]" src/liquidation-monitor.js
+          grep -q "LONG-only" scripts/liquidation-long-monitor.js
+          grep -q "findNextMarket" scripts/liquidation-long-monitor.js
+          echo "Verified MarginPad 7-coin LONG-only 5M liquidation monitor."
+      - name: Continuous MarginPad liquidation monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -uo pipefail
           START_TS=$(date +%s)
@@ -75,31 +75,31 @@ jobs:
           while [ "$(date +%s)" -lt "$DEADLINE" ]; do
             REMAINING=$((DEADLINE - $(date +%s)))
             if [ "$REMAINING" -le 0 ]; then break; fi
-            echo "[WATCHDOG] starting unanimous seven-coin Polymarket monitor; remaining=${REMAINING}s"
-            timeout "$REMAINING" node -r ./src/http-timeout.js scripts/imbalance-all-timeframes.js 2>&1 | tee -a monitor.log &
+            echo "[WATCHDOG] starting MarginPad LONG-only liquidation monitor; remaining=${REMAINING}s"
+            timeout "$REMAINING" node -r ./src/http-timeout.js scripts/liquidation-long-monitor.js 2>&1 | tee -a monitor.log &
             MONITOR_PID=$!
             while kill -0 "$MONITOR_PID" 2>/dev/null; do
               sleep 60
               tail -n 500 monitor.log > monitor-live.log 2>/dev/null || true
               git config user.name "github-actions[bot]"
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git add monitor-history.log .monitor-state.json 2>/dev/null || true
+              git add .liquidation-state.json 2>/dev/null || true
               git add -f monitor-live.log 2>/dev/null || true
-              git commit -m "Update live outcome monitor status" 2>/dev/null || true
+              git commit -m "Update liquidation monitor status" 2>/dev/null || true
               git push --force origin HEAD:monitor-status || true
             done
             wait "$MONITOR_PID" || true
             MONITOR_PID=""
             if [ "$(date +%s)" -lt "$DEADLINE" ]; then
-              echo "[WATCHDOG] outcome monitor stopped unexpectedly; restarting without resetting state"
+              echo "[WATCHDOG] liquidation monitor stopped unexpectedly; restarting without resetting state"
               sleep 5
             fi
           done
-          echo "[WATCHDOG] 355-minute outcome monitor window completed"
+          echo "[WATCHDOG] 355-minute liquidation monitor window completed"
       - name: Upload monitor log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: outcome-imbalance-monitor-log
+          name: liquidation-long-monitor-log
           path: monitor.log
           if-no-files-found: ignore
