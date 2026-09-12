@@ -1,6 +1,10 @@
 name: Polymarket Outcome Imbalance Monitor
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/monitor-health.yml'
   schedule:
     - cron: '* * * * *'
   workflow_dispatch:
