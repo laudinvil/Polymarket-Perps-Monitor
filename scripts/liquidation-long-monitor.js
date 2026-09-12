@@ -9,7 +9,16 @@ const TZ = 'Europe/Kyiv';
 const PERIOD_MS = 10 * 60 * 1000;
 const PAPER_USD = 1;
 
-function periodStart(ts) { return Math.floor(Number(ts) / PERIOD_MS) * PERIOD_MS; }
+// 10-minute periods are anchored to minutes 05, 15, 25, 35, 45, 55 (UTC+3).
+function periodStart(ts) {
+  const d = new Date(Number(ts));
+  const minutes = d.getUTCMinutes();
+  const anchoredMinute = 5 + Math.floor((minutes - 5 + 60) / 10) * 10;
+  const start = new Date(d);
+  start.setUTCMinutes(anchoredMinute, 0, 0);
+  if (minutes < 5) start.setUTCHours(start.getUTCHours() - 1, 55, 0, 0);
+  return start.getTime();
+}
 
 function loadState() {
   try {
@@ -147,7 +156,7 @@ async function alertForEvent(event, state) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; poll=${POLL_MS}ms`);
   const state = loadState();
   const startedAt = Date.now();
   const seenEvents = new Set();
