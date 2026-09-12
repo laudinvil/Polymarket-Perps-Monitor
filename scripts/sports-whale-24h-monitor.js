@@ -53,16 +53,22 @@ async function fetchRecentTrades() {
   const end = Math.floor(nowMs() / 1000);
   const ids = [...sportsEventIds];
   const all = [];
+  let pages = 0;
   for (let i = 0; i < ids.length; i += EVENT_BATCH_SIZE) {
     const batch = ids.slice(i, i + EVENT_BATCH_SIZE);
-    const url = `${DATA_API}?eventId=${batch.join(',')}&start=${start}&end=${end}&limit=${PAGE_SIZE}&offset=0`;
-    const data = await getJson(url);
-    const trades = Array.isArray(data) ? data : [];
-    for (const t of trades) {
-      const ts = Number(t.timestamp);
-      if (Number.isFinite(ts) && ts >= start && ts <= end) all.push(t);
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const url = `${DATA_API}?eventId=${batch.join(',')}&start=${start}&end=${end}&limit=${PAGE_SIZE}&offset=${offset}`;
+      const data = await getJson(url);
+      const trades = Array.isArray(data) ? data : [];
+      pages++;
+      for (const t of trades) {
+        const ts = Number(t.timestamp);
+        if (Number.isFinite(ts) && ts >= start && ts <= end) all.push(t);
+      }
+      if (trades.length < PAGE_SIZE) break;
     }
   }
+  log(`TRADE SCAN: event batches=${Math.ceil(ids.length / EVENT_BATCH_SIZE)}; pages=${pages}; trades=${all.length}`);
   return all;
 }
 
@@ -132,7 +138,7 @@ async function evaluate() {
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; open events only; event-scoped trades.');
+  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; open events only; event-scoped trades; paginated trade scan.');
   try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); }
   setInterval(async () => { try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); } }, POLL_MS);
 }
