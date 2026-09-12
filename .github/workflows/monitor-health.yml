@@ -2,7 +2,7 @@ name: Polymarket Outcome Imbalance Monitor
 
 on:
   schedule:
-    - cron: '1 0,6,12,18 * * *'
+    - cron: '* * * * *'
   workflow_dispatch:
 
 concurrency:
