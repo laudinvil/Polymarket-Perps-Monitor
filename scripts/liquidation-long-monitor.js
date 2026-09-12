@@ -118,9 +118,11 @@ async function settlePaperTrade(trade, now) {
   return true;
 }
 
-function isFreshEvent(event, startedAt, currentPeriod, seenEvents) {
+function isFreshEvent(event, startedAt, currentPeriod, closedPeriod, seenEvents) {
   const ts = normalizeTs(event?.ts);
-  if (!ts || ts < startedAt || periodStart(ts) !== currentPeriod) return false;
+  if (!ts || ts < startedAt) return false;
+  const eventPeriod = periodStart(ts);
+  if (eventPeriod !== currentPeriod && eventPeriod !== closedPeriod) return false;
   const key = eventKey(event);
   if (seenEvents.has(key)) return false;
   seenEvents.add(key);
@@ -200,7 +202,7 @@ async function main() {
       const currentPeriod = periodStart(now);
       const closedPeriod = currentPeriod - PERIOD_MS;
       const fresh = events
-        .filter(event => isFreshEvent(event, startedAt, currentPeriod, seenEvents))
+        .filter(event => isFreshEvent(event, startedAt, currentPeriod, closedPeriod, seenEvents))
         .sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
 
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < closedPeriod) {
