@@ -1,34 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchFeed, eventKey, normalizeTs, DEFAULT_SYMBOLS, POLL_MS } = require('../src/liquidation-monitor');
-const { findCurrentMarket, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
+const { bucketStart, findNextMarket, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
 const TZ = 'Europe/Kyiv';
-const PERIOD_MS = 10 * 60 * 1000;
+const PERIOD_MS = 5 * 60 * 1000;
 const PAPER_USD = 1;
-const PERIOD_ANCHOR_MINUTE = 5;
 
 function periodStart(ts) {
   const n = Number(ts);
-  if (!Number.isFinite(n)) return NaN;
-  const d = new Date(n);
-  const utcMinutes = d.getUTCMinutes();
-  const utcHour = d.getUTCHours();
-  const totalMinutes = utcHour * 60 + utcMinutes;
-  const startTotal = Math.floor((totalMinutes - PERIOD_ANCHOR_MINUTE) / 10) * 10 + PERIOD_ANCHOR_MINUTE;
-  const start = new Date(d);
-  start.setUTCHours(0, 0, 0, 0);
-  start.setUTCMinutes(startTotal, 0, 0);
-  return start.getTime();
+  return Number.isFinite(n) ? bucketStart(n, '5m') : NaN;
 }
 
 function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
   } catch {
-    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null };
+    return { lastAlertPeriod: null, paperTrade: null };
   }
 }
 
@@ -64,32 +54,27 @@ function paperOutcomeFromLiquidation(event) {
   return side === 'SHORT' ? 'DOWN' : side === 'LONG' ? 'UP' : null;
 }
 
-async function getPaperMarket(symbol, marketStart) {
-  return findMarketByEpoch(symbol, marketStart, '5m');
-}
-
-async function getPaperEntry(currentMarket, outcome) {
-  if (!currentMarket || currentMarket.synthetic) return null;
-  const marketStart = Number(currentMarket.slug?.split('-').pop()) * 1000;
+async function getPaperEntry(nextMarket, outcome) {
+  if (!nextMarket || nextMarket.synthetic || !outcome) return null;
+  const marketStart = Number(nextMarket.slug?.split('-').pop()) * 1000;
   if (!Number.isFinite(marketStart) || marketStart <= 0) return null;
 
-  const tokenId = currentMarket.tokenIds?.[String(outcome || '').toUpperCase()];
-  const midpoint = await findClobMidpoint(currentMarket, outcome);
-  const gammaPrice = Number(currentMarket.prices?.[outcome]);
+  const midpoint = await findClobMidpoint(nextMarket, outcome);
+  const gammaPrice = Number(nextMarket.prices?.[outcome]);
   const price = Number.isFinite(midpoint) && midpoint > 0 && midpoint < 1
     ? midpoint
     : gammaPrice;
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
 
-  console.log(`[10M] PAPER entry market=${currentMarket.slug} outcome=${outcome} clob_mid=${midpoint ?? 'N/A'} gamma=${Number.isFinite(gammaPrice) ? gammaPrice : 'N/A'} token=${tokenId || 'N/A'} selected=${price}`);
-  return { market: currentMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
+  console.log(`[5M] PAPER entry NEXT market=${nextMarket.slug} outcome=${outcome} clob_mid=${midpoint ?? 'N/A'} gamma=${Number.isFinite(gammaPrice) ? gammaPrice : 'N/A'} selected=${price}`);
+  return { market: nextMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
-async function settlePaperTrade(trade, state, now) {
+async function settlePaperTrade(trade, state) {
   if (!trade) return false;
-  const market = await getPaperMarket(trade.symbol, trade.marketStart);
+  const market = await findMarketByEpoch(trade.symbol, trade.marketStart, '5m');
   if (!market || !market.resolved || !market.winner) {
-    console.log(`[10M] PAPER settlement pending symbol=${trade?.symbol || 'UNKNOWN'} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'} closed=${market?.closed ?? 'N/A'}`);
+    console.log(`[5M] PAPER settlement pending symbol=${trade?.symbol || 'UNKNOWN'} marketStart=${formatTime(trade.marketStart)} resolved=${market?.resolved ?? 'N/A'} winner=${market?.winner ?? 'N/A'} closed=${market?.closed ?? 'N/A'}`);
     return false;
   }
 
@@ -106,7 +91,7 @@ async function settlePaperTrade(trade, state, now) {
     `Winner: ${winner}`,
     `Payout: $${payout.toFixed(2)}`,
     `P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
-    `Period: ${formatTime(trade.marketStart)} → ${formatTime(trade.marketStart + 300000)} UTC+3`,
+    `Period: ${formatTime(trade.marketStart)} → ${formatTime(trade.marketStart + PERIOD_MS)} UTC+3`,
     `➡️ MARKET`,
     market.url,
   ].join('\n');
@@ -119,13 +104,6 @@ async function settlePaperTrade(trade, state, now) {
   trade.result = result;
   trade.winner = winner;
   trade.pnl = pnl;
-
-  if (win) {
-    const nextPeriod = periodStart(now);
-    state.skipPeriod = nextPeriod;
-    console.log(`[10M] PAPER WIN; skipping next 10M period=${formatTime(nextPeriod)}`);
-  }
-
   return true;
 }
 
@@ -143,23 +121,19 @@ function isFreshEvent(event, currentPeriod, closedPeriod, seenEvents) {
 async function alertForEvent(event, state, closedPeriod) {
   const ts = normalizeTs(event.ts);
   const symbol = String(event.symbol || '').toUpperCase();
-  const currentPeriod = periodStart(ts);
+  const eventPeriod = periodStart(ts);
 
-  if (currentPeriod !== closedPeriod) return false;
-  if (state.skipPeriod !== null && Number(state.skipPeriod) === closedPeriod) {
-    console.log(`[10M] SUPPRESSED WIN cooldown period=${formatTime(closedPeriod)} symbol=${symbol}`);
-    return false;
-  }
-  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) {
-    console.log(`[10M] SUPPRESSED duplicate period=${formatTime(currentPeriod)} symbol=${symbol}`);
+  if (eventPeriod !== closedPeriod) return false;
+  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === closedPeriod) {
+    console.log(`[5M] SUPPRESSED duplicate period=${formatTime(closedPeriod)} symbol=${symbol}`);
     return false;
   }
 
   const alertNow = Date.now();
-  const currentMarket = await findCurrentMarket(symbol, alertNow, '5m');
-  const nextUrl = currentMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(Math.floor(alertNow / 300000) * 300000 / 1000)}`;
+  const nextMarket = await findNextMarket(symbol, alertNow, '5m');
+  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((periodStart(alertNow) + PERIOD_MS) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(event);
-  const paperTrade = outcome ? await getPaperEntry(currentMarket, outcome) : null;
+  const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
 
   const message = [
     `🔥 ${symbol} · LIQUIDATION`,
@@ -167,21 +141,19 @@ async function alertForEvent(event, state, closedPeriod) {
     `Size: ${formatUsd(event.notional)}`,
     `Price: ${event.price ?? 'n/a'}`,
     `Time: ${formatTime(ts)} UTC+3`,
-    `10M period: ${formatTime(currentPeriod)} → ${formatTime(currentPeriod + PERIOD_MS)} UTC+3`,
+    `5M period: ${formatTime(closedPeriod)} → ${formatTime(closedPeriod + PERIOD_MS)} UTC+3`,
     ...(paperTrade ? [
       `📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`,
       `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`,
       `Shares: ${paperTrade.shares.toFixed(4)}`,
-    ] : ['📈 PAPER TRADE · current market entry unavailable']),
-    `➡️ CURRENT · Polymarket 5M`,
+    ] : ['📈 PAPER TRADE · next market entry unavailable']),
+    `➡️ NEXT · Polymarket 5M`,
     nextUrl,
   ].join('\n');
 
-  state.lastAlertPeriod = currentPeriod;
-  saveState(state);
-
   try {
     const sentMessage = await sendTelegramMessage(message);
+    state.lastAlertPeriod = closedPeriod;
     if (paperTrade) {
       state.paperTrade = {
         ...paperTrade,
@@ -193,16 +165,16 @@ async function alertForEvent(event, state, closedPeriod) {
     }
     saveState(state);
   } catch (error) {
-    console.error(`[10M] Telegram send failed; period remains reserved: ${error.message}`);
+    console.error(`[5M] Telegram send failed; period remains available: ${error.message}`);
     return false;
   }
 
-  console.log(`[10M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)}`);
+  console.log(`[5M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(closedPeriod)} next=${nextUrl}`);
   return true;
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from CURRENT 5m market; CLOB midpoint entry; WIN skips next 10m period; result replies to source alert; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; Polymarket-aligned periods; closed-period alerts only; all liquidation sides; one alert per closed 5m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; CLOB midpoint entry; next-market link; poll=${POLL_MS}ms`);
   const state = loadState();
   const seenEvents = new Set();
 
@@ -210,7 +182,7 @@ async function main() {
     try {
       const now = Date.now();
       if (state.paperTrade && !state.paperTrade.settled) {
-        if (await settlePaperTrade(state.paperTrade, state, now)) saveState(state);
+        if (await settlePaperTrade(state.paperTrade, state)) saveState(state);
       }
 
       const events = await fetchFeed(DEFAULT_SYMBOLS);
@@ -222,12 +194,6 @@ async function main() {
 
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < closedPeriod) {
         state.lastAlertPeriod = null;
-        saveState(state);
-      }
-
-      if (state.skipPeriod !== null && Number(state.skipPeriod) < closedPeriod) {
-        console.log(`[10M] WIN cooldown completed period=${formatTime(state.skipPeriod)}`);
-        state.skipPeriod = null;
         saveState(state);
       }
 
@@ -244,9 +210,9 @@ async function main() {
         const ts = normalizeTs(event?.ts);
         return ts && periodStart(ts) === closedPeriod;
       }).length;
-      console.log(`[10M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.skipPeriod === closedPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
+      console.log(`[5M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) {
-      console.error(`[10M] monitor error: ${error.message}`);
+      console.error(`[5M] monitor error: ${error.message}`);
     }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
