@@ -2,7 +2,7 @@ const DATA_API = 'https://data-api.polymarket.com/trades';
 const GAMMA_API = 'https://gamma-api.polymarket.com/events';
 const POLL_MS = 2 * 60 * 1000;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const ALERT_RECENCY_MS = 150 * 1000;
+const ALERT_RECENCY_MS = 330 * 1000;
 const PAGE_SIZE = 10000;
 const EVENT_BATCH_SIZE = 50;
 const TZ_LABEL = 'UTC+3';
@@ -107,7 +107,10 @@ async function evaluate() {
   if (!best) { log(`STATS: sportsTrades24h=${seen.size}; largest=none`); return; }
   const bestAgeMs = nowMs() - Number(best.timestamp) * 1000;
   log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s`);
-  if (bestAgeMs > ALERT_RECENCY_MS) return;
+  if (bestAgeMs > ALERT_RECENCY_MS) {
+    log(`NO ALERT: current 24h maximum is older than ${ALERT_RECENCY_MS / 1000}s.`);
+    return;
+  }
   const key = tradeKey(best);
   if (lastAlertTrade === key) return;
   const text = [
