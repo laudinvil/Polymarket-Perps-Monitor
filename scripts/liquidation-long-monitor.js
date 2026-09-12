@@ -64,14 +64,17 @@ async function getPaperMarket(symbol, marketStart) {
   return findNextMarket(symbol, marketStart - 1, '5m');
 }
 
-async function getPaperEntry(symbol, nextMarket, outcome) {
+async function getPaperEntry(nextMarket, outcome) {
   if (!nextMarket || nextMarket.synthetic) return null;
-  const marketStart = Math.floor(Date.parse(nextMarket.startDate || '') / 300000) * 300000;
-  const fallbackMarketStart = Math.floor(Date.now() / 300000) * 300000;
-  const start = Number.isFinite(marketStart) && marketStart > 0 ? marketStart : fallbackMarketStart;
+  const slugEpochSeconds = Number(String(nextMarket.slug || '').split('-').pop());
+  const marketStart = Number.isFinite(slugEpochSeconds) && slugEpochSeconds > 0
+    ? slugEpochSeconds * 1000
+    : NaN;
+  if (!Number.isFinite(marketStart)) return null;
+
   const price = Number(nextMarket.prices?.[outcome]);
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
-  return { market: nextMarket, marketStart: start, outcome, entryPrice: price, shares: PAPER_USD / price };
+  return { market: nextMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
 async function settlePaperTrade(trade, now) {
@@ -127,7 +130,7 @@ async function alertForEvent(event, state) {
   const nextMarket = await findNextMarket(symbol, ts, '5m');
   const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((Math.floor(ts / 300000) * 300000 + 300000) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(event);
-  const paperTrade = outcome ? await getPaperEntry(symbol, nextMarket, outcome) : null;
+  const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
 
   const message = [
     `🔥 ${symbol} · LIQUIDATION`,
