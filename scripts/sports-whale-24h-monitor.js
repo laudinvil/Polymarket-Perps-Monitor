@@ -6,6 +6,7 @@ const ALERT_RECENCY_MS = 150 * 1000;
 const PAGE_SIZE = 10000;
 const MAX_PAGES = 2;
 const TZ_LABEL = 'UTC+3';
+const SPORT_TAGS = ['sports', 'esports'];
 const seen = new Map();
 let sportsSlugs = new Set();
 let lastAlertTrade = null;
@@ -27,17 +28,22 @@ async function getJson(url) {
 async function loadSportsEvents() {
   const cutoff = new Date(nowMs() - WINDOW_MS).toISOString();
   const slugs = new Set();
-  let offset = 0;
-  for (let page = 0; page < 10; page++) {
-    const url = `${GAMMA_API}?closed=false&limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=sports`;
-    const data = await getJson(url);
-    const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
-    for (const e of events) if (e?.slug) slugs.add(String(e.slug));
-    if (events.length < 500) break;
-    offset += 500;
+  const counts = {};
+  for (const tag of SPORT_TAGS) {
+    let offset = 0;
+    let tagCount = 0;
+    for (let page = 0; page < 10; page++) {
+      const url = `${GAMMA_API}?closed=false&limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
+      const data = await getJson(url);
+      const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
+      for (const e of events) if (e?.slug) { slugs.add(String(e.slug)); tagCount++; }
+      if (events.length < 500) break;
+      offset += 500;
+    }
+    counts[tag] = tagCount;
   }
   sportsSlugs = slugs;
-  log(`SPORTS EVENTS: ${sportsSlugs.size} active/recent event slugs loaded`);
+  log(`SPORTS EVENTS: ${sportsSlugs.size} unique active/recent event slugs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
 }
 
 async function fetchRecentTrades() {
@@ -124,7 +130,7 @@ async function evaluate() {
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports only.');
+  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports.');
   try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); }
   setInterval(async () => { try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); } }, POLL_MS);
 }
