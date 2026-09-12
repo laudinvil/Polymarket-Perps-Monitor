@@ -1,0 +1,55 @@
+name: Liquidation 5M Monitor
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/liquidation-long-monitor.js'
+      - 'src/liquidation-monitor.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+      - 'convex/**'
+      - '.github/workflows/liquidation-5m-monitor.yml'
+
+concurrency:
+  group: liquidation-5m-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install --no-package-lock
+
+      - name: Verify monitor source
+        run: |
+          node --check scripts/liquidation-long-monitor.js
+          node --check src/liquidation-monitor.js
+          node --check src/polymarket.js
+          node --check src/telegram.js
+          grep -q "CONVEX_INGEST_TOKEN" scripts/liquidation-long-monitor.js
+          grep -q "result must settle before next alert" scripts/liquidation-long-monitor.js
+
+      - name: Run 5M liquidation monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+          CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
+        run: |
+          node -r ./src/http-timeout.js scripts/liquidation-long-monitor.js
