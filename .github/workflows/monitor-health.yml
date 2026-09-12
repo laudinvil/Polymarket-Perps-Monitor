@@ -55,7 +55,7 @@ jobs:
           grep -q "timeframe=10m" scripts/liquidation-long-monitor.js
           grep -q "all liquidation sides" scripts/liquidation-long-monitor.js
           grep -q "closed-period alerts only" scripts/liquidation-long-monitor.js
-          grep -q "findNextMarket" scripts/liquidation-long-monitor.js
+          grep -q "findCurrentMarket" scripts/liquidation-long-monitor.js
           echo "Verified MarginPad BTC/ETH/SOL all-liquidation 10M closed-period monitor."
       - name: Continuous MarginPad liquidation monitor
         env:
