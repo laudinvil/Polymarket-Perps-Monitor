@@ -18,7 +18,7 @@ function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
   } catch {
-    return { lastAlertPeriod: null, paperTrade: null };
+    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null };
   }
 }
 
@@ -104,6 +104,13 @@ async function settlePaperTrade(trade, state) {
   trade.result = result;
   trade.winner = winner;
   trade.pnl = pnl;
+
+  if (win) {
+    const nextPeriod = trade.marketStart + PERIOD_MS;
+    state.skipPeriod = nextPeriod;
+    console.log(`[5M] PAPER WIN; skipping next 5M period=${formatTime(nextPeriod)}`);
+  }
+
   return true;
 }
 
@@ -124,6 +131,10 @@ async function alertForEvent(event, state, closedPeriod) {
   const eventPeriod = periodStart(ts);
 
   if (eventPeriod !== closedPeriod) return false;
+  if (state.skipPeriod !== null && Number(state.skipPeriod) === closedPeriod) {
+    console.log(`[5M] SUPPRESSED WIN cooldown period=${formatTime(closedPeriod)} symbol=${symbol}`);
+    return false;
+  }
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === closedPeriod) {
     console.log(`[5M] SUPPRESSED duplicate period=${formatTime(closedPeriod)} symbol=${symbol}`);
     return false;
@@ -174,7 +185,7 @@ async function alertForEvent(event, state, closedPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; Polymarket-aligned periods; closed-period alerts only; all liquidation sides; one alert per closed 5m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; CLOB midpoint entry; next-market link; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; Polymarket-aligned periods; closed-period alerts only; all liquidation sides; one alert per closed 5m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; CLOB midpoint entry; next-market link; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState();
   const seenEvents = new Set();
 
@@ -197,6 +208,12 @@ async function main() {
         saveState(state);
       }
 
+      if (state.skipPeriod !== null && Number(state.skipPeriod) < closedPeriod) {
+        console.log(`[5M] WIN cooldown completed period=${formatTime(state.skipPeriod)}`);
+        state.skipPeriod = null;
+        saveState(state);
+      }
+
       const closedEvents = fresh.filter(event => periodStart(normalizeTs(event.ts)) === closedPeriod);
       for (const event of closedEvents) {
         if (await alertForEvent(event, state, closedPeriod)) break;
@@ -210,7 +227,7 @@ async function main() {
         const ts = normalizeTs(event?.ts);
         return ts && periodStart(ts) === closedPeriod;
       }).length;
-      console.log(`[5M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
+      console.log(`[5M] current=${formatTime(currentPeriod)} closed=${formatTime(closedPeriod)} total_current=${totalCurrent} total_closed=${totalClosed} alert=${state.skipPeriod === closedPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === closedPeriod ? 'DONE_CLOSED_PERIOD' : 'WAITING_CLOSED_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) {
       console.error(`[5M] monitor error: ${error.message}`);
     }
