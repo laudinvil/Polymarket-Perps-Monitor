@@ -6,7 +6,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
 const TZ = 'Europe/Kyiv';
-const MIN_LONG_LIQUIDATIONS = 2;
+const MIN_LONG_LIQUIDATIONS = 3;
 
 function loadState() {
   try {
