@@ -2,8 +2,9 @@ const DATA_API = 'https://data-api.polymarket.com/trades';
 const GAMMA_API = 'https://gamma-api.polymarket.com/events';
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const ALERT_RECENCY_MS = 300 * 1000;
-const PAGE_SIZE = 10000;
-const EVENT_BATCH_SIZE = 50;
+const PAGE_SIZE = 1000;
+const MAX_PAGES_PER_BATCH = 10;
+const EVENT_BATCH_SIZE = 10;
 const TZ_LABEL = 'UTC+3';
 const SPORT_TAGS = ['sports', 'esports'];
 const seen = new Map();
@@ -67,11 +68,24 @@ async function fetchRecentTrades() {
   const ids = [...sportsEventIds];
   const all = [];
   let pages = 0;
+  let skippedBatches = 0;
+
   for (let i = 0; i < ids.length; i += EVENT_BATCH_SIZE) {
     const batch = ids.slice(i, i + EVENT_BATCH_SIZE);
-    for (let offset = 0; ; offset += PAGE_SIZE) {
+    for (let page = 0; page < MAX_PAGES_PER_BATCH; page++) {
+      const offset = page * PAGE_SIZE;
       const url = `${DATA_API}?eventId=${batch.join(',')}&start=${start}&end=${end}&limit=${PAGE_SIZE}&offset=${offset}`;
-      const data = await getJson(url);
+      let data;
+      try {
+        data = await getJson(url);
+      } catch (e) {
+        if (e.message.startsWith('HTTP 400')) {
+          skippedBatches++;
+          log(`TRADE BATCH SKIPPED: HTTP 400 at offset=${offset}; batchSize=${batch.length}`);
+          break;
+        }
+        throw e;
+      }
       const trades = Array.isArray(data) ? data : [];
       pages++;
       for (const t of trades) {
@@ -81,7 +95,8 @@ async function fetchRecentTrades() {
       if (trades.length < PAGE_SIZE) break;
     }
   }
-  log(`TRADE SCAN: event batches=${Math.ceil(ids.length / EVENT_BATCH_SIZE)}; pages=${pages}; trades=${all.length}`);
+
+  log(`TRADE SCAN: event batches=${Math.ceil(ids.length / EVENT_BATCH_SIZE)}; pages=${pages}; trades=${all.length}; skippedBatches=${skippedBatches}`);
   return all;
 }
 
@@ -155,7 +170,6 @@ async function evaluate() {
   ];
 
   if (!closed) lines.push(`Polymarket: ${marketUrl(best)}`);
-  else lines.push('Polymarket: event finished — link omitted');
 
   await sendTelegram(lines.join('\n'));
   lastAlertTrade = key;
