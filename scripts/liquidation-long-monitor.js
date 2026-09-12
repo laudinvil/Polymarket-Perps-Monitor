@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { fetchFeed, eventKey, normalizeTs, DEFAULT_SYMBOLS, POLL_MS } = require('../src/liquidation-monitor');
-const { findNextMarket, findMarketByEpoch } = require('../src/polymarket');
+const { findCurrentMarket, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
@@ -68,17 +68,21 @@ async function getPaperMarket(symbol, marketStart) {
   return findMarketByEpoch(symbol, marketStart, '5m');
 }
 
-async function getPaperEntry(nextMarket, outcome) {
-  if (!nextMarket || nextMarket.synthetic) return null;
-  const slugEpochSeconds = Number(String(nextMarket.slug || '').split('-').pop());
-  const marketStart = Number.isFinite(slugEpochSeconds) && slugEpochSeconds > 0
-    ? slugEpochSeconds * 1000
-    : NaN;
-  if (!Number.isFinite(marketStart)) return null;
+async function getPaperEntry(currentMarket, outcome) {
+  if (!currentMarket || currentMarket.synthetic) return null;
+  const marketStart = Number(currentMarket.slug?.split('-').pop()) * 1000;
+  if (!Number.isFinite(marketStart) || marketStart <= 0) return null;
 
-  const price = Number(nextMarket.prices?.[outcome]);
+  const tokenId = currentMarket.tokenIds?.[String(outcome || '').toUpperCase()];
+  const midpoint = await findClobMidpoint(currentMarket, outcome);
+  const gammaPrice = Number(currentMarket.prices?.[outcome]);
+  const price = Number.isFinite(midpoint) && midpoint > 0 && midpoint < 1
+    ? midpoint
+    : gammaPrice;
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
-  return { market: nextMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
+
+  console.log(`[10M] PAPER entry market=${currentMarket.slug} outcome=${outcome} clob_mid=${midpoint ?? 'N/A'} gamma=${Number.isFinite(gammaPrice) ? gammaPrice : 'N/A'} token=${tokenId || 'N/A'} selected=${price}`);
+  return { market: currentMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
 async function settlePaperTrade(trade, now) {
@@ -123,14 +127,9 @@ function isFreshEvent(event, currentPeriod, closedPeriod, seenEvents) {
   if (!ts) return false;
   const eventPeriod = periodStart(ts);
   if (eventPeriod !== currentPeriod && eventPeriod !== closedPeriod) return false;
-
-  // Do not mark current-period events as seen. They must remain eligible
-  // when the same period becomes the closed period on the next boundary.
-  if (eventPeriod === currentPeriod) return true;
-
   const key = eventKey(event);
   if (seenEvents.has(key)) return false;
-  seenEvents.add(key);
+  if (eventPeriod === closedPeriod) seenEvents.add(key);
   return true;
 }
 
@@ -145,10 +144,11 @@ async function alertForEvent(event, state, closedPeriod) {
     return false;
   }
 
-  const nextMarket = await findNextMarket(symbol, ts, '5m');
-  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((Math.floor(ts / 300000) * 300000 + 300000) / 1000)}`;
+  const alertNow = Date.now();
+  const currentMarket = await findCurrentMarket(symbol, alertNow, '5m');
+  const nextUrl = currentMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(Math.floor(alertNow / 300000) * 300000 / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(event);
-  const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
+  const paperTrade = outcome ? await getPaperEntry(currentMarket, outcome) : null;
 
   const message = [
     `🔥 ${symbol} · LIQUIDATION`,
@@ -161,8 +161,8 @@ async function alertForEvent(event, state, closedPeriod) {
       `📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`,
       `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`,
       `Shares: ${paperTrade.shares.toFixed(4)}`,
-    ] : ['📈 PAPER TRADE · entry price unavailable']),
-    `➡️ NEXT · Polymarket 5M`,
+    ] : ['📈 PAPER TRADE · current market entry unavailable']),
+    `➡️ CURRENT · Polymarket 5M`,
     nextUrl,
   ].join('\n');
 
@@ -191,7 +191,7 @@ async function alertForEvent(event, state, closedPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; result replies to source alert; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; closed-period alerts only; all liquidation sides; one alert per closed 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from CURRENT 5m market; CLOB midpoint entry; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
   const seenEvents = new Set();
 
