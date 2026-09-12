@@ -6,6 +6,7 @@ const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 4000;
 const OUTCOME_RETRY_MS = 15000;
+const MAX_BACKFILL_PERIODS = 24;
 const STATE_FILE = '.monitor-state.json';
 const HISTORY_FILE = 'monitor-history.log';
 
@@ -36,18 +37,11 @@ function appendHistory(record) {
 
 function persistState() {
   fs.writeFileSync(STATE_FILE, JSON.stringify({
-    updatedAt: new Date().toISOString(),
-    strategy: state.strategy,
-    symbols: SYMBOLS,
-    upCount: state.upCount,
-    downCount: state.downCount,
-    imbalance: state.imbalance,
-    leader: state.leader,
-    processedMarkets: state.processedMarkets,
-    pendingPeriod: state.pendingPeriod,
-    lastTransitionPeriod: state.lastTransitionPeriod,
-    lastTransitionSymbol: state.lastTransitionSymbol,
-    lastTransitionDirection: state.lastTransitionDirection,
+    updatedAt: new Date().toISOString(), strategy: state.strategy, symbols: SYMBOLS,
+    upCount: state.upCount, downCount: state.downCount, imbalance: state.imbalance,
+    leader: state.leader, processedMarkets: state.processedMarkets,
+    pendingPeriod: state.pendingPeriod, lastTransitionPeriod: state.lastTransitionPeriod,
+    lastTransitionSymbol: state.lastTransitionSymbol, lastTransitionDirection: state.lastTransitionDirection,
     initialized: state.initialized,
   }, null, 2) + '\n');
 }
@@ -55,12 +49,10 @@ function persistState() {
 function restoreState() {
   try {
     const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    if (saved?.strategy !== state.strategy) {
-      console.log('STATE RESTORE: old strategy state ignored');
-      return;
-    }
-    state.upCount = Number.isFinite(Number(saved.upCount)) ? Number(saved.upCount) : 0;
-    state.downCount = Number.isFinite(Number(saved.downCount)) ? Number(saved.downCount) : 0;
+    if (saved?.strategy !== state.strategy) throw new Error('Invalid monitor state strategy');
+    if (!Number.isInteger(Number(saved.upCount)) || !Number.isInteger(Number(saved.downCount))) throw new Error('Invalid cumulative counts');
+    state.upCount = Number(saved.upCount);
+    state.downCount = Number(saved.downCount);
     state.imbalance = state.upCount - state.downCount;
     state.leader = saved.leader || (state.imbalance > 0 ? 'UP' : state.imbalance < 0 ? 'DOWN' : null);
     state.processedMarkets = saved.processedMarkets && typeof saved.processedMarkets === 'object' ? saved.processedMarkets : {};
@@ -71,7 +63,9 @@ function restoreState() {
     state.initialized = Boolean(saved.initialized);
     console.log(`STATE RESTORED outcome-imbalance UP=${state.upCount} DOWN=${state.downCount} IMBALANCE=${state.imbalance} LEADER=${state.leader || '0'}`);
   } catch (error) {
-    console.log(`STATE RESTORE: no usable outcome-imbalance state (${error.message}); starting fresh`);
+    console.error(`STATE RESTORE FATAL: ${error.message}`);
+    process.exitCode = 1;
+    throw error;
   }
 }
 
@@ -86,98 +80,99 @@ function getWinner(market) {
   return winner === 'UP' || winner === 'DOWN' ? winner : null;
 }
 
-async function fetchPreviousPeriodOutcomes(currentPeriod) {
-  const targetPeriod = currentPeriod - PERIOD_MS;
-  if (state.pendingPeriod === targetPeriod && Date.now() - lastOutcomeAttemptAt < OUTCOME_RETRY_MS) return;
-  if (outcomeCheckInFlight) return;
-
+async function fetchPeriodOutcomes(targetPeriod) {
+  if (state.pendingPeriod === targetPeriod && Date.now() - lastOutcomeAttemptAt < OUTCOME_RETRY_MS) return true;
   state.pendingPeriod = targetPeriod;
   lastOutcomeAttemptAt = Date.now();
-  outcomeCheckInFlight = true;
 
-  try {
-    const pendingSymbols = SYMBOLS.filter(symbol => !state.processedMarkets[`${symbol}:${targetPeriod}`]);
+  const pendingSymbols = SYMBOLS.filter(symbol => !state.processedMarkets[`${symbol}:${targetPeriod}`]);
+  if (!pendingSymbols.length) return true;
 
-    const results = await Promise.all(pendingSymbols.map(async symbol => {
-      try {
-        const market = await findMarketByEpoch(symbol, targetPeriod, '5m');
-        if (!market) {
-          console.log(`5m OUTCOME ${symbol} period=${new Date(targetPeriod).toISOString()} market=NOT_FOUND`);
-          return { symbol, market: null, winner: null };
-        }
-
-        const winner = getWinner(market);
-        if (!winner) {
-          console.log(`5m OUTCOME WAIT ${symbol} period=${new Date(targetPeriod).toISOString()} closed=${Boolean(market.closed)} resolved=${Boolean(market.resolved)} prices=${JSON.stringify(market.outcomePrices || [])}`);
-        }
-        return { symbol, market, winner };
-      } catch (error) {
-        console.warn(`5m OUTCOME CHECK FAILED ${symbol}: ${error.message}`);
-        return { symbol, market: null, winner: null, error };
+  const results = await Promise.all(pendingSymbols.map(async symbol => {
+    try {
+      const market = await findMarketByEpoch(symbol, targetPeriod, '5m');
+      if (!market) {
+        console.log(`5m OUTCOME ${symbol} period=${new Date(targetPeriod).toISOString()} market=NOT_FOUND`);
+        return { symbol, market: null, winner: null };
       }
-    }));
+      const winner = getWinner(market);
+      if (!winner) console.log(`5m OUTCOME WAIT ${symbol} period=${new Date(targetPeriod).toISOString()} closed=${Boolean(market.closed)} resolved=${Boolean(market.resolved)} prices=${JSON.stringify(market.outcomePrices || [])}`);
+      return { symbol, market, winner };
+    } catch (error) {
+      console.warn(`5m OUTCOME CHECK FAILED ${symbol}: ${error.message}`);
+      return { symbol, market: null, winner: null };
+    }
+  }));
 
-    // Prefer actual resolution/close time when the API provides it; otherwise keep a stable symbol order.
-    results.sort((a, b) => {
-      const aTime = Date.parse(a.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
-      const bTime = Date.parse(b.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
-      if (aTime !== bTime) return aTime - bTime;
-      return SYMBOLS.indexOf(a.symbol) - SYMBOLS.indexOf(b.symbol);
-    });
+  results.sort((a, b) => {
+    const aTime = Date.parse(a.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
+    const bTime = Date.parse(b.market?.closedTime || '') || Number.MAX_SAFE_INTEGER;
+    if (aTime !== bTime) return aTime - bTime;
+    return SYMBOLS.indexOf(a.symbol) - SYMBOLS.indexOf(b.symbol);
+  });
 
-    for (const { symbol, market, winner } of results) {
-      if (!market || !winner) continue;
+  for (const { symbol, market, winner } of results) {
+    if (!market || !winner) continue;
+    const key = `${symbol}:${targetPeriod}`;
+    if (state.processedMarkets[key]) continue;
 
-      const key = `${symbol}:${targetPeriod}`;
-      if (state.processedMarkets[key]) continue;
+    const beforeUp = state.upCount;
+    const beforeDown = state.downCount;
+    const beforeImbalance = state.imbalance;
+    const beforeLeader = state.leader;
 
-      const beforeUp = state.upCount;
-      const beforeDown = state.downCount;
-      const beforeImbalance = state.imbalance;
-      const beforeLeader = state.leader;
+    if (winner === 'UP') state.upCount += 1;
+    else state.downCount += 1;
+    state.imbalance = state.upCount - state.downCount;
+    const afterLeader = state.imbalance > 0 ? 'UP' : state.imbalance < 0 ? 'DOWN' : null;
+    const crossedToNewLeader = Boolean(afterLeader && beforeLeader && afterLeader !== beforeLeader);
 
-      if (winner === 'UP') state.upCount += 1;
-      else state.downCount += 1;
-      state.imbalance = state.upCount - state.downCount;
-      const afterLeader = state.imbalance > 0 ? 'UP' : state.imbalance < 0 ? 'DOWN' : null;
-      const crossedToNewLeader = Boolean(afterLeader && beforeLeader && afterLeader !== beforeLeader);
+    state.processedMarkets[key] = { symbol, periodStart: targetPeriod, winner, marketUrl: market.url || null, closedTime: market.closedTime || null, processedAt: new Date().toISOString() };
+    appendHistory({ type: 'polymarket_5m_resolved_outcome', timeframe: '5m', symbol, periodStart: targetPeriod, winner, marketUrl: market.url || null, closed: Boolean(market.closed), resolved: Boolean(market.resolved), closedTime: market.closedTime || null, outcomes: market.outcomes || [], outcomePrices: market.outcomePrices || [], beforeUp, beforeDown, beforeImbalance, afterUp: state.upCount, afterDown: state.downCount, afterImbalance: state.imbalance, beforeLeader, afterLeader, crossedToNewLeader });
+    console.log(`5m OUTCOME COUNTED ${symbol}=${winner} | UP ${beforeUp}->${state.upCount} DOWN ${beforeDown}->${state.downCount} IMBALANCE ${beforeImbalance}->${state.imbalance} LEADER ${beforeLeader || '0'}->${afterLeader || '0'}`);
 
-      state.processedMarkets[key] = {
-        symbol,
-        periodStart: targetPeriod,
-        winner,
-        marketUrl: market.url || null,
-        closedTime: market.closedTime || null,
-        processedAt: new Date().toISOString(),
-      };
-
-      appendHistory({
-        type: 'polymarket_5m_resolved_outcome',
-        timeframe: '5m', symbol, periodStart: targetPeriod, winner,
-        marketUrl: market.url || null,
-        closed: Boolean(market.closed), resolved: Boolean(market.resolved),
-        closedTime: market.closedTime || null,
-        outcomes: market.outcomes || [], outcomePrices: market.outcomePrices || [],
-        beforeUp, beforeDown, beforeImbalance,
-        afterUp: state.upCount, afterDown: state.downCount, afterImbalance: state.imbalance,
-        beforeLeader, afterLeader, crossedToNewLeader,
-      });
-
-      console.log(`5m OUTCOME COUNTED ${symbol}=${winner} | UP ${beforeUp}->${state.upCount} DOWN ${beforeDown}->${state.downCount} IMBALANCE ${beforeImbalance}->${state.imbalance} LEADER ${beforeLeader || '0'}->${afterLeader || '0'}`);
-
-      if (crossedToNewLeader) {
-        state.lastTransitionPeriod = targetPeriod;
-        state.lastTransitionSymbol = symbol;
-        state.lastTransitionDirection = winner;
-        console.log(`5m IMBALANCE FLIP ${symbol} caused ${beforeLeader}->${afterLeader} | UP=${state.upCount} DOWN=${state.downCount} IMBALANCE=${state.imbalance}`);
-        await sendTransitionAlert(symbol, winner, targetPeriod, state.upCount, state.downCount, state.imbalance, market.url || null);
-      }
-
-      state.leader = afterLeader;
-      state.initialized = true;
-      persistState();
+    if (crossedToNewLeader) {
+      state.lastTransitionPeriod = targetPeriod;
+      state.lastTransitionSymbol = symbol;
+      state.lastTransitionDirection = winner;
+      console.log(`5m IMBALANCE FLIP ${symbol} caused ${beforeLeader}->${afterLeader} | UP=${state.upCount} DOWN=${state.downCount} IMBALANCE=${state.imbalance}`);
+      await sendTransitionAlert(symbol, winner, targetPeriod, state.upCount, state.downCount, state.imbalance, market.url || null);
     }
 
+    state.leader = afterLeader;
+    state.initialized = true;
+    persistState();
+  }
+
+  const complete = SYMBOLS.every(symbol => Boolean(state.processedMarkets[`${symbol}:${targetPeriod}`]));
+  if (complete) state.pendingPeriod = targetPeriod;
+  persistState();
+  return complete;
+}
+
+async function fetchPreviousPeriodOutcomes(currentPeriod) {
+  if (outcomeCheckInFlight) return;
+  outcomeCheckInFlight = true;
+  try {
+    const latestTarget = currentPeriod - PERIOD_MS;
+    let startTarget = state.pendingPeriod;
+    if (!Number.isFinite(Number(startTarget))) {
+      const processedPeriods = Object.values(state.processedMarkets).map(x => Number(x?.periodStart)).filter(Number.isFinite);
+      startTarget = processedPeriods.length ? Math.max(...processedPeriods) + PERIOD_MS : latestTarget;
+    } else {
+      const pendingComplete = SYMBOLS.every(symbol => Boolean(state.processedMarkets[`${startTarget}:${symbol}`]));
+      if (pendingComplete) startTarget += PERIOD_MS;
+    }
+    if (startTarget > latestTarget) return;
+
+    const targets = [];
+    for (let target = startTarget; target <= latestTarget && targets.length < MAX_BACKFILL_PERIODS; target += PERIOD_MS) targets.push(target);
+    if (targets.length > 1) console.log(`5m OUTCOME BACKFILL periods=${targets.length} from=${new Date(targets[0]).toISOString()} to=${new Date(targets[targets.length - 1]).toISOString()}`);
+
+    for (const targetPeriod of targets) {
+      const complete = await fetchPeriodOutcomes(targetPeriod);
+      if (!complete) break;
+    }
     cleanupProcessedMarkets();
     persistState();
   } finally {
@@ -188,16 +183,11 @@ async function fetchPreviousPeriodOutcomes(currentPeriod) {
 async function sendTransitionAlert(symbol, direction, marketPeriod, upCount, downCount, imbalance, marketUrl) {
   const leader = imbalance > 0 ? 'UP' : 'DOWN';
   const message = [
-    `🔥 ${symbol} · 5M IMBALANCE FLIP`,
-    `Outcome: ${direction}`,
-    `Leader changed to: ${leader}`,
-    `UP: ${upCount}`,
-    `DOWN: ${downCount}`,
-    `IMBALANCE: ${imbalance > 0 ? '+' : ''}${imbalance}`,
+    `🔥 ${symbol} · 5M IMBALANCE FLIP`, `Outcome: ${direction}`, `Leader changed to: ${leader}`,
+    `UP: ${upCount}`, `DOWN: ${downCount}`, `IMBALANCE: ${imbalance > 0 ? '+' : ''}${imbalance}`,
     `Period: ${new Date(marketPeriod).toLocaleString('en-GB', { timeZone: 'Europe/Kyiv', hour12: false })} UTC+3`,
     marketUrl ? `➡️ CLOSED · Polymarket 5M\n${marketUrl}` : null,
   ].filter(Boolean).join('\n');
-
   try {
     await sendTelegramMessage(message);
     appendHistory({ type: 'polymarket_5m_imbalance_alert', timeframe: '5m', symbol, direction, upCount, downCount, imbalance, leader, marketPeriod, marketUrl });
