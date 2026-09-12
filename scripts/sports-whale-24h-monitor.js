@@ -33,7 +33,7 @@ async function loadSportsEvents() {
     let offset = 0;
     let tagCount = 0;
     for (let page = 0; page < 10; page++) {
-      const url = `${GAMMA_API}?limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
+      const url = `${GAMMA_API}?closed=false&limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
       const data = await getJson(url);
       const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
       for (const e of events) {
@@ -45,7 +45,7 @@ async function loadSportsEvents() {
     counts[tag] = tagCount;
   }
   sportsEventIds = ids;
-  log(`SPORTS EVENTS: ${sportsEventIds.size} unique event IDs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
+  log(`SPORTS EVENTS: ${sportsEventIds.size} unique OPEN event IDs loaded; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
 }
 
 async function fetchRecentTrades() {
@@ -129,7 +129,7 @@ async function evaluate() {
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; event-scoped trades.');
+  log('Sports Whale 24H monitor started; rolling window=24h; polling=120s; sports + esports; open events only; event-scoped trades.');
   try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); }
   setInterval(async () => { try { await evaluate(); } catch (e) { log(`EVALUATION ERROR: ${e.message}`); } }, POLL_MS);
 }
