@@ -29,7 +29,13 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin monitor-status:monitor-status
-          git show monitor-status:monitor-history.log > monitor-history.log
+          if git cat-file -e monitor-status:monitor-history.log 2>/dev/null; then
+            git show monitor-status:monitor-history.log > monitor-history.log
+            echo "Restored monitor history."
+          else
+            : > monitor-history.log
+            echo "No monitor-history.log on monitor-status; starting with empty history while preserving cumulative state."
+          fi
           git show monitor-status:.monitor-state.json > .monitor-state.json
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
           test -s .monitor-state.json
