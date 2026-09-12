@@ -1,69 +1,14 @@
 name: Polymarket Perps Cascade Exhaustion Monitor
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/perp-cascade-monitor.yml'
-      - 'scripts/perp-cascade-monitor.js'
-      - 'scripts/paper-trading.js'
-
-concurrency:
-  group: polymarket-perp-cascade-monitor
-  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   monitor:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 355
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Restore paper portfolio cache
-        uses: actions/cache@v4
-        with:
-          path: paper-state.json
-          key: perp-paper-state-${{ github.run_id }}
-          restore-keys: |
-            perp-paper-state-
-
-      - name: Verify monitor source
-        run: |
-          set -e
-          node --check scripts/perp-cascade-monitor.js
-          node --check scripts/paper-trading.js
-          grep -q "api.perpetuals.polymarket.com" scripts/perp-cascade-monitor.js
-          grep -q "ws.perpetuals.polymarket.com/v1/ws" scripts/perp-cascade-monitor.js
-          grep -q "Cascade Exhaustion" scripts/perp-cascade-monitor.js
-          test -f paper-state.json
-          echo "Verified Perps monitor and paper portfolio state."
-
-      - name: Run Perps cascade monitor
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          set -uo pipefail
-          timeout 21000 node scripts/perp-cascade-monitor.js 2>&1 | tee perp-cascade-monitor.log
-
-      - name: Upload monitor log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: perp-cascade-monitor-log
-          path: perp-cascade-monitor.log
-          if-no-files-found: ignore
+      - run: echo "Perp Cascade Monitor disabled"
