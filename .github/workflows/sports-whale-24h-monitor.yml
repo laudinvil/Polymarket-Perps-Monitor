@@ -2,6 +2,11 @@ name: Sports Whale 24H Monitor
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/sports-whale-24h-monitor.yml'
   schedule:
     - cron: '*/5 * * * *'
 
