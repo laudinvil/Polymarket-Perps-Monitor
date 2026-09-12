@@ -29,7 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin monitor-status:monitor-status
-          git checkout monitor-status -- monitor-history.log .monitor-state.json
+          git show monitor-status:monitor-history.log > monitor-history.log
+          git show monitor-status:.monitor-state.json > .monitor-state.json
           rm -f monitor.log monitor-live.log .convex-log-cursor monitor-stats.md
           test -s .monitor-state.json
           node -e 'const s=require("./.monitor-state.json"); if(s.strategy!=="polymarket-5m-resolved-outcome-imbalance") throw new Error("Invalid monitor state strategy"); if(!Number.isInteger(Number(s.upCount))||!Number.isInteger(Number(s.downCount))) throw new Error("Invalid cumulative counts"); console.log(`Restored cumulative state: UP=${s.upCount} DOWN=${s.downCount} IMBALANCE=${s.imbalance}`);'
