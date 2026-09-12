@@ -64,13 +64,14 @@ async function getPaperMarket(symbol, marketStart) {
   return findNextMarket(symbol, marketStart - 1, '5m');
 }
 
-async function getPaperEntry(symbol, ts, outcome) {
-  const marketStart = Math.floor(ts / 300000) * 300000;
-  const market = await getPaperMarket(symbol, marketStart);
-  if (!market) return null;
-  const price = Number(market.prices?.[outcome]);
+async function getPaperEntry(symbol, nextMarket, outcome) {
+  if (!nextMarket || nextMarket.synthetic) return null;
+  const marketStart = Math.floor(Date.parse(nextMarket.startDate || '') / 300000) * 300000;
+  const fallbackMarketStart = Math.floor(Date.now() / 300000) * 300000;
+  const start = Number.isFinite(marketStart) && marketStart > 0 ? marketStart : fallbackMarketStart;
+  const price = Number(nextMarket.prices?.[outcome]);
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
-  return { market, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
+  return { market: nextMarket, marketStart: start, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
 async function settlePaperTrade(trade, now) {
@@ -122,10 +123,11 @@ async function alertForEvent(event, state) {
   const currentPeriod = periodStart(ts);
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) return false;
 
+  // The paper trade is opened in the NEXT 5m Polymarket market, not the market containing the liquidation.
   const nextMarket = await findNextMarket(symbol, ts, '5m');
   const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((Math.floor(ts / 300000) * 300000 + 300000) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(event);
-  const paperTrade = outcome ? await getPaperEntry(symbol, ts, outcome) : null;
+  const paperTrade = outcome ? await getPaperEntry(symbol, nextMarket, outcome) : null;
 
   const message = [
     `🔥 ${symbol} · LIQUIDATION`,
@@ -160,7 +162,7 @@ async function alertForEvent(event, state) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; result replies to source alert; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; entry from NEXT 5m market; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
   const startedAt = Date.now();
   const seenEvents = new Set();
