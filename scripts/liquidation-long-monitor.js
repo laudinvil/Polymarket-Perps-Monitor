@@ -96,7 +96,10 @@ async function settlePaperTrade(trade, now) {
     market.url,
   ].join('\n');
 
-  await sendTelegramMessage(message);
+  const options = Number.isInteger(trade.sourceMessageId)
+    ? { replyToMessageId: trade.sourceMessageId }
+    : {};
+  await sendTelegramMessage(message, options);
   trade.settled = true;
   trade.result = result;
   trade.winner = winner;
@@ -140,23 +143,24 @@ async function alertForEvent(event, state) {
     nextUrl,
   ].join('\n');
 
-  await sendTelegramMessage(message);
+  const sentMessage = await sendTelegramMessage(message);
   state.lastAlertPeriod = currentPeriod;
   if (paperTrade) {
     state.paperTrade = {
       ...paperTrade,
       symbol,
       alertTs: ts,
+      sourceMessageId: Number(sentMessage?.message_id),
       settled: false,
     };
   }
   saveState(state);
-  console.log(`[10M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)}`);
+  console.log(`[10M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${sentMessage?.message_id || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)}`);
   return true;
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=10m; anchored periods=05/15/25/35/45/55; all liquidation sides; first liquidation alerts immediately; remaining liquidations suppressed until next 10m period; paper=$${PAPER_USD.toFixed(2)} UP/DOWN with result settlement; result replies to source alert; poll=${POLL_MS}ms`);
   const state = loadState();
   const startedAt = Date.now();
   const seenEvents = new Set();
