@@ -8,6 +8,7 @@ const TZ_LABEL = 'UTC+3';
 const SPORT_TAGS = ['sports', 'esports'];
 const seen = new Map();
 let sportsEventIds = new Set();
+let eventStatus = new Map();
 let lastAlertTrade = null;
 
 function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
@@ -17,6 +18,11 @@ function tradeKey(t) { return `${t.transactionHash || ''}|${t.conditionId || ''}
 function fmtUsd(v) { return `$${Math.round(v).toLocaleString('en-US')}`; }
 function fmtTime(ts) { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Kyiv', dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(ts)); }
 function marketUrl(t) { return t.eventSlug ? `https://polymarket.com/event/${t.eventSlug}` : 'https://polymarket.com/'; }
+function isEventClosed(t) {
+  if (t.eventId != null && eventStatus.has(String(t.eventId))) return eventStatus.get(String(t.eventId));
+  if (t.eventSlug && eventStatus.has(`slug:${t.eventSlug}`)) return eventStatus.get(`slug:${t.eventSlug}`);
+  return Boolean(t.closed || t.eventClosed || t.event?.closed);
+}
 
 async function getJson(url) {
   const r = await fetch(url, { headers: { accept: 'application/json' } });
@@ -27,18 +33,23 @@ async function getJson(url) {
 async function loadSportsEvents() {
   const cutoff = new Date(nowMs() - WINDOW_MS).toISOString();
   const ids = new Set();
+  const statuses = new Map();
   const counts = {};
   for (const tag of SPORT_TAGS) {
     let offset = 0;
     let tagCount = 0;
     for (let page = 0; page < 10; page++) {
-      // Do not restrict to open events: a bet remains relevant for the rolling
-      // 24h window even when its event resolved during that window.
       const url = `${GAMMA_API}?limit=500&offset=${offset}&end_date_min=${encodeURIComponent(cutoff)}&tag_slug=${tag}`;
       const data = await getJson(url);
       const events = Array.isArray(data) ? data : (Array.isArray(data.events) ? data.events : []);
       for (const e of events) {
-        if (e?.id != null) { ids.add(Number(e.id)); tagCount++; }
+        if (e?.id != null) {
+          const closed = Boolean(e.closed || e.archived || e.resolved);
+          ids.add(Number(e.id));
+          statuses.set(String(e.id), closed);
+          if (e.slug) statuses.set(`slug:${String(e.slug)}`, closed);
+          tagCount++;
+        }
       }
       if (events.length < 500) break;
       offset += 500;
@@ -46,6 +57,7 @@ async function loadSportsEvents() {
     counts[tag] = tagCount;
   }
   sportsEventIds = ids;
+  eventStatus = statuses;
   log(`SPORTS EVENTS: ${sportsEventIds.size} unique events in 24h scope; sports=${counts.sports || 0}; esports=${counts.esports || 0}`);
 }
 
@@ -118,11 +130,9 @@ async function evaluate() {
   }
 
   const bestAgeMs = nowMs() - Number(best.timestamp) * 1000;
-  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s`);
+  const closed = isEventClosed(best);
+  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s | event=${closed ? 'CLOSED' : 'OPEN'}`);
 
-  // Alert only when the current rolling 24h maximum is a newly placed trade.
-  // The workflow runs once every 5 minutes, so this prevents the same whale
-  // from being alerted again on the next scheduled run.
   if (bestAgeMs > ALERT_RECENCY_MS) {
     log(`NO ALERT: current 24h maximum is older than ${ALERT_RECENCY_MS / 1000}s.`);
     return;
@@ -131,7 +141,7 @@ async function evaluate() {
   const key = tradeKey(best);
   if (lastAlertTrade === key) return;
 
-  const text = [
+  const lines = [
     '🐋 SPORTS WHALE · 24H',
     '',
     `Event: ${best.title || best.eventSlug || 'Unknown'}`,
@@ -141,13 +151,15 @@ async function evaluate() {
     `Price: ${Number(best.price).toFixed(4)}`,
     `Time: ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`,
     '',
-    'Rolling window: last 24 hours',
-    `Polymarket: ${marketUrl(best)}`
-  ].join('\n');
+    'Rolling window: last 24 hours'
+  ];
 
-  await sendTelegram(text);
+  if (!closed) lines.push(`Polymarket: ${marketUrl(best)}`);
+  else lines.push('Polymarket: event finished — link omitted');
+
+  await sendTelegram(lines.join('\n'));
   lastAlertTrade = key;
-  log(`ALERT: NEW 24H WHALE ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome}`);
+  log(`ALERT: NEW 24H WHALE ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | event=${closed ? 'CLOSED' : 'OPEN'}`);
 }
 
 async function main() {
