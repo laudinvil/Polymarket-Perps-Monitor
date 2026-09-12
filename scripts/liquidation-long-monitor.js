@@ -123,6 +123,11 @@ function isFreshEvent(event, currentPeriod, closedPeriod, seenEvents) {
   if (!ts) return false;
   const eventPeriod = periodStart(ts);
   if (eventPeriod !== currentPeriod && eventPeriod !== closedPeriod) return false;
+
+  // Do not mark current-period events as seen. They must remain eligible
+  // when the same period becomes the closed period on the next boundary.
+  if (eventPeriod === currentPeriod) return true;
+
   const key = eventKey(event);
   if (seenEvents.has(key)) return false;
   seenEvents.add(key);
