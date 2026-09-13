@@ -22,6 +22,10 @@ const ingest = httpAction(async (ctx, request) => {
     else if (body.type === "snapshot") await ctx.runMutation(internal.monitor.saveSnapshot, body.data);
     else if (body.type === "alert") await ctx.runMutation(internal.monitor.saveAlert, body.data);
     else if (body.type === "paper.upsert") await ctx.runMutation(internal.monitor.upsertPaperTrade, body.data);
+    else if (body.type === "runtime.start") await ctx.runMutation(internal.runtime.start, body.data);
+    else if (body.type === "runtime.heartbeat") await ctx.runMutation(internal.runtime.heartbeat, body.data);
+    else if (body.type === "runtime.log") await ctx.runMutation(internal.runtime.log, body.data);
+    else if (body.type === "runtime.finish") await ctx.runMutation(internal.runtime.finish, body.data);
     else return new Response("Unknown event type", { status: 400 });
     return Response.json({ ok: true });
   } catch (error) {
@@ -45,6 +49,29 @@ const claimEsportsAlert = httpAction(async (ctx, request) => {
 const health = httpAction(async (ctx) => {
   try { const result = await ctx.runQuery(api.monitor.monitorHealth, {}); if (!result.ok) return Response.json(result, { status: 503 }); return Response.json(result, { status: 200 }); }
   catch (error) { console.error("Convex health check failed", error); return new Response("Health check failed", { status: 503 }); }
+});
+
+const runtimeStatus = httpAction(async (ctx) => {
+  try { return Response.json(await ctx.runQuery(api.runtime.status, {})); }
+  catch (error) { console.error("Convex runtime status failed", error); return new Response("Runtime status query failed", { status: 500 }); }
+});
+
+const runtimeLogs = httpAction(async (ctx, request) => {
+  const url = new URL(request.url);
+  const rawRunId = url.searchParams.get("runId");
+  const rawLimit = Number(url.searchParams.get("limit") || 100);
+  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 100, 1), 200);
+  const runId = rawRunId === null || rawRunId === "" ? undefined : Number(rawRunId);
+  if (runId !== undefined && !Number.isFinite(runId)) return new Response("Invalid runId", { status: 400 });
+  try { return Response.json(await ctx.runQuery(api.runtime.logs, { runId, limit })); }
+  catch (error) { console.error("Convex runtime logs failed", error); return new Response("Runtime logs query failed", { status: 500 }); }
+});
+
+const runtimeRuns = httpAction(async (ctx, request) => {
+  const rawLimit = Number(new URL(request.url).searchParams.get("limit") || 20);
+  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 20, 1), 50);
+  try { return Response.json(await ctx.runQuery(api.runtime.runs, { limit })); }
+  catch (error) { console.error("Convex runtime runs failed", error); return new Response("Runtime runs query failed", { status: 500 }); }
 });
 
 const latestStats = httpAction(async (ctx, request) => {
@@ -83,6 +110,9 @@ const latestPaperTrades = httpAction(async (ctx, request) => {
 http.route({ path: "/ingest", method: "POST", handler: ingest });
 http.route({ path: "/claim-esports-alert", method: "POST", handler: claimEsportsAlert });
 http.route({ path: "/health", method: "GET", handler: health });
+http.route({ path: "/runtime/status", method: "GET", handler: runtimeStatus });
+http.route({ path: "/runtime/logs", method: "GET", handler: runtimeLogs });
+http.route({ path: "/runtime/runs", method: "GET", handler: runtimeRuns });
 http.route({ path: "/latest-stats", method: "GET", handler: latestStats });
 http.route({ path: "/snapshots", method: "GET", handler: snapshots });
 http.route({ path: "/alerts", method: "GET", handler: alerts });
