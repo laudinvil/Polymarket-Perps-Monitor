@@ -62,7 +62,8 @@ export const claimEsportsAlert = internalMutation({
 export const upsertPaperTrade = internalMutation({
   args: {
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
-    sourceMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()), updatedAt:v.number(),
+    sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
+    closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number(),
   },
   handler: async (ctx,args) => {
     const existing=await ctx.db.query("paperTrades").withIndex("by_market",q=>q.eq("symbol",args.symbol).eq("marketStart",args.marketStart)).unique();

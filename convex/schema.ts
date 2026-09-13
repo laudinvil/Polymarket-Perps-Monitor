@@ -31,7 +31,7 @@ export default defineSchema({
   }).index("by_fingerprint", ["fingerprint"]),
   paperTrades: defineTable({
     symbol: v.string(), marketStart: v.number(), outcome: v.string(), entryPrice: v.number(), shares: v.number(), alertTs: v.number(),
-    sourceMessageId: v.optional(v.number()), settled: v.boolean(), result: v.optional(v.string()), winner: v.optional(v.string()), pnl: v.optional(v.number()),
+    sourceMessageId: v.optional(v.number()), resultMessageId: v.optional(v.number()), settled: v.boolean(), result: v.optional(v.string()), winner: v.optional(v.string()), pnl: v.optional(v.number()),
     closedPrice: v.optional(v.number()), closeTs: v.optional(v.number()), closePnl: v.optional(v.number()), updatedAt: v.number(),
   }).index("by_market", ["symbol", "marketStart"]).index("by_settled_updated", ["settled", "updatedAt"]),
 });
