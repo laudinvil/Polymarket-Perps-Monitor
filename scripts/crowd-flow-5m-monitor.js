@@ -7,7 +7,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.80);
-const MIN_VOLUME = 400;
+const MIN_VOLUME = 0;
 const MIN_MOVE = Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE || 0.02);
 const MAX_PRICE = Number(process.env.CROWD_FLOW_MAX_LAST_PRICE || 0.80);
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
@@ -78,7 +78,7 @@ async function alert(v) {
   if (v.alerted || periodAlerts.has(String(v.start))) return;
 
   const total = v.up + v.down;
-  if (total < MIN_VOLUME) return;
+  if (total <= MIN_VOLUME) return;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
   const share = Math.max(v.up, v.down) / total;
@@ -175,7 +175,7 @@ function diagnostics() {
 
     let reason = 'READY';
     if (periodAlerts.has(String(t))) reason = 'period-alerted';
-    else if (total < MIN_VOLUME) reason = `volume<${MIN_VOLUME}`;
+    else if (total <= MIN_VOLUME) reason = 'volume=0';
     else if (share < THRESHOLD) reason = `flow<${Math.round(THRESHOLD * 100)}%`;
     else if (move < MIN_MOVE) reason = `move<${MIN_MOVE}`;
     else if (lp !== null && lp > MAX_PRICE) reason = `last>${MAX_PRICE}`;
