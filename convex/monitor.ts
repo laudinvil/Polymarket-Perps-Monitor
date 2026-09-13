@@ -1,4 +1,4 @@
-import { internalMutation, query } from "convex/server";
+import { internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const startRun = internalMutation({
@@ -82,7 +82,7 @@ export const getOpenPaperTrade = query({
 
 export const latestPaperTrades = query({
   args:{limit:v.number()},
-  handler:async(ctx,args)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)),
+  handler:async(ctx)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)),
 });
 
 export const pruneOldData = internalMutation({
