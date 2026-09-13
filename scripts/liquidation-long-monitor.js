@@ -175,6 +175,7 @@ async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
   const secondTs = normalizeTs(secondEvent.ts);
   const symbol = String(secondEvent.symbol || firstEvent.symbol || '').toUpperCase();
   if (!firstTs || !secondTs) return false;
+  if (firstTs < STARTUP_TS || secondTs < STARTUP_TS) return false;
   if (periodStart(firstTs) === periodStart(secondTs)) return false;
   if (state.paperTrade && !state.paperTrade.settled) return false;
   if (state.skipPeriod !== null && Number(state.skipPeriod) === alertPeriod) return false;
@@ -218,17 +219,27 @@ function isCurrentPeriodEvent(event, currentPeriod) {
   const ts = normalizeTs(event?.ts); return Boolean(ts && periodStart(ts) === currentPeriod);
 }
 
+const STARTUP_TS = Date.now();
+
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert only on opposite liquidation pair LONG->SHORT or SHORT->LONG across DIFFERENT 5M periods; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert only on opposite liquidation pair LONG->SHORT or SHORT->LONG across DIFFERENT 5M periods; same-direction events ignored; STARTUP BASELINE: historical events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState(); const seenEvents = new Set();
+  state.comboLastSide = null; state.comboLastTs = null; state.comboLastEvent = null; state.comboLastPeriod = null;
+  saveState(state);
   if (!CONVEX_INGEST_TOKEN) throw new Error('CONVEX_INGEST_TOKEN is required for persistent paper state');
   try { await loadPersistentPaperTrade(state); } catch (error) { throw new Error(`Convex paper state unavailable: ${error.message}`); }
+  let baselineReady = false;
   while (true) {
     try {
       const now = Date.now(); const currentPeriod = periodStart(now);
       if (state.paperTrade && !state.paperTrade.settled) { if (await settlePaperTrade(state.paperTrade, state)) saveState(state); }
       const events = await fetchFeed(DEFAULT_SYMBOLS);
-      const fresh = events.filter(event => isFreshEvent(event, seenEvents)).sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
+      if (!baselineReady) {
+        for (const event of events) { if (normalizeTs(event?.ts)) seenEvents.add(eventKey(event)); }
+        baselineReady = true;
+        console.log(`[5M] STARTUP BASELINE seeded ${seenEvents.size} existing MarginPad events; no historical events can trigger a combo`);
+      }
+      const fresh = events.filter(event => isFreshEvent(event, seenEvents)).filter(event => normalizeTs(event.ts) >= STARTUP_TS).sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < currentPeriod) { state.lastAlertPeriod = null; }
       if (state.skipPeriod !== null && Number(state.skipPeriod) < currentPeriod) { state.skipPeriod = null; }
       for (const event of fresh) {
