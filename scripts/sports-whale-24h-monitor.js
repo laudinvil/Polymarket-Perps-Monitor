@@ -91,13 +91,14 @@ async function fetchRecentTrades() {
       pages++;
       for (const t of trades) {
         const ts = Number(t.timestamp);
+        if (t.side !== 'BUY') continue;
         if (Number.isFinite(ts) && ts >= start && ts <= end) all.push(t);
       }
       if (trades.length < PAGE_SIZE) break;
     }
   }
 
-  log(`TRADE SCAN: event batches=${Math.ceil(ids.length / EVENT_BATCH_SIZE)}; pages=${pages}; trades=${all.length}; skippedBatches=${skippedBatches}`);
+  log(`TRADE SCAN: event batches=${Math.ceil(ids.length / EVENT_BATCH_SIZE)}; pages=${pages}; BUY trades=${all.length}; skippedBatches=${skippedBatches}`);
   return all;
 }
 
@@ -105,6 +106,7 @@ function ingest(trades) {
   const cutoff = nowMs() - WINDOW_MS;
   for (const [key, t] of seen) if (Number(t.timestamp) * 1000 < cutoff) seen.delete(key);
   for (const t of trades) {
+    if (t.side !== 'BUY') continue;
     const usd = tradeUsd(t);
     const ts = Number(t.timestamp);
     if (!Number.isFinite(usd) || usd <= 0 || !Number.isFinite(ts)) continue;
@@ -117,6 +119,7 @@ function largest() {
   const cutoff = Math.floor((nowMs() - WINDOW_MS) / 1000);
   let best = null;
   for (const t of seen.values()) {
+    if (t.side !== 'BUY') continue;
     if (Number(t.timestamp) < cutoff) continue;
     if (!best || t.usd > best.usd || (t.usd === best.usd && Number(t.timestamp) > Number(best.timestamp))) best = t;
   }
@@ -141,16 +144,16 @@ async function evaluate() {
   const best = largest();
 
   if (!best) {
-    log(`STATS: sportsTrades24h=${seen.size}; largest=none`);
+    log(`STATS: buyTrades24h=${seen.size}; largest=none`);
     return;
   }
 
   const closed = isEventClosed(best);
-  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | event=${closed ? 'CLOSED' : 'OPEN'}`);
+  log(`STATS: buyTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | event=${closed ? 'CLOSED' : 'OPEN'}`);
 
   const key = tradeKey(best);
   if (key === lastAlertKey) {
-    log(`NO ALERT: current 24h maximum already alerted (${fmtUsd(best.usd)}).`);
+    log(`NO ALERT: current 24h BUY maximum already alerted (${fmtUsd(best.usd)}).`);
     return;
   }
 
@@ -160,7 +163,7 @@ async function evaluate() {
     `Event: ${best.title || best.eventSlug || 'Unknown'}`,
     `Market: ${best.outcome || 'Unknown'}`,
     `Largest bet: ${fmtUsd(best.usd)}`,
-    `Side: ${best.side || 'UNKNOWN'}`,
+    `Side: BUY`,
     `Price: ${Number(best.price).toFixed(4)}`,
     `Time: ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL}`,
     '',
@@ -171,14 +174,13 @@ async function evaluate() {
 
   await sendTelegram(lines.join('\n'));
   lastAlertTrade = best;
-  lastAlertKey = key;
-  lastAlertTrade = key;
-  log(`ALERT: NEW 24H MAXIMUM ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | event=${closed ? 'CLOSED' : 'OPEN'}`);
+  lastAlertKey = tradeKey(best);
+  log(`ALERT: NEW 24H BUY MAXIMUM ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | event=${closed ? 'CLOSED' : 'OPEN'}`);
 }
 
 async function main() {
   const runUntil = nowMs() + (355 * 60 * 1000);
-  log('Sports Whale 24H monitor started; rolling window=24h; sports + esports; continuous scan; alert on every new 24h maximum.');
+  log('Sports Whale 24H monitor started; rolling window=24h; sports + esports; BUY trades only; continuous scan; alert on every new 24h BUY maximum.');
   while (nowMs() < runUntil) {
     try {
       await evaluate();
