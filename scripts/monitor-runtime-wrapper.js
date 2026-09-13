@@ -11,14 +11,14 @@ let finished = false;
 async function convexRuntime(type, data) {
   if (!CONVEX_INGEST_TOKEN) return;
   try {
-    const response = await fetch(`${CONVEX_SITE_URL}/runtime/ingest`, {
+    const response = await fetch(`${CONVEX_SITE_URL}/ingest`, {
       method: 'POST',
       headers: {
         accept: 'application/json',
         'content-type': 'application/json',
         authorization: `Bearer ${CONVEX_INGEST_TOKEN}`,
       },
-      body: JSON.stringify({ type, data }),
+      body: JSON.stringify({ type: `runtime.${type}`, data }),
     });
     if (!response.ok) console.error(`[CONVEX-RUNTIME] ingest ${type} failed: HTTP ${response.status}`);
   } catch (error) {
