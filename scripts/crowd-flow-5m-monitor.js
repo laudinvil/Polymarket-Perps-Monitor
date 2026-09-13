@@ -4,13 +4,8 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
+const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
-const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.80);
-const MAX_FLOW = Number(process.env.CROWD_FLOW_MAX_FLOW || 0.99);
-const MIN_VOLUME = 0;
-const MIN_MOVE = Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE || 0.02);
-const MAX_PRICE = Number(process.env.CROWD_FLOW_MAX_LAST_PRICE || 0.80);
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
 const markets = new Map();
@@ -79,18 +74,11 @@ async function alert(v) {
   if (v.alerted || periodAlerts.has(String(v.start))) return;
 
   const total = v.up + v.down;
-  if (total <= MIN_VOLUME) return;
+  if (total <= 0) return;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const share = Math.max(v.up, v.down) / total;
-  const move = o === 'UP' ? v.lu - v.fu : v.ld - v.fd;
-
-  if (share < THRESHOLD || share > MAX_FLOW || Math.abs(move) < MIN_MOVE) return;
-
   const fp = o === 'UP' ? v.fu : v.fd;
   const lp = o === 'UP' ? v.lu : v.ld;
-
-  if (lp > MAX_PRICE) return;
 
   const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
   const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
@@ -110,7 +98,7 @@ async function alert(v) {
 
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M CROWD FLOW`,
-    `FLOW: ${Math.round(share * 100)}% → ${o}`,
+    `FLOW: ${Math.round((Math.max(v.up, v.down) / total) * 100)}% → ${o}`,
     `UP: ${money(v.up)}`,
     `DOWN: ${money(v.down)}`,
     `PRICE: ${price(fp)} → ${price(lp)}`,
@@ -154,33 +142,21 @@ function event(x) {
 
 function diagnostics() {
   const t = start();
-
-  for (const symbol of SYMBOLS) {
-    const v = markets.get(key(symbol, t));
-    if (!v) {
-      console.log(`[crowd-flow] DIAG ${symbol} no market period=${t}`);
-      continue;
-    }
-
-    const total = v.up + v.down;
-    const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const share = total ? Math.max(v.up, v.down) / total : 0;
-    const fp = o === 'UP' ? v.fu : v.fd;
-    const lp = o === 'UP' ? v.lu : v.ld;
-    const move = fp !== null && lp !== null ? Math.abs(lp - fp) : 0;
-
-    let reason = 'READY';
-    if (periodAlerts.has(String(t))) reason = 'period-alerted';
-    else if (total <= MIN_VOLUME) reason = 'volume=0';
-    else if (share < THRESHOLD) reason = `flow<${Math.round(THRESHOLD * 100)}%`;
-    else if (share > MAX_FLOW) reason = `flow>${Math.round(MAX_FLOW * 100)}%`;
-    else if (move < MIN_MOVE) reason = `move<${MIN_MOVE}`;
-    else if (lp !== null && lp > MAX_PRICE) reason = `last>${MAX_PRICE}`;
-
-    console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
-    );
+  const v = markets.get(key('BTC', t));
+  if (!v) {
+    console.log(`[crowd-flow] DIAG BTC no market period=${t}`);
+    return;
   }
+
+  const total = v.up + v.down;
+  const o = v.up >= v.down ? 'UP' : 'DOWN';
+  const share = total ? Math.max(v.up, v.down) / total : 0;
+  const fp = o === 'UP' ? v.fu : v.fd;
+  const lp = o === 'UP' ? v.lu : v.ld;
+
+  console.log(
+    `[crowd-flow] DIAG BTC UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${periodAlerts.has(String(t)) ? 'period-alerted' : 'READY'}`
+  );
 }
 
 function connect() {
