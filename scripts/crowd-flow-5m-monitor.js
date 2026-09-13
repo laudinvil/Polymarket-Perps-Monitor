@@ -96,15 +96,12 @@ async function alert(v) {
   alertedLinks.add(currentUrl);
   alertedLinks.add(nextUrl);
 
-  const buy = o === 'UP' ? 'DOWN' : 'UP';
-
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M CROWD FLOW`,
     `FLOW: ${Math.round((Math.max(v.up, v.down) / total) * 100)}% → ${o}`,
     `UP: ${money(v.up)}`,
     `DOWN: ${money(v.down)}`,
     `PRICE: ${price(fp)} → ${price(lp)}`,
-    `BUY ${buy}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
     currentUrl,
