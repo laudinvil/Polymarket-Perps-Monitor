@@ -17,7 +17,7 @@ on:
 
 concurrency:
   group: liquidation-5m-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -42,7 +42,6 @@ jobs:
           node --check src/polymarket.js
           node --check src/telegram.js
           grep -q "CONVEX_INGEST_TOKEN" scripts/liquidation-long-monitor.js
-      - name: Enforce combo ordering and NEXT market link
         run: |
           python3 - <<'PY'
           from pathlib import Path
