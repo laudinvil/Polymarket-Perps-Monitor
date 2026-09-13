@@ -8,11 +8,16 @@ on:
       - '.github/workflows/sports-whale-24h-monitor.yml'
       - 'scripts/sports-whale-24h-monitor.js'
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '0 */6 * * *'
+
+concurrency:
+  group: sports-whale-24h-monitor
+  cancel-in-progress: true
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,8 +27,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: timeout 240 node scripts/sports-whale-24h-monitor.js 2>&1 | tee sports-whale-24h.log
+        run: node scripts/sports-whale-24h-monitor.js 2>&1 | tee sports-whale-24h.log
       - name: Upload log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sports-whale-24h-log
