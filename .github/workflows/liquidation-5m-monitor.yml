@@ -28,15 +28,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
       - name: Install dependencies
         run: npm install --no-package-lock
-
       - name: Verify monitor source
         run: |
           node --check scripts/liquidation-long-monitor.js
@@ -45,7 +42,76 @@ jobs:
           node --check src/polymarket.js
           node --check src/telegram.js
           grep -q "CONVEX_INGEST_TOKEN" scripts/liquidation-long-monitor.js
+      - name: Enforce chronological combo ordering
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/liquidation-long-monitor.js')
+          s = p.read_text()
+          old = '''      for (const event of fresh) {
+        const side = liquidationSide(event);
+        if (!['LONG', 'SHORT'].includes(side)) continue;
+        const eventPeriod = periodStart(normalizeTs(event.ts));
+        if (state.comboLastSide && side !== state.comboLastSide && state.comboLastPeriod !== eventPeriod) {
+          const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
+          if (await alertForCombo(firstEvent, event, state, eventPeriod)) {
+            state.comboLastSide = side;
+            state.comboLastTs = normalizeTs(event.ts);
+            state.comboLastEvent = comboEventSnapshot(event, side);
+            state.comboLastPeriod = eventPeriod;
+            saveState(state);
+            break;
+          }
+        }
+        state.comboLastSide = side;
+        state.comboLastTs = normalizeTs(event.ts);
+        state.comboLastEvent = comboEventSnapshot(event, side);
+        state.comboLastPeriod = eventPeriod;
+        saveState(state);
+      }'''
+          new = '''      for (const event of fresh) {
+        const side = liquidationSide(event);
+        if (!['LONG', 'SHORT'].includes(side)) continue;
+        const eventTs = normalizeTs(event.ts);
+        const eventPeriod = periodStart(eventTs);
 
+        // MarginPad can deliver a newly observed event whose source timestamp
+        // is older than the last event already used by the combo state.
+        // Such a late event must never become the 2nd leg of a combo.
+        if (state.comboLastTs !== null && Number(eventTs) <= Number(state.comboLastTs)) {
+          console.log(`[5M] IGNORE OUT-OF-ORDER event ts=${formatTime(eventTs)} lastComboTs=${formatTime(state.comboLastTs)} side=${side}`);
+          continue;
+        }
+
+        if (state.comboLastSide && side !== state.comboLastSide && state.comboLastPeriod !== eventPeriod) {
+          const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
+          const firstTs = normalizeTs(firstEvent.ts);
+          if (!firstTs || eventTs <= firstTs) {
+            console.log(`[5M] REJECT NON-CHRONOLOGICAL combo first=${firstTs ? formatTime(firstTs) : 'N/A'} second=${formatTime(eventTs)}`);
+            continue;
+          }
+          if (await alertForCombo(firstEvent, event, state, eventPeriod)) {
+            state.comboLastSide = side;
+            state.comboLastTs = eventTs;
+            state.comboLastEvent = comboEventSnapshot(event, side);
+            state.comboLastPeriod = eventPeriod;
+            saveState(state);
+            break;
+          }
+        }
+        state.comboLastSide = side;
+        state.comboLastTs = eventTs;
+        state.comboLastEvent = comboEventSnapshot(event, side);
+        state.comboLastPeriod = eventPeriod;
+        saveState(state);
+      }'''
+          if old not in s:
+              raise SystemExit('Expected combo loop was not found; refusing to modify source')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          print('Chronological combo guard applied')
+          PY
+          node --check scripts/liquidation-long-monitor.js
       - name: Run 5M liquidation monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
