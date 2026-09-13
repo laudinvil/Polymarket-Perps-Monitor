@@ -2,7 +2,7 @@ const WebSocket = globalThis.WebSocket;
 const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 if (!WebSocket) throw new Error('WebSocket unavailable');
-const SYMBOLS=['BTC'];
+const SYMBOLS=['BTC','ETH'];
 const PERIOD=300000, THRESHOLD=Number(process.env.CROWD_FLOW_THRESHOLD||0.60), MIN_VOLUME=Number(process.env.CROWD_FLOW_MIN_NOTIONAL||0), MIN_MOVE=Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE||0.02), MAX_PRICE=0.65;
 const WS='wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const markets=new Map(), tokens=new Map(), seen=new Set(); let socket;
