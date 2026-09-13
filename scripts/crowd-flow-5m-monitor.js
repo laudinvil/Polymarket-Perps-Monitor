@@ -8,7 +8,7 @@ const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 600;
+const MIN_TRADES = 800;
 
 const markets = new Map();
 const tokens = new Map();
