@@ -120,7 +120,7 @@ async function alert(v) {
   alertedLinks.add(nextUrl);
 
   await sendTelegramMessage([
-    `🔥 ${v.symbol} · 5M CROWD FLOW`,
+    `🔥 ${v.symbol} · 5M`,
     `FLOW: ${Math.round(s.flow * 100)}% → ${s.o}`,
     `VOLUME: ${money(s.total)}`,
     `TRADES: ${v.trades}`,
