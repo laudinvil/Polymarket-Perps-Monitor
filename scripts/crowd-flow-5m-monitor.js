@@ -13,7 +13,6 @@ const MIN_TRADES = 600;
 const markets = new Map();
 const tokens = new Map();
 const seen = new Set();
-const periodAlerts = new Set();
 const alertedLinks = new Set();
 let socket;
 
@@ -54,10 +53,6 @@ async function refresh() {
     if (v.start !== t) markets.delete(k);
   }
 
-  for (const p of periodAlerts) {
-    if (p !== String(t)) periodAlerts.delete(p);
-  }
-
   if (socket?.readyState === WebSocket.OPEN) {
     const ids = [...tokens]
       .filter(([, v]) => markets.get(v.k)?.start === t)
@@ -78,7 +73,7 @@ function signal(v) {
 }
 
 async function alert(v) {
-  if (v.alerted || periodAlerts.has(String(v.start))) return;
+  if (v.alerted) return;
 
   const s = signal(v);
   if (!s) return;
@@ -89,12 +84,10 @@ async function alert(v) {
   if (alertedLinks.has(nextUrl)) {
     console.log(`[crowd-flow] duplicate link suppressed symbol=${v.symbol} next=${nextUrl}`);
     v.alerted = true;
-    periodAlerts.add(String(v.start));
     return;
   }
 
   v.alerted = true;
-  periodAlerts.add(String(v.start));
   alertedLinks.add(nextUrl);
 
   const upPrice = v.lu === null ? null : price(v.lu);
@@ -152,7 +145,7 @@ function diagnostics() {
 
     const total = v.up + v.down;
     const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
+    const reason = v.alerted ? 'alerted' : 'WAITING';
 
     console.log(
       `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} DIRECTION=${o} REASON=${reason}`
