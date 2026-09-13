@@ -92,12 +92,11 @@ async function alert(v) {
 
   if (lp > MAX_PRICE) return;
 
-  const currentUrl = v.market.url;
   const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
   const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
 
-  if (alertedLinks.has(currentUrl) || alertedLinks.has(nextUrl)) {
-    console.log(`[crowd-flow] duplicate links suppressed symbol=${v.symbol} current=${currentUrl} next=${nextUrl}`);
+  if (alertedLinks.has(nextUrl)) {
+    console.log(`[crowd-flow] duplicate next link suppressed symbol=${v.symbol} next=${nextUrl}`);
     v.alerted = true;
     periodAlerts.add(String(v.start));
     return;
@@ -105,7 +104,6 @@ async function alert(v) {
 
   v.alerted = true;
   periodAlerts.add(String(v.start));
-  alertedLinks.add(currentUrl);
   alertedLinks.add(nextUrl);
 
   const buy = o === 'UP' ? 'DOWN' : 'UP';
@@ -117,9 +115,6 @@ async function alert(v) {
     `DOWN: ${money(v.down)}`,
     `PRICE: ${price(fp)} → ${price(lp)}`,
     `BUY ${buy}`,
-    '',
-    `➡️ CURRENT · Polymarket 5M`,
-    currentUrl,
     '',
     `➡️ NEXT · Polymarket 5M`,
     nextUrl
