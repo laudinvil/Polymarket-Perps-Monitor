@@ -7,6 +7,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.80);
+const MAX_FLOW = Number(process.env.CROWD_FLOW_MAX_FLOW || 0.99);
 const MIN_VOLUME = 0;
 const MIN_MOVE = Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE || 0.02);
 const MAX_PRICE = Number(process.env.CROWD_FLOW_MAX_LAST_PRICE || 0.80);
@@ -84,7 +85,7 @@ async function alert(v) {
   const share = Math.max(v.up, v.down) / total;
   const move = o === 'UP' ? v.lu - v.fu : v.ld - v.fd;
 
-  if (share < THRESHOLD || Math.abs(move) < MIN_MOVE) return;
+  if (share < THRESHOLD || share > MAX_FLOW || Math.abs(move) < MIN_MOVE) return;
 
   const fp = o === 'UP' ? v.fu : v.fd;
   const lp = o === 'UP' ? v.lu : v.ld;
@@ -177,6 +178,7 @@ function diagnostics() {
     if (periodAlerts.has(String(t))) reason = 'period-alerted';
     else if (total <= MIN_VOLUME) reason = 'volume=0';
     else if (share < THRESHOLD) reason = `flow<${Math.round(THRESHOLD * 100)}%`;
+    else if (share > MAX_FLOW) reason = `flow>${Math.round(MAX_FLOW * 100)}%`;
     else if (move < MIN_MOVE) reason = `move<${MIN_MOVE}`;
     else if (lp !== null && lp > MAX_PRICE) reason = `last>${MAX_PRICE}`;
 
