@@ -8,9 +8,7 @@ const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 5;
-const MIN_PRICE_MOVE = 0.02;
-const MAX_PRICE_MOVE = 0.10;
+const MIN_TRADES = 100;
 const MAX_LAST_PRICE = 0.80;
 
 const markets = new Map();
@@ -79,14 +77,11 @@ function signal(v) {
   if (v.trades < MIN_TRADES) return null;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const fp = o === 'UP' ? v.fu : v.fd;
   const lp = o === 'UP' ? v.lu : v.ld;
-  const move = fp === null || lp === null ? 0 : Math.abs(lp - fp);
 
-  if (move < MIN_PRICE_MOVE || move > MAX_PRICE_MOVE) return null;
   if (lp === null || lp > MAX_LAST_PRICE) return null;
 
-  return { o, fp, lp, move };
+  return { o, lp };
 }
 
 async function alert(v) {
@@ -114,8 +109,7 @@ async function alert(v) {
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `TRADES: ${v.trades}`,
-    `PRICE: ${price(s.fp)} → ${price(s.lp)}`,
-    `MOVE: ${price(s.move)}`,
+    `PRICE: ${price(s.lp)}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
     currentUrl,
@@ -147,12 +141,10 @@ function event(x) {
 
   if (m.o === 'UP') {
     v.up += n;
-    if (v.fu === null) v.fu = p;
-    v.lu = p;
+    if (v.lu === null) v.lu = p;
   } else {
     v.down += n;
-    if (v.fd === null) v.fd = p;
-    v.ld = p;
+    if (v.ld === null) v.ld = p;
   }
 
   alert(v).catch(e => console.error('[crowd-flow] alert', e.message));
@@ -166,12 +158,11 @@ function diagnostics() {
 
     const total = v.up + v.down;
     const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const fp = o === 'UP' ? v.fu : v.fd;
     const lp = o === 'UP' ? v.lu : v.ld;
     const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
 
     console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE=${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
     );
   }
 }
