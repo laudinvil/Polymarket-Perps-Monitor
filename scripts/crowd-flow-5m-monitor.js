@@ -8,7 +8,7 @@ const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 500;
+const MIN_TRADES = 600;
 
 const markets = new Map();
 const tokens = new Map();
@@ -83,12 +83,11 @@ async function alert(v) {
   const s = signal(v);
   if (!s) return;
 
-  const currentUrl = v.market.url;
   const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
   const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
 
-  if (alertedLinks.has(currentUrl) || alertedLinks.has(nextUrl)) {
-    console.log(`[crowd-flow] duplicate link suppressed symbol=${v.symbol} current=${currentUrl} next=${nextUrl}`);
+  if (alertedLinks.has(nextUrl)) {
+    console.log(`[crowd-flow] duplicate link suppressed symbol=${v.symbol} next=${nextUrl}`);
     v.alerted = true;
     periodAlerts.add(String(v.start));
     return;
@@ -96,17 +95,18 @@ async function alert(v) {
 
   v.alerted = true;
   periodAlerts.add(String(v.start));
-  alertedLinks.add(currentUrl);
   alertedLinks.add(nextUrl);
+
+  const upPrice = v.lu === null ? null : price(v.lu);
+  const downPrice = v.ld === null ? null : price(v.ld);
+  const upAttention = upPrice !== null && (downPrice === null || Number(v.lu) > Number(v.ld)) ? ' ⚠️' : '';
+  const downAttention = downPrice !== null && (upPrice === null || Number(v.ld) > Number(v.lu)) ? ' ⚠️' : '';
 
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `TRADES: ${v.trades}`,
-    `PRICE UP: ${v.lu === null ? 'n/a' : price(v.lu)}`,
-    `PRICE DOWN: ${v.ld === null ? 'n/a' : price(v.ld)}`,
-    '',
-    `➡️ CURRENT · Polymarket 5M`,
-    currentUrl,
+    `PRICE UP: ${upPrice === null ? 'n/a' : upPrice}${upAttention}`,
+    `PRICE DOWN: ${downPrice === null ? 'n/a' : downPrice}${downAttention}`,
     '',
     `➡️ NEXT · Polymarket 5M`,
     nextUrl
