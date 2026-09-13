@@ -1,16 +1,197 @@
 const WebSocket = globalThis.WebSocket;
 const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
+
 if (!WebSocket) throw new Error('WebSocket unavailable');
-const SYMBOLS=['BTC','ETH'];
-const PERIOD=300000, THRESHOLD=Number(process.env.CROWD_FLOW_THRESHOLD||0.60), MIN_VOLUME=400, MIN_MOVE=Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE||0.02);
-const WS='wss://ws-subscriptions-clob.polymarket.com/ws/market';
-const markets=new Map(), tokens=new Map(), seen=new Set(), periodAlerts=new Set(); let socket;
-const start=()=>bucketStart(Date.now(),'5m'); const key=(s,t)=>`${s}:${t}`;
-const money=n=>`$${Math.round(n).toLocaleString('en-US')}`; const price=n=>Number(n).toFixed(3);
-async function refresh(){const t=start();for(const s of SYMBOLS){const m=await findMarketByEpoch(s,t,'5m');if(!m?.tokenIds?.UP||!m?.tokenIds?.DOWN){console.log(`[crowd-flow] ${s} market unavailable period=${t}`);continue;}const k=key(s,t);if(!markets.has(k))markets.set(k,{symbol:s,start:t,market:m,up:0,down:0,fu:null,fd:null,lu:null,ld:null,alerted:false});tokens.set(m.tokenIds.UP,{k,o:'UP'});tokens.set(m.tokenIds.DOWN,{k,o:'DOWN');}for(const[k,v]of markets)if(v.start!==t)markets.delete(k);for(const p of periodAlerts)if(p!==String(t))periodAlerts.delete(p);if(socket?.readyState===WebSocket.OPEN){const ids=[...tokens].filter(([,v])=>markets.get(v.k)?.start===t).map(([id])=>id);if(ids.length)socket.send(JSON.stringify({assets_ids:ids,type:'market'}));console.log(`[crowd-flow] subscribed tokens=${ids.length} period=${t}`);}}
-async function alert(v){if(v.alerted||periodAlerts.has(String(v.start)))return;const total=v.up+v.down;if(total<MIN_VOLUME)return;const o=v.up>=v.down?'UP':'DOWN',share=Math.max(v.up,v.down)/total,move=o==='UP'?v.lu-v.fu:v.ld-v.fd;if(share<THRESHOLD||Math.abs(move)<MIN_MOVE)return;const fp=o==='UP'?v.fu:v.fd,lp=o==='UP'?v.lu:v.ld;v.alerted=true;periodAlerts.add(String(v.start));const buy=o==='UP'?'DOWN':'UP';const next=await findMarketByEpoch(v.symbol,v.start+PERIOD,'5m');await sendTelegramMessage([`🔥 ${v.symbol} · 5M CROWD FLOW`,`FLOW: ${Math.round(share*100)}% → ${o}`,`UP: ${money(v.up)}`,`DOWN: ${money(v.down)}`,`PRICE: ${price(fp)} → ${price(lp)}`,`BUY ${buy}`,'',`➡️ CURRENT · Polymarket 5M`,v.market.url,'',`➡️ NEXT · Polymarket 5M`,next?.url||`https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start+PERIOD)/1000)}`].join('\n'));}
-function event(x){if(x?.event_type!=='last_trade_price')return;const m=tokens.get(String(x.asset_id));if(!m)return;const v=markets.get(m.k);if(!v||v.start!==start())return;const id=`${x.asset_id}:${x.timestamp}:${x.transaction_hash||x.price}`;if(seen.has(id))return;seen.add(id);const p=Number(x.price),q=Number(x.size),n=p*q;if(!Number.isFinite(n)||n<=0)return;if(m.o==='UP'){v.up+=n;if(v.fu===null)v.fu=p;v.lu=p}else{v.down+=n;if(v.fd===null)v.fd=p;v.ld=p}alert(v).catch(e=>console.error('[crowd-flow] alert',e.message));}
-function diagnostics(){const t=start();for(const s of SYMBOLS){const v=markets.get(key(s,t));if(!v){console.log(`[crowd-flow] DIAG ${s} no market period=${t}`);continue;}const total=v.up+v.down;const o=v.up>=v.down?'UP':'DOWN';const share=total?Math.max(v.up,v.down)/total:0;const fp=o==='UP'?v.fu:v.fd;const lp=o==='UP'?v.lu:v.ld;const move=fp!==null&&lp!==null?Math.abs(lp-fp):0;let reason='READY';if(periodAlerts.has(String(t)))reason='period-alerted';else if(total<MIN_VOLUME)reason=`volume<${MIN_VOLUME}`;else if(share<THRESHOLD)reason=`flow<${Math.round(THRESHOLD*100)}%`;else if(move<MIN_MOVE)reason=`move<${MIN_MOVE}`;console.log(`[crowd-flow] DIAG ${s} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} FLOW=${Math.round(share*100)}% PRICE=${fp===null?'n/a':price(fp)}->${lp===null?'n/a':price(lp)} REASON=${reason}`)}}
-function connect(){socket=new WebSocket(WS);socket.onopen=()=>refresh();socket.onmessage=e=>{try{const x=JSON.parse(e.data);(Array.isArray(x)?x:[x]).forEach(event)}catch{}};socket.onclose=()=>setTimeout(connect,3000);socket.onerror=()=>{try{socket.close()}catch{}};}
-(async()=>{console.log('[crowd-flow] start',SYMBOLS.join(','));await refresh();connect();setInterval(()=>refresh().catch(e=>console.error('[crowd-flow]',e.message)),30000);setInterval(diagnostics,60000);})();
+
+const SYMBOLS = ['BTC', 'ETH'];
+const PERIOD = 300000;
+const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.60);
+const MIN_VOLUME = 400;
+const MIN_MOVE = Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE || 0.02);
+const MAX_PRICE = Number(process.env.CROWD_FLOW_MAX_LAST_PRICE || 0.80);
+const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+
+const markets = new Map();
+const tokens = new Map();
+const seen = new Set();
+const periodAlerts = new Set();
+let socket;
+
+const start = () => bucketStart(Date.now(), '5m');
+const key = (symbol, period) => `${symbol}:${period}`;
+const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
+const price = n => Number(n).toFixed(3);
+
+async function refresh() {
+  const t = start();
+
+  for (const symbol of SYMBOLS) {
+    const market = await findMarketByEpoch(symbol, t, '5m');
+    if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) {
+      console.log(`[crowd-flow] ${symbol} market unavailable period=${t}`);
+      continue;
+    }
+
+    const k = key(symbol, t);
+    if (!markets.has(k)) {
+      markets.set(k, {
+        symbol,
+        start: t,
+        market,
+        up: 0,
+        down: 0,
+        fu: null,
+        fd: null,
+        lu: null,
+        ld: null,
+        alerted: false
+      });
+    }
+
+    tokens.set(market.tokenIds.UP, { k, o: 'UP' });
+    tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
+  }
+
+  for (const [k, v] of markets) {
+    if (v.start !== t) markets.delete(k);
+  }
+
+  for (const p of periodAlerts) {
+    if (p !== String(t)) periodAlerts.delete(p);
+  }
+
+  if (socket?.readyState === WebSocket.OPEN) {
+    const ids = [...tokens]
+      .filter(([, v]) => markets.get(v.k)?.start === t)
+      .map(([id]) => id);
+
+    if (ids.length) {
+      socket.send(JSON.stringify({ assets_ids: ids, type: 'market' }));
+      console.log(`[crowd-flow] subscribed tokens=${ids.length} period=${t}`);
+    }
+  }
+}
+
+async function alert(v) {
+  if (v.alerted || periodAlerts.has(String(v.start))) return;
+
+  const total = v.up + v.down;
+  if (total < MIN_VOLUME) return;
+
+  const o = v.up >= v.down ? 'UP' : 'DOWN';
+  const share = Math.max(v.up, v.down) / total;
+  const move = o === 'UP' ? v.lu - v.fu : v.ld - v.fd;
+
+  if (share < THRESHOLD || Math.abs(move) < MIN_MOVE) return;
+
+  const fp = o === 'UP' ? v.fu : v.fd;
+  const lp = o === 'UP' ? v.lu : v.ld;
+
+  if (lp > MAX_PRICE) return;
+
+  v.alerted = true;
+  periodAlerts.add(String(v.start));
+
+  const buy = o === 'UP' ? 'DOWN' : 'UP';
+  const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
+
+  await sendTelegramMessage([
+    `🔥 ${v.symbol} · 5M CROWD FLOW`,
+    `FLOW: ${Math.round(share * 100)}% → ${o}`,
+    `UP: ${money(v.up)}`,
+    `DOWN: ${money(v.down)}`,
+    `PRICE: ${price(fp)} → ${price(lp)}`,
+    `BUY ${buy}`,
+    '',
+    `➡️ CURRENT · Polymarket 5M`,
+    v.market.url,
+    '',
+    `➡️ NEXT · Polymarket 5M`,
+    next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`
+  ].join('\n'));
+}
+
+function event(x) {
+  if (x?.event_type !== 'last_trade_price') return;
+
+  const m = tokens.get(String(x.asset_id));
+  if (!m) return;
+
+  const v = markets.get(m.k);
+  if (!v || v.start !== start()) return;
+
+  const id = `${x.asset_id}:${x.timestamp}:${x.transaction_hash || x.price}`;
+  if (seen.has(id)) return;
+  seen.add(id);
+
+  const p = Number(x.price);
+  const q = Number(x.size);
+  const n = p * q;
+  if (!Number.isFinite(n) || n <= 0) return;
+
+  if (m.o === 'UP') {
+    v.up += n;
+    if (v.fu === null) v.fu = p;
+    v.lu = p;
+  } else {
+    v.down += n;
+    if (v.fd === null) v.fd = p;
+    v.ld = p;
+  }
+
+  alert(v).catch(e => console.error('[crowd-flow] alert', e.message));
+}
+
+function diagnostics() {
+  const t = start();
+
+  for (const symbol of SYMBOLS) {
+    const v = markets.get(key(symbol, t));
+    if (!v) {
+      console.log(`[crowd-flow] DIAG ${symbol} no market period=${t}`);
+      continue;
+    }
+
+    const total = v.up + v.down;
+    const o = v.up >= v.down ? 'UP' : 'DOWN';
+    const share = total ? Math.max(v.up, v.down) / total : 0;
+    const fp = o === 'UP' ? v.fu : v.fd;
+    const lp = o === 'UP' ? v.lu : v.ld;
+    const move = fp !== null && lp !== null ? Math.abs(lp - fp) : 0;
+
+    let reason = 'READY';
+    if (periodAlerts.has(String(t))) reason = 'period-alerted';
+    else if (total < MIN_VOLUME) reason = `volume<${MIN_VOLUME}`;
+    else if (share < THRESHOLD) reason = `flow<${Math.round(THRESHOLD * 100)}%`;
+    else if (move < MIN_MOVE) reason = `move<${MIN_MOVE}`;
+    else if (lp !== null && lp > MAX_PRICE) reason = `last>${MAX_PRICE}`;
+
+    console.log(
+      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+    );
+  }
+}
+
+function connect() {
+  socket = new WebSocket(WS);
+  socket.onopen = () => refresh();
+  socket.onmessage = e => {
+    try {
+      const x = JSON.parse(e.data);
+      (Array.isArray(x) ? x : [x]).forEach(event);
+    } catch {}
+  };
+  socket.onclose = () => setTimeout(connect, 3000);
+  socket.onerror = () => {
+    try { socket.close(); } catch {}
+  };
+}
+
+(async () => {
+  console.log('[crowd-flow] start', SYMBOLS.join(','));
+  await refresh();
+  connect();
+  setInterval(() => refresh().catch(e => console.error('[crowd-flow]', e.message)), 30000);
+  setInterval(diagnostics, 60000);
+})();
