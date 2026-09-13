@@ -9,8 +9,8 @@ const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
 const MIN_TRADES = 5;
-const MIN_MAX_TRADE = 200;
 const MIN_PRICE_MOVE = 0.02;
+const MAX_PRICE_MOVE = 0.10;
 const MAX_LAST_PRICE = 0.80;
 
 const markets = new Map();
@@ -22,7 +22,6 @@ let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
-const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
 const price = n => Number(n).toFixed(3);
 
 async function refresh() {
@@ -44,7 +43,6 @@ async function refresh() {
         up: 0,
         down: 0,
         trades: 0,
-        maxTrade: 0,
         fu: null,
         fd: null,
         lu: null,
@@ -78,14 +76,14 @@ async function refresh() {
 }
 
 function signal(v) {
-  if (v.trades < MIN_TRADES || v.maxTrade <= MIN_MAX_TRADE) return null;
+  if (v.trades < MIN_TRADES) return null;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
   const fp = o === 'UP' ? v.fu : v.fd;
   const lp = o === 'UP' ? v.lu : v.ld;
   const move = fp === null || lp === null ? 0 : Math.abs(lp - fp);
 
-  if (move < MIN_PRICE_MOVE) return null;
+  if (move < MIN_PRICE_MOVE || move > MAX_PRICE_MOVE) return null;
   if (lp === null || lp > MAX_LAST_PRICE) return null;
 
   return { o, fp, lp, move };
@@ -116,7 +114,6 @@ async function alert(v) {
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `TRADES: ${v.trades}`,
-    `MAX TRADE: ${money(v.maxTrade)}`,
     `PRICE: ${price(s.fp)} → ${price(s.lp)}`,
     `MOVE: ${price(s.move)}`,
     '',
@@ -147,7 +144,6 @@ function event(x) {
   if (!Number.isFinite(n) || n <= 0) return;
 
   v.trades += 1;
-  v.maxTrade = Math.max(v.maxTrade, n);
 
   if (m.o === 'UP') {
     v.up += n;
@@ -175,7 +171,7 @@ function diagnostics() {
     const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
 
     console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} TRADES=${v.trades} PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
     );
   }
 }
