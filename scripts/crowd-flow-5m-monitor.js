@@ -4,9 +4,16 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC'];
+const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+
+// A signal must represent meaningful market activity, not a $1-$5 trade.
+const MIN_VOLUME = 1000;
+const MIN_TRADES = 5;
+const MIN_FLOW = 0.80;
+const MIN_PRICE_MOVE = 0.02;
+const MAX_LAST_PRICE = 0.80;
 
 const markets = new Map();
 const tokens = new Map();
@@ -38,6 +45,8 @@ async function refresh() {
         market,
         up: 0,
         down: 0,
+        trades: 0,
+        maxTrade: 0,
         fu: null,
         fd: null,
         lu: null,
@@ -70,15 +79,29 @@ async function refresh() {
   }
 }
 
+function signal(v) {
+  const total = v.up + v.down;
+  if (total < MIN_VOLUME || v.trades < MIN_TRADES) return null;
+
+  const o = v.up >= v.down ? 'UP' : 'DOWN';
+  const dominant = Math.max(v.up, v.down);
+  const flow = dominant / total;
+  const fp = o === 'UP' ? v.fu : v.fd;
+  const lp = o === 'UP' ? v.lu : v.ld;
+  const move = fp === null || lp === null ? 0 : Math.abs(lp - fp);
+
+  if (flow < MIN_FLOW) return null;
+  if (move < MIN_PRICE_MOVE) return null;
+  if (lp === null || lp > MAX_LAST_PRICE) return null;
+
+  return { o, total, flow, fp, lp, move };
+}
+
 async function alert(v) {
   if (v.alerted || periodAlerts.has(String(v.start))) return;
 
-  const total = v.up + v.down;
-  if (total <= 0) return;
-
-  const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const fp = o === 'UP' ? v.fu : v.fd;
-  const lp = o === 'UP' ? v.lu : v.ld;
+  const s = signal(v);
+  if (!s) return;
 
   const currentUrl = v.market.url;
   const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
@@ -98,10 +121,12 @@ async function alert(v) {
 
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M CROWD FLOW`,
-    `FLOW: ${Math.round((Math.max(v.up, v.down) / total) * 100)}% → ${o}`,
-    `UP: ${money(v.up)}`,
-    `DOWN: ${money(v.down)}`,
-    `PRICE: ${price(fp)} → ${price(lp)}`,
+    `FLOW: ${Math.round(s.flow * 100)}% → ${s.o}`,
+    `VOLUME: ${money(s.total)}`,
+    `TRADES: ${v.trades}`,
+    `MAX TRADE: ${money(v.maxTrade)}`,
+    `PRICE: ${price(s.fp)} → ${price(s.lp)}`,
+    `MOVE: ${price(s.move)}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
     currentUrl,
@@ -129,6 +154,9 @@ function event(x) {
   const n = p * q;
   if (!Number.isFinite(n) || n <= 0) return;
 
+  v.trades += 1;
+  v.maxTrade = Math.max(v.maxTrade, n);
+
   if (m.o === 'UP') {
     v.up += n;
     if (v.fu === null) v.fu = p;
@@ -144,21 +172,21 @@ function event(x) {
 
 function diagnostics() {
   const t = start();
-  const v = markets.get(key('BTC', t));
-  if (!v) {
-    console.log(`[crowd-flow] DIAG BTC no market period=${t}`);
-    return;
+  for (const symbol of SYMBOLS) {
+    const v = markets.get(key(symbol, t));
+    if (!v) continue;
+
+    const total = v.up + v.down;
+    const o = v.up >= v.down ? 'UP' : 'DOWN';
+    const share = total ? Math.max(v.up, v.down) / total : 0;
+    const fp = o === 'UP' ? v.fu : v.fd;
+    const lp = o === 'UP' ? v.lu : v.ld;
+    const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
+
+    console.log(
+      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} TRADES=${v.trades} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+    );
   }
-
-  const total = v.up + v.down;
-  const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const share = total ? Math.max(v.up, v.down) / total : 0;
-  const fp = o === 'UP' ? v.fu : v.fd;
-  const lp = o === 'UP' ? v.lu : v.ld;
-
-  console.log(
-    `[crowd-flow] DIAG BTC UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${periodAlerts.has(String(t)) ? 'period-alerted' : 'READY'}`
-  );
 }
 
 function connect() {
