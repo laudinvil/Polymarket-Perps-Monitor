@@ -17,8 +17,13 @@ function periodStart(ts) {
 }
 
 function loadState() {
-  try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); }
-  catch { return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null, comboPeriod: null, comboLastSide: null, comboLastTs: null }; }
+  try {
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    if (!Object.prototype.hasOwnProperty.call(state, 'comboLastEvent')) state.comboLastEvent = null;
+    return state;
+  } catch {
+    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null, comboPeriod: null, comboLastSide: null, comboLastTs: null, comboLastEvent: null };
+  }
 }
 
 function saveState(state) { fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2)); }
@@ -85,6 +90,16 @@ function liquidationSide(event) {
 function paperOutcomeFromLiquidation(event) {
   const side = liquidationSide(event);
   return side === 'SHORT' ? 'DOWN' : side === 'LONG' ? 'UP' : null;
+}
+
+function comboEventSnapshot(event, side = liquidationSide(event)) {
+  return {
+    symbol: String(event?.symbol || '').toUpperCase(),
+    side,
+    ts: normalizeTs(event?.ts),
+    notional: Number(event?.notional),
+    price: event?.price ?? null,
+  };
 }
 
 async function getPaperEntry(nextMarket, outcome) {
@@ -218,21 +233,24 @@ async function main() {
         state.comboPeriod = currentPeriod;
         state.comboLastSide = null;
         state.comboLastTs = null;
+        state.comboLastEvent = null;
       }
       for (const event of fresh) {
         const side = liquidationSide(event);
         if (!['LONG', 'SHORT'].includes(side)) continue;
         if (state.comboLastSide && side !== state.comboLastSide) {
-          const firstEvent = { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
+          const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
           if (await alertForCombo(firstEvent, event, state, currentPeriod)) {
             state.comboLastSide = side;
             state.comboLastTs = normalizeTs(event.ts);
+            state.comboLastEvent = comboEventSnapshot(event, side);
             saveState(state);
             break;
           }
         }
         state.comboLastSide = side;
         state.comboLastTs = normalizeTs(event.ts);
+        state.comboLastEvent = comboEventSnapshot(event, side);
         saveState(state);
       }
       const totalCurrent = events.filter(event => isCurrentPeriodEvent(event, currentPeriod)).length;
