@@ -16,6 +16,7 @@ const markets = new Map();
 const tokens = new Map();
 const seen = new Set();
 const periodAlerts = new Set();
+const alertedLinks = new Set();
 let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
@@ -90,11 +91,23 @@ async function alert(v) {
 
   if (lp > MAX_PRICE) return;
 
+  const currentUrl = v.market.url;
+  const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
+  const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
+
+  if (alertedLinks.has(currentUrl) || alertedLinks.has(nextUrl)) {
+    console.log(`[crowd-flow] duplicate links suppressed symbol=${v.symbol} current=${currentUrl} next=${nextUrl}`);
+    v.alerted = true;
+    periodAlerts.add(String(v.start));
+    return;
+  }
+
   v.alerted = true;
   periodAlerts.add(String(v.start));
+  alertedLinks.add(currentUrl);
+  alertedLinks.add(nextUrl);
 
   const buy = o === 'UP' ? 'DOWN' : 'UP';
-  const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
 
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M CROWD FLOW`,
@@ -105,10 +118,10 @@ async function alert(v) {
     `BUY ${buy}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
-    v.market.url,
+    currentUrl,
     '',
     `➡️ NEXT · Polymarket 5M`,
-    next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`
+    nextUrl
   ].join('\n'));
 }
 
