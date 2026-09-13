@@ -11,6 +11,7 @@ const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 // A signal must represent meaningful market activity, not a $1-$5 trade.
 const MIN_VOLUME = 1000;
 const MIN_TRADES = 5;
+const MIN_MAX_TRADE = 200;
 const MIN_FLOW = 0.80;
 const MIN_PRICE_MOVE = 0.02;
 const MAX_LAST_PRICE = 0.80;
@@ -81,7 +82,7 @@ async function refresh() {
 
 function signal(v) {
   const total = v.up + v.down;
-  if (total < MIN_VOLUME || v.trades < MIN_TRADES) return null;
+  if (total < MIN_VOLUME || v.trades < MIN_TRADES || v.maxTrade <= MIN_MAX_TRADE) return null;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
   const dominant = Math.max(v.up, v.down);
@@ -122,7 +123,6 @@ async function alert(v) {
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `FLOW: ${Math.round(s.flow * 100)}% → ${s.o}`,
-    `VOLUME: ${money(s.total)}`,
     `TRADES: ${v.trades}`,
     `MAX TRADE: ${money(v.maxTrade)}`,
     `PRICE: ${price(s.fp)} → ${price(s.lp)}`,
