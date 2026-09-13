@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
+const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
@@ -67,16 +67,13 @@ async function refresh() {
 
 function signal(v) {
   if (v.trades < MIN_TRADES) return null;
-
-  const o = v.up >= v.down ? 'UP' : 'DOWN';
-  return { o };
+  return { o: v.up >= v.down ? 'UP' : 'DOWN' };
 }
 
 async function alert(v) {
   if (v.alerted) return;
 
-  const s = signal(v);
-  if (!s) return;
+  if (!signal(v)) return;
 
   const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
   const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
@@ -101,7 +98,7 @@ async function alert(v) {
     `PRICE UP: ${upPrice === null ? 'n/a' : upPrice}${upAttention}`,
     `PRICE DOWN: ${downPrice === null ? 'n/a' : downPrice}${downAttention}`,
     '',
-    `➡️ NEXT · Polymarket 5M`,
+    '➡️ NEXT · Polymarket 5M',
     nextUrl
   ].join('\n'));
 }
@@ -125,7 +122,6 @@ function event(x) {
   if (!Number.isFinite(n) || n <= 0) return;
 
   v.trades += 1;
-
   if (m.o === 'UP') {
     v.up += n;
     v.lu = p;
@@ -142,14 +138,7 @@ function diagnostics() {
   for (const symbol of SYMBOLS) {
     const v = markets.get(key(symbol, t));
     if (!v) continue;
-
-    const total = v.up + v.down;
-    const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const reason = v.alerted ? 'alerted' : 'WAITING';
-
-    console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} DIRECTION=${o} REASON=${reason}`
-    );
+    console.log(`[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TRADES=${v.trades} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} REASON=${v.alerted ? 'alerted' : 'WAITING'}`);
   }
 }
 
