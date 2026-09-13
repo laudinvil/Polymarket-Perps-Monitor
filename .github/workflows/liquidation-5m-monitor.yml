@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/liquidation-long-monitor.js'
+      - 'scripts/monitor-runtime-wrapper.js'
       - 'src/liquidation-monitor.js'
       - 'src/polymarket.js'
       - 'src/telegram.js'
@@ -39,6 +40,7 @@ jobs:
       - name: Verify monitor source
         run: |
           node --check scripts/liquidation-long-monitor.js
+          node --check scripts/monitor-runtime-wrapper.js
           node --check src/liquidation-monitor.js
           node --check src/polymarket.js
           node --check src/telegram.js
@@ -51,4 +53,4 @@ jobs:
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
           CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
         run: |
-          node -r ./src/http-timeout.js scripts/liquidation-long-monitor.js
+          node scripts/monitor-runtime-wrapper.js
