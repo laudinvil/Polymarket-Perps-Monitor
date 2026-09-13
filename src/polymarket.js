@@ -38,9 +38,7 @@ function parseMarketData(market) {
     const numericPrices = outcomePrices.map(Number);
     const resolvedIndex = numericPrices.findIndex(value => Number.isFinite(value) && value >= 0.995);
     const otherIndex = resolvedIndex === 0 ? 1 : 0;
-    if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.005) {
-      winner = String(outcomes[resolvedIndex]).toUpperCase();
-    }
+    if (resolvedIndex >= 0 && Number.isFinite(numericPrices[otherIndex]) && numericPrices[otherIndex] <= 0.005) winner = String(outcomes[resolvedIndex]).toUpperCase();
   }
   if (!winner && Array.isArray(market?.tokens)) {
     const winningToken = market.tokens.find(token => token?.winner === true);
@@ -55,19 +53,10 @@ async function findMarketBySlug(slug) {
   if (!market || market.slug !== slug) return null;
   const data = parseMarketData(market);
   return {
-    slug,
-    url: `${MARKET_BASE_URL}/${slug}`,
-    question: market.question || null,
-    startDate: market.startDate || market.startDateIso || null,
-    endDate: market.endDate || market.endDateIso || null,
-    prices: data.prices,
-    tokenIds: data.tokenIds,
-    outcomes: data.outcomes,
-    outcomePrices: data.outcomePrices,
-    closed: data.closed,
-    closedTime: data.closedTime,
-    resolved: data.resolved,
-    winner: data.winner,
+    slug, url: `${MARKET_BASE_URL}/${slug}`, question: market.question || null,
+    startDate: market.startDate || market.startDateIso || null, endDate: market.endDate || market.endDateIso || null,
+    prices: data.prices, tokenIds: data.tokenIds, outcomes: data.outcomes, outcomePrices: data.outcomePrices,
+    closed: data.closed, closedTime: data.closedTime, resolved: data.resolved, winner: data.winner,
   };
 }
 async function clobMidpoint(tokenId) {
@@ -85,8 +74,8 @@ function longTimeframeSlug(symbol, epoch, timeframe) { const asset = LONG_ASSET_
 function constructMarketUrl(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset || !TIMEFRAMES[timeframe]) return null; if (timeframe === '1h' || timeframe === '1d') { const slug = longTimeframeSlug(asset, epoch, timeframe); return slug ? `${MARKET_BASE_URL}/${slug}` : null; } const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return `${MARKET_BASE_URL}/${slug}`; }
 async function findMarketByEpoch(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset) return null; if (timeframe === '1h' || timeframe === '1d') return findMarketBySlug(longTimeframeSlug(asset, epoch, timeframe)); const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return findMarketBySlug(slug); }
 async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
-  // Return NEXT+1: skip the immediately upcoming market and target the following period.
-  const start = nextBucketStart(now, timeframe) + TIMEFRAMES[timeframe];
+  // Return NEXT+3: skip the next two 5m markets and target the third upcoming period.
+  const start = bucketStart(now, timeframe) + 3 * TIMEFRAMES[timeframe];
   for (let i = 0; i < 12; i += 1) {
     const epoch = start + i * TIMEFRAMES[timeframe];
     const market = await findMarketByEpoch(symbol, epoch, timeframe);
