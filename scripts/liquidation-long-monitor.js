@@ -111,7 +111,7 @@ async function getPaperEntry(nextMarket, outcome) {
   const gammaPrice = Number(nextMarket.prices?.[outcome]);
   const price = Number.isFinite(midpoint) && midpoint > 0 && midpoint < 1 ? midpoint : gammaPrice;
   if (!Number.isFinite(price) || price <= 0 || price >= 1) return null;
-  console.log(`[5M] PAPER entry NEXT+2 market=${nextMarket.slug} outcome=${outcome} clob_mid=${midpoint ?? 'N/A'} gamma=${Number.isFinite(gammaPrice) ? gammaPrice : 'N/A'} selected=${price}`);
+  console.log(`[5M] PAPER entry NEXT+3 market=${nextMarket.slug} outcome=${outcome} clob_mid=${midpoint ?? 'N/A'} gamma=${Number.isFinite(gammaPrice) ? gammaPrice : 'N/A'} selected=${price}`);
   return { market: nextMarket, marketStart, outcome, entryPrice: price, shares: PAPER_USD / price };
 }
 
@@ -187,7 +187,7 @@ async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
 
   const alertNow = Date.now();
   const nextMarket = await findNextMarket(symbol, alertNow, '5m');
-  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((alertPeriod + 2 * PERIOD_MS) / 1000)}`;
+  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((alertPeriod + 3 * PERIOD_MS) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(secondEvent);
   const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
   const message = [
@@ -196,8 +196,8 @@ async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
     `1st: ${formatUsd(firstEvent.notional)} · ${formatTime(firstTs)} UTC+3 · ${firstEvent.price ?? 'n/a'}`,
     `2nd: ${formatUsd(secondEvent.notional)} · ${formatTime(secondTs)} UTC+3 · ${secondEvent.price ?? 'n/a'}`,
     `Periods: ${formatTime(periodStart(firstTs))} → ${formatTime(periodStart(secondTs))} UTC+3`,
-    ...(paperTrade ? [`📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`, `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`, `Shares: ${paperTrade.shares.toFixed(4)}`] : ['📈 PAPER TRADE · next+2 market entry unavailable']),
-    `➡️ NEXT+2 · Polymarket 5M`, nextUrl,
+    ...(paperTrade ? [`📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`, `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`, `Shares: ${paperTrade.shares.toFixed(4)}`] : ['📈 PAPER TRADE · next+3 market entry unavailable']),
+    `➡️ NEXT+3 · Polymarket 5M`, nextUrl,
   ].join('\n');
 
   try {
@@ -211,7 +211,7 @@ async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
   } catch (error) {
     console.error(`[5M] Telegram/Convex send failed; combo remains available: ${error.message}`); return false;
   }
-  console.log(`[5M] COMBO ALERT ${symbol} ${firstSide}->${secondSide} firstPeriod=${formatTime(periodStart(firstTs))} secondPeriod=${formatTime(periodStart(secondTs))} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} next+2=${nextUrl}`);
+  console.log(`[5M] COMBO ALERT ${symbol} ${firstSide}->${secondSide} firstPeriod=${formatTime(periodStart(firstTs))} secondPeriod=${formatTime(periodStart(secondTs))} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} next+3=${nextUrl}`);
   return true;
 }
 
