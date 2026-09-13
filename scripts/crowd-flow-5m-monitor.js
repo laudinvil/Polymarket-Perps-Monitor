@@ -8,10 +8,8 @@ const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-// A signal must represent meaningful market activity, not a $1-$5 trade.
 const MIN_TRADES = 5;
 const MIN_MAX_TRADE = 200;
-const MIN_FLOW = 0.80;
 const MIN_PRICE_MOVE = 0.02;
 const MAX_LAST_PRICE = 0.80;
 
@@ -82,19 +80,15 @@ async function refresh() {
 function signal(v) {
   if (v.trades < MIN_TRADES || v.maxTrade <= MIN_MAX_TRADE) return null;
 
-  const total = v.up + v.down;
   const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const dominant = Math.max(v.up, v.down);
-  const flow = total ? dominant / total : 0;
   const fp = o === 'UP' ? v.fu : v.fd;
   const lp = o === 'UP' ? v.lu : v.ld;
   const move = fp === null || lp === null ? 0 : Math.abs(lp - fp);
 
-  if (flow < MIN_FLOW) return null;
   if (move < MIN_PRICE_MOVE) return null;
   if (lp === null || lp > MAX_LAST_PRICE) return null;
 
-  return { o, flow, fp, lp, move };
+  return { o, fp, lp, move };
 }
 
 async function alert(v) {
@@ -121,7 +115,6 @@ async function alert(v) {
 
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
-    `FLOW: ${Math.round(s.flow * 100)}% → ${s.o}`,
     `TRADES: ${v.trades}`,
     `MAX TRADE: ${money(v.maxTrade)}`,
     `PRICE: ${price(s.fp)} → ${price(s.lp)}`,
@@ -177,13 +170,12 @@ function diagnostics() {
 
     const total = v.up + v.down;
     const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const share = total ? Math.max(v.up, v.down) / total : 0;
     const fp = o === 'UP' ? v.fu : v.fd;
     const lp = o === 'UP' ? v.lu : v.ld;
     const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
 
     console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} TRADES=${v.trades} FLOW=${Math.round(share * 100)}% PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+      `[crowd-flow] DIAG ${symbol} UP=${money(v.up)} DOWN=${money(v.down)} TOTAL=${money(total)} TRADES=${v.trades} PRICE=${fp === null ? 'n/a' : price(fp)}->${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
     );
   }
 }
