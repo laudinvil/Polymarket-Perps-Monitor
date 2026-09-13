@@ -8,8 +8,7 @@ const SYMBOLS = ['BTC', 'ETH', 'XRP', 'SOL', 'BNB', 'HYPE', 'DOGE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 100;
-const MAX_LAST_PRICE = 0.80;
+const MIN_TRADES = 200;
 
 const markets = new Map();
 const tokens = new Map();
@@ -41,8 +40,6 @@ async function refresh() {
         up: 0,
         down: 0,
         trades: 0,
-        fu: null,
-        fd: null,
         lu: null,
         ld: null,
         alerted: false
@@ -79,8 +76,6 @@ function signal(v) {
   const o = v.up >= v.down ? 'UP' : 'DOWN';
   const lp = o === 'UP' ? v.lu : v.ld;
 
-  if (lp === null || lp > MAX_LAST_PRICE) return null;
-
   return { o, lp };
 }
 
@@ -109,7 +104,7 @@ async function alert(v) {
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `TRADES: ${v.trades}`,
-    `PRICE: ${price(s.lp)}`,
+    `PRICE: ${s.lp === null ? 'n/a' : price(s.lp)}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
     currentUrl,
@@ -141,10 +136,10 @@ function event(x) {
 
   if (m.o === 'UP') {
     v.up += n;
-    if (v.lu === null) v.lu = p;
+    v.lu = p;
   } else {
     v.down += n;
-    if (v.ld === null) v.ld = p;
+    v.ld = p;
   }
 
   alert(v).catch(e => console.error('[crowd-flow] alert', e.message));
