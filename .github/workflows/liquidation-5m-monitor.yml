@@ -42,13 +42,33 @@ jobs:
           node --check src/polymarket.js
           node --check src/telegram.js
           grep -q "CONVEX_INGEST_TOKEN" scripts/liquidation-long-monitor.js
-      - name: Enforce chronological combo ordering
+      - name: Enforce combo ordering and NEXT market link
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('scripts/liquidation-long-monitor.js')
           s = p.read_text()
-          old = '''      for (const event of fresh) {
+
+          old = """  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((alertPeriod + 4 * PERIOD_MS) / 1000)}`;"""
+          new = """  const nextPeriod = alertPeriod + PERIOD_MS;
+  const nextMarketForAlert = nextMarket && Number(nextMarket.slug?.split('-').pop()) * 1000 === nextPeriod ? nextMarket : null;
+  const nextUrl = nextMarketForAlert?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(nextPeriod / 1000)}`;"""
+          if old not in s:
+              raise SystemExit('Expected NEXT+4 URL expression was not found; refusing to modify source')
+          s = s.replace(old, new, 1)
+
+          old_label = "`➡️ NEXT+4 · Polymarket 5M`, nextUrl"
+          new_label = "`➡️ NEXT · Polymarket 5M`, nextUrl"
+          if old_label not in s:
+              raise SystemExit('Expected NEXT+4 alert label was not found; refusing to modify source')
+          s = s.replace(old_label, new_label, 1)
+
+          old_log = "next+4=${nextUrl}`"
+          new_log = "next=${nextUrl}`"
+          if old_log in s:
+              s = s.replace(old_log, new_log, 1)
+
+          old_loop = '''      for (const event of fresh) {
         const side = liquidationSide(event);
         if (!['LONG', 'SHORT'].includes(side)) continue;
         const eventPeriod = periodStart(normalizeTs(event.ts));
@@ -69,20 +89,15 @@ jobs:
         state.comboLastPeriod = eventPeriod;
         saveState(state);
       }'''
-          new = '''      for (const event of fresh) {
+          new_loop = '''      for (const event of fresh) {
         const side = liquidationSide(event);
         if (!['LONG', 'SHORT'].includes(side)) continue;
         const eventTs = normalizeTs(event.ts);
         const eventPeriod = periodStart(eventTs);
-
-        // MarginPad can deliver a newly observed event whose source timestamp
-        // is older than the last event already used by the combo state.
-        // Such a late event must never become the 2nd leg of a combo.
         if (state.comboLastTs !== null && Number(eventTs) <= Number(state.comboLastTs)) {
           console.log(`[5M] IGNORE OUT-OF-ORDER event ts=${formatTime(eventTs)} lastComboTs=${formatTime(state.comboLastTs)} side=${side}`);
           continue;
         }
-
         if (state.comboLastSide && side !== state.comboLastSide && state.comboLastPeriod !== eventPeriod) {
           const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
           const firstTs = normalizeTs(firstEvent.ts);
@@ -105,11 +120,13 @@ jobs:
         state.comboLastPeriod = eventPeriod;
         saveState(state);
       }'''
-          if old not in s:
+          if old_loop in s:
+              s = s.replace(old_loop, new_loop, 1)
+          elif 'IGNORE OUT-OF-ORDER event' not in s:
               raise SystemExit('Expected combo loop was not found; refusing to modify source')
-          s = s.replace(old, new, 1)
+
           p.write_text(s)
-          print('Chronological combo guard applied')
+          print('NEXT market link and chronological combo guard applied')
           PY
           node --check scripts/liquidation-long-monitor.js
       - name: Run 5M liquidation monitor
