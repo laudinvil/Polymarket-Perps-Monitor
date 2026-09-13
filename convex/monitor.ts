@@ -1,4 +1,4 @@
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, query } from "convex/server";
 import { v } from "convex/values";
 
 export const startRun = internalMutation({
@@ -62,7 +62,8 @@ export const claimEsportsAlert = internalMutation({
 export const upsertPaperTrade = internalMutation({
   args: {
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
-    sourceMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()), updatedAt:v.number(),
+    sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
+    closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number(),
   },
   handler: async (ctx,args) => {
     const existing=await ctx.db.query("paperTrades").withIndex("by_market",q=>q.eq("symbol",args.symbol).eq("marketStart",args.marketStart)).unique();
@@ -81,7 +82,7 @@ export const getOpenPaperTrade = query({
 
 export const latestPaperTrades = query({
   args:{limit:v.number()},
-  handler:async(ctx)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)),
+  handler:async(ctx,args)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)),
 });
 
 export const pruneOldData = internalMutation({
