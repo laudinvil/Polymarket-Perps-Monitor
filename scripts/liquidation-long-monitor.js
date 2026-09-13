@@ -162,9 +162,9 @@ async function settlePaperTrade(trade, state) {
   await persistPaperTrade(trade); saveState(state); return true;
 }
 
-function isFreshEvent(event, currentPeriod, seenEvents) {
+function isFreshEvent(event, seenEvents) {
   const ts = normalizeTs(event?.ts);
-  if (!ts || periodStart(ts) !== currentPeriod) return false;
+  if (!ts) return false;
   const key = eventKey(event); if (seenEvents.has(key)) return false;
   seenEvents.add(key); return true;
 }
@@ -173,7 +173,7 @@ async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
   const firstTs = normalizeTs(firstEvent.ts);
   const secondTs = normalizeTs(secondEvent.ts);
   const symbol = String(secondEvent.symbol || firstEvent.symbol || '').toUpperCase();
-  if (periodStart(firstTs) !== currentPeriod || periodStart(secondTs) !== currentPeriod) return false;
+  if (!firstTs || !secondTs) return false;
   if (state.paperTrade && !state.paperTrade.settled) return false;
   if (state.skipPeriod !== null && Number(state.skipPeriod) === currentPeriod) return false;
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) return false;
@@ -217,7 +217,7 @@ function isCurrentPeriodEvent(event, currentPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert only on opposite liquidation pair LONG->SHORT or SHORT->LONG; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert on opposite liquidation pair LONG->SHORT or SHORT->LONG regardless of 5M boundary; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState(); const seenEvents = new Set();
   if (!CONVEX_INGEST_TOKEN) throw new Error('CONVEX_INGEST_TOKEN is required for persistent paper state');
   try { await loadPersistentPaperTrade(state); } catch (error) { throw new Error(`Convex paper state unavailable: ${error.message}`); }
@@ -226,21 +226,15 @@ async function main() {
       const now = Date.now(); const currentPeriod = periodStart(now);
       if (state.paperTrade && !state.paperTrade.settled) { if (await settlePaperTrade(state.paperTrade, state)) saveState(state); }
       const events = await fetchFeed(DEFAULT_SYMBOLS);
-      const fresh = events.filter(event => isFreshEvent(event, currentPeriod, seenEvents)).sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
+      const fresh = events.filter(event => isFreshEvent(event, seenEvents)).sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
       if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < currentPeriod) { state.lastAlertPeriod = null; }
       if (state.skipPeriod !== null && Number(state.skipPeriod) < currentPeriod) { state.skipPeriod = null; }
-      if (state.comboPeriod !== currentPeriod) {
-        state.comboPeriod = currentPeriod;
-        state.comboLastSide = null;
-        state.comboLastTs = null;
-        state.comboLastEvent = null;
-      }
       for (const event of fresh) {
         const side = liquidationSide(event);
         if (!['LONG', 'SHORT'].includes(side)) continue;
         if (state.comboLastSide && side !== state.comboLastSide) {
           const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
-          if (await alertForCombo(firstEvent, event, state, currentPeriod)) {
+          if (await alertForCombo(firstEvent, event, state, periodStart(normalizeTs(event.ts)))) {
             state.comboLastSide = side;
             state.comboLastTs = normalizeTs(event.ts);
             state.comboLastEvent = comboEventSnapshot(event, side);
@@ -254,9 +248,12 @@ async function main() {
         saveState(state);
       }
       const totalCurrent = events.filter(event => isCurrentPeriodEvent(event, currentPeriod)).length;
-      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} combo=${state.comboLastSide || 'NONE'} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'DONE_CURRENT_PERIOD' : 'WAITING_OPPOSITE_COMBO'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
-    } catch (error) { console.error(`[5M] monitor error: ${error.message}`); }
-    await new Promise(resolve => setTimeout(resolve, POLL_MS));
+      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} combo=${state.comboLastSide || 'NONE'} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'ALERTED' : 'READY'}`);
+      await new Promise(resolve => setTimeout(resolve, POLL_MS));
+    } catch (error) {
+      console.error(`[5M] loop error: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, POLL_MS));
+    }
   }
 }
 
