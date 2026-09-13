@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { fetchFeed, eventKey, normalizeTs, DEFAULT_SYMBOLS, POLL_MS } = require('../src/liquidation-monitor');
 const { bucketStart, findNextMarket, findMarketByEpoch, findClobMidpoint } = require('../src/polymarket');
-const { sendTelegramMessage } = require('../src/telegram');
+const { sendTelegramMessage, editTelegramMessage } = require('../src/telegram');
 
 const STATE_PATH = path.join(process.cwd(), '.liquidation-state.json');
 const TZ = 'Europe/Kyiv';
@@ -45,8 +45,8 @@ async function loadPersistentPaperTrade(state) {
   state.paperTrade = {
     symbol: trade.symbol, marketStart: trade.marketStart, outcome: trade.outcome,
     entryPrice: trade.entryPrice, shares: trade.shares, alertTs: trade.alertTs,
-    sourceMessageId: trade.sourceMessageId, settled: Boolean(trade.settled),
-    result: trade.result, winner: trade.winner, pnl: trade.pnl,
+    sourceMessageId: trade.sourceMessageId, resultMessageId: trade.resultMessageId,
+    settled: Boolean(trade.settled), result: trade.result, winner: trade.winner, pnl: trade.pnl,
     closedPrice: trade.closedPrice, closeTs: trade.closeTs, closePnl: trade.closePnl,
   };
   saveState(state);
@@ -62,6 +62,7 @@ async function persistPaperTrade(trade) {
       symbol: trade.symbol, marketStart: trade.marketStart, outcome: trade.outcome,
       entryPrice: trade.entryPrice, shares: trade.shares, alertTs: trade.alertTs,
       sourceMessageId: Number.isInteger(trade.sourceMessageId) ? trade.sourceMessageId : undefined,
+      resultMessageId: Number.isInteger(trade.resultMessageId) ? trade.resultMessageId : undefined,
       settled: Boolean(trade.settled), result: trade.result, winner: trade.winner, pnl: trade.pnl,
       closedPrice: trade.closedPrice, closeTs: trade.closeTs, closePnl: trade.closePnl,
       updatedAt: Date.now(),
@@ -123,44 +124,88 @@ async function settlePaperTrade(trade, state) {
   const market = await findMarketByEpoch(trade.symbol, trade.marketStart, '5m');
   if (!market) return false;
   let changed = false;
+
   if (!Number.isFinite(Number(trade.closedPrice))) {
     const closePrice = await findClobMidpoint(market, trade.outcome);
     if (Number.isFinite(closePrice) && closePrice >= 0 && closePrice <= 1) {
       const value = trade.shares * closePrice;
-      const closePnl = value - PAPER_USD;
-      trade.closedPrice = closePrice; trade.closeTs = endTs; trade.closePnl = closePnl; changed = true;
-      const closeMessage = [
-        `📊 PAPER CLOSE · ${trade.symbol} · 5M`,
-        `BUY $${PAPER_USD.toFixed(2)} ${trade.outcome} @ ${trade.entryPrice.toFixed(4)}`,
-        `CLOSE @ ${closePrice.toFixed(4)}`, `Value: $${value.toFixed(2)}`,
-        `P&L: ${closePnl >= 0 ? '+' : ''}$${closePnl.toFixed(2)}`,
-        `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`,
-        `➡️ MARKET`, market.url,
-      ].join('\n');
-      const options = Number.isInteger(trade.sourceMessageId) ? { replyToMessageId: trade.sourceMessageId } : {};
-      await sendTelegramMessage(closeMessage, options);
+      trade.closedPrice = closePrice;
+      trade.closeTs = endTs;
+      trade.closePnl = value - PAPER_USD;
+      changed = true;
     }
   }
-  if (changed) { await persistPaperTrade(trade); saveState(state); }
+
+  if (!Number.isInteger(trade.resultMessageId) && Number.isFinite(Number(trade.closedPrice))) {
+    const closePrice = Number(trade.closedPrice);
+    const closePnl = Number(trade.closePnl);
+    const pendingMessage = [
+      `📊 PAPER RESULT · ${trade.symbol} · 5M`,
+      `BUY $${PAPER_USD.toFixed(2)} ${trade.outcome} @ ${trade.entryPrice.toFixed(4)}`,
+      `CLOSE @ ${closePrice.toFixed(4)}`,
+      `Close P&L: ${closePnl >= 0 ? '+' : ''}$${closePnl.toFixed(2)}`,
+      `Result: PENDING RESOLUTION`,
+      `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`,
+      `➡️ MARKET`, market.url,
+    ].join('\n');
+    const sent = await sendTelegramMessage(pendingMessage);
+    const messageId = Number(sent?.message_id);
+    if (!Number.isInteger(messageId)) throw new Error('Telegram result message did not return message_id');
+    trade.resultMessageId = messageId;
+    changed = true;
+    console.log(`[5M] PAPER RESULT PENDING message=${messageId} close=${closePrice} pnl=${closePnl}`);
+  }
+
+  if (changed) {
+    await persistPaperTrade(trade);
+    saveState(state);
+  }
+
   if (!market.resolved || !market.winner) return changed;
+
   const winner = String(market.winner).toUpperCase();
   const win = winner === trade.outcome;
   const payout = win ? trade.shares : 0;
   const pnl = payout - PAPER_USD;
   const result = win ? 'WIN' : 'LOSS';
-  const message = [
-    `🏁 FINAL PAPER RESULT · ${trade.symbol} · 5M`,
+  const finalMessage = [
+    `🏁 PAPER RESULT · ${trade.symbol} · 5M`,
     `BUY $${PAPER_USD.toFixed(2)} ${trade.outcome} @ ${trade.entryPrice.toFixed(4)}`,
-    ...(Number.isFinite(Number(trade.closedPrice)) ? [`CLOSE @ ${Number(trade.closedPrice).toFixed(4)}`, `Close P&L: ${Number(trade.closePnl).toFixed(2) >= 0 ? '+' : ''}$${Number(trade.closePnl).toFixed(2)}`] : []),
-    `Result: ${result}`, `Winner: ${winner}`, `Payout: $${payout.toFixed(2)}`,
+    ...(Number.isFinite(Number(trade.closedPrice)) ? [
+      `CLOSE @ ${Number(trade.closedPrice).toFixed(4)}`,
+      `Close P&L: ${Number(trade.closePnl) >= 0 ? '+' : ''}$${Number(trade.closePnl).toFixed(2)}`,
+    ] : []),
+    `Result: ${result}`,
+    `Winner: ${winner}`,
+    `Payout: $${payout.toFixed(2)}`,
     `Final P&L: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`,
-    `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`, `➡️ MARKET`, market.url,
+    `Period: ${formatTime(trade.marketStart)} → ${formatTime(endTs)} UTC+3`,
+    `➡️ MARKET`, market.url,
   ].join('\n');
-  const options = Number.isInteger(trade.sourceMessageId) ? { replyToMessageId: trade.sourceMessageId } : {};
-  await sendTelegramMessage(message, options);
-  trade.settled = true; trade.result = result; trade.winner = winner; trade.pnl = pnl;
+
+  if (Number.isInteger(trade.resultMessageId)) {
+    try {
+      await editTelegramMessage(trade.resultMessageId, finalMessage);
+      console.log(`[5M] PAPER RESULT EDITED message=${trade.resultMessageId} result=${result} winner=${winner}`);
+    } catch (error) {
+      console.error(`[5M] Telegram result edit failed; keeping trade pending: ${error.message}`);
+      return changed;
+    }
+  } else {
+    const sent = await sendTelegramMessage(finalMessage);
+    const messageId = Number(sent?.message_id);
+    if (Number.isInteger(messageId)) trade.resultMessageId = messageId;
+    console.log(`[5M] PAPER RESULT legacy final message=${messageId || 'N/A'} result=${result} winner=${winner}`);
+  }
+
+  trade.settled = true;
+  trade.result = result;
+  trade.winner = winner;
+  trade.pnl = pnl;
   if (win) state.skipPeriod = endTs;
-  await persistPaperTrade(trade); saveState(state); return true;
+  await persistPaperTrade(trade);
+  saveState(state);
+  return true;
 }
 
 function isFreshEvent(event, seenEvents) {
@@ -201,7 +246,7 @@ async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
     const sentMessage = await sendTelegramMessage(message);
     state.lastAlertPeriod = alertPeriod;
     if (paperTrade) {
-      state.paperTrade = { ...paperTrade, symbol, alertTs: secondTs, sourceMessageId: Number(sentMessage?.message_id), settled: false };
+      state.paperTrade = { ...paperTrade, symbol, alertTs: secondTs, sourceMessageId: Number(sentMessage?.message_id), resultMessageId: null, settled: false };
       await persistPaperTrade(state.paperTrade);
     }
     saveState(state);
@@ -269,4 +314,4 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(`[5M] fatal: ${error.stack || error.message}`); process.exitCode = 1; });
+main().catch(error => { console.error(`[5M] FATAL: ${error.stack || error.message}`); process.exitCode = 1; });
