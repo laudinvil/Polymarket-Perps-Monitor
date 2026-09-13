@@ -6,7 +6,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 
 const SYMBOLS = ['BTC', 'ETH'];
 const PERIOD = 300000;
-const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.60);
+const THRESHOLD = Number(process.env.CROWD_FLOW_THRESHOLD || 0.69);
 const MIN_VOLUME = 400;
 const MIN_MOVE = Number(process.env.CROWD_FLOW_MIN_PRICE_MOVE || 0.02);
 const MAX_PRICE = Number(process.env.CROWD_FLOW_MAX_LAST_PRICE || 0.80);
