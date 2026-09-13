@@ -1,6 +1,8 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
-const DEFAULT_SYMBOLS = ['BTC'];
+// Global mode: MarginPad /feed already contains the newest liquidations across all tracked symbols.
+// Keep this as a marker for callers; fetchFeed() treats ALL as a request for the global feed.
+const DEFAULT_SYMBOLS = ['ALL'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
@@ -85,6 +87,11 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   }
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
+  const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
+  // ALL mode is intentionally global: do not loop over a hard-coded coin list and
+  // do not consume one live-fallback request per symbol. The /feed endpoint already
+  // returns the newest liquidations across all tracked symbols.
+  if (requested.includes('ALL') || requested.length === 0) return fetchLiveFeed(fetchImpl);
   const results = await Promise.all(symbols.map(async symbol => [normalizeSymbol(symbol), await fetchSymbolFeed(symbol, fetchImpl)]));
   return results.flatMap(([, events]) => events);
 }
@@ -93,13 +100,15 @@ function isLong(event) {
   return side.includes('long') || side === 'buy';
 }
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
-  const allowed = new Set(symbols.map(normalizeSymbol));
+  const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
+  const global = requested.includes('ALL') || requested.length === 0;
+  const allowed = new Set(requested);
   const current = bucketStart(now);
   const rows = new Map();
   for (const event of events || []) {
     const ts = normalizeTs(event.ts);
     const symbol = normalizeSymbol(event.symbol);
-    if (!ts || !allowed.has(symbol) || !isLong(event)) continue;
+    if (!ts || (!global && !allowed.has(symbol)) || !isLong(event)) continue;
     const bucket = bucketStart(ts);
     if (bucket >= current) continue;
     const key = `${bucket}:${symbol}`;
