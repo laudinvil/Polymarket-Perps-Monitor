@@ -7,6 +7,15 @@ export default defineSchema({
     lastHeartbeatAt: v.optional(v.number()), finishedAt: v.optional(v.number()),
     status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
   }).index("by_run", ["runId"]).index("by_started_at", ["startedAt"]),
+  monitorRuntime: defineTable({
+    runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number(),
+    lastHeartbeatAt: v.optional(v.number()), finishedAt: v.optional(v.number()),
+    status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
+    exitCode: v.optional(v.union(v.number(), v.null())),
+  }).index("by_run", ["runId"]).index("by_started_at", ["startedAt"]),
+  monitorRuntimeLogs: defineTable({
+    runId: v.number(), level: v.string(), message: v.string(), ts: v.number(),
+  }).index("by_run_ts", ["runId", "ts"]).index("by_ts", ["ts"]),
   snapshots: defineTable({
     runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), imbalanceUsd:v.number(), longUsd:v.number(), shortUsd:v.number(), longEvents:v.number(), shortEvents:v.number(), events:v.number(),
   }).index("by_timeframe_symbol_boundary",["timeframe","symbol","boundaryTs"]).index("by_timeframe_boundary",["timeframe","boundaryTs"]).index("by_boundary",["boundaryTs"]),
@@ -20,6 +29,8 @@ export default defineSchema({
     fingerprint: v.string(), strategy: v.string(), team: v.string(), url: v.string(), matchId: v.string(), sentAt: v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
   paperTrades: defineTable({
-    symbol: v.string(), marketStart: v.number(), outcome: v.string(), entryPrice: v.number(), shares: v.number(), alertTs: v.number(), sourceMessageId: v.optional(v.number()), settled: v.boolean(), result: v.optional(v.string()), winner: v.optional(v.string()), pnl: v.optional(v.number()), updatedAt: v.number(),
+    symbol: v.string(), marketStart: v.number(), outcome: v.string(), entryPrice: v.number(), shares: v.number(), alertTs: v.number(),
+    sourceMessageId: v.optional(v.number()), settled: v.boolean(), result: v.optional(v.string()), winner: v.optional(v.string()), pnl: v.optional(v.number()),
+    closedPrice: v.optional(v.number()), closeTs: v.optional(v.number()), closePnl: v.optional(v.number()), updatedAt: v.number(),
   }).index("by_market", ["symbol", "marketStart"]).index("by_settled_updated", ["settled", "updatedAt"]),
 });
