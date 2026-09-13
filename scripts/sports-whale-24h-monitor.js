@@ -1,7 +1,7 @@
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const GAMMA_API = 'https://gamma-api.polymarket.com/events';
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const ALERT_RECENCY_MS = 300 * 1000;
+const SCAN_INTERVAL_MS = 60 * 1000;
 const PAGE_SIZE = 1000;
 const MAX_PAGES_PER_BATCH = 10;
 const EVENT_BATCH_SIZE = 10;
@@ -11,6 +11,7 @@ const seen = new Map();
 let sportsEventIds = new Set();
 let eventStatus = new Map();
 let lastAlertTrade = null;
+let lastAlertKey = null;
 
 function log(message) { console.log(`[${new Date().toISOString()}] ${message}`); }
 function nowMs() { return Date.now(); }
@@ -144,17 +145,14 @@ async function evaluate() {
     return;
   }
 
-  const bestAgeMs = nowMs() - Number(best.timestamp) * 1000;
   const closed = isEventClosed(best);
-  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | age=${Math.round(bestAgeMs / 1000)}s | event=${closed ? 'CLOSED' : 'OPEN'}`);
-
-  if (bestAgeMs > ALERT_RECENCY_MS) {
-    log(`NO ALERT: current 24h maximum is older than ${ALERT_RECENCY_MS / 1000}s.`);
-    return;
-  }
+  log(`STATS: sportsTrades24h=${seen.size}; largest=${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | ${fmtTime(Number(best.timestamp) * 1000)} ${TZ_LABEL} | event=${closed ? 'CLOSED' : 'OPEN'}`);
 
   const key = tradeKey(best);
-  if (lastAlertTrade === key) return;
+  if (key === lastAlertKey) {
+    log(`NO ALERT: current 24h maximum already alerted (${fmtUsd(best.usd)}).`);
+    return;
+  }
 
   const lines = [
     '🐋 SPORTS WHALE · 24H',
@@ -172,18 +170,25 @@ async function evaluate() {
   if (!closed) lines.push(`Polymarket: ${marketUrl(best)}`);
 
   await sendTelegram(lines.join('\n'));
+  lastAlertTrade = best;
+  lastAlertKey = key;
   lastAlertTrade = key;
-  log(`ALERT: NEW 24H WHALE ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | event=${closed ? 'CLOSED' : 'OPEN'}`);
+  log(`ALERT: NEW 24H MAXIMUM ${fmtUsd(best.usd)} | ${best.title} | ${best.outcome} | event=${closed ? 'CLOSED' : 'OPEN'}`);
 }
 
 async function main() {
-  log('Sports Whale 24H monitor started; rolling window=24h; sports + esports; resolved events included; one scan per workflow run.');
-  try {
-    await evaluate();
-  } catch (e) {
-    log(`EVALUATION ERROR: ${e.message}`);
-    process.exitCode = 1;
+  const runUntil = nowMs() + (355 * 60 * 1000);
+  log('Sports Whale 24H monitor started; rolling window=24h; sports + esports; continuous scan; alert on every new 24h maximum.');
+  while (nowMs() < runUntil) {
+    try {
+      await evaluate();
+    } catch (e) {
+      log(`EVALUATION ERROR: ${e.message}`);
+    }
+    const sleepMs = Math.max(1000, SCAN_INTERVAL_MS - (nowMs() % SCAN_INTERVAL_MS));
+    await new Promise(resolve => setTimeout(resolve, sleepMs));
   }
+  log('Sports Whale 24H monitor finished after continuous monitoring window.');
 }
 
 main().catch(e => {
