@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// Deployment trigger: keep Convex production schema/runtime in sync with main.
 export default defineSchema({
   monitorRuns: defineTable({
     runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number(),
