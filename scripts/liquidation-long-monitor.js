@@ -20,9 +20,10 @@ function loadState() {
   try {
     const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
     if (!Object.prototype.hasOwnProperty.call(state, 'comboLastEvent')) state.comboLastEvent = null;
+    if (!Object.prototype.hasOwnProperty.call(state, 'comboLastPeriod')) state.comboLastPeriod = null;
     return state;
   } catch {
-    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null, comboPeriod: null, comboLastSide: null, comboLastTs: null, comboLastEvent: null };
+    return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null, comboLastSide: null, comboLastTs: null, comboLastEvent: null, comboLastPeriod: null };
   }
 }
 
@@ -169,14 +170,15 @@ function isFreshEvent(event, seenEvents) {
   seenEvents.add(key); return true;
 }
 
-async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
+async function alertForCombo(firstEvent, secondEvent, state, alertPeriod) {
   const firstTs = normalizeTs(firstEvent.ts);
   const secondTs = normalizeTs(secondEvent.ts);
   const symbol = String(secondEvent.symbol || firstEvent.symbol || '').toUpperCase();
   if (!firstTs || !secondTs) return false;
+  if (periodStart(firstTs) === periodStart(secondTs)) return false;
   if (state.paperTrade && !state.paperTrade.settled) return false;
-  if (state.skipPeriod !== null && Number(state.skipPeriod) === currentPeriod) return false;
-  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) return false;
+  if (state.skipPeriod !== null && Number(state.skipPeriod) === alertPeriod) return false;
+  if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === alertPeriod) return false;
 
   const firstSide = liquidationSide(firstEvent);
   const secondSide = liquidationSide(secondEvent);
@@ -184,7 +186,7 @@ async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
 
   const alertNow = Date.now();
   const nextMarket = await findNextMarket(symbol, alertNow, '5m');
-  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((currentPeriod + PERIOD_MS) / 1000)}`;
+  const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((alertPeriod + PERIOD_MS) / 1000)}`;
   const outcome = paperOutcomeFromLiquidation(secondEvent);
   const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
   const message = [
@@ -192,14 +194,14 @@ async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
     `Combo: ${firstSide} → ${secondSide}`,
     `1st: ${formatUsd(firstEvent.notional)} · ${formatTime(firstTs)} UTC+3 · ${firstEvent.price ?? 'n/a'}`,
     `2nd: ${formatUsd(secondEvent.notional)} · ${formatTime(secondTs)} UTC+3 · ${secondEvent.price ?? 'n/a'}`,
-    `5M period: ${formatTime(currentPeriod)} → ${formatTime(currentPeriod + PERIOD_MS)} UTC+3`,
+    `Periods: ${formatTime(periodStart(firstTs))} → ${formatTime(periodStart(secondTs))} UTC+3`,
     ...(paperTrade ? [`📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`, `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`, `Shares: ${paperTrade.shares.toFixed(4)}`] : ['📈 PAPER TRADE · next+1 market entry unavailable']),
     `➡️ NEXT+1 · Polymarket 5M`, nextUrl,
   ].join('\n');
 
   try {
     const sentMessage = await sendTelegramMessage(message);
-    state.lastAlertPeriod = currentPeriod;
+    state.lastAlertPeriod = alertPeriod;
     if (paperTrade) {
       state.paperTrade = { ...paperTrade, symbol, alertTs: secondTs, sourceMessageId: Number(sentMessage?.message_id), settled: false };
       await persistPaperTrade(state.paperTrade);
@@ -208,7 +210,7 @@ async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
   } catch (error) {
     console.error(`[5M] Telegram/Convex send failed; combo remains available: ${error.message}`); return false;
   }
-  console.log(`[5M] COMBO ALERT ${symbol} ${firstSide}->${secondSide} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} first=${formatTime(firstTs)} second=${formatTime(secondTs)} next+1=${nextUrl}`);
+  console.log(`[5M] COMBO ALERT ${symbol} ${firstSide}->${secondSide} firstPeriod=${formatTime(periodStart(firstTs))} secondPeriod=${formatTime(periodStart(secondTs))} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} next+1=${nextUrl}`);
   return true;
 }
 
@@ -217,7 +219,7 @@ function isCurrentPeriodEvent(event, currentPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert on opposite liquidation pair LONG->SHORT or SHORT->LONG regardless of 5M boundary; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert only on opposite liquidation pair LONG->SHORT or SHORT->LONG across DIFFERENT 5M periods; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState(); const seenEvents = new Set();
   if (!CONVEX_INGEST_TOKEN) throw new Error('CONVEX_INGEST_TOKEN is required for persistent paper state');
   try { await loadPersistentPaperTrade(state); } catch (error) { throw new Error(`Convex paper state unavailable: ${error.message}`); }
@@ -232,12 +234,14 @@ async function main() {
       for (const event of fresh) {
         const side = liquidationSide(event);
         if (!['LONG', 'SHORT'].includes(side)) continue;
-        if (state.comboLastSide && side !== state.comboLastSide) {
+        const eventPeriod = periodStart(normalizeTs(event.ts));
+        if (state.comboLastSide && side !== state.comboLastSide && state.comboLastPeriod !== eventPeriod) {
           const firstEvent = state.comboLastEvent || { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
-          if (await alertForCombo(firstEvent, event, state, periodStart(normalizeTs(event.ts)))) {
+          if (await alertForCombo(firstEvent, event, state, eventPeriod)) {
             state.comboLastSide = side;
             state.comboLastTs = normalizeTs(event.ts);
             state.comboLastEvent = comboEventSnapshot(event, side);
+            state.comboLastPeriod = eventPeriod;
             saveState(state);
             break;
           }
@@ -245,10 +249,11 @@ async function main() {
         state.comboLastSide = side;
         state.comboLastTs = normalizeTs(event.ts);
         state.comboLastEvent = comboEventSnapshot(event, side);
+        state.comboLastPeriod = eventPeriod;
         saveState(state);
       }
       const totalCurrent = events.filter(event => isCurrentPeriodEvent(event, currentPeriod)).length;
-      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} combo=${state.comboLastSide || 'NONE'} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'ALERTED' : 'READY'}`);
+      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} combo=${state.comboLastSide || 'NONE'} comboPeriod=${state.comboLastPeriod ? formatTime(state.comboLastPeriod) : 'NONE'} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'ALERTED' : 'READY'}`);
       await new Promise(resolve => setTimeout(resolve, POLL_MS));
     } catch (error) {
       console.error(`[5M] loop error: ${error.message}`);
@@ -257,4 +262,4 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(error); process.exit(1); });
+main().catch(error => { console.error(`[5M] fatal: ${error.stack || error.message}`); process.exitCode = 1; });
