@@ -74,9 +74,7 @@ function signal(v) {
   if (v.trades < MIN_TRADES) return null;
 
   const o = v.up >= v.down ? 'UP' : 'DOWN';
-  const lp = o === 'UP' ? v.lu : v.ld;
-
-  return { o, lp };
+  return { o };
 }
 
 async function alert(v) {
@@ -104,7 +102,8 @@ async function alert(v) {
   await sendTelegramMessage([
     `🔥 ${v.symbol} · 5M`,
     `TRADES: ${v.trades}`,
-    `PRICE: ${s.lp === null ? 'n/a' : price(s.lp)}`,
+    `PRICE UP: ${v.lu === null ? 'n/a' : price(v.lu)}`,
+    `PRICE DOWN: ${v.ld === null ? 'n/a' : price(v.ld)}`,
     '',
     `➡️ CURRENT · Polymarket 5M`,
     currentUrl,
@@ -153,11 +152,10 @@ function diagnostics() {
 
     const total = v.up + v.down;
     const o = v.up >= v.down ? 'UP' : 'DOWN';
-    const lp = o === 'UP' ? v.lu : v.ld;
     const reason = periodAlerts.has(String(t)) ? 'period-alerted' : 'WAITING';
 
     console.log(
-      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE=${lp === null ? 'n/a' : price(lp)} REASON=${reason}`
+      `[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TOTAL=${Math.round(total)} TRADES=${v.trades} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} DIRECTION=${o} REASON=${reason}`
     );
   }
 }
