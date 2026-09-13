@@ -18,7 +18,7 @@ function periodStart(ts) {
 
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); }
-  catch { return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null }; }
+  catch { return { lastAlertPeriod: null, paperTrade: null, skipPeriod: null, comboPeriod: null, comboLastSide: null, comboLastTs: null }; }
 }
 
 function saveState(state) { fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2)); }
@@ -154,22 +154,29 @@ function isFreshEvent(event, currentPeriod, seenEvents) {
   seenEvents.add(key); return true;
 }
 
-async function alertForEvent(event, state, currentPeriod) {
-  const ts = normalizeTs(event.ts);
-  const symbol = String(event.symbol || '').toUpperCase();
-  if (periodStart(ts) !== currentPeriod) return false;
+async function alertForCombo(firstEvent, secondEvent, state, currentPeriod) {
+  const firstTs = normalizeTs(firstEvent.ts);
+  const secondTs = normalizeTs(secondEvent.ts);
+  const symbol = String(secondEvent.symbol || firstEvent.symbol || '').toUpperCase();
+  if (periodStart(firstTs) !== currentPeriod || periodStart(secondTs) !== currentPeriod) return false;
   if (state.paperTrade && !state.paperTrade.settled) return false;
   if (state.skipPeriod !== null && Number(state.skipPeriod) === currentPeriod) return false;
   if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) === currentPeriod) return false;
 
+  const firstSide = liquidationSide(firstEvent);
+  const secondSide = liquidationSide(secondEvent);
+  if (!['LONG', 'SHORT'].includes(firstSide) || !['LONG', 'SHORT'].includes(secondSide) || firstSide === secondSide) return false;
+
   const alertNow = Date.now();
   const nextMarket = await findNextMarket(symbol, alertNow, '5m');
   const nextUrl = nextMarket?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor((currentPeriod + PERIOD_MS) / 1000)}`;
-  const outcome = paperOutcomeFromLiquidation(event);
+  const outcome = paperOutcomeFromLiquidation(secondEvent);
   const paperTrade = outcome ? await getPaperEntry(nextMarket, outcome) : null;
   const message = [
-    `🔥 ${symbol} · LIQUIDATION`, `Side: ${liquidationSide(event)}`, `Size: ${formatUsd(event.notional)}`,
-    `Price: ${event.price ?? 'n/a'}`, `Time: ${formatTime(ts)} UTC+3`,
+    `🔥 ${symbol} · LIQUIDATION COMBO`,
+    `Combo: ${firstSide} → ${secondSide}`,
+    `1st: ${formatUsd(firstEvent.notional)} · ${formatTime(firstTs)} UTC+3 · ${firstEvent.price ?? 'n/a'}`,
+    `2nd: ${formatUsd(secondEvent.notional)} · ${formatTime(secondTs)} UTC+3 · ${secondEvent.price ?? 'n/a'}`,
     `5M period: ${formatTime(currentPeriod)} → ${formatTime(currentPeriod + PERIOD_MS)} UTC+3`,
     ...(paperTrade ? [`📈 PAPER TRADE · $${PAPER_USD.toFixed(2)}`, `BUY ${paperTrade.outcome} @ ${paperTrade.entryPrice.toFixed(4)}`, `Shares: ${paperTrade.shares.toFixed(4)}`] : ['📈 PAPER TRADE · next+1 market entry unavailable']),
     `➡️ NEXT+1 · Polymarket 5M`, nextUrl,
@@ -179,14 +186,14 @@ async function alertForEvent(event, state, currentPeriod) {
     const sentMessage = await sendTelegramMessage(message);
     state.lastAlertPeriod = currentPeriod;
     if (paperTrade) {
-      state.paperTrade = { ...paperTrade, symbol, alertTs: ts, sourceMessageId: Number(sentMessage?.message_id), settled: false };
+      state.paperTrade = { ...paperTrade, symbol, alertTs: secondTs, sourceMessageId: Number(sentMessage?.message_id), settled: false };
       await persistPaperTrade(state.paperTrade);
     }
     saveState(state);
   } catch (error) {
-    console.error(`[5M] Telegram/Convex send failed; period remains available: ${error.message}`); return false;
+    console.error(`[5M] Telegram/Convex send failed; combo remains available: ${error.message}`); return false;
   }
-  console.log(`[5M] ALERT ${symbol} side=${liquidationSide(event)} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} liquidation=${formatTime(ts)} period=${formatTime(currentPeriod)} next+1=${nextUrl}`);
+  console.log(`[5M] COMBO ALERT ${symbol} ${firstSide}->${secondSide} paper=${paperTrade?.outcome || 'N/A'} entry=${paperTrade?.entryPrice ?? 'N/A'} sourceMessageId=${state.paperTrade?.sourceMessageId || 'N/A'} first=${formatTime(firstTs)} second=${formatTime(secondTs)} next+1=${nextUrl}`);
   return true;
 }
 
@@ -195,7 +202,7 @@ function isCurrentPeriodEvent(event, currentPeriod) {
 }
 
 async function main() {
-  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; current-period alerts; one alert per current 5m period; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
+  console.log(`MarginPad liquidation monitor started; symbols=${DEFAULT_SYMBOLS.join(',')}; timeframe=5m; COMBO strategy: alert only on opposite liquidation pair LONG->SHORT or SHORT->LONG; same-direction events ignored; persistent Convex paper state; close at market end; final result after official resolution; WIN skips next 5m period; poll=${POLL_MS}ms`);
   const state = loadState(); const seenEvents = new Set();
   if (!CONVEX_INGEST_TOKEN) throw new Error('CONVEX_INGEST_TOKEN is required for persistent paper state');
   try { await loadPersistentPaperTrade(state); } catch (error) { throw new Error(`Convex paper state unavailable: ${error.message}`); }
@@ -205,11 +212,31 @@ async function main() {
       if (state.paperTrade && !state.paperTrade.settled) { if (await settlePaperTrade(state.paperTrade, state)) saveState(state); }
       const events = await fetchFeed(DEFAULT_SYMBOLS);
       const fresh = events.filter(event => isFreshEvent(event, currentPeriod, seenEvents)).sort((a, b) => normalizeTs(a.ts) - normalizeTs(b.ts));
-      if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < currentPeriod) { state.lastAlertPeriod = null; saveState(state); }
-      if (state.skipPeriod !== null && Number(state.skipPeriod) < currentPeriod) { state.skipPeriod = null; saveState(state); }
-      for (const event of fresh) { if (await alertForEvent(event, state, currentPeriod)) break; }
+      if (state.lastAlertPeriod !== null && Number(state.lastAlertPeriod) < currentPeriod) { state.lastAlertPeriod = null; }
+      if (state.skipPeriod !== null && Number(state.skipPeriod) < currentPeriod) { state.skipPeriod = null; }
+      if (state.comboPeriod !== currentPeriod) {
+        state.comboPeriod = currentPeriod;
+        state.comboLastSide = null;
+        state.comboLastTs = null;
+      }
+      for (const event of fresh) {
+        const side = liquidationSide(event);
+        if (!['LONG', 'SHORT'].includes(side)) continue;
+        if (state.comboLastSide && side !== state.comboLastSide) {
+          const firstEvent = { symbol: event.symbol, side: state.comboLastSide, ts: state.comboLastTs };
+          if (await alertForCombo(firstEvent, event, state, currentPeriod)) {
+            state.comboLastSide = side;
+            state.comboLastTs = normalizeTs(event.ts);
+            saveState(state);
+            break;
+          }
+        }
+        state.comboLastSide = side;
+        state.comboLastTs = normalizeTs(event.ts);
+        saveState(state);
+      }
       const totalCurrent = events.filter(event => isCurrentPeriodEvent(event, currentPeriod)).length;
-      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'DONE_CURRENT_PERIOD' : 'WAITING_CURRENT_PERIOD'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
+      console.log(`[5M] current=${formatTime(currentPeriod)} total_current=${totalCurrent} combo=${state.comboLastSide || 'NONE'} alert=${state.paperTrade && !state.paperTrade.settled ? 'WAITING_PAPER_SETTLEMENT' : state.skipPeriod === currentPeriod ? 'SKIP_AFTER_WIN' : state.lastAlertPeriod === currentPeriod ? 'DONE_CURRENT_PERIOD' : 'WAITING_OPPOSITE_COMBO'} paper=${state.paperTrade?.settled ? state.paperTrade.result : state.paperTrade ? 'OPEN' : 'NONE'}`);
     } catch (error) { console.error(`[5M] monitor error: ${error.message}`); }
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
