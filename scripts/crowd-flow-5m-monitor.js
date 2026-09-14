@@ -13,6 +13,7 @@ const tokens = new Map();
 const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
+let lastAlertPeriod = null;
 let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
@@ -29,6 +30,13 @@ async function checkBoundary(symbol, currentStart) {
   if (justFinished.alertChecked) return;
   justFinished.alertChecked = true;
 
+  // One full 5M period of silence after every alert.
+  // Alert at boundary N -> period N..N+1 is silent; next eligible boundary is N+2.
+  if (lastAlertPeriod !== null && currentStart < lastAlertPeriod + PERIOD * 2) {
+    console.log(`[crowd-flow] cooldown suppressed ${symbol} boundary=${currentStart} lastAlert=${lastAlertPeriod}`);
+    return;
+  }
+
   const increase = justFinished.trades - previous.trades;
   if (increase <= 1) {
     console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
@@ -44,6 +52,7 @@ async function checkBoundary(symbol, currentStart) {
   }
 
   alertedLinks.add(currentUrl);
+  lastAlertPeriod = currentStart;
 
   const upPrice = justFinished.lu === null ? 'n/a' : price(justFinished.lu);
   const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
@@ -154,7 +163,7 @@ function diagnostics() {
     const previous = completed.get(key(symbol, t - PERIOD));
     const prior = completed.get(key(symbol, t - PERIOD * 2));
     if (!v) continue;
-    console.log(`[crowd-flow] DIAG ${symbol} CURRENT=${v.trades} PREVIOUS=${previous?.trades ?? 'n/a'} PRIOR=${prior?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)}`);
+    console.log(`[crowd-flow] DIAG ${symbol} CURRENT=${v.trades} PREVIOUS=${previous?.trades ?? 'n/a'} PRIOR=${prior?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} COOLDOWN=${lastAlertPeriod !== null && t < lastAlertPeriod + PERIOD * 2}`);
   }
 }
 
