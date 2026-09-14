@@ -9,7 +9,7 @@ const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
 const MIN_TRADES = 900;
-const MIN_PRICE_GAP = 0.19;
+const MIN_PRICE_GAP = 0.21;
 
 const markets = new Map();
 const tokens = new Map();
