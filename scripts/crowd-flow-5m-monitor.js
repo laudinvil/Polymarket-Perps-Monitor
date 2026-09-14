@@ -8,17 +8,60 @@ const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 1500;
-
 const markets = new Map();
 const tokens = new Map();
 const seen = new Set();
 const alertedLinks = new Set();
+const completed = new Map();
 let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
 const price = n => Number(n).toFixed(3);
+
+async function alertDrop(symbol, previous, currentStart) {
+  if (!previous || previous.trades <= 0) return;
+
+  const current = await findMarketByEpoch(symbol, currentStart, '5m');
+  const currentUrl = current?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
+
+  if (alertedLinks.has(currentUrl)) {
+    console.log(`[crowd-flow] duplicate link suppressed symbol=${symbol} current=${currentUrl}`);
+    return;
+  }
+
+  alertedLinks.add(currentUrl);
+
+  await sendTelegramMessage([
+    `🔥 ${symbol} · 5M TRADE DROP`,
+    `PREVIOUS: ${previous.trades}`,
+    `CURRENT: ${previous.currentTrades}`,
+    `DROP: ${previous.trades - previous.currentTrades}`,
+    '',
+    '➡️ CURRENT · Polymarket 5M',
+    currentUrl
+  ].join('\n'));
+}
+
+async function checkBoundary(symbol, currentStart) {
+  const previousStart = currentStart - PERIOD;
+  const previous = completed.get(key(symbol, previousStart));
+  const current = markets.get(key(symbol, currentStart));
+  if (!previous || !current || current.boundaryChecked) return;
+
+  current.boundaryChecked = true;
+  if (current.trades < previous.trades) {
+    await sendTelegramMessage([
+      `🔥 ${symbol} · 5M TRADE DROP`,
+      `PREVIOUS: ${previous.trades}`,
+      `CURRENT: ${current.trades}`,
+      `DROP: ${previous.trades - current.trades}`,
+      '',
+      '➡️ CURRENT · Polymarket 5M',
+      current.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`
+    ].join('\n'));
+  }
+}
 
 async function refresh() {
   const t = start();
@@ -41,16 +84,29 @@ async function refresh() {
         trades: 0,
         lu: null,
         ld: null,
-        alerted: false
+        boundaryChecked: false
       });
     }
 
     tokens.set(market.tokenIds.UP, { k, o: 'UP' });
     tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
+
+    const current = markets.get(k);
+    const previousStart = t - PERIOD;
+    const previous = markets.get(key(symbol, previousStart));
+    if (previous && !completed.has(key(symbol, previousStart))) {
+      completed.set(key(symbol, previousStart), { ...previous });
+    }
+
+    await checkBoundary(symbol, t);
   }
 
   for (const [k, v] of markets) {
-    if (v.start !== t) markets.delete(k);
+    if (v.start < t - PERIOD) markets.delete(k);
+  }
+
+  for (const [k, v] of completed) {
+    if (v.start < t - PERIOD * 3) completed.delete(k);
   }
 
   if (socket?.readyState === WebSocket.OPEN) {
@@ -63,46 +119,6 @@ async function refresh() {
       console.log(`[crowd-flow] subscribed tokens=${ids.length} period=${t}`);
     }
   }
-}
-
-function signal(v) {
-  if (v.trades < MIN_TRADES) return null;
-  if (v.lu === null || v.ld === null) return null;
-
-  return { o: v.up >= v.down ? 'UP' : 'DOWN' };
-}
-
-async function alert(v) {
-  if (v.alerted) return;
-
-  if (!signal(v)) return;
-
-  const next = await findMarketByEpoch(v.symbol, v.start + PERIOD, '5m');
-  const nextUrl = next?.url || `https://polymarket.com/event/${v.symbol.toLowerCase()}-updown-5m-${Math.floor((v.start + PERIOD) / 1000)}`;
-
-  if (alertedLinks.has(nextUrl)) {
-    console.log(`[crowd-flow] duplicate link suppressed symbol=${v.symbol} next=${nextUrl}`);
-    v.alerted = true;
-    return;
-  }
-
-  v.alerted = true;
-  alertedLinks.add(nextUrl);
-
-  const upPrice = v.lu === null ? null : price(v.lu);
-  const downPrice = v.ld === null ? null : price(v.ld);
-  const upAttention = upPrice !== null && (downPrice === null || Number(v.lu) > Number(v.ld)) ? ' ⚠️' : '';
-  const downAttention = downPrice !== null && (upPrice === null || Number(v.ld) > Number(v.lu)) ? ' ⚠️' : '';
-
-  await sendTelegramMessage([
-    `🔥 ${v.symbol} · 5M`,
-    `TRADES: ${v.trades}`,
-    `PRICE UP: ${upPrice === null ? 'n/a' : upPrice}${upAttention}`,
-    `PRICE DOWN: ${downPrice === null ? 'n/a' : downPrice}${downAttention}`,
-    '',
-    '➡️ NEXT · Polymarket 5M',
-    nextUrl
-  ].join('\n'));
 }
 
 function event(x) {
@@ -131,16 +147,15 @@ function event(x) {
     v.down += n;
     v.ld = p;
   }
-
-  alert(v).catch(e => console.error('[crowd-flow] alert', e.message));
 }
 
 function diagnostics() {
   const t = start();
   for (const symbol of SYMBOLS) {
     const v = markets.get(key(symbol, t));
+    const previous = completed.get(key(symbol, t - PERIOD));
     if (!v) continue;
-    console.log(`[crowd-flow] DIAG ${symbol} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} TRADES=${v.trades} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} REASON=${v.alerted ? 'alerted' : 'WAITING'}`);
+    console.log(`[crowd-flow] DIAG ${symbol} CURRENT_TRADES=${v.trades} PREVIOUS_TRADES=${previous?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)}`);
   }
 }
 
