@@ -29,7 +29,7 @@ async function checkBoundary(symbol, currentStart) {
   if (justFinished.alertChecked) return;
   justFinished.alertChecked = true;
 
-  if (justFinished.trades >= previous.trades) return;
+  if (justFinished.trades <= previous.trades) return;
 
   const current = markets.get(key(symbol, currentStart));
   const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -45,10 +45,10 @@ async function checkBoundary(symbol, currentStart) {
   const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
 
   await sendTelegramMessage([
-    `🔥 ${symbol} · 5M TRADE DROP`,
+    `🔥 ${symbol} · 5M TRADE INCREASE`,
     `PREVIOUS: ${previous.trades}`,
     `CURRENT: ${justFinished.trades}`,
-    `DROP: ${previous.trades - justFinished.trades}`,
+    `INCREASE: ${justFinished.trades - previous.trades}`,
     `PRICE UP: ${upPrice}`,
     `PRICE DOWN: ${downPrice}`,
     '',
@@ -56,7 +56,7 @@ async function checkBoundary(symbol, currentStart) {
     currentUrl
   ].join('\n'));
 
-  console.log(`[crowd-flow] DROP ${symbol} previous=${previous.trades} current=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
+  console.log(`[crowd-flow] INCREASE ${symbol} previous=${previous.trades} current=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
 }
 
 async function refresh() {
