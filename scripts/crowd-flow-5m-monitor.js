@@ -26,7 +26,6 @@ async function checkBoundary(symbol, currentStart) {
   const previous = completed.get(key(symbol, previousStart));
   if (!justFinished || !previous) return;
 
-  const alertKey = `${symbol}:${justFinishedStart}`;
   if (justFinished.alertChecked) return;
   justFinished.alertChecked = true;
 
@@ -42,17 +41,22 @@ async function checkBoundary(symbol, currentStart) {
 
   alertedLinks.add(currentUrl);
 
+  const upPrice = justFinished.lu === null ? 'n/a' : price(justFinished.lu);
+  const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
+
   await sendTelegramMessage([
     `🔥 ${symbol} · 5M TRADE DROP`,
     `PREVIOUS: ${previous.trades}`,
     `CURRENT: ${justFinished.trades}`,
     `DROP: ${previous.trades - justFinished.trades}`,
+    `PRICE UP: ${upPrice}`,
+    `PRICE DOWN: ${downPrice}`,
     '',
     '➡️ CURRENT · Polymarket 5M',
     currentUrl
   ].join('\n'));
 
-  console.log(`[crowd-flow] DROP ${symbol} previous=${previous.trades} current=${justFinished.trades} boundary=${currentStart}`);
+  console.log(`[crowd-flow] DROP ${symbol} previous=${previous.trades} current=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
 }
 
 async function refresh() {
