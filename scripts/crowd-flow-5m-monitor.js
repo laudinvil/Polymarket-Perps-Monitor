@@ -29,7 +29,11 @@ async function checkBoundary(symbol, currentStart) {
   if (justFinished.alertChecked) return;
   justFinished.alertChecked = true;
 
-  if (justFinished.trades <= previous.trades) return;
+  const increase = justFinished.trades - previous.trades;
+  if (increase <= 1) {
+    console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
+    return;
+  }
 
   const current = markets.get(key(symbol, currentStart));
   const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -48,7 +52,7 @@ async function checkBoundary(symbol, currentStart) {
     `🔥 ${symbol} · 5M TRADE INCREASE`,
     `PREVIOUS: ${previous.trades}`,
     `CURRENT: ${justFinished.trades}`,
-    `INCREASE: ${justFinished.trades - previous.trades}`,
+    `INCREASE: ${increase}`,
     `PRICE UP: ${upPrice}`,
     `PRICE DOWN: ${downPrice}`,
     '',
