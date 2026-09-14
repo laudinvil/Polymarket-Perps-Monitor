@@ -19,11 +19,21 @@ const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
 const price = n => Number(n).toFixed(3);
 
-async function alertDrop(symbol, previous, currentStart) {
-  if (!previous || previous.trades <= 0) return;
+async function checkBoundary(symbol, currentStart) {
+  const justFinishedStart = currentStart - PERIOD;
+  const previousStart = currentStart - PERIOD * 2;
+  const justFinished = completed.get(key(symbol, justFinishedStart));
+  const previous = completed.get(key(symbol, previousStart));
+  if (!justFinished || !previous) return;
 
-  const current = await findMarketByEpoch(symbol, currentStart, '5m');
-  const currentUrl = current?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
+  const alertKey = `${symbol}:${justFinishedStart}`;
+  if (justFinished.alertChecked) return;
+  justFinished.alertChecked = true;
+
+  if (justFinished.trades >= previous.trades) return;
+
+  const current = markets.get(key(symbol, currentStart));
+  const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
 
   if (alertedLinks.has(currentUrl)) {
     console.log(`[crowd-flow] duplicate link suppressed symbol=${symbol} current=${currentUrl}`);
@@ -35,32 +45,14 @@ async function alertDrop(symbol, previous, currentStart) {
   await sendTelegramMessage([
     `🔥 ${symbol} · 5M TRADE DROP`,
     `PREVIOUS: ${previous.trades}`,
-    `CURRENT: ${previous.currentTrades}`,
-    `DROP: ${previous.trades - previous.currentTrades}`,
+    `CURRENT: ${justFinished.trades}`,
+    `DROP: ${previous.trades - justFinished.trades}`,
     '',
     '➡️ CURRENT · Polymarket 5M',
     currentUrl
   ].join('\n'));
-}
 
-async function checkBoundary(symbol, currentStart) {
-  const previousStart = currentStart - PERIOD;
-  const previous = completed.get(key(symbol, previousStart));
-  const current = markets.get(key(symbol, currentStart));
-  if (!previous || !current || current.boundaryChecked) return;
-
-  current.boundaryChecked = true;
-  if (current.trades < previous.trades) {
-    await sendTelegramMessage([
-      `🔥 ${symbol} · 5M TRADE DROP`,
-      `PREVIOUS: ${previous.trades}`,
-      `CURRENT: ${current.trades}`,
-      `DROP: ${previous.trades - current.trades}`,
-      '',
-      '➡️ CURRENT · Polymarket 5M',
-      current.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`
-    ].join('\n'));
-  }
+  console.log(`[crowd-flow] DROP ${symbol} previous=${previous.trades} current=${justFinished.trades} boundary=${currentStart}`);
 }
 
 async function refresh() {
@@ -83,15 +75,13 @@ async function refresh() {
         down: 0,
         trades: 0,
         lu: null,
-        ld: null,
-        boundaryChecked: false
+        ld: null
       });
     }
 
     tokens.set(market.tokenIds.UP, { k, o: 'UP' });
     tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
 
-    const current = markets.get(k);
     const previousStart = t - PERIOD;
     const previous = markets.get(key(symbol, previousStart));
     if (previous && !completed.has(key(symbol, previousStart))) {
@@ -106,7 +96,7 @@ async function refresh() {
   }
 
   for (const [k, v] of completed) {
-    if (v.start < t - PERIOD * 3) completed.delete(k);
+    if (v.start < t - PERIOD * 4) completed.delete(k);
   }
 
   if (socket?.readyState === WebSocket.OPEN) {
@@ -154,8 +144,9 @@ function diagnostics() {
   for (const symbol of SYMBOLS) {
     const v = markets.get(key(symbol, t));
     const previous = completed.get(key(symbol, t - PERIOD));
+    const prior = completed.get(key(symbol, t - PERIOD * 2));
     if (!v) continue;
-    console.log(`[crowd-flow] DIAG ${symbol} CURRENT_TRADES=${v.trades} PREVIOUS_TRADES=${previous?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)}`);
+    console.log(`[crowd-flow] DIAG ${symbol} CURRENT=${v.trades} PREVIOUS=${previous?.trades ?? 'n/a'} PRIOR=${prior?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)}`);
   }
 }
 
