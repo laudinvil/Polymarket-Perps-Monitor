@@ -8,8 +8,7 @@ const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
-const MIN_TRADES = 900;
-const MIN_PRICE_GAP = 0.21;
+const MIN_TRADES = 950;
 
 const markets = new Map();
 const tokens = new Map();
@@ -69,9 +68,6 @@ async function refresh() {
 function signal(v) {
   if (v.trades < MIN_TRADES) return null;
   if (v.lu === null || v.ld === null) return null;
-
-  const gap = Math.abs(Number(v.lu) - Number(v.ld));
-  if (gap <= MIN_PRICE_GAP) return null;
 
   return { o: v.up >= v.down ? 'UP' : 'DOWN' };
 }
