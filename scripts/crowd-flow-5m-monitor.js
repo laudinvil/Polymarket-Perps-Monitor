@@ -13,7 +13,6 @@ const tokens = new Map();
 const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
-let lastAlertPeriod = null;
 let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
@@ -23,15 +22,14 @@ const price = n => Number(n).toFixed(3);
 async function checkBoundary(currentStart) {
   const justFinishedStart = currentStart - PERIOD;
   const previousStart = currentStart - PERIOD * 2;
-  const candidates = [];
 
+  const candidates = [];
   for (const symbol of SYMBOLS) {
     const justFinished = completed.get(key(symbol, justFinishedStart));
     const previous = completed.get(key(symbol, previousStart));
     if (!justFinished || !previous || justFinished.alertChecked) continue;
 
     justFinished.alertChecked = true;
-
     const increase = justFinished.trades - previous.trades;
     if (increase <= 1) {
       console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
@@ -41,15 +39,9 @@ async function checkBoundary(currentStart) {
     candidates.push({ symbol, justFinished, previous, increase });
   }
 
-  // One full 5M period of silence after every alert.
-  if (lastAlertPeriod !== null && currentStart < lastAlertPeriod + PERIOD * 2) {
-    console.log(`[crowd-flow] cooldown boundary=${currentStart} lastAlert=${lastAlertPeriod}`);
-    return;
-  }
-
   if (!candidates.length) return;
 
-  // One alert per boundary: choose the coin with the minimum number of trades.
+  // One alert per completed period: select the coin with the minimum trade count.
   candidates.sort((a, b) => a.justFinished.trades - b.justFinished.trades || a.symbol.localeCompare(b.symbol));
   const winner = candidates[0];
   const { symbol, justFinished, previous, increase } = winner;
@@ -63,7 +55,6 @@ async function checkBoundary(currentStart) {
   }
 
   alertedLinks.add(currentUrl);
-  lastAlertPeriod = currentStart;
 
   const upPrice = justFinished.lu === null ? 'n/a' : price(justFinished.lu);
   const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
