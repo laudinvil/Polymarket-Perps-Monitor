@@ -52,7 +52,7 @@ async function checkBoundary(currentStart) {
   const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
 
   await sendTelegramMessage([
-    `🔥 ${symbol} · 5M TRADE FLOW`,
+    `🔥 ${symbol} · 5M`,
     `TRADES: ${justFinished.trades}`,
     `PRICE UP: ${upPrice}`,
     `PRICE DOWN: ${downPrice}`,
