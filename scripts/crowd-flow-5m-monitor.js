@@ -25,7 +25,7 @@ async function checkBoundary(currentStart) {
   const candidates = [];
   for (const symbol of SYMBOLS) {
     const justFinished = completed.get(key(symbol, justFinishedStart));
-    if (!justFinished || justFinished.alertChecked) continue;
+    if (!justFinished || justFinished.alertChecked || justFinished.trades < 1) continue;
 
     justFinished.alertChecked = true;
     candidates.push({ symbol, justFinished });
@@ -33,7 +33,7 @@ async function checkBoundary(currentStart) {
 
   if (!candidates.length) return;
 
-  // One alert per completed period: select the coin with the minimum trade count.
+  // One alert per completed period: select the coin with the minimum positive trade count.
   candidates.sort((a, b) => a.justFinished.trades - b.justFinished.trades || a.symbol.localeCompare(b.symbol));
   const winner = candidates[0];
   const { symbol, justFinished } = winner;
