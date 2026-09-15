@@ -1,0 +1,12 @@
+const CONVEX_URL = String(process.env.CONVEX_URL || "").replace(/\/$/, "");
+const SYMBOL = process.env.CROWD_FLOW_SYMBOL || "BTC";
+const LIMIT = Math.min(Math.max(Number(process.env.CROWD_FLOW_LIMIT || 20), 1), 200);
+if (!CONVEX_URL) throw new Error("CONVEX_URL is required");
+const url = `${CONVEX_URL}/crowd-flow/periods?symbol=${encodeURIComponent(SYMBOL)}&limit=${LIMIT}`;
+const response = await fetch(url);
+if (!response.ok) throw new Error(`Convex stats request failed: ${response.status}`);
+const rows = await response.json();
+const formatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const formatPeriod = (start, end) => `${formatter.format(new Date(start))}–${formatter.format(new Date(end))}`;
+const output = rows.map((row) => ({ symbol: row.symbol, periodStart: row.periodStart, periodEnd: row.periodEnd, period: formatPeriod(row.periodStart, row.periodEnd), trades: row.trades, recordedAt: row.recordedAt }));
+process.stdout.write(JSON.stringify({ symbol: SYMBOL, periods: output }, null, 2));
