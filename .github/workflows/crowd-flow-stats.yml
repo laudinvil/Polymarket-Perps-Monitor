@@ -18,15 +18,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
-      contents: read
+      contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Read Crowd Flow stats from Convex
         env:
-          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          test -n "$CONVEX_URL"
-          curl -fsS --retry 3 --retry-delay 2 \
-            "$CONVEX_URL/crowd-flow/periods?symbol=BTC&limit=100" \
-            -o /tmp/crowd-flow.json
+          test -n "$CONVEX_DEPLOY_KEY"
+          npm install
+          npx convex run monitor:latestCrowdFlowPeriods '{"symbol":"BTC","limit":100}' > /tmp/crowd-flow.json
           jq . /tmp/crowd-flow.json
+
+      - name: Save latest stats snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p .github/deploy-status
+          cp /tmp/crowd-flow.json .github/deploy-status/crowd-flow.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/deploy-status/crowd-flow.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Record Crowd Flow Convex stats"
+          git push origin HEAD:main
