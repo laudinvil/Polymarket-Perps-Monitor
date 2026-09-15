@@ -48,6 +48,24 @@ export const saveAlert = internalMutation({
   },
 });
 
+export const saveCrowdFlowPeriod = internalMutation({
+  args: { symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number() },
+  handler: async (ctx,args) => {
+    const existing=await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
+    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
+    return await ctx.db.insert("crowdFlowPeriods",args);
+  },
+});
+
+export const latestCrowdFlowPeriods = query({
+  args:{symbol:v.optional(v.string()),limit:v.number()},
+  handler:async(ctx,args)=>{
+    const limit=Math.min(Math.max(args.limit,1),200);
+    if(args.symbol)return await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit);
+    return await ctx.db.query("crowdFlowPeriods").withIndex("by_recorded_at").order("desc").take(limit);
+  },
+});
+
 export const claimEsportsAlert = internalMutation({
   args: { fingerprint:v.string(), strategy:v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number() },
   returns: v.boolean(),
@@ -72,68 +90,11 @@ export const upsertPaperTrade = internalMutation({
   },
 });
 
-export const getOpenPaperTrade = query({
-  args:{},
-  handler:async(ctx)=>{
-    const rows=await ctx.db.query("paperTrades").withIndex("by_settled_updated",q=>q.eq("settled",false)).order("desc").take(10);
-    return rows[0] || null;
-  },
-});
-
-export const latestPaperTrades = query({
-  args:{limit:v.number()},
-  handler:async(ctx)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)),
-});
-
-export const pruneOldData = internalMutation({
-  args: {}, returns: v.object({ monitorRuns:v.number(), snapshots:v.number(), alerts:v.number() }),
-  handler: async (ctx) => {
-    const cutoff=Date.now()-7*24*60*60*1000; let monitorRuns=0,snapshots=0,alerts=0;
-    const oldRuns=await ctx.db.query("monitorRuns").withIndex("by_started_at",(q)=>q.lt("startedAt",cutoff)).order("asc").take(500);
-    for(const row of oldRuns){await ctx.db.delete(row._id);monitorRuns++;}
-    const oldSnapshots=await ctx.db.query("snapshots").withIndex("by_boundary",(q)=>q.lt("boundaryTs",cutoff)).order("asc").take(500);
-    for(const row of oldSnapshots){await ctx.db.delete(row._id);snapshots++;}
-    const oldAlerts=await ctx.db.query("alerts").withIndex("by_sent_at").order("asc").take(500);
-    for(const row of oldAlerts)if(row.sentAt<cutoff){await ctx.db.delete(row._id);alerts++;}
-    const oldEsports=await ctx.db.query("esportsAlerts").withIndex("by_fingerprint").take(500);
-    for(const row of oldEsports)if(row.sentAt<cutoff)await ctx.db.delete(row._id);
-    return {monitorRuns,snapshots,alerts};
-  },
-});
-
-export const monitorHealth = query({
-  args: {}, returns: v.object({ ok:v.boolean(), ageMs:v.number() }),
-  handler: async (ctx) => {
-    const latest=await ctx.db.query("monitorRuns").withIndex("by_started_at").order("desc").take(1); const row=latest[0];
-    if(!row)return {ok:false,ageMs:Number.MAX_SAFE_INTEGER}; const heartbeatAt=row.lastHeartbeatAt??row.startedAt; const ageMs=Date.now()-heartbeatAt;
-    return {ok:row.status==="running"&&ageMs<3*60*1000,ageMs};
-  },
-});
-
-export const latestSnapshots = query({
-  args:{timeframe:v.string(),symbol:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{
-    if(args.symbol)return await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary",q=>q.eq("timeframe",args.timeframe).eq("symbol",args.symbol!)).order("desc").take(args.limit);
-    return await ctx.db.query("snapshots").withIndex("by_timeframe_boundary",q=>q.eq("timeframe",args.timeframe)).order("desc").take(args.limit);
-  },
-});
-
-export const latestStats = query({
-  args:{timeframe:v.string()},
-  returns:v.array(v.object({timeframe:v.string(),symbol:v.string(),boundaryTs:v.number(),imbalanceUsd:v.number(),longUsd:v.number(),shortUsd:v.number(),longEvents:v.number(),shortEvents:v.number(),events:v.number()})),
-  handler:async(ctx,args)=>{
-    const symbols=["BTC","ETH"]; const rows=[];
-    for(const symbol of symbols){const row=await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary",q=>q.eq("timeframe",args.timeframe).eq("symbol",symbol)).order("desc").take(1); if(row[0])rows.push({timeframe:row[0].timeframe,symbol:row[0].symbol,boundaryTs:row[0].boundaryTs,imbalanceUsd:row[0].imbalanceUsd,longUsd:row[0].longUsd,shortUsd:row[0].shortUsd,longEvents:row[0].longEvents,shortEvents:row[0].shortEvents,events:row[0].events});}
-    return rows;
-  },
-});
-
-export const latestAlerts = query({
-  args:{timeframe:v.optional(v.string()),symbol:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{let rows=await ctx.db.query("alerts").withIndex("by_sent_at").order("desc").take(Math.min(args.limit*5,200)); if(args.timeframe)rows=rows.filter(row=>row.timeframe===args.timeframe); if(args.symbol)rows=rows.filter(row=>row.symbol===args.symbol); return rows.slice(0,args.limit);},
-});
-
-export const latestMonitorRuns = query({
-  args:{limit:v.number()},
-  handler:async(ctx,args)=>await ctx.db.query("monitorRuns").withIndex("by_started_at").order("desc").take(Math.min(args.limit,50)),
-});
+export const getOpenPaperTrade = query({ args:{}, handler:async(ctx)=>{const rows=await ctx.db.query("paperTrades").withIndex("by_settled_updated",q=>q.eq("settled",false)).order("desc").take(10);return rows[0]||null;} });
+export const latestPaperTrades = query({ args:{limit:v.number()}, handler:async(ctx)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)) });
+export const pruneOldData = internalMutation({ args:{}, returns:v.object({monitorRuns:v.number(),snapshots:v.number(),alerts:v.number()}), handler:async(ctx)=>{const cutoff=Date.now()-7*24*60*60*1000;let monitorRuns=0,snapshots=0,alerts=0;const oldRuns=await ctx.db.query("monitorRuns").withIndex("by_started_at",q=>q.lt("startedAt",cutoff)).order("asc").take(500);for(const row of oldRuns){await ctx.db.delete(row._id);monitorRuns++;}const oldSnapshots=await ctx.db.query("snapshots").withIndex("by_boundary",q=>q.lt("boundaryTs",cutoff)).order("asc").take(500);for(const row of oldSnapshots){await ctx.db.delete(row._id);snapshots++;}const oldAlerts=await ctx.db.query("alerts").withIndex("by_sent_at").order("asc").take(500);for(const row of oldAlerts)if(row.sentAt<cutoff){await ctx.db.delete(row._id);alerts++;}const oldEsports=await ctx.db.query("esportsAlerts").withIndex("by_fingerprint").take(500);for(const row of oldEsports)if(row.sentAt<cutoff)await ctx.db.delete(row._id);return{monitorRuns,snapshots,alerts};} });
+export const monitorHealth = query({ args:{}, returns:v.object({ok:v.boolean(),ageMs:v.number()}), handler:async(ctx)=>{const latest=await ctx.db.query("monitorRuns").withIndex("by_started_at").order("desc").take(1);const row=latest[0];if(!row)return{ok:false,ageMs:Number.MAX_SAFE_INTEGER};const heartbeatAt=row.lastHeartbeatAt??row.startedAt;const ageMs=Date.now()-heartbeatAt;return{ok:row.status==="running"&&ageMs<3*60*1000,ageMs};} });
+export const latestSnapshots = query({ args:{timeframe:v.string(),symbol:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{if(args.symbol)return await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary",q=>q.eq("timeframe",args.timeframe).eq("symbol",args.symbol!)).order("desc").take(args.limit);return await ctx.db.query("snapshots").withIndex("by_timeframe_boundary",q=>q.eq("timeframe",args.timeframe)).order("desc").take(args.limit);} });
+export const latestStats = query({ args:{timeframe:v.string()}, returns:v.array(v.object({timeframe:v.string(),symbol:v.string(),boundaryTs:v.number(),imbalanceUsd:v.number(),longUsd:v.number(),shortUsd:v.number(),longEvents:v.number(),shortEvents:v.number(),events:v.number()})), handler:async(ctx,args)=>{const symbols=["BTC","ETH"];const rows=[];for(const symbol of symbols){const row=await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary",q=>q.eq("timeframe",args.timeframe).eq("symbol",symbol)).order("desc").take(1);if(row[0])rows.push({timeframe:row[0].timeframe,symbol:row[0].symbol,boundaryTs:row[0].boundaryTs,imbalanceUsd:row[0].imbalanceUsd,longUsd:row[0].longUsd,shortUsd:row[0].shortUsd,longEvents:row[0].longEvents,shortEvents:row[0].shortEvents,events:row[0].events});}return rows;} });
+export const latestAlerts = query({ args:{timeframe:v.optional(v.string()),symbol:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{let rows=await ctx.db.query("alerts").withIndex("by_sent_at").order("desc").take(Math.min(args.limit*5,200));if(args.timeframe)rows=rows.filter(row=>row.timeframe===args.timeframe);if(args.symbol)rows=rows.filter(row=>row.symbol===args.symbol);return rows.slice(0,args.limit);} });
+export const latestMonitorRuns = query({ args:{limit:v.number()}, handler:async(ctx,args)=>await ctx.db.query("monitorRuns").withIndex("by_started_at").order("desc").take(Math.min(args.limit,50)) });
