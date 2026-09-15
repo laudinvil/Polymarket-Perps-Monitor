@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC', 'ETH', 'SOL'];
+const SYMBOLS = ['BTC', 'ETH'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
