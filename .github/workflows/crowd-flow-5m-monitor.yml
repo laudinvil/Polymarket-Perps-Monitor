@@ -2,7 +2,7 @@ name: Crowd Flow 5M Monitor
 
 on:
   schedule:
-    - cron: '15 */5 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 360
     permissions:
       contents: read
     steps:
