@@ -12,19 +12,16 @@ const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
 let socket;
-let streakDirection = null;
 let streakLength = 0;
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
 async function fetchFullPeriodTrades(market, periodStart) {
   if (!market?.conditionId) return null;
-  const startSec = Math.floor(periodStart / 1000);
-  const endSec = startSec + Math.floor(PERIOD / 1000);
-  const rows = []; const seenRows = new Set(); let offset = 0; const limit = 10000;
+  const startSec = Math.floor(periodStart / 1000), endSec = startSec + 300;
+  const rows = [], seenRows = new Set(); let offset = 0; const limit = 10000;
   while (true) {
     const url = new URL(DATA_API);
-    url.searchParams.set('market', market.conditionId); url.searchParams.set('start', String(startSec)); url.searchParams.set('end', String(endSec));
-    url.searchParams.set('takerOnly', 'true'); url.searchParams.set('limit', String(limit)); url.searchParams.set('offset', String(offset));
+    url.searchParams.set('market', market.conditionId); url.searchParams.set('start', String(startSec)); url.searchParams.set('end', String(endSec)); url.searchParams.set('takerOnly', 'true'); url.searchParams.set('limit', String(limit)); url.searchParams.set('offset', String(offset));
     const response = await fetch(url, { headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error(`Data API ${response.status}`);
     const page = await response.json(); if (!Array.isArray(page)) throw new Error('Data API invalid response');
@@ -59,17 +56,20 @@ async function checkBoundary(currentStart) {
     if (!previous || previous.trades === undefined) { current.alertChecked = true; console.log(`[crowd-flow] BTC first comparable period=${justFinishedStart} trades=${current.trades}`); return; }
     current.alertChecked = true;
     const diff = current.trades - previous.trades;
-    const direction = diff > 0 ? 'UP' : diff < 0 ? 'DOWN' : 'SAME';
-    if (direction === 'SAME') { streakDirection = null; streakLength = 0; console.log(`[crowd-flow] BTC direction=SAME streak reset period=${justFinishedStart}`); return; }
-    if (streakDirection === direction) streakLength += 1; else { streakDirection = direction; streakLength = 1; }
-    const change = diff > 0 ? `+${diff}` : String(Math.abs(diff));
-    console.log(`[crowd-flow] BTC direction=${direction} streak=${streakLength} change=${change} period=${justFinishedStart}`);
+    if (diff <= 0) {
+      streakLength = 0;
+      console.log(`[crowd-flow] BTC increase streak reset change=${diff} period=${justFinishedStart}`);
+      return;
+    }
+    streakLength += 1;
+    const change = `+${diff}`;
+    console.log(`[crowd-flow] BTC direction=UP streak=${streakLength} change=${change} period=${justFinishedStart}`);
     if (streakLength < 2) return;
     const currentMarket = markets.get(key('BTC', currentStart));
     const currentUrl = currentMarket?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
     if (alertedLinks.has(currentUrl)) return; alertedLinks.add(currentUrl);
-    await sendTelegramMessage(['🔥 BTC · 5M', `TRADES: ${current.trades}`, `PREVIOUS: ${previous.trades}`, `CHANGE: ${direction} ${change}`, `CLOSE UP: ${current.lu ?? 'N/A'}`, `CLOSE DOWN: ${current.ld ?? 'N/A'}`, '', '➡️ CURRENT · Polymarket 5M', currentUrl].join('\n'));
-    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} streak=${streakLength} change=${change} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
+    await sendTelegramMessage(['🔥 BTC · 5M', `TRADES: ${current.trades}`, `PREVIOUS: ${previous.trades}`, `CHANGE: UP ${change}`, `CLOSE UP: ${current.lu ?? 'N/A'}`, `CLOSE DOWN: ${current.ld ?? 'N/A'}`, '', '➡️ CURRENT · Polymarket 5M', currentUrl].join('\n'));
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=UP streak=${streakLength} change=${change} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
   } catch (e) { console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`); }
 }
 async function refresh() {
