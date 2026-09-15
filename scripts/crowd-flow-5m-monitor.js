@@ -21,22 +21,14 @@ const price = n => Number(n).toFixed(3);
 
 async function checkBoundary(currentStart) {
   const justFinishedStart = currentStart - PERIOD;
-  const previousStart = currentStart - PERIOD * 2;
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
     const justFinished = completed.get(key(symbol, justFinishedStart));
-    const previous = completed.get(key(symbol, previousStart));
-    if (!justFinished || !previous || justFinished.alertChecked) continue;
+    if (!justFinished || justFinished.alertChecked) continue;
 
     justFinished.alertChecked = true;
-    const increase = justFinished.trades - previous.trades;
-    if (increase <= 1) {
-      console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
-      continue;
-    }
-
-    candidates.push({ symbol, justFinished, previous, increase });
+    candidates.push({ symbol, justFinished });
   }
 
   if (!candidates.length) return;
@@ -44,7 +36,7 @@ async function checkBoundary(currentStart) {
   // One alert per completed period: select the coin with the minimum trade count.
   candidates.sort((a, b) => a.justFinished.trades - b.justFinished.trades || a.symbol.localeCompare(b.symbol));
   const winner = candidates[0];
-  const { symbol, justFinished, previous, increase } = winner;
+  const { symbol, justFinished } = winner;
 
   const current = markets.get(key(symbol, currentStart));
   const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -60,10 +52,8 @@ async function checkBoundary(currentStart) {
   const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
 
   await sendTelegramMessage([
-    `🔥 ${symbol} · 5M TRADE INCREASE`,
-    `PREVIOUS: ${previous.trades}`,
-    `CURRENT: ${justFinished.trades}`,
-    `INCREASE: ${increase}`,
+    `🔥 ${symbol} · 5M TRADE FLOW`,
+    `TRADES: ${justFinished.trades}`,
     `PRICE UP: ${upPrice}`,
     `PRICE DOWN: ${downPrice}`,
     '',
@@ -71,7 +61,7 @@ async function checkBoundary(currentStart) {
     currentUrl
   ].join('\n'));
 
-  console.log(`[crowd-flow] INCREASE ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
+  console.log(`[crowd-flow] ALERT ${symbol} trades=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
 }
 
 async function refresh() {
