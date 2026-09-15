@@ -15,7 +15,6 @@ const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
 let socket;
-let streakDirection = null;
 let streakLength = 0;
 
 const start = () => bucketStart(Date.now(), '5m');
@@ -114,10 +113,9 @@ async function checkBoundary(currentStart) {
     if (!ok) return;
     if (previous && !previous.backfilled) await backfillPeriod(previous);
 
-    let diff;
-    let direction;
     if (!previous || previous.trades === undefined) {
       current.alertChecked = true;
+      streakLength = 0;
       console.log(`[crowd-flow] BTC first comparable period=${justFinishedStart} trades=${current.trades}`);
       await convexPost('crowdFlow.period', {
         symbol:'BTC', periodStart:justFinishedStart, periodEnd:justFinishedStart + PERIOD,
@@ -126,29 +124,22 @@ async function checkBoundary(currentStart) {
       return;
     }
 
+    const diff = current.trades - previous.trades;
+    const isIncrease = diff > 0;
+    streakLength = isIncrease ? streakLength + 1 : 0;
     current.alertChecked = true;
-    diff = current.trades - previous.trades;
-    direction = diff > 0 ? 'UP' : diff < 0 ? 'DOWN' : 'SAME';
-    if (direction === 'SAME') {
-      streakDirection = null;
-      streakLength = 0;
-    } else if (streakDirection === direction) {
-      streakLength += 1;
-    } else {
-      streakDirection = direction;
-      streakLength = 1;
-    }
 
     const change = diff > 0 ? `+${diff}` : String(diff);
-    console.log(`[crowd-flow] BTC direction=${direction} streak=${streakLength} change=${diff} period=${justFinishedStart}`);
+    console.log(`[crowd-flow] BTC increase=${isIncrease} streak=${streakLength} change=${diff} period=${justFinishedStart}`);
 
     await convexPost('crowdFlow.period', {
       symbol:'BTC', periodStart:justFinishedStart, periodEnd:justFinishedStart + PERIOD,
-      trades:current.trades, previousTrades:previous.trades, change:diff, direction, streak:streakLength,
+      trades:current.trades, previousTrades:previous.trades, change:diff,
+      direction:isIncrease ? 'UP' : 'NOT_UP', streak:streakLength,
       closeUp:current.lu ?? undefined, closeDown:current.ld ?? undefined, recordedAt:Date.now()
     });
 
-    if (streakLength < 2) return;
+    if (!isIncrease || streakLength < 2) return;
 
     const currentMarket = markets.get(key('BTC', currentStart));
     const currentUrl = currentMarket?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -158,12 +149,12 @@ async function checkBoundary(currentStart) {
       '🔥 BTC · 5M',
       `TRADES: ${current.trades}`,
       `PREVIOUS: ${previous.trades}`,
-      `CHANGE: ${direction} ${change}`,
+      `CHANGE: UP +${diff}`,
       `CLOSE UP: ${current.lu ?? 'N/A'}`,
       `CLOSE DOWN: ${current.ld ?? 'N/A'}`,
       '', '➡️ CURRENT · Polymarket 5M', currentUrl
     ].join('\n'));
-    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} streak=${streakLength} change=${diff} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} increaseStreak=${streakLength} change=${diff} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
   } catch (e) {
     console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`);
   }
