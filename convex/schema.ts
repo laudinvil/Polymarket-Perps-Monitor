@@ -23,6 +23,9 @@ export default defineSchema({
   alerts: defineTable({
     runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), alertType:v.string(), previousImbalanceUsd:v.number(), newImbalanceUsd:v.number(), sentAt:v.number(),
   }).index("by_symbol_timeframe_boundary",["symbol","timeframe","boundaryTs"]).index("by_sent_at",["sentAt"]),
+  crowdFlowPeriods: defineTable({
+    symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number(),
+  }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
   lineAlerts: defineTable({
     runId:v.number(), eventId:v.string(), home:v.string(), away:v.string(), market:v.string(), selection:v.string(), line:v.number(), movePercent:v.number(), bookmakers:v.any(), polymarketUrl:v.optional(v.string()), sentAt:v.number(),
   }).index("by_sent_at",["sentAt"]).index("by_event",["eventId"]),
