@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC', 'ETH'];
+const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const DATA_API = 'https://data-api.polymarket.com/trades';
@@ -18,7 +18,6 @@ let socket;
 
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
-const price = n => Number(n).toFixed(3);
 
 async function fetchFullPeriodTrades(market, periodStart) {
   if (!market?.conditionId) return null;
@@ -62,141 +61,108 @@ async function fetchFullPeriodTrades(market, periodStart) {
 }
 
 async function backfillPeriod(v) {
+  if (v.backfilled) return true;
   const trades = await fetchFullPeriodTrades(v.market, v.start);
   if (trades === null) return false;
 
-  let up = 0;
-  let down = 0;
-  let lu = null;
-  let ld = null;
-
-  const upToken = String(v.market.tokenIds.UP);
-  const downToken = String(v.market.tokenIds.DOWN);
-
-  for (const trade of trades) {
-    const asset = String(trade.asset || '');
-    const p = Number(trade.price);
-    const q = Number(trade.size);
-    if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) continue;
-
-    if (asset === upToken) {
-      up += p * q;
-      lu = p;
-    } else if (asset === downToken) {
-      down += p * q;
-      ld = p;
-    }
-  }
-
   v.trades = trades.length;
-  v.up = up;
-  v.down = down;
-  v.lu = lu;
-  v.ld = ld;
   v.backfilled = true;
   return true;
 }
 
 async function checkBoundary(currentStart) {
-  const justFinishedStart = currentStart - PERIOD;
+  const periodStart = currentStart - PERIOD;
+  const current = completed.get(key('BTC', periodStart));
+  if (!current || current.alertChecked) return;
 
-  const candidates = [];
-  for (const symbol of SYMBOLS) {
-    const justFinished = completed.get(key(symbol, justFinishedStart));
-    if (!justFinished || justFinished.alertChecked) continue;
-
-    try {
-      const ok = await backfillPeriod(justFinished);
-      if (!ok || justFinished.trades < 1) {
-        justFinished.alertChecked = true;
-        continue;
-      }
-      console.log(`[crowd-flow] BACKFILL ${symbol} period=${justFinishedStart} trades=${justFinished.trades}`);
-    } catch (e) {
-      console.error(`[crowd-flow] BACKFILL FAILED ${symbol} period=${justFinishedStart}: ${e.message}`);
-      continue;
-    }
-
-    justFinished.alertChecked = true;
-    candidates.push({ symbol, justFinished });
+  try {
+    const ok = await backfillPeriod(current);
+    if (!ok) return;
+  } catch (e) {
+    console.error(`[crowd-flow] BACKFILL FAILED BTC period=${periodStart}: ${e.message}`);
+    return;
   }
 
-  if (!candidates.length) return;
+  const previousStart = periodStart - PERIOD;
+  const previous = completed.get(key('BTC', previousStart));
 
-  // One alert per completed period: select the coin with the minimum positive trade count.
-  candidates.sort((a, b) => a.justFinished.trades - b.justFinished.trades || a.symbol.localeCompare(b.symbol));
-  const winner = candidates[0];
-  const { symbol, justFinished } = winner;
+  // Wait until the immediately previous 5M period is also available and backfilled.
+  if (!previous) return;
 
-  const current = markets.get(key(symbol, currentStart));
-  const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
+  try {
+    const ok = await backfillPeriod(previous);
+    if (!ok) return;
+  } catch (e) {
+    console.error(`[crowd-flow] BACKFILL FAILED BTC previous=${previousStart}: ${e.message}`);
+    return;
+  }
+
+  const diff = current.trades - previous.trades;
+  const direction = diff > 0 ? 'MORE' : diff < 0 ? 'LESS' : 'SAME';
+  const change = diff > 0 ? `+${diff}` : String(diff);
+
+  const live = markets.get(key('BTC', currentStart));
+  const currentUrl = live?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
 
   if (alertedLinks.has(currentUrl)) {
-    console.log(`[crowd-flow] duplicate link suppressed symbol=${symbol} current=${currentUrl}`);
+    current.alertChecked = true;
     return;
   }
 
   alertedLinks.add(currentUrl);
-
-  const upPrice = justFinished.lu === null ? 'n/a' : price(justFinished.lu);
-  const downPrice = justFinished.ld === null ? 'n/a' : price(justFinished.ld);
+  current.alertChecked = true;
 
   await sendTelegramMessage([
-    `🔥 ${symbol} · 5M`,
-    `TRADES: ${justFinished.trades}`,
-    `PRICE UP: ${upPrice}`,
-    `PRICE DOWN: ${downPrice}`,
+    '🔥 BTC · 5M',
+    `TRADES: ${current.trades}`,
+    `PREVIOUS: ${previous.trades}`,
+    `CHANGE: ${direction} ${change}`,
     '',
     '➡️ CURRENT · Polymarket 5M',
     currentUrl
   ].join('\n'));
 
-  console.log(`[crowd-flow] ALERT ${symbol} trades=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
+  console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} change=${change} direction=${direction} boundary=${currentStart}`);
 }
 
 async function refresh() {
   const t = start();
 
-  for (const symbol of SYMBOLS) {
-    const market = await findMarketByEpoch(symbol, t, '5m');
-    if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) {
-      console.log(`[crowd-flow] ${symbol} market unavailable period=${t}`);
-      continue;
-    }
+  const market = await findMarketByEpoch('BTC', t, '5m');
+  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) {
+    console.log(`[crowd-flow] BTC market unavailable period=${t}`);
+    return;
+  }
 
-    const k = key(symbol, t);
-    if (!markets.has(k)) {
-      markets.set(k, {
-        symbol,
-        start: t,
-        market,
-        up: 0,
-        down: 0,
-        trades: 0,
-        lu: null,
-        ld: null,
-        backfilled: false
-      });
-    }
+  const k = key('BTC', t);
+  if (!markets.has(k)) {
+    markets.set(k, {
+      symbol: 'BTC',
+      start: t,
+      market,
+      trades: 0,
+      backfilled: false,
+      alertChecked: false
+    });
+  }
 
-    tokens.set(market.tokenIds.UP, { k, o: 'UP' });
-    tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
+  tokens.set(market.tokenIds.UP, { k, o: 'UP' });
+  tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
 
-    const previousStart = t - PERIOD;
-    const previous = markets.get(key(symbol, previousStart));
-    if (previous && !completed.has(key(symbol, previousStart))) {
-      completed.set(key(symbol, previousStart), { ...previous });
-    }
+  const previousStart = t - PERIOD;
+  const previous = markets.get(key('BTC', previousStart));
+  if (previous && !completed.has(key('BTC', previousStart))) {
+    completed.set(key('BTC', previousStart), { ...previous });
   }
 
   await checkBoundary(t);
 
-  for (const [k, v] of markets) {
-    if (v.start < t - PERIOD) markets.delete(k);
+  for (const [mk, v] of markets) {
+    if (v.start < t - PERIOD) markets.delete(mk);
   }
 
-  for (const [k, v] of completed) {
-    if (v.start < t - PERIOD * 4) completed.delete(k);
+  for (const [ck, v] of completed) {
+    if (v.start < t - PERIOD * 4) completed.delete(ck);
   }
 
   if (socket?.readyState === WebSocket.OPEN) {
@@ -206,7 +172,7 @@ async function refresh() {
 
     if (ids.length) {
       socket.send(JSON.stringify({ assets_ids: ids, type: 'market' }));
-      console.log(`[crowd-flow] subscribed tokens=${ids.length} symbols=${SYMBOLS.length} period=${t}`);
+      console.log(`[crowd-flow] subscribed tokens=${ids.length} symbol=BTC period=${t}`);
     }
   }
 }
@@ -226,27 +192,14 @@ function event(x) {
 
   const p = Number(x.price);
   const q = Number(x.size);
-  const n = p * q;
-  if (!Number.isFinite(n) || n <= 0) return;
-
+  if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) return;
   v.trades += 1;
-  if (m.o === 'UP') {
-    v.up += n;
-    v.lu = p;
-  } else {
-    v.down += n;
-    v.ld = p;
-  }
 }
 
 function diagnostics() {
   const t = start();
-  const rows = [];
-  for (const symbol of SYMBOLS) {
-    const v = markets.get(key(symbol, t));
-    if (v) rows.push(`${symbol}=${v.trades}`);
-  }
-  console.log(`[crowd-flow] DIAG ${rows.join(' ')}`);
+  const v = markets.get(key('BTC', t));
+  if (v) console.log(`[crowd-flow] DIAG BTC=${v.trades}`);
 }
 
 function connect() {
@@ -265,7 +218,7 @@ function connect() {
 }
 
 (async () => {
-  console.log('[crowd-flow] start', SYMBOLS.join(','));
+  console.log('[crowd-flow] start BTC');
   await refresh();
   connect();
   setInterval(() => refresh().catch(e => console.error('[crowd-flow]', e.message)), 30000);
