@@ -1,8 +1,11 @@
 const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
+const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
+const alertedPeriods = new Set();
+let increaseStreak = 0;
 const start = () => bucketStart(Date.now(), '5m');
 
 async function convexPost(data) {
@@ -51,13 +54,11 @@ async function fetchFullPeriodTrades(market, periodStart) {
   return rows;
 }
 
-async function saveCompletedPeriod(periodStart) {
-  const key = String(periodStart);
-  if (saved.has(key)) return;
+async function loadPeriod(periodStart) {
   const market = await findMarketByEpoch('BTC', periodStart, '5m');
-  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) return;
+  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) return null;
   const trades = await fetchFullPeriodTrades(market, periodStart);
-  if (trades === null) return;
+  if (trades === null) return null;
   let closeUp = null, closeDown = null;
   let closeUpTs = -Infinity, closeDownTs = -Infinity;
   const upToken = String(market.tokenIds.UP);
@@ -70,27 +71,70 @@ async function saveCompletedPeriod(periodStart) {
     if (asset === upToken && ts >= closeUpTs) { closeUp = price; closeUpTs = ts; }
     if (asset === downToken && ts >= closeDownTs) { closeDown = price; closeDownTs = ts; }
   }
+  return { market, trades: trades.length, closeUp, closeDown };
+}
+
+async function saveCompletedPeriod(periodStart) {
+  const key = String(periodStart);
+  if (saved.has(key)) return null;
+  const data = await loadPeriod(periodStart);
+  if (!data) return null;
   await convexPost({
     symbol: 'BTC',
     periodStart,
     periodEnd: periodStart + PERIOD,
-    trades: trades.length,
-    closeUp: closeUp ?? undefined,
-    closeDown: closeDown ?? undefined,
+    trades: data.trades,
+    closeUp: data.closeUp ?? undefined,
+    closeDown: data.closeDown ?? undefined,
     recordedAt: Date.now()
   });
   saved.add(key);
-  console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${trades.length}`);
+  console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades}`);
+  return data;
+}
+
+async function alertIfNeeded(periodStart, current) {
+  const previousStart = periodStart - PERIOD;
+  const previous = await loadPeriod(previousStart);
+  if (!previous) return;
+
+  const diff = current.trades - previous.trades;
+  if (diff > 0) increaseStreak += 1;
+  else increaseStreak = 0;
+
+  console.log(`[crowd-flow] BTC period=${periodStart} trades=${current.trades} previous=${previous.trades} change=${diff} increaseStreak=${increaseStreak}`);
+  if (increaseStreak < 2 || alertedPeriods.has(String(periodStart))) return;
+
+  const currentStart = periodStart + PERIOD;
+  const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
+  const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
+  await sendTelegramMessage([
+    '🔥 BTC · 5M',
+    `TRADES: ${current.trades}`,
+    `PREVIOUS: ${previous.trades}`,
+    `CHANGE: UP +${diff}`,
+    `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
+    `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
+    '',
+    '➡️ CURRENT · Polymarket 5M',
+    currentUrl
+  ].join('\n'));
+  alertedPeriods.add(String(periodStart));
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} streak=${increaseStreak}`);
 }
 
 async function tick() {
   const completedStart = start() - PERIOD;
-  try { await saveCompletedPeriod(completedStart); }
-  catch (e) { console.error(`[crowd-flow] SAVE FAILED period=${completedStart}: ${e.message}`); }
+  try {
+    const current = await saveCompletedPeriod(completedStart);
+    if (current) await alertIfNeeded(completedStart, current);
+  } catch (e) {
+    console.error(`[crowd-flow] SAVE/ALERT FAILED period=${completedStart}: ${e.message}`);
+  }
 }
 
 (async () => {
-  console.log('[crowd-flow] start BTC continuous trade stats');
+  console.log('[crowd-flow] start BTC continuous trade stats + alerts');
   await tick();
   setInterval(tick, 30000);
 })();
