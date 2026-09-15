@@ -15,6 +15,8 @@ const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
 let socket;
+let streakDirection = null;
+let streakLength = 0;
 
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
@@ -119,7 +121,25 @@ async function checkBoundary(currentStart) {
     current.alertChecked = true;
     const diff = current.trades - previous.trades;
     const direction = diff > 0 ? 'UP' : diff < 0 ? 'DOWN' : 'SAME';
+
+    if (direction === 'SAME') {
+      streakDirection = null;
+      streakLength = 0;
+      console.log(`[crowd-flow] BTC direction=SAME streak reset period=${justFinishedStart}`);
+      return;
+    }
+
+    if (streakDirection === direction) {
+      streakLength += 1;
+    } else {
+      streakDirection = direction;
+      streakLength = 1;
+    }
+
     const change = diff > 0 ? `+${diff}` : String(diff);
+    console.log(`[crowd-flow] BTC direction=${direction} streak=${streakLength} change=${diff} period=${justFinishedStart}`);
+
+    if (streakLength < 2) return;
 
     const currentMarket = markets.get(key('BTC', currentStart));
     const currentUrl = currentMarket?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -137,7 +157,7 @@ async function checkBoundary(currentStart) {
       currentUrl
     ].join('\n'));
 
-    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} change=${diff} boundary=${currentStart}`);
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} streak=${streakLength} change=${diff} boundary=${currentStart}`);
   } catch (e) {
     console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`);
   }
