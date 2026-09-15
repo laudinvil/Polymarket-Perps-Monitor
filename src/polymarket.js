@@ -54,6 +54,7 @@ async function findMarketBySlug(slug) {
   const data = parseMarketData(market);
   return {
     slug, url: `${MARKET_BASE_URL}/${slug}`, question: market.question || null,
+    conditionId: market.conditionId || null,
     startDate: market.startDate || market.startDateIso || null, endDate: market.endDate || market.endDateIso || null,
     prices: data.prices, tokenIds: data.tokenIds, outcomes: data.outcomes, outcomePrices: data.outcomePrices,
     closed: data.closed, closedTime: data.closedTime, resolved: data.resolved, winner: data.winner,
@@ -74,7 +75,6 @@ function longTimeframeSlug(symbol, epoch, timeframe) { const asset = LONG_ASSET_
 function constructMarketUrl(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset || !TIMEFRAMES[timeframe]) return null; if (timeframe === '1h' || timeframe === '1d') { const slug = longTimeframeSlug(asset, epoch, timeframe); return slug ? `${MARKET_BASE_URL}/${slug}` : null; } const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return `${MARKET_BASE_URL}/${slug}`; }
 async function findMarketByEpoch(symbol, epoch, timeframe = '5m') { const asset = String(symbol || '').trim().toUpperCase(); if (!asset) return null; if (timeframe === '1h' || timeframe === '1d') return findMarketBySlug(longTimeframeSlug(asset, epoch, timeframe)); const slug = `${asset.toLowerCase()}-updown-${timeframe}-${Math.floor(epoch / 1000)}`; return findMarketBySlug(slug); }
 async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
-  // Return NEXT+4: skip the next three 5m markets and target the fourth upcoming period.
   const start = bucketStart(now, timeframe) + 4 * TIMEFRAMES[timeframe];
   for (let i = 0; i < 12; i += 1) {
     const epoch = start + i * TIMEFRAMES[timeframe];
@@ -82,7 +82,7 @@ async function findNextMarket(symbol, now = Date.now(), timeframe = '5m') {
     if (market) return market;
   }
   const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
-  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null };
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null, conditionId: null };
   return null;
 }
 async function findCurrentMarket(symbol, now = Date.now(), timeframe = '15m') {
@@ -90,7 +90,7 @@ async function findCurrentMarket(symbol, now = Date.now(), timeframe = '15m') {
   const market = await findMarketByEpoch(symbol, start, timeframe);
   if (market) return market;
   const fallbackUrl = constructMarketUrl(symbol, start, timeframe);
-  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null };
+  if (fallbackUrl) return { slug: fallbackUrl.slice(`${MARKET_BASE_URL}/`.length), url: fallbackUrl, synthetic: true, prices: {}, tokenIds: {}, outcomes: [], outcomePrices: [], closed: false, closedTime: null, resolved: false, winner: null, conditionId: null };
   return null;
 }
 module.exports = { TIMEFRAMES, bucketStart, nextBucketStart, constructMarketUrl, findMarketByEpoch, findNextMarket, findCurrentMarket, findClobMidpoint };
