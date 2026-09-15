@@ -1,12 +1,11 @@
 {
   "status": "success",
   "workflow": "Deploy Convex",
-  "run_id": 34648209914,
+  "run_id": 34973003804,
   "run_attempt": 1,
-  "commit_sha": "e2b21de6ddcd96be9efe961cf440fc56a9090b35",
-  "deployed_at": "2026-09-11T21:12:49.762Z",
+  "commit_sha": "84ea58bdce92e2063c990080f3a70f7912605362",
+  "deployed_at": "2026-09-15T13:07:41.954Z",
   "convex_health": {
-    "ageMs": 14741,
     "ok": true
   }
 }
