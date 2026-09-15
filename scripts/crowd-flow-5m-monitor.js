@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 if (!WebSocket) throw new Error('WebSocket unavailable');
 
-const SYMBOLS = ['BTC'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'BNB', 'HYPE'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 
@@ -20,28 +20,39 @@ const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
 const price = n => Number(n).toFixed(3);
 
-async function checkBoundary(symbol, currentStart) {
+async function checkBoundary(currentStart) {
   const justFinishedStart = currentStart - PERIOD;
   const previousStart = currentStart - PERIOD * 2;
-  const justFinished = completed.get(key(symbol, justFinishedStart));
-  const previous = completed.get(key(symbol, previousStart));
-  if (!justFinished || !previous) return;
+  const candidates = [];
 
-  if (justFinished.alertChecked) return;
-  justFinished.alertChecked = true;
+  for (const symbol of SYMBOLS) {
+    const justFinished = completed.get(key(symbol, justFinishedStart));
+    const previous = completed.get(key(symbol, previousStart));
+    if (!justFinished || !previous || justFinished.alertChecked) continue;
+
+    justFinished.alertChecked = true;
+
+    const increase = justFinished.trades - previous.trades;
+    if (increase <= 1) {
+      console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
+      continue;
+    }
+
+    candidates.push({ symbol, justFinished, previous, increase });
+  }
 
   // One full 5M period of silence after every alert.
-  // Alert at boundary N -> period N..N+1 is silent; next eligible boundary is N+2.
   if (lastAlertPeriod !== null && currentStart < lastAlertPeriod + PERIOD * 2) {
-    console.log(`[crowd-flow] cooldown suppressed ${symbol} boundary=${currentStart} lastAlert=${lastAlertPeriod}`);
+    console.log(`[crowd-flow] cooldown boundary=${currentStart} lastAlert=${lastAlertPeriod}`);
     return;
   }
 
-  const increase = justFinished.trades - previous.trades;
-  if (increase <= 1) {
-    console.log(`[crowd-flow] ignored ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase}`);
-    return;
-  }
+  if (!candidates.length) return;
+
+  // One alert per boundary: choose the coin with the minimum number of trades.
+  candidates.sort((a, b) => a.justFinished.trades - b.justFinished.trades || a.symbol.localeCompare(b.symbol));
+  const winner = candidates[0];
+  const { symbol, justFinished, previous, increase } = winner;
 
   const current = markets.get(key(symbol, currentStart));
   const currentUrl = current?.market?.url || `https://polymarket.com/event/${symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -69,7 +80,7 @@ async function checkBoundary(symbol, currentStart) {
     currentUrl
   ].join('\n'));
 
-  console.log(`[crowd-flow] INCREASE ${symbol} previous=${previous.trades} current=${justFinished.trades} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
+  console.log(`[crowd-flow] INCREASE ${symbol} previous=${previous.trades} current=${justFinished.trades} increase=${increase} priceUp=${upPrice} priceDown=${downPrice} boundary=${currentStart}`);
 }
 
 async function refresh() {
@@ -104,9 +115,9 @@ async function refresh() {
     if (previous && !completed.has(key(symbol, previousStart))) {
       completed.set(key(symbol, previousStart), { ...previous });
     }
-
-    await checkBoundary(symbol, t);
   }
+
+  await checkBoundary(t);
 
   for (const [k, v] of markets) {
     if (v.start < t - PERIOD) markets.delete(k);
@@ -123,7 +134,7 @@ async function refresh() {
 
     if (ids.length) {
       socket.send(JSON.stringify({ assets_ids: ids, type: 'market' }));
-      console.log(`[crowd-flow] subscribed tokens=${ids.length} period=${t}`);
+      console.log(`[crowd-flow] subscribed tokens=${ids.length} symbols=${SYMBOLS.length} period=${t}`);
     }
   }
 }
@@ -158,13 +169,12 @@ function event(x) {
 
 function diagnostics() {
   const t = start();
+  const rows = [];
   for (const symbol of SYMBOLS) {
     const v = markets.get(key(symbol, t));
-    const previous = completed.get(key(symbol, t - PERIOD));
-    const prior = completed.get(key(symbol, t - PERIOD * 2));
-    if (!v) continue;
-    console.log(`[crowd-flow] DIAG ${symbol} CURRENT=${v.trades} PREVIOUS=${previous?.trades ?? 'n/a'} PRIOR=${prior?.trades ?? 'n/a'} UP=${Math.round(v.up)} DOWN=${Math.round(v.down)} PRICE_UP=${v.lu === null ? 'n/a' : price(v.lu)} PRICE_DOWN=${v.ld === null ? 'n/a' : price(v.ld)} COOLDOWN=${lastAlertPeriod !== null && t < lastAlertPeriod + PERIOD * 2}`);
+    if (v) rows.push(`${symbol}=${v.trades}`);
   }
+  console.log(`[crowd-flow] DIAG ${rows.join(' ')}`);
 }
 
 function connect() {
