@@ -6,7 +6,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 
 const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
-const MIN_TRADES = 2300;
+const MIN_TRADES = 2400;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const DATA_API = 'https://data-api.polymarket.com/trades';
 
