@@ -6,7 +6,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 
 const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
-const MIN_TRADES = 1500;
+const MIN_TRADES = 2200;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const DATA_API = 'https://data-api.polymarket.com/trades';
 
@@ -132,7 +132,7 @@ async function checkBoundary(currentStart) {
     alertedLinks.add(currentUrl);
 
     await sendTelegramMessage([
-      '🔥 BTC · 5M CROWD FLOW',
+      '🔥 BTC · 5M',
       `TRADES: ${current.trades}`,
       `THRESHOLD: ${MIN_TRADES}+`,
       `CLOSE UP: ${current.lu ?? 'N/A'}`,
