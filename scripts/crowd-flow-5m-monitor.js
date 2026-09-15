@@ -61,88 +61,109 @@ async function fetchFullPeriodTrades(market, periodStart) {
 }
 
 async function backfillPeriod(v) {
-  if (v.backfilled) return true;
   const trades = await fetchFullPeriodTrades(v.market, v.start);
   if (trades === null) return false;
 
+  let up = 0;
+  let down = 0;
+  let lu = null;
+  let ld = null;
+
+  const upToken = String(v.market.tokenIds.UP);
+  const downToken = String(v.market.tokenIds.DOWN);
+
+  for (const trade of trades) {
+    const asset = String(trade.asset || '');
+    const p = Number(trade.price);
+    const q = Number(trade.size);
+    if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) continue;
+
+    if (asset === upToken) {
+      up += p * q;
+      lu = p;
+    } else if (asset === downToken) {
+      down += p * q;
+      ld = p;
+    }
+  }
+
   v.trades = trades.length;
+  v.up = up;
+  v.down = down;
+  v.lu = lu;
+  v.ld = ld;
   v.backfilled = true;
   return true;
 }
 
 async function checkBoundary(currentStart) {
-  const periodStart = currentStart - PERIOD;
-  const current = completed.get(key('BTC', periodStart));
+  const justFinishedStart = currentStart - PERIOD;
+  const previousStart = currentStart - PERIOD * 2;
+  const current = completed.get(key('BTC', justFinishedStart));
+  const previous = completed.get(key('BTC', previousStart));
+
   if (!current || current.alertChecked) return;
 
   try {
     const ok = await backfillPeriod(current);
     if (!ok) return;
-  } catch (e) {
-    console.error(`[crowd-flow] BACKFILL FAILED BTC period=${periodStart}: ${e.message}`);
-    return;
-  }
 
-  const previousStart = periodStart - PERIOD;
-  const previous = completed.get(key('BTC', previousStart));
+    if (previous && !previous.backfilled) await backfillPeriod(previous);
 
-  // Wait until the immediately previous 5M period is also available and backfilled.
-  if (!previous) return;
+    if (!previous || previous.trades === undefined) {
+      current.alertChecked = true;
+      console.log(`[crowd-flow] BTC first comparable period=${justFinishedStart} trades=${current.trades}`);
+      return;
+    }
 
-  try {
-    const ok = await backfillPeriod(previous);
-    if (!ok) return;
-  } catch (e) {
-    console.error(`[crowd-flow] BACKFILL FAILED BTC previous=${previousStart}: ${e.message}`);
-    return;
-  }
-
-  const diff = current.trades - previous.trades;
-  const direction = diff > 0 ? 'MORE' : diff < 0 ? 'LESS' : 'SAME';
-  const change = diff > 0 ? `+${diff}` : String(diff);
-
-  const live = markets.get(key('BTC', currentStart));
-  const currentUrl = live?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
-
-  if (alertedLinks.has(currentUrl)) {
     current.alertChecked = true;
-    return;
+    const diff = current.trades - previous.trades;
+    const direction = diff > 0 ? 'UP' : diff < 0 ? 'DOWN' : 'SAME';
+    const change = diff > 0 ? `+${diff}` : String(diff);
+
+    const currentMarket = markets.get(key('BTC', currentStart));
+    const currentUrl = currentMarket?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
+
+    if (alertedLinks.has(currentUrl)) return;
+    alertedLinks.add(currentUrl);
+
+    await sendTelegramMessage([
+      '🔥 BTC · 5M',
+      `TRADES: ${current.trades}`,
+      `PREVIOUS: ${previous.trades}`,
+      `CHANGE: ${direction} ${change}`,
+      '',
+      '➡️ CURRENT · Polymarket 5M',
+      currentUrl
+    ].join('\n'));
+
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} change=${diff} boundary=${currentStart}`);
+  } catch (e) {
+    console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`);
   }
-
-  alertedLinks.add(currentUrl);
-  current.alertChecked = true;
-
-  await sendTelegramMessage([
-    '🔥 BTC · 5M',
-    `TRADES: ${current.trades}`,
-    `PREVIOUS: ${previous.trades}`,
-    `CHANGE: ${direction} ${change}`,
-    '',
-    '➡️ CURRENT · Polymarket 5M',
-    currentUrl
-  ].join('\n'));
-
-  console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} change=${change} direction=${direction} boundary=${currentStart}`);
 }
 
 async function refresh() {
   const t = start();
-
-  const market = await findMarketByEpoch('BTC', t, '5m');
+  const symbol = 'BTC';
+  const market = await findMarketByEpoch(symbol, t, '5m');
   if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) {
     console.log(`[crowd-flow] BTC market unavailable period=${t}`);
     return;
   }
 
-  const k = key('BTC', t);
+  const k = key(symbol, t);
   if (!markets.has(k)) {
     markets.set(k, {
-      symbol: 'BTC',
+      symbol,
       start: t,
       market,
+      up: 0,
+      down: 0,
       trades: 0,
-      backfilled: false,
-      alertChecked: false
+      lu: null,
+      ld: null,
+      backfilled: false
     });
   }
 
@@ -150,9 +171,15 @@ async function refresh() {
   tokens.set(market.tokenIds.DOWN, { k, o: 'DOWN' });
 
   const previousStart = t - PERIOD;
-  const previous = markets.get(key('BTC', previousStart));
-  if (previous && !completed.has(key('BTC', previousStart))) {
-    completed.set(key('BTC', previousStart), { ...previous });
+  const previous = markets.get(key(symbol, previousStart));
+  if (previous && !completed.has(key(symbol, previousStart))) {
+    completed.set(key(symbol, previousStart), { ...previous });
+  }
+
+  const olderStart = t - PERIOD * 2;
+  const older = markets.get(key(symbol, olderStart));
+  if (older && !completed.has(key(symbol, olderStart))) {
+    completed.set(key(symbol, olderStart), { ...older });
   }
 
   await checkBoundary(t);
@@ -192,8 +219,17 @@ function event(x) {
 
   const p = Number(x.price);
   const q = Number(x.size);
-  if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) return;
+  const n = p * q;
+  if (!Number.isFinite(n) || n <= 0) return;
+
   v.trades += 1;
+  if (m.o === 'UP') {
+    v.up += n;
+    v.lu = p;
+  } else {
+    v.down += n;
+    v.ld = p;
+  }
 }
 
 function diagnostics() {
