@@ -1,0 +1,110 @@
+[
+  {
+    "_creationTime": 1789479027232.3071,
+    "_id": "kd7dpvj2f4n81zs4e3arkgangd8eep2v",
+    "closeDown": 0.01,
+    "closeUp": 0.99,
+    "direction": "NOT_UP",
+    "periodEnd": 1789479000000,
+    "periodStart": 1789478700000,
+    "recordedAt": 1789479026950,
+    "symbol": "BTC",
+    "trades": 1967
+  },
+  {
+    "_creationTime": 1789478727079.0774,
+    "_id": "kd7ayqrn9fmyw0e8fk63kkd8618een24",
+    "closeDown": 0.01,
+    "closeUp": 0.99,
+    "direction": "NOT_UP",
+    "periodEnd": 1789478700000,
+    "periodStart": 1789478400000,
+    "recordedAt": 1789478726964,
+    "symbol": "BTC",
+    "trades": 2063
+  },
+  {
+    "_creationTime": 1789478404414.5989,
+    "_id": "kd74e57pf2g9qgh3mqa4fwjk6x8eeh84",
+    "closeDown": 0.99,
+    "closeUp": 0.01,
+    "direction": "NOT_UP",
+    "periodEnd": 1789478400000,
+    "periodStart": 1789478100000,
+    "recordedAt": 1789478404278,
+    "symbol": "BTC",
+    "trades": 1795
+  },
+  {
+    "_creationTime": 1789478104215.1438,
+    "_id": "kd7bb7qqs1nqwp64gggph292m98ef49b",
+    "closeDown": 0.999,
+    "closeUp": 0.001,
+    "direction": "NOT_UP",
+    "periodEnd": 1789478100000,
+    "periodStart": 1789477800000,
+    "recordedAt": 1789478104101,
+    "symbol": "BTC",
+    "trades": 1545
+  },
+  {
+    "_creationTime": 1789477804366.4983,
+    "_id": "kd71jxezyx9d02rt2m8vatggc18ef05j",
+    "closeDown": 0.99,
+    "closeUp": 0.01,
+    "direction": "UP",
+    "periodEnd": 1789477800000,
+    "periodStart": 1789477500000,
+    "recordedAt": 1789477804183,
+    "symbol": "BTC",
+    "trades": 2270
+  },
+  {
+    "_creationTime": 1789477504170.7913,
+    "_id": "kd7bqd4zxv3q3kwgw47tns27mx8ee7z6",
+    "closeDown": 0.02,
+    "closeUp": 0.999,
+    "direction": "NOT_UP",
+    "periodEnd": 1789477500000,
+    "periodStart": 1789477200000,
+    "recordedAt": 1789477504052,
+    "symbol": "BTC",
+    "trades": 1210
+  },
+  {
+    "_creationTime": 1789477204159.2844,
+    "_id": "kd7fhrkh7k75wwsa751n4wgqth8ef6yr",
+    "closeDown": 0.999,
+    "closeUp": 0.0098224838,
+    "direction": "NOT_UP",
+    "periodEnd": 1789477200000,
+    "periodStart": 1789476900000,
+    "recordedAt": 1789477204028,
+    "symbol": "BTC",
+    "trades": 888
+  },
+  {
+    "_creationTime": 1789476904188.519,
+    "_id": "kd7dhbgakcnqj98emxryf9t6998eep6h",
+    "closeDown": 0.01,
+    "closeUp": 0.99,
+    "direction": "NOT_UP",
+    "periodEnd": 1789476900000,
+    "periodStart": 1789476600000,
+    "recordedAt": 1789476904066,
+    "symbol": "BTC",
+    "trades": 1367
+  },
+  {
+    "_creationTime": 1789476604540.4495,
+    "_id": "kd78zg334ck0cxx6rfvkd0qs698efpx3",
+    "closeDown": 0.01,
+    "closeUp": 0.99,
+    "direction": "NOT_UP",
+    "periodEnd": 1789476600000,
+    "periodStart": 1789476300000,
+    "recordedAt": 1789476604102,
+    "symbol": "BTC",
+    "trades": 2040
+  }
+]
