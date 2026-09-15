@@ -6,6 +6,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 
 const SYMBOLS = ['BTC'];
 const PERIOD = 300000;
+const MIN_TRADES = 1500;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
 const DATA_API = 'https://data-api.polymarket.com/trades';
 
@@ -15,7 +16,6 @@ const seen = new Set();
 const alertedLinks = new Set();
 const completed = new Map();
 let socket;
-let streakLength = 0;
 
 const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
@@ -103,58 +103,43 @@ async function backfillPeriod(v) {
 
 async function checkBoundary(currentStart) {
   const justFinishedStart = currentStart - PERIOD;
-  const previousStart = currentStart - PERIOD * 2;
   const current = completed.get(key('BTC', justFinishedStart));
-  const previous = completed.get(key('BTC', previousStart));
   if (!current || current.alertChecked) return;
 
   try {
     const ok = await backfillPeriod(current);
     if (!ok) return;
-    if (previous && !previous.backfilled) await backfillPeriod(previous);
-
-    if (!previous || previous.trades === undefined) {
-      current.alertChecked = true;
-      streakLength = 0;
-      console.log(`[crowd-flow] BTC first comparable period=${justFinishedStart} trades=${current.trades}`);
-      await convexPost('crowdFlow.period', {
-        symbol:'BTC', periodStart:justFinishedStart, periodEnd:justFinishedStart + PERIOD,
-        trades:current.trades, closeUp:current.lu ?? undefined, closeDown:current.ld ?? undefined, recordedAt:Date.now()
-      });
-      return;
-    }
-
-    const diff = current.trades - previous.trades;
-    const isIncrease = diff > 0;
-    streakLength = isIncrease ? streakLength + 1 : 0;
     current.alertChecked = true;
 
-    const change = diff > 0 ? `+${diff}` : String(diff);
-    console.log(`[crowd-flow] BTC increase=${isIncrease} streak=${streakLength} change=${diff} period=${justFinishedStart}`);
+    console.log(`[crowd-flow] BTC trades=${current.trades} threshold=${MIN_TRADES} period=${justFinishedStart}`);
 
     await convexPost('crowdFlow.period', {
-      symbol:'BTC', periodStart:justFinishedStart, periodEnd:justFinishedStart + PERIOD,
-      trades:current.trades, previousTrades:previous.trades, change:diff,
-      direction:isIncrease ? 'UP' : 'NOT_UP', streak:streakLength,
-      closeUp:current.lu ?? undefined, closeDown:current.ld ?? undefined, recordedAt:Date.now()
+      symbol:'BTC',
+      periodStart:justFinishedStart,
+      periodEnd:justFinishedStart + PERIOD,
+      trades:current.trades,
+      direction: current.trades >= MIN_TRADES ? 'UP' : 'NOT_UP',
+      closeUp:current.lu ?? undefined,
+      closeDown:current.ld ?? undefined,
+      recordedAt:Date.now()
     });
 
-    if (!isIncrease || streakLength < 2) return;
+    if (current.trades < MIN_TRADES) return;
 
     const currentMarket = markets.get(key('BTC', currentStart));
     const currentUrl = currentMarket?.market?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
     if (alertedLinks.has(currentUrl)) return;
     alertedLinks.add(currentUrl);
+
     await sendTelegramMessage([
-      '🔥 BTC · 5M',
+      '🔥 BTC · 5M CROWD FLOW',
       `TRADES: ${current.trades}`,
-      `PREVIOUS: ${previous.trades}`,
-      `CHANGE: UP +${diff}`,
+      `THRESHOLD: ${MIN_TRADES}+`,
       `CLOSE UP: ${current.lu ?? 'N/A'}`,
       `CLOSE DOWN: ${current.ld ?? 'N/A'}`,
       '', '➡️ CURRENT · Polymarket 5M', currentUrl
     ].join('\n'));
-    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} increaseStreak=${streakLength} change=${diff} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} threshold=${MIN_TRADES} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
   } catch (e) {
     console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`);
   }
@@ -176,9 +161,6 @@ async function refresh() {
   const previousStart = t - PERIOD;
   const previous = markets.get(key(symbol, previousStart));
   if (previous && !completed.has(key(symbol, previousStart))) completed.set(key(symbol, previousStart), { ...previous });
-  const olderStart = t - PERIOD * 2;
-  const older = markets.get(key(symbol, olderStart));
-  if (older && !completed.has(key(symbol, olderStart))) completed.set(key(symbol, olderStart), { ...older });
 
   await checkBoundary(t);
   for (const [mk, v] of markets) if (v.start < t - PERIOD) markets.delete(mk);
@@ -223,7 +205,7 @@ function connect() {
 }
 
 (async () => {
-  console.log('[crowd-flow] start BTC');
+  console.log(`[crowd-flow] start BTC threshold=${MIN_TRADES} no-streak`);
   await refresh();
   connect();
   setInterval(() => refresh().catch(e => console.error('[crowd-flow]', e.message)), 30000);
