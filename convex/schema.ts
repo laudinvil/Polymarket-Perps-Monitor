@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Deployment trigger: keep Convex production schema/runtime in sync with main.
+// Crowd Flow persistence is part of the production deployment contract.
 export default defineSchema({
   monitorRuns: defineTable({
     runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number(),
@@ -33,8 +34,8 @@ export default defineSchema({
     fingerprint: v.string(), strategy: v.string(), team: v.string(), url: v.string(), matchId: v.string(), sentAt: v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
   paperTrades: defineTable({
-    symbol: v.string(), marketStart: v.number(), outcome: v.string(), entryPrice: v.number(), shares: v.number(), alertTs: v.number(),
-    sourceMessageId: v.optional(v.number()), resultMessageId: v.optional(v.number()), settled: v.boolean(), result: v.optional(v.string()), winner: v.optional(v.string()), pnl: v.optional(v.number()),
-    closedPrice: v.optional(v.number()), closeTs: v.optional(v.number()), closePnl: v.optional(v.number()), updatedAt: v.number(),
-  }).index("by_market", ["symbol", "marketStart"]).index("by_settled_updated", ["settled", "updatedAt"]),
+    symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
+    sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
+    closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number(),
+  }).index("by_market",["symbol","marketStart"]).index("by_settled_updated",["settled","updatedAt"]),
 });
