@@ -70,6 +70,8 @@ async function backfillPeriod(v) {
   let down = 0;
   let lu = null;
   let ld = null;
+  let luTs = -Infinity;
+  let ldTs = -Infinity;
 
   const upToken = String(v.market.tokenIds.UP);
   const downToken = String(v.market.tokenIds.DOWN);
@@ -78,14 +80,15 @@ async function backfillPeriod(v) {
     const asset = String(trade.asset || '');
     const p = Number(trade.price);
     const q = Number(trade.size);
+    const ts = Number(trade.timestamp);
     if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) continue;
 
     if (asset === upToken) {
       up += p * q;
-      lu = p;
+      if (ts >= luTs) { lu = p; luTs = ts; }
     } else if (asset === downToken) {
       down += p * q;
-      ld = p;
+      if (ts >= ldTs) { ld = p; ldTs = ts; }
     }
   }
 
@@ -152,12 +155,14 @@ async function checkBoundary(currentStart) {
       `TRADES: ${current.trades}`,
       `PREVIOUS: ${previous.trades}`,
       `CHANGE: ${direction} ${change}`,
+      `CLOSE UP: ${current.lu ?? 'N/A'}`,
+      `CLOSE DOWN: ${current.ld ?? 'N/A'}`,
       '',
       '➡️ CURRENT · Polymarket 5M',
       currentUrl
     ].join('\n'));
 
-    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} streak=${streakLength} change=${diff} boundary=${currentStart}`);
+    console.log(`[crowd-flow] ALERT BTC trades=${current.trades} previous=${previous.trades} direction=${direction} streak=${streakLength} change=${diff} closeUp=${current.lu ?? 'N/A'} closeDown=${current.ld ?? 'N/A'} boundary=${currentStart}`);
   } catch (e) {
     console.error(`[crowd-flow] CHECK FAILED BTC period=${justFinishedStart}: ${e.message}`);
   }
