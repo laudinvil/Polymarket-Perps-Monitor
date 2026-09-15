@@ -7,6 +7,7 @@ if (!WebSocket) throw new Error('WebSocket unavailable');
 const SYMBOLS = ['BTC', 'ETH'];
 const PERIOD = 300000;
 const WS = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+const DATA_API = 'https://data-api.polymarket.com/trades';
 
 const markets = new Map();
 const tokens = new Map();
@@ -19,13 +20,102 @@ const start = () => bucketStart(Date.now(), '5m');
 const key = (symbol, period) => `${symbol}:${period}`;
 const price = n => Number(n).toFixed(3);
 
+async function fetchFullPeriodTrades(market, periodStart) {
+  if (!market?.conditionId) return null;
+
+  const startSec = Math.floor(periodStart / 1000);
+  const endSec = startSec + Math.floor(PERIOD / 1000);
+  const rows = [];
+  const seenRows = new Set();
+  let offset = 0;
+  const limit = 10000;
+
+  while (true) {
+    const url = new URL(DATA_API);
+    url.searchParams.set('market', market.conditionId);
+    url.searchParams.set('start', String(startSec));
+    url.searchParams.set('end', String(endSec));
+    url.searchParams.set('takerOnly', 'true');
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Data API ${response.status}`);
+    const page = await response.json();
+    if (!Array.isArray(page)) throw new Error('Data API invalid response');
+
+    for (const trade of page) {
+      const ts = Number(trade.timestamp);
+      if (!Number.isFinite(ts) || ts < startSec || ts >= endSec) continue;
+      const id = `${trade.transactionHash || ''}:${trade.asset || ''}:${trade.timestamp}:${trade.price}:${trade.size}`;
+      if (seenRows.has(id)) continue;
+      seenRows.add(id);
+      rows.push(trade);
+    }
+
+    if (page.length < limit) break;
+    offset += limit;
+    if (offset > 10000) throw new Error('Data API pagination cap reached inside 5m period');
+  }
+
+  return rows;
+}
+
+async function backfillPeriod(v) {
+  const trades = await fetchFullPeriodTrades(v.market, v.start);
+  if (trades === null) return false;
+
+  let up = 0;
+  let down = 0;
+  let lu = null;
+  let ld = null;
+
+  const upToken = String(v.market.tokenIds.UP);
+  const downToken = String(v.market.tokenIds.DOWN);
+
+  for (const trade of trades) {
+    const asset = String(trade.asset || '');
+    const p = Number(trade.price);
+    const q = Number(trade.size);
+    if (!Number.isFinite(p) || !Number.isFinite(q) || q <= 0) continue;
+
+    if (asset === upToken) {
+      up += p * q;
+      lu = p;
+    } else if (asset === downToken) {
+      down += p * q;
+      ld = p;
+    }
+  }
+
+  v.trades = trades.length;
+  v.up = up;
+  v.down = down;
+  v.lu = lu;
+  v.ld = ld;
+  v.backfilled = true;
+  return true;
+}
+
 async function checkBoundary(currentStart) {
   const justFinishedStart = currentStart - PERIOD;
 
   const candidates = [];
   for (const symbol of SYMBOLS) {
     const justFinished = completed.get(key(symbol, justFinishedStart));
-    if (!justFinished || justFinished.alertChecked || justFinished.trades < 1) continue;
+    if (!justFinished || justFinished.alertChecked) continue;
+
+    try {
+      const ok = await backfillPeriod(justFinished);
+      if (!ok || justFinished.trades < 1) {
+        justFinished.alertChecked = true;
+        continue;
+      }
+      console.log(`[crowd-flow] BACKFILL ${symbol} period=${justFinishedStart} trades=${justFinished.trades}`);
+    } catch (e) {
+      console.error(`[crowd-flow] BACKFILL FAILED ${symbol} period=${justFinishedStart}: ${e.message}`);
+      continue;
+    }
 
     justFinished.alertChecked = true;
     candidates.push({ symbol, justFinished });
@@ -84,7 +174,8 @@ async function refresh() {
         down: 0,
         trades: 0,
         lu: null,
-        ld: null
+        ld: null,
+        backfilled: false
       });
     }
 
