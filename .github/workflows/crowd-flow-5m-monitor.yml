@@ -35,6 +35,8 @@ jobs:
         run: node --check scripts/crowd-flow-5m-monitor.js
       - name: Run Crowd Flow 5M monitor
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: node scripts/crowd-flow-5m-monitor.js
