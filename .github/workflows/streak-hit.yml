@@ -1,0 +1,47 @@
+name: StreakHit
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'live or backtest'
+        required: true
+        default: live
+        type: choice
+        options:
+          - live
+          - backtest
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/streak-hit.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+      - 'package.json'
+      - '.github/workflows/streak-hit.yml'
+
+concurrency:
+  group: streak-hit
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-package-lock
+      - run: node --check scripts/streak-hit.js
+      - name: Run StreakHit
+        run: |
+          if [ "${{ github.event.inputs.mode || 'live' }}" = "backtest" ]; then
+            npm run streak-hit:backtest
+          else
+            npm run streak-hit
+          fi
