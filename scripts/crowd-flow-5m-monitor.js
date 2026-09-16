@@ -122,28 +122,27 @@ async function tick() {
   try {
     const current = await loadPeriod(completedStart);
     if (!current) return;
+    if (previousPeriodStart === completedStart) return;
 
-    if (previousPeriodStart !== completedStart) {
-      if (previousTrades != null && current.trades > previousTrades) {
-        increaseStreak += 1;
-      } else {
-        increaseStreak = 0;
-      }
-      previousTrades = current.trades;
-      previousPeriodStart = completedStart;
-    }
+    const priorTrades = previousTrades;
+    const isIncrease = priorTrades != null && current.trades > priorTrades;
+    const nextStreak = isIncrease ? increaseStreak + 1 : 0;
 
     try {
-      await saveCompletedPeriod(completedStart, current, previousTrades === current.trades ? null : previousTrades);
+      await saveCompletedPeriod(completedStart, current, priorTrades);
     } catch (e) {
       console.error(`[crowd-flow] STATS SAVE FAILED period=${completedStart}: ${e.message}`);
     }
 
-    const priorTrades = increaseStreak > 0 ? current.trades - (current.trades - (previousTrades ?? current.trades)) : null;
-    if (previousTrades === current.trades) {
-      // The state above already advanced; retrieve the actual previous count from the Convex-compatible fields below.
-      // Alert evaluation uses the prior period captured before state advancement.
+    try {
+      await alertIfNeeded(completedStart, current, priorTrades, nextStreak);
+    } catch (e) {
+      console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`);
     }
+
+    previousTrades = current.trades;
+    increaseStreak = nextStreak;
+    previousPeriodStart = completedStart;
   } catch (e) {
     console.error(`[crowd-flow] PERIOD LOAD FAILED period=${completedStart}: ${e.message}`);
   }
