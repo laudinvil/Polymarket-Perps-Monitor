@@ -55,21 +55,27 @@ function updateStreak(state, timeframe, periodStart, winner) {
   return { timeframe, periodStart, direction: winner, streak: bucket.streak, threshold: cfg.minStreak, newStreak: bucket.streak > cfg.minStreak, isHit: bucket.streak >= cfg.minStreak };
 }
 async function sendAlert(alert, currentStart, currentMarket) {
-  const direction = alert.direction === 'UP' ? '⬆️ UP' : '⬇️ DOWN';
+  const buyDirection = alert.direction === 'UP' ? 'DOWN' : 'UP';
+  const buyArrow = buyDirection === 'UP' ? '⬆️' : '⬇️';
   const label = alert.newStreak ? 'STREAK CONTINUES' : 'STREAK HIT';
   const url = currentMarketUrl(currentMarket);
-  const lines = [`🔥 BTC · ${alert.timeframe.toUpperCase()} · ${label}`, `STREAK: ${direction} × ${alert.streak}`, `MIN: ${alert.threshold}`, `CLOSED: ${new Date(alert.periodStart).toISOString()}`, `NEXT: ${new Date(currentStart).toISOString()}`];
+  const lines = [
+    `🔥 BTC · ${alert.timeframe.toUpperCase()} · ${label}`,
+    `STREAK: ${alert.direction} × ${alert.streak}`,
+    `MIN: ${alert.threshold}`,
+    `CLOSED: ${new Date(alert.periodStart).toISOString()}`,
+    `NEXT: ${new Date(currentStart).toISOString()}`,
+    `BUY ${buyDirection} ${buyArrow}`,
+  ];
   if (url) lines.push(`➡️ CURRENT · Polymarket ${alert.timeframe.toUpperCase()}\n${url}`);
   await sendTelegramMessage(lines.join('\n'));
-  append({ type: 'streak_hit_alert', symbol: SYMBOL, ...alert, currentStart, currentMarketUrl: url });
+  append({ type: 'streak_hit_alert', symbol: SYMBOL, ...alert, buyDirection, currentStart, currentMarketUrl: url });
 }
 async function processTimeframe(state, timeframe, now) {
   const cfg = TIMEFRAMES[timeframe];
   const currentStart = floorPeriod(now, cfg.ms);
   const latestClosed = currentStart - cfg.ms;
   const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null, initialized: false };
-
-  // First startup: backfill the configured history into Convex/state, but NEVER alert.
   if (!bucket.initialized) {
     const start = latestClosed - (cfg.history - 1) * cfg.ms;
     let next = start;
@@ -79,7 +85,7 @@ async function processTimeframe(state, timeframe, now) {
       const market = await resolvePeriod(timeframe, next);
       const winner = winnerFromMarket(market);
       if (!winner) break;
-      const alert = updateStreak(state, timeframe, next, winner);
+      updateStreak(state, timeframe, next, winner);
       const streak = state.timeframes[timeframe].streak;
       const isHit = streak >= cfg.minStreak;
       const isContinuation = isHit && streak > cfg.minStreak;
@@ -91,7 +97,6 @@ async function processTimeframe(state, timeframe, now) {
     bucket.initialized = true;
     return;
   }
-
   let next = Number(bucket.lastProcessed) + cfg.ms;
   if (next > latestClosed) return;
   let guard = 0;
