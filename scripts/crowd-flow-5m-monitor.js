@@ -108,11 +108,12 @@ async function alertIfNeeded(periodStart, current, previous, streak) {
     `TRADES: ${current.trades}`
   ];
 
-  if (streakHit) {
+  if (thresholdHit) {
+    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
+    lines.push('BUY DOWN');
+  } else if (streakHit) {
     lines.push(`PREVIOUS: ${previous}`);
     lines.push(`CHANGE: UP +${current.trades - previous}`);
-  } else {
-    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
   }
 
   lines.push(
