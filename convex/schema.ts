@@ -33,6 +33,9 @@ export default defineSchema({
   cvd5mPeriods: defineTable({
     symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), buyUsd:v.number(), sellUsd:v.number(), cvdUsd:v.number(), imbalancePct:v.number(), buyEvents:v.number(), sellEvents:v.number(), trades:v.number(), direction:v.string(), recordedAt:v.number(),
   }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
+  cvd5mAlerts: defineTable({
+    symbol:v.string(), periodStart:v.number(), sentAt:v.number(),
+  }).index("by_symbol_period",["symbol","periodStart"]).index("by_sent_at",["sentAt"]),
   streakHitPeriods: defineTable({
     symbol:v.string(), timeframe:v.string(), periodStart:v.number(), periodEnd:v.number(),
     result:v.string(), streak:v.number(), direction:v.string(), threshold:v.number(),
@@ -44,7 +47,7 @@ export default defineSchema({
     runId:v.number(), eventId:v.string(), home:v.string(), away:v.string(), market:v.string(), selection:v.string(), line:v.number(), movePercent:v.number(), bookmakers:v.any(), polymarketUrl:v.optional(v.string()), sentAt:v.number(),
   }).index("by_sent_at",["sentAt"]).index("by_event",["eventId"]),
   esportsAlerts: defineTable({
-    fingerprint: v.string(), strategy: v.string(), team: v.string(), url: v.string(), matchId: v.string(), sentAt: v.number(),
+    fingerprint: v.string(), strategy: v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
