@@ -28,7 +28,7 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  if (direction !== 'NEUTRAL') lastDirection = direction;
  alerted.add(start); periods.delete(start);
  console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} trades=${data.trades} consecutive=${consecutiveDirectionPeriods}`);
- if (direction === 'NEUTRAL' || consecutiveDirectionPeriods < 2) continue;
+ if (direction === 'NEUTRAL' || consecutiveDirectionPeriods < 3) continue;
  const sign = cvd >= 0 ? '+' : '';
  const title = direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
  const message = [`🔥 BTC · 5M · ${title}`, `CVD: ${sign}$${cvd.toFixed(2)}`, `BUY: $${data.buyUsd.toFixed(2)}`, `SELL: $${data.sellUsd.toFixed(2)}`, `IMBALANCE: ${imbalancePct.toFixed(1)}%`, `TRADES: ${data.trades}`, '', '➡️ Polymarket 5M', currentUrl].join('\n');
