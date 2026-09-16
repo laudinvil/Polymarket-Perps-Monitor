@@ -2,7 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Deployment trigger: keep Convex production schema/runtime in sync with main.
-// Crowd Flow persistence is part of the production deployment contract.
+// Crowd Flow and BTC CVD persistence are part of the production deployment contract.
 export default defineSchema({
   monitorRuns: defineTable({
     runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number(),
@@ -26,6 +26,9 @@ export default defineSchema({
   }).index("by_symbol_timeframe_boundary",["symbol","timeframe","boundaryTs"]).index("by_sent_at",["sentAt"]),
   crowdFlowPeriods: defineTable({
     symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number(),
+  }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
+  cvd5mPeriods: defineTable({
+    symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), buyUsd:v.number(), sellUsd:v.number(), cvdUsd:v.number(), imbalancePct:v.number(), buyEvents:v.number(), sellEvents:v.number(), trades:v.number(), direction:v.string(), recordedAt:v.number(),
   }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
   streakHitPeriods: defineTable({
     symbol:v.string(), timeframe:v.string(), periodStart:v.number(), periodEnd:v.number(),
