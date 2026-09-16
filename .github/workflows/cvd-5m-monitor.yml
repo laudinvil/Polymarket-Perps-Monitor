@@ -1,0 +1,36 @@
+name: BTC CVD 5M Monitor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/cvd-5m-monitor.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+      - 'package.json'
+      - '.github/workflows/cvd-5m-monitor.yml'
+      - 'convex/**'
+
+concurrency:
+  group: btc-cvd-5m-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      CONVEX_URL: ${{ secrets.CONVEX_URL }}
+      CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-package-lock
+      - run: node --check scripts/cvd-5m-monitor.js
+      - name: Run BTC CVD 5M Monitor
+        run: node scripts/cvd-5m-monitor.js
