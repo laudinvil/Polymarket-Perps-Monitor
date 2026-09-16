@@ -33,7 +33,6 @@ function winnerFromMarket(market) {
 }
 function currentMarketUrl(market) { return market?.url || null; }
 async function resolvePeriod(timeframe, periodStart) { return findMarketByEpoch(SYMBOL, periodStart, timeframe); }
-
 function updateStreak(state, timeframe, periodStart, winner) {
   const cfg = TIMEFRAMES[timeframe];
   const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null };
@@ -44,7 +43,6 @@ function updateStreak(state, timeframe, periodStart, winner) {
   bucket.lastProcessed = periodStart;
   return bucket.streak >= cfg.minStreak ? { timeframe, periodStart, direction: winner, streak: bucket.streak, threshold: cfg.minStreak, newStreak: bucket.streak > cfg.minStreak } : null;
 }
-
 async function sendAlert(alert, currentStart, currentMarket) {
   const direction = alert.direction === 'UP' ? '⬆️ UP' : '⬇️ DOWN';
   const label = alert.newStreak ? 'STREAK CONTINUES' : 'STREAK HIT';
@@ -54,7 +52,6 @@ async function sendAlert(alert, currentStart, currentMarket) {
   await sendTelegramMessage(lines.join('\n'));
   append({ type: 'streak_hit_alert', symbol: SYMBOL, ...alert, currentStart, currentMarketUrl: url });
 }
-
 async function processTimeframe(state, timeframe, now) {
   const cfg = TIMEFRAMES[timeframe];
   const currentStart = floorPeriod(now, cfg.ms);
@@ -77,7 +74,6 @@ async function processTimeframe(state, timeframe, now) {
     next += cfg.ms;
   }
 }
-
 async function polyBacktestMarkets(timeframe, limit) {
   const apiKey = process.env.POLYBACKTEST_API_KEY;
   if (!apiKey) throw new Error('POLYBACKTEST_API_KEY is required for StreakHit backtest');
@@ -86,7 +82,6 @@ async function polyBacktestMarkets(timeframe, limit) {
   const body = await response.json();
   return Array.isArray(body?.data) ? body.data : Array.isArray(body?.markets) ? body.markets : [];
 }
-
 function runBacktest(rows, timeframe) {
   const cfg = TIMEFRAMES[timeframe];
   const ordered = rows.filter(row => ['up', 'down'].includes(String(row?.winner || '').toLowerCase())).map(row => ({ ...row, winner: String(row.winner).toUpperCase() })).sort((a, b) => new Date(a.start_time || a.startTime).getTime() - new Date(b.start_time || b.startTime).getTime());
@@ -97,13 +92,11 @@ function runBacktest(rows, timeframe) {
   }
   return { timeframe, requested: cfg.history, received: rows.length, resolved: ordered.length, minimum: cfg.minStreak, hits };
 }
-
 async function backtest() {
   const results = [];
   for (const [timeframe, cfg] of Object.entries(TIMEFRAMES)) results.push(runBacktest(await polyBacktestMarkets(timeframe, cfg.history), timeframe));
   console.log(JSON.stringify({ strategy: 'StreakHit', symbol: SYMBOL, generatedAt: new Date().toISOString(), results }, null, 2));
 }
-
 async function live() {
   const state = loadState(); state.strategy = 'StreakHit';
   while (true) {
@@ -111,7 +104,6 @@ async function live() {
     saveState(state); await new Promise(resolve => setTimeout(resolve, POLL_MS));
   }
 }
-
 const mode = process.argv[2] || 'live';
 if (mode === 'backtest') backtest().catch(error => { console.error(error.stack || error.message); process.exit(1); });
 else live().catch(error => { console.error(error.stack || error.message); process.exit(1); });
