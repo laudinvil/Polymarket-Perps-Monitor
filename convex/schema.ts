@@ -27,6 +27,9 @@ export default defineSchema({
   crowdFlowPeriods: defineTable({
     symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number(),
   }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
+  crowdFlowAlerts: defineTable({
+    symbol:v.string(), periodStart:v.number(), alertType:v.string(), sentAt:v.number(),
+  }).index("by_symbol_period",["symbol","periodStart"]),
   cvd5mPeriods: defineTable({
     symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), buyUsd:v.number(), sellUsd:v.number(), cvdUsd:v.number(), imbalancePct:v.number(), buyEvents:v.number(), sellEvents:v.number(), trades:v.number(), direction:v.string(), recordedAt:v.number(),
   }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
