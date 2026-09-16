@@ -4,11 +4,11 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOL = 'BTC';
 const TIMEFRAMES = {
-  '5m': { ms: 5 * 60 * 1000, history: 50, minStreak: 9 },
-  '15m': { ms: 15 * 60 * 1000, history: 50, minStreak: 8 },
-  '1h': { ms: 60 * 60 * 1000, history: 24, minStreak: 7 },
-  '4h': { ms: 4 * 60 * 60 * 1000, history: 24, minStreak: 6 },
-  '24h': { ms: 24 * 60 * 60 * 1000, history: 5, minStreak: 5 },
+  '5m': { ms: 5 * 60 * 1000, history: 50, minStreak: 8 },
+  '15m': { ms: 15 * 60 * 1000, history: 50, minStreak: 7 },
+  '1h': { ms: 60 * 60 * 1000, history: 24, minStreak: 6 },
+  '4h': { ms: 4 * 60 * 60 * 1000, history: 24, minStreak: 5 },
+  '24h': { ms: 24 * 60 * 60 * 1000, history: 5, minStreak: 4 },
 };
 const STATE_FILE = '.streak-hit-state.json';
 const HISTORY_FILE = 'streak-hit-history.log';
