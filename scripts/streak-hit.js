@@ -13,6 +13,7 @@ const TIMEFRAMES = {
 const STATE_FILE = '.streak-hit-state.json';
 const HISTORY_FILE = 'streak-hit-history.log';
 const POLL_MS = 15000;
+const POLYBACKTEST_BASE = 'https://api.polybacktest.com/v3/btc/markets';
 
 function floorPeriod(now, ms) { return Math.floor(now / ms) * ms; }
 function append(record) { fs.appendFileSync(HISTORY_FILE, JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n'); }
@@ -46,11 +47,10 @@ function updateStreak(state, timeframe, periodStart, winner) {
   const key = String(periodStart);
   if (bucket.periods[key]) return null;
   bucket.periods[key] = winner;
-  const previous = bucket.direction;
-  if (winner === previous) bucket.streak += 1;
+  if (winner === bucket.direction) bucket.streak += 1;
   else { bucket.direction = winner; bucket.streak = 1; }
   bucket.lastProcessed = periodStart;
-  const alert = bucket.streak >= cfg.minStreak && bucket.streak >= 2 ? {
+  return bucket.streak >= cfg.minStreak ? {
     timeframe,
     periodStart,
     direction: winner,
@@ -58,12 +58,12 @@ function updateStreak(state, timeframe, periodStart, winner) {
     threshold: cfg.minStreak,
     newStreak: bucket.streak > cfg.minStreak,
   } : null;
-  return alert;
 }
 
 async function sendAlert(alert, currentStart, currentMarket) {
   const direction = alert.direction === 'UP' ? '⬆️ UP' : '⬇️ DOWN';
   const label = alert.newStreak ? 'STREAK CONTINUES' : 'STREAK HIT';
+  const url = currentMarketUrl(currentMarket);
   const lines = [
     `🔥 BTC · ${alert.timeframe.toUpperCase()} · ${label}`,
     `STREAK: ${direction} × ${alert.streak}`,
@@ -71,10 +71,9 @@ async function sendAlert(alert, currentStart, currentMarket) {
     `CLOSED: ${new Date(alert.periodStart).toISOString()}`,
     `NEXT: ${new Date(currentStart).toISOString()}`,
   ];
-  if (currentMarketUrl(currentMarket)) lines.push(`➡️ CURRENT · Polymarket ${alert.timeframe.toUpperCase()}\n${currentMarketUrl(currentMarket)}`);
-  const message = lines.join('\n');
-  await sendTelegramMessage(message);
-  append({ type: 'streak_hit_alert', symbol: SYMBOL, ...alert, currentStart, currentMarketUrl: currentMarketUrl(currentMarket) });
+  if (url) lines.push(`➡️ CURRENT · Polymarket ${alert.timeframe.toUpperCase()}\n${url}`);
+  await sendTelegramMessage(lines.join('\n'));
+  append({ type: 'streak_hit_alert', symbol: SYMBOL, ...alert, currentStart, currentMarketUrl: url });
 }
 
 async function processTimeframe(state, timeframe, now) {
@@ -83,10 +82,9 @@ async function processTimeframe(state, timeframe, now) {
   const latestClosed = currentStart - cfg.ms;
   const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null };
   let next = bucket.lastProcessed == null ? latestClosed - (cfg.history - 1) * cfg.ms : Number(bucket.lastProcessed) + cfg.ms;
-  const end = latestClosed;
-  if (next > end) return;
+  if (next > latestClosed) return;
   let guard = 0;
-  while (next <= end && guard++ < cfg.history + 2) {
+  while (next <= latestClosed && guard++ < cfg.history + 2) {
     if (bucket.periods[String(next)]) { next += cfg.ms; continue; }
     const market = await resolvePeriod(timeframe, next);
     const winner = winnerFromMarket(market);
@@ -100,6 +98,55 @@ async function processTimeframe(state, timeframe, now) {
   }
 }
 
+async function polyBacktestMarkets(timeframe, limit) {
+  const apiKey = process.env.POLYBACKTEST_API_KEY;
+  if (!apiKey) throw new Error('POLYBACKTEST_API_KEY is required for StreakHit backtest');
+  const url = `${POLYBACKTEST_BASE}?type=${encodeURIComponent(timeframe)}&limit=${limit}`;
+  const response = await fetch(url, { headers: { 'X-API-Key': apiKey, Accept: 'application/json' } });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`PolyBackTest ${response.status}: ${text.slice(0, 500)}`);
+  }
+  const body = await response.json();
+  return Array.isArray(body?.data) ? body.data : Array.isArray(body?.markets) ? body.markets : [];
+}
+
+function runBacktest(rows, timeframe) {
+  const cfg = TIMEFRAMES[timeframe];
+  const ordered = rows
+    .filter(row => String(row?.winner || '').toLowerCase() === 'up' || String(row?.winner || '').toLowerCase() === 'down')
+    .map(row => ({ ...row, winner: String(row.winner).toUpperCase() }))
+    .sort((a, b) => new Date(a.start_time || a.startTime).getTime() - new Date(b.start_time || b.startTime).getTime());
+  let direction = null;
+  let streak = 0;
+  const hits = [];
+  for (const row of ordered) {
+    if (row.winner === direction) streak += 1;
+    else { direction = row.winner; streak = 1; }
+    if (streak >= cfg.minStreak) hits.push({
+      marketId: row.market_id || row.marketId,
+      slug: row.slug,
+      timeframe,
+      startTime: row.start_time || row.startTime,
+      endTime: row.end_time || row.endTime,
+      direction,
+      streak,
+      threshold: cfg.minStreak,
+      newStreak: streak > cfg.minStreak,
+    });
+  }
+  return { timeframe, requested: cfg.history, received: rows.length, resolved: ordered.length, minimum: cfg.minStreak, hits };
+}
+
+async function backtest() {
+  const results = [];
+  for (const [timeframe, cfg] of Object.entries(TIMEFRAMES)) {
+    const rows = await polyBacktestMarkets(timeframe, cfg.history);
+    results.push(runBacktest(rows, timeframe));
+  }
+  console.log(JSON.stringify({ strategy: 'StreakHit', symbol: SYMBOL, generatedAt: new Date().toISOString(), results }, null, 2));
+}
+
 async function live() {
   const state = loadState();
   state.strategy = 'StreakHit';
@@ -110,25 +157,6 @@ async function live() {
     }
     saveState(state);
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
-  }
-}
-
-async function backtest() {
-  const state = { strategy: 'StreakHit-backtest', timeframes: {}, alerts: {} };
-  for (const [timeframe, cfg] of Object.entries(TIMEFRAMES)) {
-    const now = Date.now();
-    const currentStart = floorPeriod(now, cfg.ms);
-    const bucket = state.timeframes[timeframe] = { periods: {}, lastProcessed: null, streak: 0, direction: null };
-    const rows = [];
-    for (let i = cfg.history; i >= 1; i--) {
-      const periodStart = currentStart - i * cfg.ms;
-      const market = await resolvePeriod(timeframe, periodStart);
-      const winner = winnerFromMarket(market);
-      if (!winner) continue;
-      const alert = updateStreak(state, timeframe, periodStart, winner);
-      rows.push({ timeframe, periodStart, winner, streak: bucket.streak, alert: Boolean(alert) });
-    }
-    console.log(JSON.stringify({ timeframe, history: rows, minimum: cfg.minStreak }, null, 2));
   }
 }
 
