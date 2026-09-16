@@ -110,7 +110,6 @@ async function alertIfNeeded(periodStart, current, previous, streak) {
 
   if (thresholdHit) {
     lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
-    lines.push('BUY DOWN');
   } else if (streakHit) {
     lines.push(`PREVIOUS: ${previous}`);
     lines.push(`CHANGE: UP +${current.trades - previous}`);
@@ -120,7 +119,7 @@ async function alertIfNeeded(periodStart, current, previous, streak) {
     `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
     `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
     '',
-    '➡️ CURRENT · Polymarket 5M',
+    '➡️ Polymarket 5M',
     currentUrl
   );
 
