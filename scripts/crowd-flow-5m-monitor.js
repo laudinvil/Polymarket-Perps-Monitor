@@ -103,24 +103,17 @@ async function alertIfNeeded(periodStart, current, previous) {
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
+  const action = thresholdHit ? 'BUY ⬇️' : 'BUY ⬆️';
   const lines = [
-    '🔥 BTC · 5M',
-    `TRADES: ${current.trades}`
-  ];
-
-  if (thresholdHit) {
-    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`, 'BUY ⬇️');
-  } else if (lowTradeHit) {
-    lines.push(`THRESHOLD: ${LOW_TRADE_THRESHOLD}-`, 'BUY ⬆️');
-  }
-
-  lines.push(
+    `🔥 BTC · 5M · ${action}`,
+    `TRADES: ${current.trades}`,
+    `THRESHOLD: ${thresholdHit ? `${ALERT_THRESHOLD}+` : `${LOW_TRADE_THRESHOLD}-`}`,
     `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
     `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
     '',
     '➡️ Polymarket 5M',
     currentUrl
-  );
+  ];
 
   await sendTelegramMessage(lines.join('\n'));
   alertedPeriods.add(String(periodStart));
