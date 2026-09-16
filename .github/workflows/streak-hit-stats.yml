@@ -17,6 +17,8 @@ jobs:
   stats:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     env:
       CONVEX_URL: ${{ secrets.CONVEX_URL }}
     steps:
@@ -26,6 +28,19 @@ jobs:
           node-version: 24
       - name: Query Convex StreakHit stats
         run: node scripts/streak-hit-stats.js | tee streak-hit-stats.json
+      - name: Persist latest stats
+        run: |
+          mkdir -p .github/deploy-status
+          cp streak-hit-stats.json .github/deploy-status/streak-hit.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/deploy-status/streak-hit.json
+          if git diff --cached --quiet; then
+            echo 'No stats changes'
+          else
+            git commit -m 'Update StreakHit Convex stats'
+            git push
+          fi
       - name: Upload stats
         uses: actions/upload-artifact@v4
         with:
