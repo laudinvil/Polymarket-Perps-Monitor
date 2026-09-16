@@ -2,15 +2,6 @@ name: BTC CVD 5M Monitor
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/cvd-5m-monitor.js'
-      - 'src/polymarket.js'
-      - 'src/telegram.js'
-      - 'package.json'
-      - '.github/workflows/cvd-5m-monitor.yml'
-      - 'convex/**'
 
 permissions:
   contents: read
@@ -35,6 +26,5 @@ jobs:
           node-version: 24
       - run: npm install --no-package-lock
       - run: node --check scripts/cvd-5m-monitor.js
-      # Keep the long-lived monitor isolated from automatic push-triggered restarts.
       - name: Run BTC CVD 5M Monitor
         run: node scripts/cvd-5m-monitor.js
