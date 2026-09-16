@@ -1,144 +1,23 @@
 import { internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-export const startRun = internalMutation({
-  args: { runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique();
-    if (existing) return existing._id;
-    return await ctx.db.insert("monitorRuns", { ...args, lastHeartbeatAt: args.startedAt, status: "running" });
-  },
-});
-
-export const heartbeat = internalMutation({
-  args: { runId: v.number(), heartbeatAt: v.number() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique();
-    if (!existing || existing.status !== "running") return null;
-    await ctx.db.patch(existing._id, { lastHeartbeatAt: args.heartbeatAt });
-    return existing._id;
-  },
-});
-
-export const finishRun = internalMutation({
-  args: { runId: v.number(), finishedAt: v.number(), status: v.union(v.literal("completed"), v.literal("failed")) },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique();
-    if (!existing) return null;
-    await ctx.db.patch(existing._id, { finishedAt: args.finishedAt, status: args.status });
-    return existing._id;
-  },
-});
-
-export const saveSnapshot = internalMutation({
-  args: { runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), imbalanceUsd:v.number(), longUsd:v.number(), shortUsd:v.number(), longEvents:v.number(), shortEvents:v.number(), events:v.number() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary", (q) => q.eq("timeframe", args.timeframe).eq("symbol", args.symbol).eq("boundaryTs", args.boundaryTs)).unique();
-    if (existing) return existing._id;
-    return await ctx.db.insert("snapshots", args);
-  },
-});
-
-export const saveAlert = internalMutation({
-  args: { runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), alertType:v.string(), previousImbalanceUsd:v.number(), newImbalanceUsd:v.number(), sentAt:v.number() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("alerts").withIndex("by_symbol_timeframe_boundary", (q) => q.eq("symbol", args.symbol).eq("timeframe", args.timeframe).eq("boundaryTs", args.boundaryTs)).first();
-    if (existing) return existing._id;
-    return await ctx.db.insert("alerts", args);
-  },
-});
-
-export const saveCrowdFlowPeriod = internalMutation({
-  args: { symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number() },
-  handler: async (ctx,args) => {
-    const existing=await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
-    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
-    return await ctx.db.insert("crowdFlowPeriods",args);
-  },
-});
-
-export const claimCrowdFlowAlert = internalMutation({
-  args: { symbol:v.string(), periodStart:v.number(), alertType:v.string(), sentAt:v.number() },
-  returns: v.boolean(),
-  handler: async (ctx,args) => {
-    const existing=await ctx.db.query("crowdFlowAlerts").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
-    if(existing) return false;
-    await ctx.db.insert("crowdFlowAlerts",args);
-    return true;
-  },
-});
-
-export const latestCrowdFlowPeriods = query({
-  args:{symbol:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{
-    const limit=Math.min(Math.max(args.limit,1),200);
-    if(args.symbol)return await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit);
-    return await ctx.db.query("crowdFlowPeriods").withIndex("by_recorded_at").order("desc").take(limit);
-  },
-});
-
-export const saveCvd5mPeriod = internalMutation({
-  args: { symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), buyUsd:v.number(), sellUsd:v.number(), cvdUsd:v.number(), imbalancePct:v.number(), buyEvents:v.number(), sellEvents:v.number(), trades:v.number(), direction:v.string(), recordedAt:v.number() },
-  handler: async (ctx,args) => {
-    const existing=await ctx.db.query("cvd5mPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
-    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
-    return await ctx.db.insert("cvd5mPeriods",args);
-  },
-});
-
-export const latestCvd5mPeriods = query({
-  args:{symbol:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{
-    const limit=Math.min(Math.max(args.limit,1),500);
-    if(args.symbol)return await ctx.db.query("cvd5mPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit);
-    return await ctx.db.query("cvd5mPeriods").withIndex("by_recorded_at").order("desc").take(limit);
-  },
-});
-
-export const saveStreakHitPeriod = internalMutation({
-  args: { symbol:v.string(), timeframe:v.string(), periodStart:v.number(), periodEnd:v.number(), result:v.string(), streak:v.number(), direction:v.string(), threshold:v.number(), isHit:v.boolean(), isContinuation:v.boolean(), recordedAt:v.number() },
-  handler: async (ctx,args) => {
-    const existing=await ctx.db.query("streakHitPeriods").withIndex("by_symbol_timeframe_period",q=>q.eq("symbol",args.symbol).eq("timeframe",args.timeframe).eq("periodStart",args.periodStart)).unique();
-    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
-    return await ctx.db.insert("streakHitPeriods",args);
-  },
-});
-
-export const latestStreakHitPeriods = query({
-  args:{symbol:v.optional(v.string()),timeframe:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{
-    const limit=Math.min(Math.max(args.limit,1),500);
-    if(args.symbol&&args.timeframe)return await ctx.db.query("streakHitPeriods").withIndex("by_symbol_timeframe_period",q=>q.eq("symbol",args.symbol!).eq("timeframe",args.timeframe!)).order("desc").take(limit);
-    if(args.timeframe)return await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(limit);
-    return await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(limit);
-  },
-});
-
-export const latestStreakHits = query({
-  args:{symbol:v.optional(v.string()),timeframe:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{const limit=Math.min(Math.max(args.limit,1),500);const rows=args.timeframe ? await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(Math.min(limit*3,500)) : await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(Math.min(limit*3,500));return rows.filter(row=>!args.symbol||row.symbol===args.symbol).filter(row=>row.isHit).slice(0,limit);},
-});
-
-export const claimEsportsAlert = internalMutation({
-  args: { fingerprint:v.string(), strategy:v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number() },
-  returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("esportsAlerts").withIndex("by_fingerprint", (q) => q.eq("fingerprint", args.fingerprint)).unique();
-    if (existing) return false;
-    await ctx.db.insert("esportsAlerts", args);
-    return true;
-  },
-});
-
-export const upsertPaperTrade = internalMutation({
-  args: { symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(), sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()), closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number() },
-  handler: async (ctx,args) => {
-    const existing=await ctx.db.query("paperTrades").withIndex("by_market",q=>q.eq("symbol",args.symbol).eq("marketStart",args.marketStart)).unique();
-    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
-    return await ctx.db.insert("paperTrades",args);
-  },
-});
-
+export const startRun = internalMutation({ args: { runId: v.number(), githubRunId: v.string(), commitSha: v.string(), startedAt: v.number() }, handler: async (ctx, args) => { const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique(); if (existing) return existing._id; return await ctx.db.insert("monitorRuns", { ...args, lastHeartbeatAt: args.startedAt, status: "running" }); }, });
+export const heartbeat = internalMutation({ args: { runId: v.number(), heartbeatAt: v.number() }, handler: async (ctx, args) => { const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique(); if (!existing || existing.status !== "running") return null; await ctx.db.patch(existing._id, { lastHeartbeatAt: args.heartbeatAt }); return existing._id; }, });
+export const finishRun = internalMutation({ args: { runId: v.number(), finishedAt: v.number(), status: v.union(v.literal("completed"), v.literal("failed")) }, handler: async (ctx, args) => { const existing = await ctx.db.query("monitorRuns").withIndex("by_run", (q) => q.eq("runId", args.runId)).unique(); if (!existing) return null; await ctx.db.patch(existing._id, { finishedAt: args.finishedAt, status: args.status }); return existing._id; }, });
+export const saveSnapshot = internalMutation({ args: { runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), imbalanceUsd:v.number(), longUsd:v.number(), shortUsd:v.number(), longEvents:v.number(), shortEvents:v.number(), events:v.number() }, handler: async (ctx, args) => { const existing = await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary", (q) => q.eq("timeframe", args.timeframe).eq("symbol", args.symbol).eq("boundaryTs", args.boundaryTs)).unique(); if (existing) return existing._id; return await ctx.db.insert("snapshots", args); }, });
+export const saveAlert = internalMutation({ args: { runId:v.number(), timeframe:v.string(), symbol:v.string(), boundaryTs:v.number(), alertType:v.string(), previousImbalanceUsd:v.number(), newImbalanceUsd:v.number(), sentAt:v.number() }, handler: async (ctx, args) => { const existing = await ctx.db.query("alerts").withIndex("by_symbol_timeframe_boundary", (q) => q.eq("symbol", args.symbol).eq("timeframe", args.timeframe).eq("boundaryTs", args.boundaryTs)).first(); if (existing) return existing._id; return await ctx.db.insert("alerts", args); }, });
+export const saveCrowdFlowPeriod = internalMutation({ args: { symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number() }, handler: async (ctx,args) => { const existing=await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique(); if(existing){await ctx.db.patch(existing._id,args);return existing._id;} return await ctx.db.insert("crowdFlowPeriods",args); }, });
+export const claimCrowdFlowAlert = internalMutation({ args: { symbol:v.string(), periodStart:v.number(), alertType:v.string(), sentAt:v.number() }, returns: v.boolean(), handler: async (ctx,args) => { const existing=await ctx.db.query("crowdFlowAlerts").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique(); if(existing) return false; await ctx.db.insert("crowdFlowAlerts",args); return true; }, });
+export const latestCrowdFlowPeriods = query({ args:{symbol:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{ const limit=Math.min(Math.max(args.limit,1),200); if(args.symbol)return await ctx.db.query("crowdFlowPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit); return await ctx.db.query("crowdFlowPeriods").withIndex("by_recorded_at").order("desc").take(limit); }, });
+export const saveCvd5mPeriod = internalMutation({ args: { symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), buyUsd:v.number(), sellUsd:v.number(), cvdUsd:v.number(), imbalancePct:v.number(), buyEvents:v.number(), sellEvents:v.number(), trades:v.number(), direction:v.string(), recordedAt:v.number() }, handler: async (ctx,args) => { const existing=await ctx.db.query("cvd5mPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique(); if(existing){await ctx.db.patch(existing._id,args);return existing._id;} return await ctx.db.insert("cvd5mPeriods",args); }, });
+export const claimCvd5mAlert = internalMutation({ args:{symbol:v.string(),periodStart:v.number(),sentAt:v.number()}, returns:v.boolean(), handler:async(ctx,args)=>{ const existing=await ctx.db.query("cvd5mAlerts").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique(); if(existing)return false; await ctx.db.insert("cvd5mAlerts",args); return true; } });
+export const latestCvd5mAlert = query({ args:{symbol:v.string()}, handler:async(ctx,args)=>await ctx.db.query("cvd5mAlerts").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol)).order("desc").take(1) });
+export const latestCvd5mPeriods = query({ args:{symbol:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{ const limit=Math.min(Math.max(args.limit,1),500); if(args.symbol)return await ctx.db.query("cvd5mPeriods").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit); return await ctx.db.query("cvd5mPeriods").withIndex("by_recorded_at").order("desc").take(limit); }, });
+export const saveStreakHitPeriod = internalMutation({ args: { symbol:v.string(), timeframe:v.string(), periodStart:v.number(), periodEnd:v.number(), result:v.string(), streak:v.number(), direction:v.string(), threshold:v.number(), isHit:v.boolean(), isContinuation:v.boolean(), recordedAt:v.number() }, handler: async (ctx,args) => { const existing=await ctx.db.query("streakHitPeriods").withIndex("by_symbol_timeframe_period",q=>q.eq("symbol",args.symbol).eq("timeframe",args.timeframe).eq("periodStart",args.periodStart)).unique(); if(existing){await ctx.db.patch(existing._id,args);return existing._id;} return await ctx.db.insert("streakHitPeriods",args); }, });
+export const latestStreakHitPeriods = query({ args:{symbol:v.optional(v.string()),timeframe:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{ const limit=Math.min(Math.max(args.limit,1),500); if(args.symbol&&args.timeframe)return await ctx.db.query("streakHitPeriods").withIndex("by_symbol_timeframe_period",q=>q.eq("symbol",args.symbol!).eq("timeframe",args.timeframe!)).order("desc").take(limit); if(args.timeframe)return await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(limit); return await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(limit); }, });
+export const latestStreakHits = query({ args:{symbol:v.optional(v.string()),timeframe:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{const limit=Math.min(Math.max(args.limit,1),500);const rows=args.timeframe ? await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(Math.min(limit*3,500)) : await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(Math.min(limit*3,500));return rows.filter(row=>!args.symbol||row.symbol===args.symbol).filter(row=>row.isHit).slice(0,limit);}, });
+export const claimEsportsAlert = internalMutation({ args: { fingerprint:v.string(), strategy:v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number() }, returns: v.boolean(), handler: async (ctx, args) => { const existing = await ctx.db.query("esportsAlerts").withIndex("by_fingerprint", (q) => q.eq("fingerprint", args.fingerprint)).unique(); if (existing) return false; await ctx.db.insert("esportsAlerts", args); return true; }, });
+export const upsertPaperTrade = internalMutation({ args: { symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(), sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()), closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number() }, handler: async (ctx,args) => { const existing=await ctx.db.query("paperTrades").withIndex("by_market",q=>q.eq("symbol",args.symbol).eq("marketStart",args.marketStart)).unique(); if(existing){await ctx.db.patch(existing._id,args);return existing._id;} return await ctx.db.insert("paperTrades",args); }, });
 export const getOpenPaperTrade = query({ args:{}, handler:async(ctx)=>{const rows=await ctx.db.query("paperTrades").withIndex("by_settled_updated",q=>q.eq("settled",false)).order("desc").take(10);return rows[0]||null;} });
 export const latestPaperTrades = query({ args:{limit:v.number()}, handler:async(ctx,args)=>await ctx.db.query("paperTrades").withIndex("by_settled_updated").order("desc").take(Math.min(args.limit,100)) });
 export const pruneOldData = internalMutation({ args:{}, returns:v.object({monitorRuns:v.number(),snapshots:v.number(),alerts:v.number()}), handler:async(ctx)=>{const cutoff=Date.now()-7*24*60*60*1000;let monitorRuns=0,snapshots=0,alerts=0;const oldRuns=await ctx.db.query("monitorRuns").withIndex("by_started_at",q=>q.lt("startedAt",cutoff)).order("asc").take(500);for(const row of oldRuns){await ctx.db.delete(row._id);monitorRuns++;}const oldSnapshots=await ctx.db.query("snapshots").withIndex("by_boundary",q=>q.lt("boundaryTs",cutoff)).order("asc").take(500);for(const row of oldSnapshots){await ctx.db.delete(row._id);snapshots++;}const oldAlerts=await ctx.db.query("alerts").withIndex("by_sent_at").order("asc").take(500);for(const row of oldAlerts)if(row.sentAt<cutoff){await ctx.db.delete(row._id);alerts++;}const oldEsports=await ctx.db.query("esportsAlerts").withIndex("by_fingerprint").take(500);for(const row of oldEsports)if(row.sentAt<cutoff)await ctx.db.delete(row._id);return{monitorRuns,snapshots,alerts};} });
