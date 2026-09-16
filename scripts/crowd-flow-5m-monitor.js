@@ -22,6 +22,20 @@ async function convexPost(data) {
   if (!response.ok) throw new Error(`Convex ${response.status}`);
 }
 
+async function claimCrowdFlowAlert(periodStart) {
+  const base = process.env.CONVEX_URL;
+  const token = process.env.CONVEX_INGEST_TOKEN;
+  if (!base || !token) throw new Error('Convex environment variables missing');
+  const response = await fetch(`${base.replace(/\/$/, '')}/claim-crowd-flow-alert`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ symbol: 'BTC', periodStart, alertType: 'LOW_TRADES', sentAt: Date.now() })
+  });
+  if (!response.ok) throw new Error(`Convex Crowd Flow claim ${response.status}`);
+  const result = await response.json();
+  return result?.claimed === true;
+}
+
 async function cvdAlertExistsForPeriod(periodStart) {
   const base = process.env.CONVEX_URL;
   if (!base) return false;
@@ -130,6 +144,15 @@ async function alertIfNeeded(periodStart, current) {
     return;
   }
 
+  // Persistent atomic claim in Convex prevents duplicates after restarts and
+  // also prevents two concurrent monitor instances from sending the same alert.
+  const claimed = await claimCrowdFlowAlert(periodStart);
+  if (!claimed) {
+    alertedPeriods.add(String(periodStart));
+    console.log(`[crowd-flow] DUPLICATE SUPPRESSED period=${periodStart}`);
+    return;
+  }
+
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -177,7 +200,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${LOW_TRADE_THRESHOLD}- trades only; CVD priority enabled)`);
+  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${LOW_TRADE_THRESHOLD}- trades only; CVD priority enabled; persistent duplicate protection enabled)`);
   await tick();
   setInterval(tick, 30000);
 })();
