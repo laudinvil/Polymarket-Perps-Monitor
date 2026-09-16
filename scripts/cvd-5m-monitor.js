@@ -8,6 +8,7 @@ const alerted = new Set();
 let lastDirection = null;
 let consecutiveDirectionPeriods = 0;
 let consecutiveDirection = null;
+let alertCooldownUntil = 0;
 let gateContractSize = 0.0001;
 function bucket(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
 function getPeriod(start) { if (!periods.has(start)) periods.set(start, { buyUsd: 0, sellUsd: 0, buyEvents: 0, sellEvents: 0, trades: 0, exchanges: {} }); return periods.get(start); }
@@ -29,10 +30,13 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  alerted.add(start); periods.delete(start);
  console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} trades=${data.trades} consecutive=${consecutiveDirectionPeriods}`);
  if (direction === 'NEUTRAL' || consecutiveDirectionPeriods < 3) continue;
+ if (start < alertCooldownUntil) { console.log(`[cvd-5m] ALERT COOLDOWN period=${start}; until=${alertCooldownUntil}`); continue; }
  const sign = cvd >= 0 ? '+' : '';
  const title = direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
  const message = [`🔥 BTC · 5M · ${title}`, `CVD: ${sign}$${cvd.toFixed(2)}`, `BUY: $${data.buyUsd.toFixed(2)}`, `SELL: $${data.sellUsd.toFixed(2)}`, `IMBALANCE: ${imbalancePct.toFixed(1)}%`, `TRADES: ${data.trades}`, '', '➡️ Polymarket 5M', currentUrl].join('\n');
  await sendTelegramMessage(message);
+ alertCooldownUntil = start + PERIOD_MS * 2;
+ console.log(`[cvd-5m] ALERT SENT period=${start}; next alert allowed from=${alertCooldownUntil}`);
  }
 }
 (async () => { console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid'); await loadLastDirection(); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
