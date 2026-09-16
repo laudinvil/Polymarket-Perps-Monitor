@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: btc-cvd-5m-monitor-v2
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run:
