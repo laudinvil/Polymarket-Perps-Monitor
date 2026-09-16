@@ -3,13 +3,11 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
 const ALERT_THRESHOLD = 2500;
-const AVERAGE_PERIODS = 20;
-const LOW_AVERAGE_RATIO = 0.70;
+const LOW_TRADE_THRESHOLD = 1000;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
 const alertedPeriods = new Set();
 let previousTrades = null;
-let tradeHistory = [];
 let previousPeriodStart = null;
 const start = () => bucketStart(Date.now(), '5m');
 
@@ -97,10 +95,10 @@ async function saveCompletedPeriod(periodStart, data, previous) {
   console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades} previous=${previous ?? 'N/A'}`);
 }
 
-async function alertIfNeeded(periodStart, current, average) {
+async function alertIfNeeded(periodStart, current, previous) {
   const thresholdHit = current.trades >= ALERT_THRESHOLD;
-  const lowAverageHit = average != null && current.trades <= average * LOW_AVERAGE_RATIO;
-  if ((!thresholdHit && !lowAverageHit) || alertedPeriods.has(String(periodStart))) return;
+  const lowTradeHit = current.trades <= LOW_TRADE_THRESHOLD;
+  if ((!thresholdHit && !lowTradeHit) || alertedPeriods.has(String(periodStart))) return;
 
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
@@ -112,9 +110,8 @@ async function alertIfNeeded(periodStart, current, average) {
 
   if (thresholdHit) {
     lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
-  } else if (lowAverageHit) {
-    lines.push(`AVERAGE: ${Math.round(average)}`);
-    lines.push(`BELOW AVERAGE: -${Math.round(average - current.trades)} (${Math.round((1 - current.trades / average) * 100)}%)`);
+  } else if (lowTradeHit) {
+    lines.push(`THRESHOLD: ${LOW_TRADE_THRESHOLD}-`);
   }
 
   lines.push(
@@ -127,7 +124,7 @@ async function alertIfNeeded(periodStart, current, average) {
 
   await sendTelegramMessage(lines.join('\n'));
   alertedPeriods.add(String(periodStart));
-  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} lowAverageHit=${lowAverageHit} average=${average ?? 'N/A'}`);
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} lowTradeHit=${lowTradeHit}`);
 }
 
 async function tick() {
@@ -137,9 +134,6 @@ async function tick() {
     if (!current || previousPeriodStart === completedStart) return;
 
     const priorTrades = previousTrades;
-    const historyAverage = tradeHistory.length >= AVERAGE_PERIODS
-      ? tradeHistory.reduce((sum, value) => sum + value, 0) / tradeHistory.length
-      : null;
 
     try {
       await saveCompletedPeriod(completedStart, current, priorTrades);
@@ -148,13 +142,11 @@ async function tick() {
     }
 
     try {
-      await alertIfNeeded(completedStart, current, historyAverage);
+      await alertIfNeeded(completedStart, current, priorTrades);
     } catch (e) {
       console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`);
     }
 
-    tradeHistory.push(current.trades);
-    if (tradeHistory.length > AVERAGE_PERIODS) tradeHistory.shift();
     previousTrades = current.trades;
     previousPeriodStart = completedStart;
   } catch (e) {
@@ -163,7 +155,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR >=30% below ${AVERAGE_PERIODS}-period average)`);
+  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR ${LOW_TRADE_THRESHOLD}- trades)`);
   await tick();
   setInterval(tick, 30000);
 })();
