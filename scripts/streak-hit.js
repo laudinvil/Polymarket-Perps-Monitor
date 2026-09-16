@@ -33,36 +33,20 @@ function winnerFromMarket(market) {
 }
 function currentMarketUrl(market) { return market?.url || null; }
 async function resolvePeriod(timeframe, periodStart) { return findMarketByEpoch(SYMBOL, periodStart, timeframe); }
-async function saveConvexPeriod(timeframe, periodStart, winner, streak, cfg, isHit, isContinuation) {
+async function saveConvexPeriod(timeframe, periodStart, winner, streak, cfg, isHit, isContinuation, alertSent = false) {
   const convexUrl = process.env.CONVEX_URL;
   const token = process.env.CONVEX_INGEST_TOKEN;
   if (!convexUrl || !token) return;
   const payload = {
     type: 'streakHit.period',
-    data: {
-      symbol: SYMBOL,
-      timeframe,
-      periodStart,
-      periodEnd: periodStart + cfg.ms,
-      result: winner,
-      streak,
-      direction: winner,
-      threshold: cfg.minStreak,
-      isHit,
-      isContinuation,
-      recordedAt: Date.now(),
-    },
+    data: { symbol: SYMBOL, timeframe, periodStart, periodEnd: periodStart + cfg.ms, result: winner, streak, direction: winner, threshold: cfg.minStreak, isHit, isContinuation, alertSent, recordedAt: Date.now() },
   };
-  const response = await fetch(`${convexUrl.replace(/\/$/, '')}/ingest`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(`${convexUrl.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
   if (!response.ok) throw new Error(`Convex StreakHit ingest ${response.status}`);
 }
 function updateStreak(state, timeframe, periodStart, winner) {
   const cfg = TIMEFRAMES[timeframe];
-  const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null };
+  const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null, initialized: false };
   const key = String(periodStart);
   if (bucket.periods[key]) return null;
   bucket.periods[key] = winner;
@@ -83,8 +67,32 @@ async function processTimeframe(state, timeframe, now) {
   const cfg = TIMEFRAMES[timeframe];
   const currentStart = floorPeriod(now, cfg.ms);
   const latestClosed = currentStart - cfg.ms;
-  const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null };
-  let next = bucket.lastProcessed == null ? latestClosed - (cfg.history - 1) * cfg.ms : Number(bucket.lastProcessed) + cfg.ms;
+  const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null, initialized: false };
+
+  // First startup: backfill the configured history into Convex/state, but NEVER alert.
+  if (!bucket.initialized) {
+    const start = latestClosed - (cfg.history - 1) * cfg.ms;
+    let next = start;
+    let guard = 0;
+    while (next <= latestClosed && guard++ < cfg.history + 2) {
+      if (bucket.periods[String(next)]) { next += cfg.ms; continue; }
+      const market = await resolvePeriod(timeframe, next);
+      const winner = winnerFromMarket(market);
+      if (!winner) break;
+      const alert = updateStreak(state, timeframe, next, winner);
+      const streak = state.timeframes[timeframe].streak;
+      const isHit = streak >= cfg.minStreak;
+      const isContinuation = isHit && streak > cfg.minStreak;
+      try { await saveConvexPeriod(timeframe, next, winner, streak, cfg, isHit, isContinuation, false); }
+      catch (error) { console.warn(`StreakHit ${timeframe} Convex journal failed: ${error.message}`); }
+      next += cfg.ms;
+    }
+    bucket.lastProcessed = latestClosed;
+    bucket.initialized = true;
+    return;
+  }
+
+  let next = Number(bucket.lastProcessed) + cfg.ms;
   if (next > latestClosed) return;
   let guard = 0;
   while (next <= latestClosed && guard++ < cfg.history + 2) {
@@ -96,15 +104,19 @@ async function processTimeframe(state, timeframe, now) {
     const streak = state.timeframes[timeframe].streak;
     const isHit = streak >= cfg.minStreak;
     const isContinuation = isHit && streak > cfg.minStreak;
-    try {
-      await saveConvexPeriod(timeframe, next, winner, streak, cfg, isHit, isContinuation);
-    } catch (error) {
-      console.warn(`StreakHit ${timeframe} Convex journal failed: ${error.message}`);
-    }
-    if (alert && !state.alerts[`${timeframe}:${next}`]) {
+    const alertKey = `${timeframe}:${next}`;
+    let alertSent = false;
+    try { await saveConvexPeriod(timeframe, next, winner, streak, cfg, isHit, isContinuation, false); }
+    catch (error) { console.warn(`StreakHit ${timeframe} Convex journal failed: ${error.message}`); }
+    if (alert && isHit && !state.alerts[alertKey]) {
       const currentMarket = await resolvePeriod(timeframe, currentStart);
       await sendAlert(alert, currentStart, currentMarket);
-      state.alerts[`${timeframe}:${next}`] = { sentAt: new Date().toISOString(), streak: alert.streak, direction: alert.direction };
+      state.alerts[alertKey] = { sentAt: new Date().toISOString(), streak: alert.streak, direction: alert.direction };
+      alertSent = true;
+    }
+    if (alertSent) {
+      try { await saveConvexPeriod(timeframe, next, winner, streak, cfg, isHit, isContinuation, true); }
+      catch (error) { console.warn(`StreakHit ${timeframe} Convex alert journal failed: ${error.message}`); }
     }
     next += cfg.ms;
   }
