@@ -17,6 +17,7 @@ on:
       - 'scripts/streak-hit.js'
       - 'src/polymarket.js'
       - 'src/telegram.js'
+      - 'convex/**'
       - 'package.json'
       - '.github/workflows/streak-hit.yml'
 
@@ -32,6 +33,8 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
+      CONVEX_URL: ${{ secrets.CONVEX_URL }}
+      CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
