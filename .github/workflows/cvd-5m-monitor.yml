@@ -35,6 +35,6 @@ jobs:
           node-version: 24
       - run: npm install --no-package-lock
       - run: node --check scripts/cvd-5m-monitor.js
-      # Fresh run trigger after successful Convex deployment.
+      # Keep the long-lived monitor isolated from automatic push-triggered restarts.
       - name: Run BTC CVD 5M Monitor
         run: node scripts/cvd-5m-monitor.js
