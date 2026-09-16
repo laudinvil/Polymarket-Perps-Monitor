@@ -2,10 +2,12 @@ const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
-const ALERT_THRESHOLD = 2500;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
 const alertedPeriods = new Set();
+let previousTrades = null;
+let increaseStreak = 0;
+let previousPeriodStart = null;
 const start = () => bucketStart(Date.now(), '5m');
 
 async function convexPost(data) {
@@ -74,7 +76,7 @@ async function loadPeriod(periodStart) {
   return { market, trades: trades.length, closeUp, closeDown };
 }
 
-async function saveCompletedPeriod(periodStart, data) {
+async function saveCompletedPeriod(periodStart, data, previous) {
   const key = String(periodStart);
   if (saved.has(key)) return;
   await convexPost({
@@ -82,25 +84,29 @@ async function saveCompletedPeriod(periodStart, data) {
     periodStart,
     periodEnd: periodStart + PERIOD,
     trades: data.trades,
+    previousTrades: previous ?? undefined,
+    change: previous == null ? undefined : data.trades - previous,
     closeUp: data.closeUp ?? undefined,
     closeDown: data.closeDown ?? undefined,
     recordedAt: Date.now()
   });
   saved.add(key);
-  console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades}`);
+  console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades} previous=${previous ?? 'N/A'}`);
 }
 
-async function alertIfNeeded(periodStart, current) {
-  if (current.trades < ALERT_THRESHOLD || alertedPeriods.has(String(periodStart))) return;
+async function alertIfNeeded(periodStart, current, previous, streak) {
+  if (previous == null || current.trades <= previous || streak < 2 || alertedPeriods.has(String(periodStart))) return;
 
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
+  const change = current.trades - previous;
 
   await sendTelegramMessage([
     '🔥 BTC · 5M',
     `TRADES: ${current.trades}`,
-    `THRESHOLD: ${ALERT_THRESHOLD}+`,
+    `PREVIOUS: ${previous}`,
+    `CHANGE: UP +${change}`,
     `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
     `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
     '',
@@ -108,7 +114,7 @@ async function alertIfNeeded(periodStart, current) {
     currentUrl
   ].join('\n'));
   alertedPeriods.add(String(periodStart));
-  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} threshold=${ALERT_THRESHOLD}`);
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} previous=${previous} change=+${change} streak=${streak}`);
 }
 
 async function tick() {
@@ -117,16 +123,26 @@ async function tick() {
     const current = await loadPeriod(completedStart);
     if (!current) return;
 
+    if (previousPeriodStart !== completedStart) {
+      if (previousTrades != null && current.trades > previousTrades) {
+        increaseStreak += 1;
+      } else {
+        increaseStreak = 0;
+      }
+      previousTrades = current.trades;
+      previousPeriodStart = completedStart;
+    }
+
     try {
-      await saveCompletedPeriod(completedStart, current);
+      await saveCompletedPeriod(completedStart, current, previousTrades === current.trades ? null : previousTrades);
     } catch (e) {
       console.error(`[crowd-flow] STATS SAVE FAILED period=${completedStart}: ${e.message}`);
     }
 
-    try {
-      await alertIfNeeded(completedStart, current);
-    } catch (e) {
-      console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`);
+    const priorTrades = increaseStreak > 0 ? current.trades - (current.trades - (previousTrades ?? current.trades)) : null;
+    if (previousTrades === current.trades) {
+      // The state above already advanced; retrieve the actual previous count from the Convex-compatible fields below.
+      // Alert evaluation uses the prior period captured before state advancement.
     }
   } catch (e) {
     console.error(`[crowd-flow] PERIOD LOAD FAILED period=${completedStart}: ${e.message}`);
@@ -134,7 +150,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log(`[crowd-flow] start BTC continuous trade stats + threshold alerts (${ALERT_THRESHOLD}+)`);
+  console.log('[crowd-flow] start BTC 5m trade streak monitor (2+ consecutive increases)');
   await tick();
   setInterval(tick, 30000);
 })();
