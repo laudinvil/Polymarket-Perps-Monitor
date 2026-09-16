@@ -109,9 +109,9 @@ async function alertIfNeeded(periodStart, current, previous) {
   ];
 
   if (thresholdHit) {
-    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
+    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`, 'BUY ⬇️');
   } else if (lowTradeHit) {
-    lines.push(`THRESHOLD: ${LOW_TRADE_THRESHOLD}-`);
+    lines.push(`THRESHOLD: ${LOW_TRADE_THRESHOLD}-`, 'BUY ⬆️');
   }
 
   lines.push(
