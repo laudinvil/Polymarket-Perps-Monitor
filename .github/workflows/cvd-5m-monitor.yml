@@ -12,8 +12,11 @@ on:
       - '.github/workflows/cvd-5m-monitor.yml'
       - 'convex/**'
 
+permissions:
+  contents: read
+
 concurrency:
-  group: btc-cvd-5m-monitor
+  group: btc-cvd-5m-monitor-v2
   cancel-in-progress: true
 
 jobs:
