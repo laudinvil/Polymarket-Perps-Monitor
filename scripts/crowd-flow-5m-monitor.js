@@ -2,7 +2,7 @@ const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
-const ALERT_THRESHOLD = 2800;
+const ALERT_THRESHOLD = 3000;
 const LOW_TRADE_THRESHOLD = 800;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
