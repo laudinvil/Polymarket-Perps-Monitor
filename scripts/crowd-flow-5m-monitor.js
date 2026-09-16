@@ -22,6 +22,31 @@ async function convexPost(data) {
   if (!response.ok) throw new Error(`Convex ${response.status}`);
 }
 
+async function cvdAlertExistsForPeriod(periodStart) {
+  const base = process.env.CONVEX_URL;
+  if (!base) return false;
+  try {
+    const response = await fetch(`${base.replace(/\/$/, '')}/cvd-5m/periods?symbol=BTC&limit=20`);
+    if (!response.ok) return false;
+    const rows = await response.json();
+    const list = Array.isArray(rows) ? rows : rows?.periods;
+    if (!Array.isArray(list)) return false;
+    const chronological = [...list].sort((a, b) => Number(a.periodStart) - Number(b.periodStart));
+    const target = chronological.find(r => Number(r.periodStart) === Number(periodStart));
+    if (!target || !['BUY', 'SELL'].includes(target.direction)) return false;
+    let streak = 1;
+    for (let i = chronological.indexOf(target) - 1; i >= 0; i--) {
+      const row = chronological[i];
+      if (row.direction !== target.direction) break;
+      streak += 1;
+    }
+    return streak >= 3;
+  } catch (e) {
+    console.error(`[crowd-flow] CVD priority check failed: ${e.message}`);
+    return false;
+  }
+}
+
 async function fetchFullPeriodTrades(market, periodStart) {
   if (!market?.conditionId) return null;
   const startSec = Math.floor(periodStart / 1000);
@@ -98,6 +123,13 @@ async function alertIfNeeded(periodStart, current) {
   const lowTradeHit = current.trades <= LOW_TRADE_THRESHOLD;
   if (!lowTradeHit || alertedPeriods.has(String(periodStart))) return;
 
+  // CVD has priority: if the same completed period is a 3+ direction streak,
+  // suppress Crowd Flow for that period.
+  if (await cvdAlertExistsForPeriod(periodStart)) {
+    console.log(`[crowd-flow] SUPPRESSED by CVD priority period=${periodStart}`);
+    return;
+  }
+
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
@@ -145,7 +177,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${LOW_TRADE_THRESHOLD}- trades only)`);
+  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${LOW_TRADE_THRESHOLD}- trades only; CVD priority enabled)`);
   await tick();
   setInterval(tick, 30000);
 })();
