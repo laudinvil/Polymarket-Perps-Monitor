@@ -17,8 +17,6 @@ on:
       - 'scripts/streak-hit.js'
       - 'src/polymarket.js'
       - 'src/telegram.js'
-      - 'convex/**'
-      - 'package.json'
       - '.github/workflows/streak-hit.yml'
 
 concurrency:
