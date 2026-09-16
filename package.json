@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "monitor": "node scripts/imbalance-all-timeframes.js",
+    "streak-hit": "node scripts/streak-hit.js live",
+    "streak-hit:backtest": "node scripts/streak-hit.js backtest",
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
