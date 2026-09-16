@@ -2,7 +2,6 @@ const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
-const ALERT_THRESHOLD = 3000;
 const LOW_TRADE_THRESHOLD = 800;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
@@ -95,19 +94,17 @@ async function saveCompletedPeriod(periodStart, data, previous) {
   console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades} previous=${previous ?? 'N/A'}`);
 }
 
-async function alertIfNeeded(periodStart, current, previous) {
-  const thresholdHit = current.trades >= ALERT_THRESHOLD;
+async function alertIfNeeded(periodStart, current) {
   const lowTradeHit = current.trades <= LOW_TRADE_THRESHOLD;
-  if ((!thresholdHit && !lowTradeHit) || alertedPeriods.has(String(periodStart))) return;
+  if (!lowTradeHit || alertedPeriods.has(String(periodStart))) return;
 
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
-  const action = thresholdHit ? 'BUY ⬇️' : 'BUY ⬆️';
   const lines = [
-    `🔥 BTC · 5M · ${action}`,
+    '🔥 BTC · 5M · BUY ⬆️',
     `TRADES: ${current.trades}`,
-    `THRESHOLD: ${thresholdHit ? `${ALERT_THRESHOLD}+` : `${LOW_TRADE_THRESHOLD}-`}`,
+    `THRESHOLD: ${LOW_TRADE_THRESHOLD}-`,
     `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
     `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
     '',
@@ -117,7 +114,7 @@ async function alertIfNeeded(periodStart, current, previous) {
 
   await sendTelegramMessage(lines.join('\n'));
   alertedPeriods.add(String(periodStart));
-  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} lowTradeHit=${lowTradeHit}`);
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${lowTradeHit}`);
 }
 
 async function tick() {
@@ -135,7 +132,7 @@ async function tick() {
     }
 
     try {
-      await alertIfNeeded(completedStart, current, priorTrades);
+      await alertIfNeeded(completedStart, current);
     } catch (e) {
       console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`);
     }
@@ -148,7 +145,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR ${LOW_TRADE_THRESHOLD}- trades)`);
+  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${LOW_TRADE_THRESHOLD}- trades only)`);
   await tick();
   setInterval(tick, 30000);
 })();
