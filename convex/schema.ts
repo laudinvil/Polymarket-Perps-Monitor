@@ -27,6 +27,13 @@ export default defineSchema({
   crowdFlowPeriods: defineTable({
     symbol:v.string(), periodStart:v.number(), periodEnd:v.number(), trades:v.number(), previousTrades:v.optional(v.number()), change:v.optional(v.number()), direction:v.optional(v.string()), streak:v.optional(v.number()), closeUp:v.optional(v.number()), closeDown:v.optional(v.number()), recordedAt:v.number(),
   }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
+  streakHitPeriods: defineTable({
+    symbol:v.string(), timeframe:v.string(), periodStart:v.number(), periodEnd:v.number(),
+    result:v.string(), streak:v.number(), direction:v.string(), threshold:v.number(),
+    isHit:v.boolean(), isContinuation:v.boolean(), recordedAt:v.number(),
+  }).index("by_symbol_timeframe_period",["symbol","timeframe","periodStart"])
+    .index("by_timeframe_period",["timeframe","periodStart"])
+    .index("by_recorded_at",["recordedAt"]),
   lineAlerts: defineTable({
     runId:v.number(), eventId:v.string(), home:v.string(), away:v.string(), market:v.string(), selection:v.string(), line:v.number(), movePercent:v.number(), bookmakers:v.any(), polymarketUrl:v.optional(v.string()), sentAt:v.number(),
   }).index("by_sent_at",["sentAt"]).index("by_event",["eventId"]),
