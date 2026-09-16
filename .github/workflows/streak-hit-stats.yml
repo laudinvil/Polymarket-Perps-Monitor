@@ -2,6 +2,10 @@ name: StreakHit Convex Stats
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/streak-hit-stats.yml'
+      - 'scripts/streak-hit-stats.js'
   schedule:
     - cron: '*/5 * * * *'
 
