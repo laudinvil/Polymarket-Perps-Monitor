@@ -2,6 +2,7 @@ const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD = 300000;
+const ALERT_THRESHOLD = 2500;
 const DATA_API = 'https://data-api.polymarket.com/trades';
 const saved = new Set();
 const alertedPeriods = new Set();
@@ -95,34 +96,43 @@ async function saveCompletedPeriod(periodStart, data, previous) {
 }
 
 async function alertIfNeeded(periodStart, current, previous, streak) {
-  if (previous == null || current.trades <= previous || streak < 2 || alertedPeriods.has(String(periodStart))) return;
+  const thresholdHit = current.trades >= ALERT_THRESHOLD;
+  const streakHit = previous != null && current.trades > previous && streak >= 2;
+  if ((!thresholdHit && !streakHit) || alertedPeriods.has(String(periodStart))) return;
 
   const currentStart = periodStart + PERIOD;
   const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
   const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
-  const change = current.trades - previous;
-
-  await sendTelegramMessage([
+  const lines = [
     '🔥 BTC · 5M',
-    `TRADES: ${current.trades}`,
-    `PREVIOUS: ${previous}`,
-    `CHANGE: UP +${change}`,
+    `TRADES: ${current.trades}`
+  ];
+
+  if (streakHit) {
+    lines.push(`PREVIOUS: ${previous}`);
+    lines.push(`CHANGE: UP +${current.trades - previous}`);
+  } else {
+    lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`);
+  }
+
+  lines.push(
     `CLOSE UP: ${current.closeUp ?? 'N/A'}`,
     `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`,
     '',
     '➡️ CURRENT · Polymarket 5M',
     currentUrl
-  ].join('\n'));
+  );
+
+  await sendTelegramMessage(lines.join('\n'));
   alertedPeriods.add(String(periodStart));
-  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} previous=${previous} change=+${change} streak=${streak}`);
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} streakHit=${streakHit} streak=${streak}`);
 }
 
 async function tick() {
   const completedStart = start() - PERIOD;
   try {
     const current = await loadPeriod(completedStart);
-    if (!current) return;
-    if (previousPeriodStart === completedStart) return;
+    if (!current || previousPeriodStart === completedStart) return;
 
     const priorTrades = previousTrades;
     const isIncrease = priorTrades != null && current.trades > priorTrades;
@@ -149,7 +159,7 @@ async function tick() {
 }
 
 (async () => {
-  console.log('[crowd-flow] start BTC 5m trade streak monitor (2+ consecutive increases)');
+  console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR 2+ consecutive increases)`);
   await tick();
   setInterval(tick, 30000);
 })();
