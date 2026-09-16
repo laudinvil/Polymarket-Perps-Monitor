@@ -33,6 +33,33 @@ function winnerFromMarket(market) {
 }
 function currentMarketUrl(market) { return market?.url || null; }
 async function resolvePeriod(timeframe, periodStart) { return findMarketByEpoch(SYMBOL, periodStart, timeframe); }
+async function saveConvexPeriod(timeframe, periodStart, winner, streak, cfg, isHit, isContinuation) {
+  const convexUrl = process.env.CONVEX_URL;
+  const token = process.env.CONVEX_INGEST_TOKEN;
+  if (!convexUrl || !token) return;
+  const payload = {
+    type: 'streakHit.period',
+    data: {
+      symbol: SYMBOL,
+      timeframe,
+      periodStart,
+      periodEnd: periodStart + cfg.ms,
+      result: winner,
+      streak,
+      direction: winner,
+      threshold: cfg.minStreak,
+      isHit,
+      isContinuation,
+      recordedAt: Date.now(),
+    },
+  };
+  const response = await fetch(`${convexUrl.replace(/\/$/, '')}/ingest`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Convex StreakHit ingest ${response.status}`);
+}
 function updateStreak(state, timeframe, periodStart, winner) {
   const cfg = TIMEFRAMES[timeframe];
   const bucket = state.timeframes[timeframe] ||= { periods: {}, lastProcessed: null, streak: 0, direction: null };
@@ -41,7 +68,7 @@ function updateStreak(state, timeframe, periodStart, winner) {
   bucket.periods[key] = winner;
   if (winner === bucket.direction) bucket.streak += 1; else { bucket.direction = winner; bucket.streak = 1; }
   bucket.lastProcessed = periodStart;
-  return bucket.streak >= cfg.minStreak ? { timeframe, periodStart, direction: winner, streak: bucket.streak, threshold: cfg.minStreak, newStreak: bucket.streak > cfg.minStreak } : null;
+  return { timeframe, periodStart, direction: winner, streak: bucket.streak, threshold: cfg.minStreak, newStreak: bucket.streak > cfg.minStreak, isHit: bucket.streak >= cfg.minStreak };
 }
 async function sendAlert(alert, currentStart, currentMarket) {
   const direction = alert.direction === 'UP' ? '⬆️ UP' : '⬇️ DOWN';
@@ -66,6 +93,14 @@ async function processTimeframe(state, timeframe, now) {
     const winner = winnerFromMarket(market);
     if (!winner) break;
     const alert = updateStreak(state, timeframe, next, winner);
+    const streak = state.timeframes[timeframe].streak;
+    const isHit = streak >= cfg.minStreak;
+    const isContinuation = isHit && streak > cfg.minStreak;
+    try {
+      await saveConvexPeriod(timeframe, next, winner, streak, cfg, isHit, isContinuation);
+    } catch (error) {
+      console.warn(`StreakHit ${timeframe} Convex journal failed: ${error.message}`);
+    }
     if (alert && !state.alerts[`${timeframe}:${next}`]) {
       const currentMarket = await resolvePeriod(timeframe, currentStart);
       await sendAlert(alert, currentStart, currentMarket);
