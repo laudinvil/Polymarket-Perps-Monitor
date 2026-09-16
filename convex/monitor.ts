@@ -57,6 +57,17 @@ export const saveCrowdFlowPeriod = internalMutation({
   },
 });
 
+export const claimCrowdFlowAlert = internalMutation({
+  args: { symbol:v.string(), periodStart:v.number(), alertType:v.string(), sentAt:v.number() },
+  returns: v.boolean(),
+  handler: async (ctx,args) => {
+    const existing=await ctx.db.query("crowdFlowAlerts").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
+    if(existing) return false;
+    await ctx.db.insert("crowdFlowAlerts",args);
+    return true;
+  },
+});
+
 export const latestCrowdFlowPeriods = query({
   args:{symbol:v.optional(v.string()),limit:v.number()},
   handler:async(ctx,args)=>{
@@ -105,11 +116,7 @@ export const latestStreakHitPeriods = query({
 
 export const latestStreakHits = query({
   args:{symbol:v.optional(v.string()),timeframe:v.optional(v.string()),limit:v.number()},
-  handler:async(ctx,args)=>{
-    const limit=Math.min(Math.max(args.limit,1),500);
-    const rows=args.timeframe ? await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(Math.min(limit*3,500)) : await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(Math.min(limit*3,500));
-    return rows.filter(row=>!args.symbol||row.symbol===args.symbol).filter(row=>row.isHit).slice(0,limit);
-  },
+  handler:async(ctx,args)=>{const limit=Math.min(Math.max(args.limit,1),500);const rows=args.timeframe ? await ctx.db.query("streakHitPeriods").withIndex("by_timeframe_period",q=>q.eq("timeframe",args.timeframe!)).order("desc").take(Math.min(limit*3,500)) : await ctx.db.query("streakHitPeriods").withIndex("by_recorded_at").order("desc").take(Math.min(limit*3,500));return rows.filter(row=>!args.symbol||row.symbol===args.symbol).filter(row=>row.isHit).slice(0,limit);},
 });
 
 export const claimEsportsAlert = internalMutation({
