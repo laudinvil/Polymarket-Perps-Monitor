@@ -4,9 +4,9 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
-const EXCHANGES = ['binance', 'bybit', 'okx', 'gate', 'hyperliquid'];
 const periods = new Map();
 const alerted = new Set();
+let gateContractSize = 0.0001;
 
 function bucket(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
 function getPeriod(start) {
@@ -14,40 +14,31 @@ function getPeriod(start) {
   return periods.get(start);
 }
 function addTrade(exchange, ts, side, usd) {
-  if (!Number.isFinite(ts) || !Number.isFinite(usd) || usd <= 0) return;
+  if (!Number.isFinite(ts) || !Number.isFinite(usd) || usd <= 0 || !side) return;
   const start = bucket(ts);
   const p = getPeriod(start);
   if (!p.exchanges[exchange]) p.exchanges[exchange] = { buyUsd: 0, sellUsd: 0, trades: 0 };
   const e = p.exchanges[exchange];
-  p.trades += 1;
-  e.trades += 1;
+  p.trades += 1; e.trades += 1;
   if (side === 'BUY') { p.buyUsd += usd; p.buyEvents += 1; e.buyUsd += usd; }
-  else if (side === 'SELL') { p.sellUsd += usd; p.sellEvents += 1; e.sellUsd += usd; }
+  else { p.sellUsd += usd; p.sellEvents += 1; e.sellUsd += usd; }
 }
-
 function connect(name, url, onMessage) {
   const ws = new WebSocket(url);
   ws.on('open', () => console.log(`[cvd-5m] ${name} connected`));
-  ws.on('message', raw => {
-    try { onMessage(JSON.parse(raw.toString())); } catch (e) { console.error(`[cvd-5m] ${name} parse: ${e.message}`); }
-  });
+  ws.on('message', raw => { try { onMessage(JSON.parse(raw.toString())); } catch (e) { console.error(`[cvd-5m] ${name} parse: ${e.message}`); } });
   ws.on('error', e => console.error(`[cvd-5m] ${name} error: ${e.message}`));
   ws.on('close', () => { console.error(`[cvd-5m] ${name} disconnected; reconnecting`); setTimeout(() => connect(name, url, onMessage), 3000); });
   return ws;
 }
-
 function connectBinance() {
-  connect('binance', 'wss://fstream.binance.com/ws/btcusdt@aggTrade', m => {
-    addTrade('binance', Number(m.T), m.m === true ? 'SELL' : 'BUY', Number(m.p) * Number(m.q));
-  });
+  connect('binance', 'wss://fstream.binance.com/ws/btcusdt@aggTrade', m => addTrade('binance', Number(m.T), m.m === true ? 'SELL' : 'BUY', Number(m.p) * Number(m.q)));
 }
 function connectBybit() {
   connect('bybit', 'wss://stream.bybit.com/v5/public/linear', m => {
-    if (m.op === 'ping') return;
-    if (m.success && m.op === 'subscribe') return;
     for (const t of (m.data || [])) {
       const side = String(t.S || '').toUpperCase();
-      addTrade('bybit', Number(t.T), side === 'Buy' ? 'BUY' : side === 'Sell' ? 'SELL' : null, Number(t.p) * Number(t.v));
+      addTrade('bybit', Number(t.T), side === 'BUY' ? 'BUY' : side === 'SELL' ? 'SELL' : null, Number(t.p) * Number(t.v));
     }
   }).on('open', function () { this.send(JSON.stringify({ op: 'subscribe', args: ['publicTrade.BTCUSDT'] })); });
 }
@@ -55,20 +46,28 @@ function connectOkx() {
   connect('okx', 'wss://ws.okx.com:8443/ws/v5/public', m => {
     for (const t of (m.data || [])) {
       const side = String(t.side || '').toUpperCase();
-      addTrade('okx', Number(t.ts), side === 'BUY' ? 'BUY' : side === 'SELL' ? 'SELL' : null, Number(t.px) * Number(t.sz) * 100);
+      // BTC-USDT-SWAP ctVal is 0.01 BTC per contract.
+      addTrade('okx', Number(t.ts), side === 'BUY' ? 'BUY' : side === 'SELL' ? 'SELL' : null, Number(t.px) * Number(t.sz) * 0.01);
     }
   }).on('open', function () { this.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'trades', instId: 'BTC-USDT-SWAP' }] })); });
 }
+async function loadGateContractSize() {
+  try {
+    const r = await fetch('https://api.gateio.ws/api/v4/futures/usdt/contracts/BTC_USDT');
+    if (!r.ok) throw new Error(`Gate contract ${r.status}`);
+    const j = await r.json();
+    const v = Number(j.quanto_multiplier || j.contract_size || j.mark_price_round);
+    if (Number.isFinite(v) && v > 0 && v < 1) gateContractSize = v;
+    console.log(`[cvd-5m] gate contract size=${gateContractSize}`);
+  } catch (e) { console.error(`[cvd-5m] gate contract metadata failed: ${e.message}; using ${gateContractSize}`); }
+}
 function connectGate() {
   connect('gate', 'wss://fx-ws.gateio.ws/v4/ws/usdt', m => {
-    const r = m.result;
-    if (!Array.isArray(r)) return;
-    for (const t of r) {
-      const size = Number(t.size);
-      const price = Number(t.price);
+    if (!Array.isArray(m.result)) return;
+    for (const t of m.result) {
+      const size = Number(t.size); const price = Number(t.price);
       const ts = Number(t.create_time_ms || Number(t.create_time || 0) * 1000);
-      if (!Number.isFinite(size) || !Number.isFinite(price)) continue;
-      addTrade('gate', ts, size >= 0 ? 'BUY' : 'SELL', Math.abs(size) * price);
+      addTrade('gate', ts, size >= 0 ? 'BUY' : 'SELL', Math.abs(size) * gateContractSize * price);
     }
   }).on('open', function () { this.send(JSON.stringify({ time: Math.floor(Date.now() / 1000), channel: 'futures.trades', event: 'subscribe', payload: ['BTC_USDT'] })); });
 }
@@ -77,50 +76,39 @@ function connectHyperliquid() {
     if (m.channel !== 'trades') return;
     for (const t of (m.data || [])) {
       const side = String(t.side || '').toUpperCase();
-      const px = Number(t.px);
-      const sz = Number(t.sz);
-      const ts = Number(t.time);
       const normalized = side === 'A' || side === 'BUY' ? 'BUY' : side === 'B' || side === 'SELL' ? 'SELL' : null;
-      addTrade('hyperliquid', ts, normalized, px * sz);
+      addTrade('hyperliquid', Number(t.time), normalized, Number(t.px) * Number(t.sz));
     }
   }).on('open', function () { this.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } })); });
 }
-
 async function convexPost(data) {
-  const base = process.env.CONVEX_URL;
-  const token = process.env.CONVEX_INGEST_TOKEN;
+  const base = process.env.CONVEX_URL; const token = process.env.CONVEX_INGEST_TOKEN;
   if (!base || !token) throw new Error('Convex environment variables missing');
   const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ type: 'cvd5m.period', data }) });
   if (!response.ok) throw new Error(`Convex ${response.status}`);
 }
-
 async function closeCompletedPeriods() {
   const current = bucket(Date.now());
   for (const [start, data] of periods) {
     if (start >= current || alerted.has(start)) continue;
-    const total = data.buyUsd + data.sellUsd;
-    const cvd = data.buyUsd - data.sellUsd;
+    const total = data.buyUsd + data.sellUsd; const cvd = data.buyUsd - data.sellUsd;
     const imbalancePct = total > 0 ? Math.abs(cvd) / total * 100 : 0;
     const direction = cvd > 0 ? 'BUY' : cvd < 0 ? 'SELL' : 'NEUTRAL';
     const currentMarket = await findMarketByEpoch('BTC', current, '5m');
     const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(current / 1000)}`;
     const exchanges = {};
     for (const [name, e] of Object.entries(data.exchanges)) exchanges[name] = { buyUsd: Number(e.buyUsd.toFixed(2)), sellUsd: Number(e.sellUsd.toFixed(2)), trades: e.trades };
-
     await convexPost({ symbol: 'BTC', periodStart: start, periodEnd: start + PERIOD_MS, buyUsd: Number(data.buyUsd.toFixed(2)), sellUsd: Number(data.sellUsd.toFixed(2)), cvdUsd: Number(cvd.toFixed(2)), imbalancePct: Number(imbalancePct.toFixed(4)), buyEvents: data.buyEvents, sellEvents: data.sellEvents, trades: data.trades, direction, exchanges, recordedAt: Date.now() });
-
     const sign = cvd >= 0 ? '+' : '';
     const message = [`🔥 BTC · 5M · CVD`, `DISBALANCE: ${direction}`, `CVD: ${sign}$${cvd.toFixed(2)}`, `BUY: $${data.buyUsd.toFixed(2)}`, `SELL: $${data.sellUsd.toFixed(2)}`, `IMBALANCE: ${imbalancePct.toFixed(1)}%`, `TRADES: ${data.trades}`, '', '➡️ CURRENT · Polymarket 5M', currentUrl].join('\n');
     await sendTelegramMessage(message);
-    alerted.add(start);
-    periods.delete(start);
+    alerted.add(start); periods.delete(start);
     console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} trades=${data.trades}`);
   }
-  for (const start of periods.keys()) if (start < current - PERIOD_MS) periods.delete(start);
 }
-
 (async () => {
-  console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD:', EXCHANGES.join(', '));
+  console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid');
+  await loadGateContractSize();
   connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid();
   await closeCompletedPeriods();
   setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS);
