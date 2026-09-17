@@ -43,7 +43,6 @@ function connect(name, url, onMessage, onOpen) {
   ws.on('close', () => setTimeout(() => connect(name, url, onMessage, onOpen), 3000));
   return ws;
 }
-
 const BINANCE = Object.fromEntries(SYMBOLS.map(s => [s, `${s.toLowerCase()}usdt`]));
 function connectBinance() {
   const streams = SYMBOLS.map(s => `${BINANCE[s]}@aggTrade`).join('/');
@@ -66,8 +65,9 @@ async function loadOkxMeta() {
   const r = await fetch('https://www.okx.com/api/v5/public/instruments?instType=SWAP');
   if (!r.ok) throw new Error(`OKX instruments ${r.status}`);
   const j = await r.json();
-  for (const row of (j.data || [])) if (SYMBOLS.includes(String(row.instId || '').split('-')[0])) {
-    okxMeta.set(String(row.instId).split('-')[0], { instId: row.instId, ctVal: Number(row.ctVal), ctValCcy: String(row.ctValCcy || '').toUpperCase() });
+  for (const row of (j.data || [])) {
+    const symbol = String(row.instId || '').split('-')[0].toUpperCase();
+    if (SYMBOLS.includes(symbol)) okxMeta.set(symbol, { instId: row.instId, ctVal: Number(row.ctVal), ctValCcy: String(row.ctValCcy || '').toUpperCase() });
   }
 }
 function okxUsd(symbol, price, size) {
@@ -130,25 +130,26 @@ async function sendAlert(winner, nextStart) {
 }
 async function closeCompletedPeriods() {
   const current = bucket(Date.now());
-  for (const [key, p] of [...periods]) {
-    if (p.periodStart >= current) continue;
+  const completed = [...periods.values()].filter(p => p.periodStart < current);
+  const byPeriod = new Map();
+  for (const p of completed) {
     const total = p.buyUsd + p.sellUsd;
     p.cvdUsd = p.buyUsd - p.sellUsd;
     p.imbalancePct = total > 0 ? Math.abs(p.cvdUsd) / total * 100 : 0;
     p.direction = p.cvdUsd > 0 ? 'BUY' : p.cvdUsd < 0 ? 'SELL' : 'NEUTRAL';
-    await convexPost({ ...p, periodEnd: p.periodStart + PERIOD_MS, recordedAt: Date.now() });
-    periods.delete(key);
+    if (!byPeriod.has(p.periodStart)) byPeriod.set(p.periodStart, []);
+    byPeriod.get(p.periodStart).push(p);
   }
-  const completedStarts = new Set([...periods.values()].map(p => p.periodStart));
-  const lastCompleted = current - PERIOD_MS;
-  if (alerted.has(lastCompleted)) return;
-  const rows = [...periods.values()].filter(p => p.periodStart === lastCompleted && p.buyUsd + p.sellUsd > 0);
-  if (!rows.length) return;
-  rows.sort((a, b) => b.imbalancePct - a.imbalancePct);
-  const winner = rows[0];
-  alerted.add(lastCompleted);
-  await sendAlert(winner, current);
-  void completedStarts;
+  for (const [start, rows] of byPeriod) {
+    for (const p of rows) await convexPost({ ...p, periodEnd: start + PERIOD_MS, recordedAt: Date.now() });
+    if (!alerted.has(start)) {
+      const candidates = rows.filter(p => p.buyUsd + p.sellUsd > 0).sort((a, b) => b.imbalancePct - a.imbalancePct);
+      if (candidates.length) { alerted.add(start); await sendAlert(candidates[0], current); }
+    }
+    for (const p of rows) periods.delete(`${p.symbol}:${p.periodStart}`);
+  }
+  const cutoff = current - 2 * PERIOD_MS;
+  for (const [key, ts] of seen) if (ts < cutoff) seen.delete(key);
 }
 
 (async () => {
