@@ -1,10 +1,13 @@
+const { env, exitCode } = require('node:process');
+const nodeProcess = require('node:process');
+
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
 const TYPE = '5m';
 
-const apiKey = process.env.POLYBACKTEST_API_KEY;
-const tgToken = process.env.TELEGRAM_BOT_TOKEN;
-const tgChatId = process.env.TELEGRAM_CHAT_ID;
+const apiKey = env.POLYBACKTEST_API_KEY;
+const tgToken = env.TELEGRAM_BOT_TOKEN;
+const tgChatId = env.TELEGRAM_CHAT_ID;
 
 if (!apiKey) throw new Error('POLYBACKTEST_API_KEY is required');
 if (!tgToken || !tgChatId) throw new Error('TELEGRAM secrets are required');
@@ -115,5 +118,5 @@ async function main() {
 
 main().catch(err => {
   console.error(`[polybacktest] FAILED ${err.stack || err.message}`);
-  process.exitCode = 1;
+  nodeProcess.exitCode = 1;
 });
