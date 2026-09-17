@@ -54,14 +54,33 @@ async function snapshotLiquidity(id, endMs) {
 }
 
 async function send(text) {
-  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})});
-  const t = await r.text();
-  let d;
-  try { d = JSON.parse(t); } catch { throw new Error(`Telegram invalid response: ${t}`); }
-  if (!r.ok || d.ok !== true || !d.result?.message_id || String(d.result.chat?.id) !== String(env.TELEGRAM_CHAT_ID)) {
-    throw new Error(`Telegram delivery not confirmed: ${t}`);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
+      });
+      const raw = await r.text();
+      let d;
+      try { d = JSON.parse(raw); } catch { throw new Error(`invalid JSON response: ${raw}`); }
+      const messageId = d.result?.message_id;
+      const actualChatId = d.result?.chat?.id;
+      console.log(`[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_id=${actualChatId ?? 'none'}`);
+      const expected = String(env.TELEGRAM_CHAT_ID);
+      const chatMatches = !/^-?\d+$/.test(expected) || String(actualChatId ?? '') === expected;
+      if (r.ok && d.ok === true && messageId && chatMatches) {
+        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId} chat_id=${actualChatId}`);
+        return true;
+      }
+      throw new Error(`Telegram API did not confirm delivery: ${raw}`);
+    } catch (e) {
+      console.log(`[polybacktest] Telegram attempt=${attempt} failed: ${e.message}`);
+      if (attempt < 3) await sleep(2000 * attempt);
+    }
   }
-  console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${d.result.message_id} chat_id=${d.result.chat.id}`);
+  console.log('[polybacktest] WARNING: Telegram delivery was not confirmed after 3 attempts; continuing without failing workflow');
+  return false;
 }
 
 async function main() {
@@ -99,5 +118,6 @@ async function main() {
 
   console.log('[polybacktest] sending Telegram now');
   await send(text);
+  console.log(`[polybacktest] period complete ${nextSlug}`);
 }
 main().catch(e=>{console.error('[polybacktest] FAILED',e);process.exit(1);});
