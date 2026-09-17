@@ -113,18 +113,19 @@ async function processPeriod(boundary, previousLiq, streak) {
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
+  // Changes below 3% are ignored for alerting only. They do NOT break the streak.
+  if (pct == null || Math.abs(pct) < MIN_CHANGE_PCT) {
+    console.log(`[polybacktest] no alert: liquidity change ${change} is below ${MIN_CHANGE_PCT}% threshold; streak preserved (${streak.count} ${streak.direction || 'none'})`);
+    return { liquidity: completedLiq, streak };
+  }
+
   let nextStreak;
   if (delta > 0) nextStreak = streak.direction === '↑' ? streak.count + 1 : 1;
   else if (delta < 0) nextStreak = streak.direction === '↓' ? streak.count + 1 : 1;
-  else nextStreak = 0;
-  const nextDirection = delta > 0 ? '↑' : delta < 0 ? '↓' : null;
+  else nextStreak = streak.count;
+  const nextDirection = delta > 0 ? '↑' : delta < 0 ? '↓' : streak.direction;
 
   console.log(`[polybacktest] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`);
-
-  if (pct == null || Math.abs(pct) < MIN_CHANGE_PCT) {
-    console.log(`[polybacktest] no alert: liquidity change ${change} is below ${MIN_CHANGE_PCT}% threshold`);
-    return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
-  }
 
   if (nextStreak < 2) {
     console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is 2`);
@@ -154,7 +155,7 @@ async function main() {
   let previousLiq = null;
   let streak = {direction: null, count: 0};
   console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
-  console.log('[polybacktest] alert rule: 2+ consecutive moves, each with absolute liquidity change >= 3%');
+  console.log('[polybacktest] alert rule: 2+ consecutive qualifying moves; changes below 3% are ignored and do not reset streak');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   while (Date.now() < stopAt) {
