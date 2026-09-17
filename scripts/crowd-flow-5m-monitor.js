@@ -163,3 +163,4 @@ async function closeCompletedPeriods() {
   connectHyperliquid();
   setInterval(() => closeCompletedPeriods().catch(e => console.error(`[crowd-flow] close failed: ${e.message}`)), POLL_MS);
 })().catch(e => { console.error(e); process.exitCode = 1; });
+// start new monitor
