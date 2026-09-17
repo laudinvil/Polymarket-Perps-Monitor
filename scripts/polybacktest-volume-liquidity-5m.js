@@ -56,7 +56,12 @@ async function snapshotLiquidity(id, endMs) {
 async function send(text) {
   const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})});
   const t = await r.text();
-  if (!r.ok) throw new Error(`Telegram ${r.status}: ${t}`);
+  let d;
+  try { d = JSON.parse(t); } catch { throw new Error(`Telegram invalid response: ${t}`); }
+  if (!r.ok || d.ok !== true || !d.result?.message_id || String(d.result.chat?.id) !== String(env.TELEGRAM_CHAT_ID)) {
+    throw new Error(`Telegram delivery not confirmed: ${t}`);
+  }
+  console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${d.result.message_id} chat_id=${d.result.chat.id}`);
 }
 
 async function main() {
@@ -94,6 +99,5 @@ async function main() {
 
   console.log('[polybacktest] sending Telegram now');
   await send(text);
-  console.log(`[polybacktest] TELEGRAM SENT ${nextSlug}`);
 }
 main().catch(e=>{console.error('[polybacktest] FAILED',e);process.exit(1);});
