@@ -6,9 +6,9 @@ const PERIOD = 300000;
 const GAP = 1600;
 const RUN_MS = 358 * 60 * 1000;
 const MIN_CHANGE_PCT = 3;
+const MIN_STREAK = 2;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const nextBoundary = () => Math.floor(Date.now() / PERIOD + 1) * PERIOD;
 const slug = start => `btc-updown-5m-${Math.floor(start / 1000)}`;
 
@@ -33,36 +33,23 @@ async function market(s) {
   const d = await api(`/markets/by-slug/${encodeURIComponent(s)}?coin=${COIN}`);
   const x = unwrapMarket(d, s);
   const id = x.id ?? x.market_id;
-  console.log(`[polybacktest] market ${s} id=${id}`);
-  return {id, slug:x.slug || s, raw:x};
-}
+  let finalVolume = x.final_volume ?? x.finalVolume;
 
-function extractVolume(obj) {
-  if (!obj || typeof obj !== 'object') return null;
-  const keys = ['volume','volume_usd','volumeUsd','total_volume','totalVolume','trading_volume','tradingVolume'];
-  for (const key of keys) {
-    const value = obj[key];
-    if (Number.isFinite(Number(value))) return Number(value);
+  // v4 market-by-slug should expose final_volume for a completed market.
+  // If the response omits it, fetch the canonical market-by-ID record.
+  if (!Number.isFinite(Number(finalVolume))) {
+    const md = await api(`/markets/${encodeURIComponent(id)}?coin=${COIN}`);
+    const m = unwrapMarket(md, s);
+    finalVolume = m.final_volume ?? m.finalVolume;
   }
-  return null;
-}
 
-async function snapshotVolume(id, endMs, fallbackMarket) {
-  const candidates = [endMs - 2000,endMs - 5000,endMs - 10000,endMs - 15000,endMs - 30000,endMs - 60000,endMs - 120000];
-  for (const ts of candidates) {
-    try {
-      console.log(`[polybacktest] snapshot ${id} ts=${new Date(ts).toISOString()}`);
-      const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
-      const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
-      const volume = extractVolume(s) ?? extractVolume(d.data) ?? extractVolume(d) ?? extractVolume(fallbackMarket);
-      if (volume == null) continue;
-      console.log(`[polybacktest] snapshot OK ${id} time=${s?.time ?? 'n/a'} volume=${volume.toFixed(2)}`);
-      return volume;
-    } catch (e) {
-      console.log(`[polybacktest] snapshot miss ${id}: ${e.message}`);
-    }
+  if (!Number.isFinite(Number(finalVolume))) {
+    throw new Error(`Market ${s} id=${id} has no final_volume`);
   }
-  throw new Error(`No usable volume for market ${id}`);
+
+  finalVolume = Number(finalVolume);
+  console.log(`[polybacktest] market ${s} id=${id} final_volume=${finalVolume.toFixed(2)}`);
+  return {id, slug:x.slug || s, finalVolume};
 }
 
 async function send(text) {
@@ -110,13 +97,13 @@ async function processPeriod(boundary, previousVolume, streak) {
   if (previousValue == null) {
     const previous = await market(previousSlug);
     console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
-    previousValue = await snapshotVolume(previous.id, completedStart, previous.raw);
+    previousValue = previous.finalVolume;
   } else {
-    console.log(`[polybacktest] previous volume carried forward=${previousValue.toFixed(2)}`);
+    console.log(`[polybacktest] previous final_volume carried forward=${previousValue.toFixed(2)}`);
     console.log(`[polybacktest] completed id=${completed.id}`);
   }
 
-  const completedVolume = await snapshotVolume(completed.id, boundary, completed.raw);
+  const completedVolume = completed.finalVolume;
   const delta = completedVolume - previousValue;
   const pct = previousValue === 0 ? null : (delta / previousValue) * 100;
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
@@ -136,8 +123,8 @@ async function processPeriod(boundary, previousVolume, streak) {
 
   console.log(`[polybacktest] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`);
 
-  if (nextStreak < 2) {
-    console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is 2`);
+  if (nextStreak < MIN_STREAK) {
+    console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is ${MIN_STREAK}`);
     return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
   }
 
@@ -164,7 +151,8 @@ async function main() {
   let previousVolume = null;
   let streak = {direction: null, count: 0};
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] alert rule: 2+ consecutive qualifying moves; changes below 3% are ignored and do not reset streak');
+  console.log('[polybacktest] source: PolyBackTest market final_volume (not snapshots/liquidity)');
+  console.log(`[polybacktest] alert rule: ${MIN_STREAK}+ consecutive qualifying moves; changes below ${MIN_CHANGE_PCT}% are ignored and do not reset streak`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   while (Date.now() < stopAt) {
