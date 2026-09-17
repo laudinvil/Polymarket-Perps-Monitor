@@ -2,6 +2,8 @@ name: PolyBackTest Volume Liquidity 5M
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     # Start one minute before each 5-minute boundary so GitHub Actions has
     # time to boot; the script waits for the boundary before reading results.
