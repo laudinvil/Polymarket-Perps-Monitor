@@ -2,12 +2,15 @@ name: BTC CVD 5M Monitor
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/cvd-5m-monitor.js'
 
 permissions:
   contents: read
 
 concurrency:
-  group: btc-cvd-5m-monitor-v2
+  group: btc-cvd-5m-monitor-v3
   cancel-in-progress: false
 
 jobs:
