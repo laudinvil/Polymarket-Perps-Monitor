@@ -71,13 +71,7 @@ async function getMarketBySlug(slug) {
   const volume = volumeRaw == null ? null : num(volumeRaw);
   console.log(`[polybacktest] market ${slug} id=${id} volume=${volume == null ? 'missing' : volume} final_volume=${x.final_volume ?? 'missing'}`);
 
-  return {
-    id,
-    slug: x.slug ?? slug,
-    volume,
-    end: num(x.end_time) || 0,
-    period: x.end_time ?? x.period,
-  };
+  return { id, slug: x.slug ?? slug, volume };
 }
 
 function sumBook(book) {
@@ -86,17 +80,33 @@ function sumBook(book) {
     .reduce((sum, level) => sum + num(level.price) * num(level.size), 0);
 }
 
-async function getBoundarySnapshot(market, boundaryMs) {
-  const path = `/markets/${encodeURIComponent(market.id)}/snapshot-at/${boundaryMs}?coin=${COIN}`;
+async function snapshotRequest(marketId, timestamp) {
+  const path = `/markets/${encodeURIComponent(marketId)}/snapshot-at/${timestamp}?coin=${COIN}`;
   console.log(`[polybacktest] GET ${path}`);
-  const d = await api(path);
-  const snapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
-  if (!snapshots.length) throw new Error(`No snapshot within ±2s for ${market.id}`);
-  const s = snapshots[0];
-  const liquidity = sumBook(s.orderbook_up) + sumBook(s.orderbook_down);
-  console.log(`[polybacktest] boundary snapshot ${market.id} time=${s.time} liquidity=${liquidity.toFixed(2)} price_up=${s.price_up ?? 'n/a'} price_down=${s.price_down ?? 'n/a'}`);
-  if (!liquidity) throw new Error(`Zero boundary liquidity for ${market.id}`);
-  return { liquidity, snapshotTime: s.time };
+  return api(path);
+}
+
+async function getBoundarySnapshot(market, boundaryMs, isCurrent) {
+  // A newly opened Polymarket market can have its first stored snapshot a few
+  // seconds after the boundary. Try the exact boundary first, then +5s.
+  const candidates = isCurrent ? [boundaryMs, boundaryMs + 5000] : [boundaryMs, boundaryMs - 2000];
+  let lastError;
+  for (const ts of candidates) {
+    try {
+      const d = await snapshotRequest(market.id, ts);
+      const snapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
+      if (!snapshots.length) throw new Error(`empty snapshot response`);
+      const s = snapshots[0];
+      const liquidity = sumBook(s.orderbook_up) + sumBook(s.orderbook_down);
+      console.log(`[polybacktest] snapshot ${market.id} requested=${ts} actual=${s.time} liquidity=${liquidity.toFixed(2)} price_up=${s.price_up ?? 'n/a'} price_down=${s.price_down ?? 'n/a'}`);
+      if (liquidity > 0) return { liquidity, snapshotTime: s.time };
+      lastError = new Error(`zero liquidity`);
+    } catch (err) {
+      lastError = err;
+      console.log(`[polybacktest] snapshot miss ${market.id} at ${ts}: ${err.message}`);
+    }
+  }
+  throw lastError || new Error(`No usable snapshot for ${market.id}`);
 }
 
 function alertText(prev, curr, boundaryMs) {
@@ -135,13 +145,11 @@ async function main() {
   const previousSlug = marketSlug(previousEnd);
   console.log(`[polybacktest] target=${currentSlug} previous=${previousSlug}`);
 
-  // The market id is deterministic, but its final_volume may still be unpublished.
-  // We therefore use point-in-time snapshots for the boundary state and never wait for resolution.
   const curr = await getMarketBySlug(currentSlug);
   const prev = await getMarketBySlug(previousSlug);
 
-  curr.boundary = await getBoundarySnapshot(curr, boundary);
-  prev.boundary = await getBoundarySnapshot(prev, previousEnd);
+  curr.boundary = await getBoundarySnapshot(curr, boundary, true);
+  prev.boundary = await getBoundarySnapshot(prev, previousEnd, false);
   curr.liquidity = curr.boundary.liquidity;
   prev.liquidity = prev.boundary.liquidity;
 
