@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
 const CVD_ALERTS_ENABLED = true;
-const MIN_IMBALANCE_PCT = 42;
+const MIN_IMBALANCE_PCT = 50;
 const periods = new Map();
 const alerted = new Set();
 let gateContractSize = 0.0001;
@@ -39,4 +39,4 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  }
 }
 (async () => { console.log(`[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; alerts enabled; imbalance >= ${MIN_IMBALANCE_PCT}%`); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
-// Trigger a fresh Actions run from the corrected 42% threshold code.
+// Trigger a fresh Actions run from the corrected 50% threshold code.
