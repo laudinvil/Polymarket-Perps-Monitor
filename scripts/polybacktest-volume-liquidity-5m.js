@@ -104,17 +104,10 @@ async function main() {
 
   const prevMarket = markets[markets.length - 2];
   const currMarket = markets[markets.length - 1];
-  const endMs = new Date(currMarket.end).getTime();
-  const ageMs = Date.now() - endMs;
-
-  console.log(`[polybacktest] latest=${currMarket.id} end=${currMarket.end} ageMs=${ageMs}`);
-  if (!Number.isFinite(endMs) || ageMs < 0 || ageMs > 8 * 60_000) {
-    console.log('[polybacktest] latest resolved market is not recent; skip');
-    return;
-  }
+  console.log(`[polybacktest] comparing ${prevMarket.id} -> ${currMarket.id}`);
 
   const [prev, curr] = await Promise.all([getDetails(prevMarket), getDetails(currMarket)]);
-  console.log(`[polybacktest] compare ${prev.id} -> ${curr.id} volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
+  console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
 
   await sendTelegram(formatAlert(prev, curr));
   console.log(`[polybacktest] TELEGRAM SENT ${curr.id}`);
