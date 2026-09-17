@@ -3,9 +3,8 @@ const { env } = require('node:process');
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
 const TYPE = '5m';
-const POLL_MS = 10000;
-const WATCH_MS = 290000;
-const RECENT_MS = 270000;
+const POLL_MS = 5000;
+const WATCH_MS = 360000;
 
 const apiKey = env.POLYBACKTEST_API_KEY;
 const tgToken = env.TELEGRAM_BOT_TOKEN;
@@ -176,41 +175,48 @@ async function processLatest(markets) {
   return curr.id;
 }
 
-async function main() {
-  const startedAt = Date.now();
-  const deadline = startedAt + WATCH_MS;
-  console.log('[polybacktest] boundary-aware BTC 5m watcher');
+function nextFiveMinuteBoundaryMs(now = Date.now()) {
+  const d = new Date(now);
+  d.setSeconds(0, 0);
+  const minute = d.getMinutes();
+  const add = 5 - (minute % 5 || 5);
+  d.setMinutes(minute + add);
+  return d.getTime();
+}
 
+async function main() {
+  console.log('[polybacktest] pre-boundary BTC 5m watcher');
+
+  const boundary = nextFiveMinuteBoundaryMs();
+  const waitMs = Math.max(0, boundary - Date.now());
+  console.log(`[polybacktest] waiting ${Math.ceil(waitMs / 1000)}s for boundary ${new Date(boundary).toISOString()}`);
+  if (waitMs > 0) await sleep(waitMs);
+
+  const deadline = Date.now() + WATCH_MS;
   let markets = await getMarkets();
   if (markets.length < 2) throw new Error(`Need 2 resolved markets, got ${markets.length}`);
 
-  let latestId = markets[markets.length - 1].id;
-  const latestEnd = marketEndMs(markets[markets.length - 1]);
-  const latestAge = Date.now() - latestEnd;
+  const initialLatestId = markets[markets.length - 1].id;
+  console.log(`[polybacktest] boundary reached, baseline resolved=${initialLatestId}`);
 
-  // If GitHub starts shortly after a 5m boundary, the newest resolved market
-  // is the period that just closed and must be alerted immediately.
-  if (latestEnd > 0 && latestAge >= 0 && latestAge <= RECENT_MS) {
-    console.log(`[polybacktest] recent resolved market ${latestId}, age=${Math.round(latestAge / 1000)}s`);
-    await processLatest(markets);
-    return;
-  }
-
-  console.log(`[polybacktest] waiting for next resolved market after ${latestId}`);
   while (Date.now() < deadline) {
-    await sleep(POLL_MS);
     markets = await getMarkets();
-    if (markets.length < 2) continue;
+    if (markets.length < 2) {
+      await sleep(POLL_MS);
+      continue;
+    }
 
-    const currentLatest = markets[markets.length - 1];
-    if (currentLatest.id !== latestId) {
-      console.log(`[polybacktest] NEW RESOLVED MARKET ${currentLatest.id}`);
+    const currentLatestId = markets[markets.length - 1].id;
+    if (currentLatestId !== initialLatestId) {
+      console.log(`[polybacktest] NEW RESOLVED MARKET ${currentLatestId}`);
       await processLatest(markets);
       return;
     }
+
+    await sleep(POLL_MS);
   }
 
-  console.log('[polybacktest] no new resolved market during watch window');
+  console.log('[polybacktest] no new resolved market during boundary watch window');
 }
 
 main().catch(err => {
