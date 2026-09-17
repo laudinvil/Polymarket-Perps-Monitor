@@ -1,6 +1,6 @@
 const { env } = require('node:process');
 
-const API = 'https://api.polybacktest.com/v2';
+const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
 const TYPE = '5m';
 
@@ -109,7 +109,7 @@ async function getMarkets() {
     end: m.end_time ?? m.endTime ?? m.end ?? m.resolved_at ?? 0,
     raw: m,
   })).filter(m => m.id != null)
-    .sort((a, b) => new Date(a.end).getTime() - new Date(b.end).getTime());
+    .sort((a, b) => Number(a.end) - Number(b.end));
 }
 
 async function getDetails(market) {
@@ -117,8 +117,8 @@ async function getDetails(market) {
   const d = await api(`/markets/${encodeURIComponent(market.id)}?coin=${encodeURIComponent(coin)}`);
   const x = d.market || d.data?.market || d.data || d;
   console.log(`[polybacktest] detail ${market.id} volume=${x.final_volume ?? 'missing'} liquidity=${x.final_liquidity ?? 'missing'} keys=${Object.keys(x).slice(0, 20).join(',')}`);
-  if (x.final_volume == null || x.final_liquidity == null) {
-    throw new Error(`PolyBackTest market ${market.id} has no final_volume/final_liquidity`);
+  if (x.final_volume == null) {
+    throw new Error(`PolyBackTest market ${market.id} has no final_volume`);
   }
   return {
     ...market,
@@ -127,6 +127,25 @@ async function getDetails(market) {
     liquidity: num(x.final_liquidity),
     period: x.period ?? x.end_time ?? x.endTime ?? x.end ?? market.end,
   };
+}
+
+function sumBook(book) {
+  if (!book || typeof book !== 'object') return 0;
+  const levels = [...(Array.isArray(book.bids) ? book.bids : []), ...(Array.isArray(book.asks) ? book.asks : [])];
+  return levels.reduce((sum, level) => sum + num(level.price) * num(level.size), 0);
+}
+
+async function getOrderbookLiquidity(market) {
+  const coin = String(COIN).toLowerCase();
+  const path = `/markets/${encodeURIComponent(market.id)}/snapshots?coin=${encodeURIComponent(coin)}&limit=1&include_orderbook=true`;
+  const data = await api(path);
+  const snapshots = Array.isArray(data?.snapshots) ? data.snapshots : [];
+  if (!snapshots.length) throw new Error(`PolyBackTest market ${market.id} has no snapshots`);
+  const s = snapshots[0];
+  const liquidity = sumBook(s.orderbook_up) + sumBook(s.orderbook_down);
+  console.log(`[polybacktest] orderbook ${market.id} snapshots=${snapshots.length} liquidity=${liquidity.toFixed(2)}`);
+  if (!liquidity) throw new Error(`PolyBackTest market ${market.id} orderbook liquidity is zero`);
+  return liquidity;
 }
 
 async function main() {
@@ -139,7 +158,9 @@ async function main() {
   console.log(`[polybacktest] comparing ${prevMarket.id} -> ${currMarket.id}`);
 
   const prev = await getDetails(prevMarket);
+  prev.liquidity = await getOrderbookLiquidity(prevMarket);
   const curr = await getDetails(currMarket);
+  curr.liquidity = await getOrderbookLiquidity(currMarket);
   console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
 
   await sendTelegram(formatAlert(prev, curr));
