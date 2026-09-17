@@ -2,6 +2,10 @@ name: BTC PolyBackTest Volume Liquidity 5M
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/polybacktest-volume-liquidity-5m.js'
+      - '.github/workflows/polybacktest-volume-liquidity-5m.yml'
   schedule:
     - cron: '*/5 * * * *'
 
