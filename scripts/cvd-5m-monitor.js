@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const { findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
+// DOGE intentionally excluded from all CVD monitoring.
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
 const CVD_ALERTS_ENABLED = true;
