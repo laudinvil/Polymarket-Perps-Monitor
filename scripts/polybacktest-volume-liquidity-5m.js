@@ -15,16 +15,33 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let lastPolyBackTestRequest = 0;
 
 async function api(path) {
-  const wait = Math.max(0, 1100 - (Date.now() - lastPolyBackTestRequest));
-  if (wait) await sleep(wait);
-  lastPolyBackTestRequest = Date.now();
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const wait = Math.max(0, 1600 - (Date.now() - lastPolyBackTestRequest));
+    if (wait) await sleep(wait);
+    lastPolyBackTestRequest = Date.now();
 
-  const res = await fetch(`${API}${path}`, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`PolyBackTest ${res.status}: ${text.slice(0, 500)}`);
-  return JSON.parse(text);
+    const res = await fetch(`${API}${path}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    });
+    const text = await res.text();
+
+    if (res.ok) return JSON.parse(text);
+
+    if (res.status === 429 && attempt < 4) {
+      let retryMs = 1600;
+      try {
+        const body = JSON.parse(text);
+        retryMs = Math.max(1600, Number(body?.details?.retry_after || 1) * 1000 + 300);
+      } catch {}
+      console.log(`[polybacktest] rate limited, retry ${attempt + 1}/4 after ${retryMs}ms`);
+      await sleep(retryMs);
+      continue;
+    }
+
+    throw new Error(`PolyBackTest ${res.status}: ${text.slice(0, 500)}`);
+  }
+
+  throw new Error('PolyBackTest request failed after retries');
 }
 
 async function sendTelegram(text) {
