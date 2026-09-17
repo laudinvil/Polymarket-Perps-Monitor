@@ -42,7 +42,6 @@ async function api(path) {
 
     throw new Error(`PolyBackTest ${res.status}: ${text.slice(0, 500)}`);
   }
-
   throw new Error('PolyBackTest request failed after retries');
 }
 
@@ -127,9 +126,7 @@ async function getDetails(market) {
   const d = await api(`/markets/${encodeURIComponent(market.id)}?coin=${encodeURIComponent(coin)}`);
   const x = d.market || d.data?.market || d.data || d;
   console.log(`[polybacktest] detail ${market.id} volume=${x.final_volume ?? 'missing'} liquidity=${x.final_liquidity ?? 'missing'} keys=${Object.keys(x).slice(0, 20).join(',')}`);
-  if (x.final_volume == null) {
-    throw new Error(`PolyBackTest market ${market.id} has no final_volume`);
-  }
+  if (x.final_volume == null) throw new Error(`PolyBackTest market ${market.id} has no final_volume`);
   return {
     ...market,
     slug: x.slug ?? x.event_slug ?? x.polymarket_slug ?? market.slug,
@@ -185,34 +182,33 @@ function nextFiveMinuteBoundaryMs(now = Date.now()) {
 }
 
 async function main() {
-  console.log('[polybacktest] pre-boundary BTC 5m watcher');
+  console.log('[polybacktest] pre-boundary BTC 5m watcher v2');
 
   const boundary = nextFiveMinuteBoundaryMs();
   const waitMs = Math.max(0, boundary - Date.now());
+
+  // Critical: capture the resolved baseline BEFORE the boundary.
+  // The previous version captured it after the boundary and could therefore
+  // consume the newly resolved market as the baseline and never alert.
+  const baselineMarkets = await getMarkets();
+  if (baselineMarkets.length < 2) throw new Error(`Need 2 resolved markets, got ${baselineMarkets.length}`);
+  const baselineLatestId = baselineMarkets[baselineMarkets.length - 1].id;
+  console.log(`[polybacktest] baseline BEFORE boundary: ${baselineLatestId}`);
   console.log(`[polybacktest] waiting ${Math.ceil(waitMs / 1000)}s for boundary ${new Date(boundary).toISOString()}`);
   if (waitMs > 0) await sleep(waitMs);
 
   const deadline = Date.now() + WATCH_MS;
-  let markets = await getMarkets();
-  if (markets.length < 2) throw new Error(`Need 2 resolved markets, got ${markets.length}`);
-
-  const initialLatestId = markets[markets.length - 1].id;
-  console.log(`[polybacktest] boundary reached, baseline resolved=${initialLatestId}`);
-
   while (Date.now() < deadline) {
-    markets = await getMarkets();
-    if (markets.length < 2) {
-      await sleep(POLL_MS);
-      continue;
+    const markets = await getMarkets();
+    if (markets.length >= 2) {
+      const currentLatestId = markets[markets.length - 1].id;
+      console.log(`[polybacktest] after boundary latest resolved=${currentLatestId}`);
+      if (currentLatestId !== baselineLatestId) {
+        console.log(`[polybacktest] NEW RESOLVED MARKET ${currentLatestId}`);
+        await processLatest(markets);
+        return;
+      }
     }
-
-    const currentLatestId = markets[markets.length - 1].id;
-    if (currentLatestId !== initialLatestId) {
-      console.log(`[polybacktest] NEW RESOLVED MARKET ${currentLatestId}`);
-      await processLatest(markets);
-      return;
-    }
-
     await sleep(POLL_MS);
   }
 
