@@ -88,7 +88,7 @@ async function send(text) {
   return false;
 }
 
-async function processPeriod(boundary) {
+async function processPeriod(boundary, previousLiq) {
   const completedStart = boundary - PERIOD;
   const previousStart = boundary - 2*PERIOD;
   const completedSlug = slug(completedStart);
@@ -97,19 +97,25 @@ async function processPeriod(boundary) {
   console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
 
   const completed = await market(completedSlug);
-  const previous = await market(previousSlug);
-  console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
+  let previousValue = previousLiq;
+  if (previousValue == null) {
+    const previous = await market(previousSlug);
+    console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
+    previousValue = await snapshotLiquidity(previous.id, completedStart);
+  } else {
+    console.log(`[polybacktest] previous liquidity carried forward=${previousValue.toFixed(2)}`);
+    console.log(`[polybacktest] completed id=${completed.id}`);
+  }
 
-  const previousLiq = await snapshotLiquidity(previous.id, completedStart);
   const completedLiq = await snapshotLiquidity(completed.id, boundary);
-  const delta = completedLiq - previousLiq;
-  const pct = previousLiq === 0 ? null : (delta / previousLiq) * 100;
+  const delta = completedLiq - previousValue;
+  const pct = previousValue === 0 ? null : (delta / previousValue) * 100;
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
   const text = [
     '🔥 BTC · 5M',
-    `PREVIOUS: $${previousLiq.toFixed(2)}`,
+    `PREVIOUS: $${previousValue.toFixed(2)}`,
     `LAST 5M: $${completedLiq.toFixed(2)}`,
     `LIQUIDITY ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
     '➡️ NEXT · Polymarket 5M',
@@ -119,11 +125,13 @@ async function processPeriod(boundary) {
   console.log('[polybacktest] sending Telegram now');
   await send(text);
   console.log(`[polybacktest] period complete ${nextSlug}`);
+  return completedLiq;
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = nextBoundary();
+  let previousLiq = null;
   console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
@@ -133,7 +141,7 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
-      await processPeriod(boundary);
+      previousLiq = await processPeriod(boundary, previousLiq);
     } catch (e) {
       console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
     }
