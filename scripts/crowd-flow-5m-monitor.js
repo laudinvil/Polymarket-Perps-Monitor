@@ -1,89 +1,130 @@
-const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
+const WebSocket = require('ws');
+const { findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-const PERIOD = 300000;
-const ALERT_THRESHOLD = 2500;
-const DATA_API = 'https://data-api.polymarket.com/trades';
-const saved = new Set();
+const PERIOD_MS = 5 * 60 * 1000;
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'DOGE', 'BNB'];
+const EXCHANGES = ['binance', 'bybit', 'okx', 'gate', 'hyperliquid'];
+const state = new Map();
 const alertedPeriods = new Set();
-let previousTrades = null;
-let increaseStreak = 0;
-let previousPeriodStart = null;
-const start = () => bucketStart(Date.now(), '5m');
+const sockets = [];
 
+function periodStart(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
+function bucket(symbol, start) {
+  const key = `${symbol}:${start}`;
+  if (!state.has(key)) state.set(key, { symbol, periodStart: start, buyUsd: 0, sellUsd: 0, trades: 0, exchanges: {} });
+  return state.get(key);
+}
+function addTrade(symbol, ts, side, usd, exchange) {
+  if (!Number.isFinite(ts) || !Number.isFinite(usd) || usd <= 0) return;
+  const b = bucket(symbol, periodStart(ts));
+  if (side === 'buy') b.buyUsd += usd;
+  else if (side === 'sell') b.sellUsd += usd;
+  else return;
+  b.trades += 1;
+  b.exchanges[exchange] = (b.exchanges[exchange] || 0) + usd;
+}
+function parseSymbol(value) {
+  const s = String(value || '').toUpperCase();
+  for (const symbol of SYMBOLS) if (s.includes(symbol)) return symbol;
+  return null;
+}
+function connectBinance(symbol) {
+  const ws = new WebSocket(`wss://fstream.binance.com/ws/${symbol.toLowerCase()}usdt@aggTrade`);
+  ws.on('open', () => console.log(`[crowd-flow] Binance connected ${symbol}`));
+  ws.on('message', raw => { try { const x = JSON.parse(raw); const price = Number(x.p), qty = Number(x.q), ts = Number(x.T); addTrade(symbol, ts, x.m ? 'sell' : 'buy', price * qty, 'binance'); } catch {} });
+  ws.on('close', () => setTimeout(() => connectBinance(symbol), 3000));
+  ws.on('error', e => console.warn(`[crowd-flow] Binance ${symbol}: ${e.message}`));
+  sockets.push(ws);
+}
+function connectBybit(symbol) {
+  const ws = new WebSocket('wss://stream.bybit.com/v5/public/linear');
+  ws.on('open', () => { ws.send(JSON.stringify({ op: 'subscribe', args: [`publicTrade.${symbol}USDT`] })); console.log(`[crowd-flow] Bybit connected ${symbol}`); });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of (x.data || [])) { const price = Number(t.p), qty = Number(t.v), ts = Number(t.T); addTrade(symbol, ts, String(t.S).toLowerCase(), price * qty, 'bybit'); } } catch {} });
+  ws.on('close', () => setTimeout(() => connectBybit(symbol), 3000));
+  ws.on('error', e => console.warn(`[crowd-flow] Bybit ${symbol}: ${e.message}`));
+  sockets.push(ws);
+}
+function connectOkx(symbol) {
+  const ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+  ws.on('open', () => { ws.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'trades', instId: `${symbol}-USDT-SWAP` }] })); console.log(`[crowd-flow] OKX connected ${symbol}`); });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of (x.data || [])) { const price = Number(t.p), qty = Number(t.sz), ts = Number(t.ts); addTrade(symbol, ts, String(t.side).toLowerCase(), price * qty, 'okx'); } } catch {} });
+  ws.on('close', () => setTimeout(() => connectOkx(symbol), 3000));
+  ws.on('error', e => console.warn(`[crowd-flow] OKX ${symbol}: ${e.message}`));
+  sockets.push(ws);
+}
+function connectGate(symbol) {
+  const ws = new WebSocket('wss://fx-ws.gateio.ws/v4/ws/usdt');
+  ws.on('open', () => { ws.send(JSON.stringify({ time: Math.floor(Date.now() / 1000), channel: 'futures.trades', event: 'subscribe', payload: [`${symbol}_USDT`] })); console.log(`[crowd-flow] Gate connected ${symbol}`); });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); if (x.event !== 'update' || x.channel !== 'futures.trades') return; const rows = Array.isArray(x.result) ? x.result : [x.result]; for (const t of rows) { const price = Number(t.price), size = Number(t.size), ts = Number(t.create_time_ms || t.time_ms || Number(t.time) * 1000); addTrade(symbol, ts, size >= 0 ? 'buy' : 'sell', price * Math.abs(size), 'gate'); } } catch {} });
+  ws.on('close', () => setTimeout(() => connectGate(symbol), 3000));
+  ws.on('error', e => console.warn(`[crowd-flow] Gate ${symbol}: ${e.message}`));
+  sockets.push(ws);
+}
+function connectHyperliquid(symbol) {
+  const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
+  ws.on('open', () => { ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: symbol } })); console.log(`[crowd-flow] Hyperliquid connected ${symbol}`); });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); const rows = Array.isArray(x.data) ? x.data : []; for (const t of rows) { const price = Number(t.px), qty = Number(t.sz), ts = Number(t.time); const side = String(t.side).toUpperCase(); addTrade(symbol, ts, side === 'B' ? 'buy' : side === 'A' ? 'sell' : null, price * qty, 'hyperliquid'); } } catch {} });
+  ws.on('close', () => setTimeout(() => connectHyperliquid(symbol), 3000));
+  ws.on('error', e => console.warn(`[crowd-flow] Hyperliquid ${symbol}: ${e.message}`));
+  sockets.push(ws);
+}
+function connectAll() {
+  for (const symbol of SYMBOLS) {
+    connectBinance(symbol);
+    connectBybit(symbol);
+    connectOkx(symbol);
+    connectGate(symbol);
+    connectHyperliquid(symbol);
+  }
+  console.log(`[crowd-flow] started ${SYMBOLS.length} coins × ${EXCHANGES.length} exchanges = ${SYMBOLS.length * EXCHANGES.length} streams`);
+}
 async function convexPost(data) {
-  const base = process.env.CONVEX_URL;
-  const token = process.env.CONVEX_INGEST_TOKEN;
+  const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN;
   if (!base || !token) throw new Error('Convex environment variables missing');
   const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ type: 'crowdFlow.period', data }) });
   if (!response.ok) throw new Error(`Convex ${response.status}`);
 }
-
-async function fetchFullPeriodTrades(market, periodStart) {
-  if (!market?.conditionId) return null;
-  const startSec = Math.floor(periodStart / 1000), endSec = startSec + 300;
-  const rows = [], seenRows = new Set(); let offset = 0; const limit = 10000;
-  while (true) {
-    const url = new URL(DATA_API);
-    url.searchParams.set('market', market.conditionId); url.searchParams.set('start', String(startSec)); url.searchParams.set('end', String(endSec)); url.searchParams.set('takerOnly', 'true'); url.searchParams.set('limit', String(limit)); url.searchParams.set('offset', String(offset));
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error(`Data API ${response.status}`);
-    const page = await response.json(); if (!Array.isArray(page)) throw new Error('Data API invalid response');
-    for (const trade of page) {
-      const ts = Number(trade.timestamp); if (!Number.isFinite(ts) || ts < startSec || ts >= endSec) continue;
-      const id = `${trade.transactionHash || ''}:${trade.asset || ''}:${trade.timestamp}:${trade.price}:${trade.size}`;
-      if (seenRows.has(id)) continue; seenRows.add(id); rows.push(trade);
-    }
-    if (page.length < limit) break; offset += limit; if (offset > 10000) throw new Error('Data API pagination cap reached inside 5m period');
+async function claimAlert(periodStart, symbol) {
+  const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN;
+  if (!base || !token) return true;
+  const response = await fetch(`${base.replace(/\/$/, '')}/claim-crowd-flow-alert`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ periodStart, symbol, alertType: 'MAX_IMBALANCE' }) });
+  if (!response.ok) return true;
+  const result = await response.json().catch(() => ({}));
+  return result.claimed !== false;
+}
+function completedBuckets(completedStart) {
+  return [...state.values()].filter(x => x.periodStart === completedStart);
+}
+async function processPeriod(completedStart) {
+  const rows = completedBuckets(completedStart);
+  if (!rows.length) return;
+  const enriched = rows.map(x => {
+    const total = x.buyUsd + x.sellUsd;
+    const cvdUsd = x.buyUsd - x.sellUsd;
+    const imbalancePct = total > 0 ? Math.abs(cvdUsd) / total * 100 : 0;
+    return { ...x, cvdUsd, imbalancePct, direction: cvdUsd >= 0 ? 'BUY' : 'SELL', periodEnd: completedStart + PERIOD_MS };
+  });
+  for (const x of enriched) {
+    await convexPost({ symbol: x.symbol, periodStart: x.periodStart, periodEnd: x.periodEnd, buyUsd: x.buyUsd, sellUsd: x.sellUsd, cvdUsd: x.cvdUsd, imbalancePct: x.imbalancePct, trades: x.trades, exchanges: x.exchanges, direction: x.direction, recordedAt: Date.now() });
   }
-  return rows;
+  const winner = enriched.filter(x => x.buyUsd + x.sellUsd > 0).sort((a, b) => b.imbalancePct - a.imbalancePct)[0];
+  if (!winner || alertedPeriods.has(String(completedStart))) return;
+  const claimed = await claimAlert(completedStart, winner.symbol);
+  if (!claimed) return;
+  const market = await findMarketByEpoch(winner.symbol, completedStart + PERIOD_MS, '5m');
+  const url = market?.url || `https://polymarket.com/event/${winner.symbol.toLowerCase()}-updown-5m-${Math.floor((completedStart + PERIOD_MS) / 1000)}`;
+  const sign = winner.cvdUsd >= 0 ? 'BUY' : 'SELL';
+  const message = [`🔥 ${winner.symbol} · 5M CVD IMBALANCE`,`IMBALANCE: ${winner.imbalancePct.toFixed(2)}% → ${sign}`,`CVD: ${winner.cvdUsd >= 0 ? '+' : '-'}$${Math.abs(winner.cvdUsd).toFixed(0)}`,`BUY: $${winner.buyUsd.toFixed(0)}`,`SELL: $${winner.sellUsd.toFixed(0)}`,`TRADES: ${winner.trades}`,'',`➡️ NEXT · Polymarket 5M`,url].join('\n');
+  await sendTelegramMessage(message);
+  alertedPeriods.add(String(completedStart));
+  console.log(`[crowd-flow] ALERT period=${completedStart} winner=${winner.symbol} imbalance=${winner.imbalancePct.toFixed(2)}% cvd=${winner.cvdUsd.toFixed(0)}`);
+  for (const x of enriched) state.delete(`${x.symbol}:${x.periodStart}`);
 }
-
-async function loadPeriod(periodStart) {
-  const market = await findMarketByEpoch('BTC', periodStart, '5m');
-  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) return null;
-  const trades = await fetchFullPeriodTrades(market, periodStart); if (trades === null) return null;
-  let closeUp = null, closeDown = null, closeUpTs = -Infinity, closeDownTs = -Infinity;
-  const upToken = String(market.tokenIds.UP), downToken = String(market.tokenIds.DOWN);
-  for (const trade of trades) {
-    const asset = String(trade.asset || ''), price = Number(trade.price), ts = Number(trade.timestamp);
-    if (!Number.isFinite(price) || !Number.isFinite(ts)) continue;
-    if (asset === upToken && ts >= closeUpTs) { closeUp = price; closeUpTs = ts; }
-    if (asset === downToken && ts >= closeDownTs) { closeDown = price; closeDownTs = ts; }
-  }
-  return { market, trades: trades.length, closeUp, closeDown };
-}
-
-async function saveCompletedPeriod(periodStart, data, previous) {
-  const key = String(periodStart); if (saved.has(key)) return;
-  await convexPost({ symbol: 'BTC', periodStart, periodEnd: periodStart + PERIOD, trades: data.trades, previousTrades: previous ?? undefined, change: previous == null ? undefined : data.trades - previous, closeUp: data.closeUp ?? undefined, closeDown: data.closeDown ?? undefined, recordedAt: Date.now() });
-  saved.add(key); console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades} previous=${previous ?? 'N/A'}`);
-}
-
-async function alertIfNeeded(periodStart, current, previous, streak) {
-  const thresholdHit = current.trades >= ALERT_THRESHOLD;
-  const streakHit = previous != null && current.trades > previous && streak >= 2;
-  if ((!thresholdHit && !streakHit) || alertedPeriods.has(String(periodStart))) return;
-  const currentStart = periodStart + PERIOD;
-  const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
-  const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
-  const lines = ['🔥 BTC · 5M', `TRADES: ${current.trades}`];
-  if (thresholdHit) { lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`); lines.push('BUY DOWN'); }
-  else if (streakHit) { lines.push(`PREVIOUS: ${previous}`); lines.push(`CHANGE: UP +${current.trades - previous}`); }
-  lines.push(`CLOSE UP: ${current.closeUp ?? 'N/A'}`, `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`, '', '➡️ CURRENT · Polymarket 5M', currentUrl);
-  await sendTelegramMessage(lines.join('\n')); alertedPeriods.add(String(periodStart));
-  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} streakHit=${streakHit} streak=${streak}`);
-}
-
 async function tick() {
-  const completedStart = start() - PERIOD;
-  try {
-    const current = await loadPeriod(completedStart); if (!current || previousPeriodStart === completedStart) return;
-    const priorTrades = previousTrades; const isIncrease = priorTrades != null && current.trades > priorTrades; const nextStreak = isIncrease ? increaseStreak + 1 : 0;
-    try { await saveCompletedPeriod(completedStart, current, priorTrades); } catch (e) { console.error(`[crowd-flow] STATS SAVE FAILED period=${completedStart}: ${e.message}`); }
-    try { await alertIfNeeded(completedStart, current, priorTrades, nextStreak); } catch (e) { console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`); }
-    previousTrades = current.trades; increaseStreak = nextStreak; previousPeriodStart = completedStart;
-  } catch (e) { console.error(`[crowd-flow] PERIOD LOAD FAILED period=${completedStart}: ${e.message}`); }
+  const completedStart = periodStart(Date.now()) - PERIOD_MS;
+  try { await processPeriod(completedStart); } catch (e) { console.error(`[crowd-flow] PERIOD FAILED ${completedStart}: ${e.stack || e.message}`); }
 }
-
-(async () => { console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR 2+ consecutive increases)`); await tick(); setInterval(tick, 30000); })();
+process.on('SIGTERM', () => { for (const ws of sockets) try { ws.close(); } catch {} process.exit(0); });
+process.on('SIGINT', () => { for (const ws of sockets) try { ws.close(); } catch {} process.exit(0); });
+(async () => { console.log(`[crowd-flow] CVD 5m monitor: ${SYMBOLS.join(', ')}; exchanges=${EXCHANGES.join(', ')}; winner=max absolute imbalance per 5m period`); connectAll(); await tick(); setInterval(tick, 15000); })();
