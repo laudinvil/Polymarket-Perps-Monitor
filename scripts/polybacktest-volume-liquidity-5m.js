@@ -5,6 +5,7 @@ const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
 const RUN_MS = 358 * 60 * 1000;
+const MIN_CHANGE_PCT = 3;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -59,8 +60,7 @@ async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method:'POST',
-        headers:{'content-type':'application/json'},
+        method:'POST', headers:{'content-type':'application/json'},
         body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
       });
       const raw = await r.text();
@@ -121,6 +121,11 @@ async function processPeriod(boundary, previousLiq, streak) {
 
   console.log(`[polybacktest] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`);
 
+  if (pct == null || Math.abs(pct) < MIN_CHANGE_PCT) {
+    console.log(`[polybacktest] no alert: liquidity change ${change} is below ${MIN_CHANGE_PCT}% threshold`);
+    return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
+  }
+
   if (nextStreak < 2) {
     console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is 2`);
     return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
@@ -149,14 +154,13 @@ async function main() {
   let previousLiq = null;
   let streak = {direction: null, count: 0};
   console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
-  console.log('[polybacktest] alert rule: 2+ consecutive liquidity moves in the same direction');
+  console.log('[polybacktest] alert rule: 2+ consecutive moves, each with absolute liquidity change >= 3%');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   while (Date.now() < stopAt) {
     const wait = boundary - Date.now();
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
-
     try {
       const result = await processPeriod(boundary, previousLiq, streak);
       previousLiq = result.liquidity;
@@ -164,10 +168,8 @@ async function main() {
     } catch (e) {
       console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
     }
-
     boundary += PERIOD;
   }
-
   console.log('[polybacktest] watcher window complete');
 }
 
