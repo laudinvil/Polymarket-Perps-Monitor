@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: crowd-flow-5m-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
