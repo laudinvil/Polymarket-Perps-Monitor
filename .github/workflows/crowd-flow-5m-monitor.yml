@@ -1,16 +1,7 @@
 name: Crowd Flow 5M Monitor
 
 on:
-  schedule:
-    - cron: '0 */5 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/crowd-flow-5m-monitor.js'
-      - 'src/polymarket.js'
-      - 'src/telegram.js'
-      - '.github/workflows/crowd-flow-5m-monitor.yml'
 
 concurrency:
   group: crowd-flow-5m-monitor
