@@ -1,7 +1,6 @@
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
 const TYPE = '5m';
-const POLL_MS = 60_000;
 
 const apiKey = process.env.POLYBACKTEST_API_KEY;
 const tgToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -9,9 +8,6 @@ const tgChatId = process.env.TELEGRAM_CHAT_ID;
 
 if (!apiKey) throw new Error('POLYBACKTEST_API_KEY is required');
 if (!tgToken || !tgChatId) throw new Error('TELEGRAM secrets are required');
-
-let previous = null;
-let lastAlertId = null;
 
 async function api(path) {
   const res = await fetch(`${API}${path}`, {
@@ -101,36 +97,30 @@ async function getDetails(market) {
   };
 }
 
-async function pollOnce() {
+async function main() {
+  console.log('[polybacktest] single-shot BTC 5m');
   const markets = await getMarkets();
-  if (!markets.length) return;
-  const market = markets[markets.length - 1];
-  const current = await getDetails(market);
-  console.log(`[polybacktest] latest id=${current.id} volume=${current.volume} liquidity=${current.liquidity}`);
+  if (markets.length < 2) throw new Error(`Need 2 resolved markets, got ${markets.length}`);
 
-  if (!previous) {
-    previous = current;
-    console.log('[polybacktest] baseline established');
+  const prevMarket = markets[markets.length - 2];
+  const currMarket = markets[markets.length - 1];
+  const endMs = new Date(currMarket.end).getTime();
+  const ageMs = Date.now() - endMs;
+
+  console.log(`[polybacktest] latest=${currMarket.id} end=${currMarket.end} ageMs=${ageMs}`);
+  if (!Number.isFinite(endMs) || ageMs < 0 || ageMs > 8 * 60_000) {
+    console.log('[polybacktest] latest resolved market is not recent; skip');
     return;
   }
-  if (current.id === previous.id || current.id === lastAlertId) return;
 
-  const alert = formatAlert(previous, current);
-  try {
-    await sendTelegram(alert);
-    lastAlertId = current.id;
-    console.log(`[polybacktest] TELEGRAM SENT ${current.id}`);
-    previous = current;
-  } catch (err) {
-    console.error(`[polybacktest] TELEGRAM FAILED ${err.message}`);
-  }
+  const [prev, curr] = await Promise.all([getDetails(prevMarket), getDetails(currMarket)]);
+  console.log(`[polybacktest] compare ${prev.id} -> ${curr.id} volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
+
+  await sendTelegram(formatAlert(prev, curr));
+  console.log(`[polybacktest] TELEGRAM SENT ${curr.id}`);
 }
 
-console.log('[polybacktest] start BTC 5m v2');
-
-async function loop() {
-  try { await pollOnce(); }
-  catch (err) { console.error(`[polybacktest] LOOP FAILED ${err.stack || err.message}`); }
-  setTimeout(loop, POLL_MS);
-}
-loop();
+main().catch(err => {
+  console.error(`[polybacktest] FAILED ${err.stack || err.message}`);
+  process.exitCode = 1;
+});
