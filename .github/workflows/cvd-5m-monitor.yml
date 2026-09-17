@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'scripts/cvd-5m-monitor.js'
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: read
