@@ -2,7 +2,6 @@ const { env } = require('node:process');
 
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'btc';
-const TYPE = '5m';
 
 const apiKey = env.POLYBACKTEST_API_KEY;
 const tgToken = env.TELEGRAM_BOT_TOKEN;
@@ -67,13 +66,16 @@ async function getMarketBySlug(slug) {
   const x = d.market || d.data?.market || d.data || d;
   const id = x.market_id ?? x.id;
   if (!id) throw new Error(`Market not found for slug ${slug}`);
-  console.log(`[polybacktest] market ${slug} id=${id} final_volume=${x.final_volume ?? 'missing'} final_liquidity=${x.final_liquidity ?? 'missing'}`);
-  if (x.final_volume == null) throw new Error(`Market ${id} has no final_volume at boundary`);
+
+  const volumeRaw = x.volume ?? x.total_volume ?? x.current_volume ?? x.final_volume;
+  const volume = volumeRaw == null ? null : num(volumeRaw);
+  console.log(`[polybacktest] market ${slug} id=${id} volume=${volume == null ? 'missing' : volume} final_volume=${x.final_volume ?? 'missing'}`);
+
   return {
     id,
     slug: x.slug ?? slug,
-    volume: num(x.final_volume),
-    end: num(x.end_time),
+    volume,
+    end: num(x.end_time) || 0,
     period: x.end_time ?? x.period,
   };
 }
@@ -84,64 +86,67 @@ function sumBook(book) {
     .reduce((sum, level) => sum + num(level.price) * num(level.size), 0);
 }
 
-async function getEndLiquidity(market, endMs) {
-  // v4 snapshots are oldest-first; use snapshot-at instead of limit=1.
-  const ts = endMs - 1000;
-  const path = `/markets/${encodeURIComponent(market.id)}/snapshot-at/${ts}?coin=${COIN}`;
+async function getBoundarySnapshot(market, boundaryMs) {
+  const path = `/markets/${encodeURIComponent(market.id)}/snapshot-at/${boundaryMs}?coin=${COIN}`;
   console.log(`[polybacktest] GET ${path}`);
   const d = await api(path);
   const snapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
-  if (!snapshots.length) throw new Error(`No end snapshot for ${market.id}`);
+  if (!snapshots.length) throw new Error(`No snapshot within ±2s for ${market.id}`);
   const s = snapshots[0];
   const liquidity = sumBook(s.orderbook_up) + sumBook(s.orderbook_down);
-  console.log(`[polybacktest] end snapshot ${market.id} time=${s.time} liquidity=${liquidity.toFixed(2)}`);
-  if (!liquidity) throw new Error(`Zero end liquidity for ${market.id}`);
-  return liquidity;
+  console.log(`[polybacktest] boundary snapshot ${market.id} time=${s.time} liquidity=${liquidity.toFixed(2)} price_up=${s.price_up ?? 'n/a'} price_down=${s.price_down ?? 'n/a'}`);
+  if (!liquidity) throw new Error(`Zero boundary liquidity for ${market.id}`);
+  return { liquidity, snapshotTime: s.time };
 }
 
-function alertText(prev, curr) {
-  const vd = pct(prev.volume, curr.volume);
+function alertText(prev, curr, boundaryMs) {
+  const volumeAvailable = prev.volume != null && curr.volume != null && prev.volume > 0;
+  const vd = volumeAvailable ? pct(prev.volume, curr.volume) : null;
   const ld = pct(prev.liquidity, curr.liquidity);
-  const combination = vd >= 0 && ld >= 0 ? 'VOLUME ↑ + LIQUIDITY ↑'
-    : vd < 0 && ld < 0 ? 'VOLUME ↓ + LIQUIDITY ↓' : 'MIXED';
-  const winner = vd > ld ? 'VOLUME' : ld > vd ? 'LIQUIDITY' : 'TIE';
+  const combination = volumeAvailable
+    ? (vd >= 0 && ld >= 0 ? 'VOLUME ↑ + LIQUIDITY ↑' : vd < 0 && ld < 0 ? 'VOLUME ↓ + LIQUIDITY ↓' : 'MIXED')
+    : 'LIQUIDITY ONLY (VOLUME NOT YET PUBLISHED)';
+  const winner = volumeAvailable ? (vd > ld ? 'VOLUME' : ld > vd ? 'LIQUIDITY' : 'TIE') : 'LIQUIDITY';
+
   return [
     `🔥 BTC · POLYBACKTEST 5M`,
-    `VOLUME: ${vd >= 0 ? 'UP' : 'DOWN'} ${fmtPct(vd)}`,
+    volumeAvailable ? `VOLUME: ${vd >= 0 ? 'UP' : 'DOWN'} ${fmtPct(vd)}` : `VOLUME: NOT YET PUBLISHED`,
     `LIQUIDITY: ${ld >= 0 ? 'UP' : 'DOWN'} ${fmtPct(ld)}`,
-    `VOLUME: ${fmtUsd(prev.volume)} → ${fmtUsd(curr.volume)}`,
+    volumeAvailable ? `VOLUME: ${fmtUsd(prev.volume)} → ${fmtUsd(curr.volume)}` : `VOLUME: ${prev.volume == null ? 'N/A' : fmtUsd(prev.volume)} → N/A`,
     `LIQUIDITY: ${fmtUsd(prev.liquidity)} → ${fmtUsd(curr.liquidity)}`,
     `COMBINATION: ${combination}`,
     `WINNER: ${winner}`,
-    `PERIOD: ${new Date(curr.end).toISOString()}`,
+    `PERIOD: ${new Date(boundaryMs - 300000).toISOString()} → ${new Date(boundaryMs).toISOString()}`,
     '',
     '➡️ POLYMARKET 5M', `https://polymarket.com/event/${curr.slug}`,
   ].join('\n');
 }
 
 async function main() {
-  console.log('[polybacktest] exact-boundary BTC 5m watcher');
+  console.log('[polybacktest] exact-boundary BTC 5m watcher (snapshot-at)');
 
   const boundary = nextBoundary();
   const wait = Math.max(0, boundary - Date.now());
   console.log(`[polybacktest] boundary=${new Date(boundary).toISOString()} wait=${Math.ceil(wait / 1000)}s`);
   if (wait) await sleep(wait);
 
-  // Do not discover an ended market from a list. The 5m slug is deterministic.
-  // At boundary T, the market that just ended is the market ending at T.
   const currentSlug = marketSlug(boundary);
   const previousEnd = boundary - 300000;
   const previousSlug = marketSlug(previousEnd);
   console.log(`[polybacktest] target=${currentSlug} previous=${previousSlug}`);
 
+  // The market id is deterministic, but its final_volume may still be unpublished.
+  // We therefore use point-in-time snapshots for the boundary state and never wait for resolution.
   const curr = await getMarketBySlug(currentSlug);
-  curr.liquidity = await getEndLiquidity(curr, boundary);
-
   const prev = await getMarketBySlug(previousSlug);
-  prev.liquidity = await getEndLiquidity(prev, previousEnd);
 
-  console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
-  await sendTelegram(alertText(prev, curr));
+  curr.boundary = await getBoundarySnapshot(curr, boundary);
+  prev.boundary = await getBoundarySnapshot(prev, previousEnd);
+  curr.liquidity = curr.boundary.liquidity;
+  prev.liquidity = prev.boundary.liquidity;
+
+  console.log(`[polybacktest] values volume=${prev.volume ?? 'N/A'}->${curr.volume ?? 'N/A'} liquidity=${prev.liquidity}->${curr.liquidity}`);
+  await sendTelegram(alertText(prev, curr, boundary));
   console.log(`[polybacktest] TELEGRAM SENT ${curr.id}`);
 }
 
