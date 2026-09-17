@@ -20,7 +20,7 @@ async function api(path) {
 }
 
 function unwrapMarket(d, fallbackSlug) {
-  const candidates = [d?.market,d?.data?.market,d?.data,d?.result?.market,d?.result,Array.isArray(d)?d[0]:null,d];
+  const candidates = [d?.market,d?.data?.market,d?.result?.market,d?.result,Array.isArray(d)?d[0]:null,d];
   const x = candidates.find(v => v && typeof v === 'object' && !Array.isArray(v) && (v.id != null || v.market_id != null || v.slug != null));
   if (!x) throw new Error(`PolyBackTest market payload has no id for ${fallbackSlug}`);
   return x;
@@ -35,12 +35,31 @@ async function market(s) {
   return {id, slug:x.slug || s, volume};
 }
 
-async function snapshotLiquidity(id, ts) {
-  const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
-  const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
-  if (!s) throw new Error(`No snapshot ${id} at ${ts}`);
-  const sum = b => [...(b?.bids || []), ...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
-  return sum(s.orderbook_up) + sum(s.orderbook_down);
+async function snapshotLiquidity(id, endMs) {
+  const candidates = [
+    endMs - 2000,
+    endMs - 5000,
+    endMs - 10000,
+    endMs - 15000,
+    endMs - 30000,
+    endMs - 60000,
+    endMs - 120000
+  ];
+  for (const ts of candidates) {
+    try {
+      console.log(`[polybacktest] snapshot ${id} ts=${new Date(ts).toISOString()}`);
+      const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
+      const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
+      if (!s) continue;
+      const sum = b => [...(b?.bids || []), ...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
+      const liquidity = sum(s.orderbook_up) + sum(s.orderbook_down);
+      console.log(`[polybacktest] snapshot OK ${id} time=${s.time} liquidity=${liquidity.toFixed(2)}`);
+      return liquidity;
+    } catch (e) {
+      console.log(`[polybacktest] snapshot miss ${id}: ${e.message}`);
+    }
+  }
+  throw new Error(`No usable snapshot for market ${id}`);
 }
 
 async function send(text) {
@@ -51,6 +70,7 @@ async function send(text) {
 
 async function main() {
   const boundary = nextBoundary();
+  console.log(`[polybacktest] boundary BTC 5m watcher`);
   console.log(`[polybacktest] waiting for ${new Date(boundary).toISOString()}`);
   while (Date.now() < boundary) await sleep(Math.min(1000, boundary-Date.now()));
 
@@ -65,8 +85,8 @@ async function main() {
   const previous = await market(previousSlug);
   console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
 
-  const previousLiq = await snapshotLiquidity(previous.id, completedStart - 2000);
-  const completedLiq = await snapshotLiquidity(completed.id, boundary - 2000);
+  const previousLiq = await snapshotLiquidity(previous.id, completedStart);
+  const completedLiq = await snapshotLiquidity(completed.id, boundary);
 
   const volumeText = previous.volume != null && completed.volume != null
     ? `$${num(previous.volume).toFixed(2)} → $${num(completed.volume).toFixed(2)}`
