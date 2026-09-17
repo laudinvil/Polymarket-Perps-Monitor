@@ -3,6 +3,7 @@ const API = 'https://api.polybacktest.com/v4';
 const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
+const RUN_MS = 345 * 60 * 1000;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -86,12 +87,7 @@ async function send(text) {
   return false;
 }
 
-async function main() {
-  const boundary = nextBoundary();
-  console.log(`[polybacktest] liquidity-only BTC 5m watcher`);
-  console.log(`[polybacktest] waiting for ${new Date(boundary).toISOString()}`);
-  while (Date.now() < boundary) await sleep(Math.min(1000,boundary-Date.now()));
-
+async function processPeriod(boundary) {
   const completedStart = boundary - PERIOD;
   const previousStart = boundary - 2*PERIOD;
   const completedSlug = slug(completedStart);
@@ -123,4 +119,28 @@ async function main() {
   await send(text);
   console.log(`[polybacktest] period complete ${nextSlug}`);
 }
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = nextBoundary();
+  console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
+  console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+    } catch (e) {
+      console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
+    }
+
+    boundary += PERIOD;
+  }
+
+  console.log('[polybacktest] watcher window complete');
+}
+
 main().catch(e=>{console.error('[polybacktest] FAILED',e);process.exit(1);});
