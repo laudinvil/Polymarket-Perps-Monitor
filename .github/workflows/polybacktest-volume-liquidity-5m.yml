@@ -1,4 +1,4 @@
-name: BTC PolyBackTest Volume Liquidity 5M
+name: PolyBackTest Volume Liquidity 5M
 
 on:
   workflow_dispatch:
@@ -9,26 +9,26 @@ on:
   schedule:
     - cron: '*/5 * * * *'
 
-permissions:
-  contents: read
-
 concurrency:
   group: polybacktest-volume-liquidity-5m
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    env:
-      POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --check scripts/polybacktest-volume-liquidity-5m.js
-      - name: Run BTC PolyBackTest strategy
+
+      - name: Run PolyBackTest monitor
+        env:
+          POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/polybacktest-volume-liquidity-5m.js
