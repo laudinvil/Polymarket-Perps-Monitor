@@ -126,7 +126,7 @@ async function pollOnce() {
   }
 }
 
-console.log('[polybacktest] start BTC 5m');
+console.log('[polybacktest] start BTC 5m v2');
 
 async function loop() {
   try { await pollOnce(); }
