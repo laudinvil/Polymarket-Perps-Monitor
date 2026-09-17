@@ -1,140 +1,26 @@
-const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
+const WebSocket = require('ws');
+const { findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-const PERIOD = 300000;
+const PERIOD_MS = 5 * 60 * 1000;
+const POLL_MS = 15000;
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'DOGE', 'BNB'];
-const DATA_API = 'https://data-api.polymarket.com/trades';
-const start = () => bucketStart(Date.now(), '5m');
+const periods = new Map();
+const processed = new Set();
+const alerted = new Set();
+const gateContractSize = {};
 
-async function convexPost(data) {
-  const base = process.env.CONVEX_URL;
-  const token = process.env.CONVEX_INGEST_TOKEN;
-  if (!base || !token) throw new Error('Convex environment variables missing');
-  const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, {
-    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ type: 'crowdFlow.period', data })
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Convex ${response.status}: ${text}`);
-}
-
-async function claimCrowdFlowAlert(periodStart, symbol) {
-  const base = process.env.CONVEX_URL;
-  const token = process.env.CONVEX_INGEST_TOKEN;
-  if (!base || !token) throw new Error('Convex environment variables missing');
-  const response = await fetch(`${base.replace(/\/$/, '')}/claim-crowd-flow-alert`, {
-    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ symbol, periodStart, alertType: 'MAX_IMBALANCE', sentAt: Date.now() })
-  });
-  if (!response.ok) throw new Error(`Convex Crowd Flow claim ${response.status}`);
-  return (await response.json())?.claimed === true;
-}
-
-async function fetchFullPeriodTrades(market, periodStart) {
-  if (!market?.conditionId) return null;
-  const startSec = Math.floor(periodStart / 1000), endSec = startSec + 300;
-  const rows = [], seenRows = new Set();
-  let offset = 0;
-  const limit = 10000;
-  while (true) {
-    const url = new URL(DATA_API);
-    url.searchParams.set('market', market.conditionId);
-    url.searchParams.set('start', String(startSec));
-    url.searchParams.set('end', String(endSec));
-    url.searchParams.set('takerOnly', 'true');
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('offset', String(offset));
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error(`Data API ${response.status}`);
-    const page = await response.json();
-    if (!Array.isArray(page)) throw new Error('Data API invalid response');
-    for (const trade of page) {
-      const ts = Number(trade.timestamp);
-      if (!Number.isFinite(ts) || ts < startSec || ts >= endSec) continue;
-      const id = `${trade.transactionHash || ''}:${trade.asset || ''}:${trade.timestamp}:${trade.price}:${trade.size}:${trade.side || ''}`;
-      if (seenRows.has(id)) continue;
-      seenRows.add(id); rows.push(trade);
-    }
-    if (page.length < limit) break;
-    offset += limit;
-    if (offset > 10000) throw new Error('Data API pagination cap reached inside 5m period');
-  }
-  return rows;
-}
-
-async function loadPeriod(symbol, periodStart) {
-  const market = await findMarketByEpoch(symbol, periodStart, '5m');
-  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) return null;
-  const trades = await fetchFullPeriodTrades(market, periodStart);
-  if (trades === null) return null;
-
-  let buyUsd = 0, sellUsd = 0, buyEvents = 0, sellEvents = 0;
-  let closeUp = null, closeDown = null, closeUpTs = -Infinity, closeDownTs = -Infinity;
-  const upToken = String(market.tokenIds.UP), downToken = String(market.tokenIds.DOWN);
-
-  for (const trade of trades) {
-    const asset = String(trade.asset || ''), price = Number(trade.price), size = Number(trade.size), ts = Number(trade.timestamp);
-    if (!Number.isFinite(price) || !Number.isFinite(size) || size <= 0 || !Number.isFinite(ts)) continue;
-    const usd = price * size;
-    const side = String(trade.side || '').toUpperCase();
-    if (side === 'BUY') { buyUsd += usd; buyEvents += 1; }
-    else if (side === 'SELL') { sellUsd += usd; sellEvents += 1; }
-    if (asset === upToken && ts >= closeUpTs) { closeUp = price; closeUpTs = ts; }
-    if (asset === downToken && ts >= closeDownTs) { closeDown = price; closeDownTs = ts; }
-  }
-
-  const total = buyUsd + sellUsd;
-  const cvdUsd = buyUsd - sellUsd;
-  const imbalancePct = total > 0 ? Math.abs(cvdUsd) / total * 100 : 0;
-  const direction = cvdUsd > 0 ? 'BUY' : cvdUsd < 0 ? 'SELL' : 'NEUTRAL';
-  return { symbol, market, trades: trades.length, buyUsd, sellUsd, cvdUsd, imbalancePct, buyEvents, sellEvents, direction, closeUp, closeDown };
-}
-
-async function saveCompletedPeriod(periodStart, data) {
-  await convexPost({
-    symbol: data.symbol, periodStart, periodEnd: periodStart + PERIOD, trades: data.trades,
-    direction: data.direction, closeUp: data.closeUp ?? undefined, closeDown: data.closeDown ?? undefined,
-    recordedAt: Date.now()
-  });
-  console.log(`[crowd-flow] SAVED ${data.symbol} period=${periodStart} direction=${data.direction} imbalance=${data.imbalancePct.toFixed(1)}% buy=$${data.buyUsd.toFixed(2)} sell=$${data.sellUsd.toFixed(2)}`);
-}
-
-async function alertMaxImbalance(periodStart, results) {
-  const candidates = results.filter(x => x && x.direction !== 'NEUTRAL' && x.imbalancePct > 0);
-  if (!candidates.length) return;
-  candidates.sort((a, b) => b.imbalancePct - a.imbalancePct);
-  const winner = candidates[0];
-  const claimed = await claimCrowdFlowAlert(periodStart, winner.symbol);
-  if (!claimed) { console.log(`[crowd-flow] DUPLICATE SUPPRESSED period=${periodStart}`); return; }
-
-  const currentStart = periodStart + PERIOD;
-  const currentMarket = await findMarketByEpoch(winner.symbol, currentStart, '5m');
-  const currentUrl = currentMarket?.url || `https://polymarket.com/event/${winner.symbol.toLowerCase()}-updown-5m-${Math.floor(currentStart / 1000)}`;
-  const title = winner.direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
-  const message = [
-    `🔥 ${winner.symbol} · 5M · ${title}`,
-    `CVD: ${winner.cvdUsd >= 0 ? '+' : ''}$${winner.cvdUsd.toFixed(2)}`,
-    `BUY: $${winner.buyUsd.toFixed(2)}`,
-    `SELL: $${winner.sellUsd.toFixed(2)}`,
-    `IMBALANCE: ${winner.imbalancePct.toFixed(1)}%`,
-    `TRADES: ${winner.trades}`,
-    '', '➡️ Polymarket 5M', currentUrl
-  ];
-  await sendTelegramMessage(message.join('\n'));
-  console.log(`[crowd-flow] ALERT SENT period=${periodStart} winner=${winner.symbol} imbalance=${winner.imbalancePct.toFixed(1)}%`);
-}
-
-(async () => {
-  const periodStart = start() - PERIOD;
-  console.log(`[crowd-flow] start 5m imbalance: ${SYMBOLS.join(', ')}; signal=MAX ABS(CVD)/(BUY+SELL); period=${periodStart}`);
-  const results = await Promise.all(SYMBOLS.map(symbol => loadPeriod(symbol, periodStart).catch(e => {
-    console.error(`[crowd-flow] ${symbol} LOAD FAILED: ${e.message}`); return null;
-  })));
-  for (const result of results) {
-    if (!result) continue;
-    try { await saveCompletedPeriod(periodStart, result); }
-    catch (e) { console.error(`[crowd-flow] ${result.symbol} STATS SAVE FAILED: ${e.message}`); }
-  }
-  try { await alertMaxImbalance(periodStart, results); }
-  catch (e) { console.error(`[crowd-flow] ALERT FAILED: ${e.message}`); process.exitCode = 1; }
-})();
+function bucket(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
+function getPeriod(symbol, start) { const key = `${symbol}:${start}`; if (!periods.has(key)) periods.set(key, { symbol, start, buyUsd:0, sellUsd:0, buyEvents:0, sellEvents:0, trades:0 }); return periods.get(key); }
+function addTrade(symbol, exchange, ts, side, usd) { if (!SYMBOLS.includes(symbol) || !Number.isFinite(ts) || !Number.isFinite(usd) || usd <= 0 || !side) return; const p=getPeriod(symbol,bucket(ts)); p.trades++; if(side==='BUY'){p.buyUsd+=usd;p.buyEvents++;} else {p.sellUsd+=usd;p.sellEvents++;} }
+function connect(name,url,onMessage){const ws=new WebSocket(url);ws.on('open',()=>console.log(`[crowd-flow] ${name} connected`));ws.on('message',raw=>{try{onMessage(JSON.parse(raw.toString()));}catch(e){console.error(`[crowd-flow] ${name} parse: ${e.message}`);}});ws.on('error',e=>console.error(`[crowd-flow] ${name} error: ${e.message}`));ws.on('close',()=>{console.error(`[crowd-flow] ${name} disconnected; reconnecting`);setTimeout(()=>connect(name,url,onMessage),3000);});return ws;}
+function connectBinance(symbol){connect(`binance-${symbol}`,`wss://fstream.binance.com/ws/${symbol.toLowerCase()}usdt@aggTrade`,m=>addTrade(symbol,'binance',Number(m.T),m.m?'SELL':'BUY',Number(m.p)*Number(m.q)));}
+function connectBybit(symbol){connect(`bybit-${symbol}`,'wss://stream.bybit.com/v5/public/linear',m=>{for(const t of(m.data||[])){const s=String(t.S||'').toUpperCase();addTrade(symbol,'bybit',Number(t.T),s==='BUY'?'BUY':s==='SELL'?'SELL':null,Number(t.p)*Number(t.v));}}).on('open',function(){this.send(JSON.stringify({op:'subscribe',args:[`publicTrade.${symbol}USDT`]}));});}
+function connectOkx(symbol){connect(`okx-${symbol}`,'wss://ws.okx.com:8443/ws/v5/public',m=>{for(const t of(m.data||[])){const s=String(t.side||'').toUpperCase();addTrade(symbol,'okx',Number(t.ts),s==='BUY'?'BUY':s==='SELL'?'SELL':null,Number(t.px)*Number(t.sz)*0.01);}}).on('open',function(){this.send(JSON.stringify({op:'subscribe',args:[{channel:'trades',instId:`${symbol}-USDT-SWAP`}]}));});}
+async function loadGateContractSize(symbol){try{const r=await fetch(`https://api.gateio.ws/api/v4/futures/usdt/contracts/${symbol}_USDT`);if(!r.ok)throw new Error(`Gate contract ${r.status}`);const j=await r.json();const v=Number(j.quanto_multiplier||j.contract_size);gateContractSize[symbol]=Number.isFinite(v)&&v>0?v:0.0001;}catch(e){gateContractSize[symbol]=0.0001;console.error(`[crowd-flow] Gate ${symbol}: ${e.message}`);}}
+function connectGate(symbol){connect(`gate-${symbol}`,'wss://fx-ws.gateio.ws/v4/ws/usdt',m=>{if(!Array.isArray(m.result))return;for(const t of m.result){const size=Number(t.size),price=Number(t.price),ts=Number(t.create_time_ms||Number(t.create_time||0)*1000);addTrade(symbol,'gate',ts,size>=0?'BUY':'SELL',Math.abs(size)*(gateContractSize[symbol]||0.0001)*price);}}).on('open',function(){this.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.trades',event:'subscribe',payload:[`${symbol}_USDT`]}));});}
+function connectHyperliquid(symbol){connect(`hyperliquid-${symbol}`,'wss://api.hyperliquid.xyz/ws',m=>{if(m.channel!=='trades')return;for(const t of(m.data||[])){const s=String(t.side||'').toUpperCase();const side=s==='A'||s==='BUY'?'BUY':s==='B'||s==='SELL'?'SELL':null;addTrade(symbol,'hyperliquid',Number(t.time),side,Number(t.px)*Number(t.sz));}}).on('open',function(){this.send(JSON.stringify({method:'subscribe',subscription:{type:'trades',coin:symbol}}));});}
+async function convexPost(data){const base=process.env.CONVEX_URL,token=process.env.CONVEX_INGEST_TOKEN;if(!base||!token)throw new Error('Convex environment variables missing');const r=await fetch(`${base.replace(/\/$/,'')}/ingest`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({type:'crowdFlow.period',data})});const text=await r.text();if(!r.ok)throw new Error(`Convex ${r.status}: ${text}`);}
+async function claimAlert(periodStart,symbol){const base=process.env.CONVEX_URL,token=process.env.CONVEX_INGEST_TOKEN;const r=await fetch(`${base.replace(/\/$/,'')}/claim-crowd-flow-alert`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({symbol,periodStart,alertType:'MAX_IMBALANCE',sentAt:Date.now()})});if(!r.ok)throw new Error(`Convex claim ${r.status}`);return(await r.json())?.claimed===true;}
+async function closeCompletedPeriods(){const current=bucket(Date.now());const candidates=[];for(const[key,data]of periods){if(data.start>=current||processed.has(key))continue;const total=data.buyUsd+data.sellUsd,cvd=data.buyUsd-data.sellUsd,imbalance=total>0?Math.abs(cvd)/total*100:0,direction=cvd>0?'BUY':cvd<0?'SELL':'NEUTRAL';const saved={symbol:data.symbol,periodStart:data.start,periodEnd:data.start+PERIOD_MS,buyUsd:Number(data.buyUsd.toFixed(2)),sellUsd:Number(data.sellUsd.toFixed(2)),cvdUsd:Number(cvd.toFixed(2)),imbalancePct:Number(imbalance.toFixed(4)),buyEvents:data.buyEvents,sellEvents:data.sellEvents,trades:data.trades,direction,recordedAt:Date.now()};try{await convexPost(saved);}catch(e){console.error(`[crowd-flow] ${data.symbol} SAVE FAILED: ${e.message}`);continue;}processed.add(key);periods.delete(key);console.log(`[crowd-flow] SAVED ${data.symbol} period=${data.start} direction=${direction} imbalance=${imbalance.toFixed(1)}% trades=${data.trades}`);if(direction!=='NEUTRAL'&&imbalance>0)candidates.push({...saved,rawImbalance:imbalance});}if(!candidates.length)return;candidates.sort((a,b)=>b.rawImbalance-a.rawImbalance);const winner=candidates[0],periodKey=String(winner.periodStart);if(alerted.has(periodKey))return;const claimed=await claimAlert(winner.periodStart,winner.symbol);if(!claimed){alerted.add(periodKey);return;}const market=await findMarketByEpoch(winner.symbol,current,'5m');const url=market?.url||`https://polymarket.com/event/${winner.symbol.toLowerCase()}-updown-5m-${Math.floor(current/1000)}`;const title=winner.direction==='BUY'?'⬆️ BUY UP':'⬇️ BUY DOWN';const message=[`🔥 ${winner.symbol} · 5M · ${title}`,`CVD: ${winner.cvdUsd>=0?'+':''}$${winner.cvdUsd.toFixed(2)}`,`BUY: $${winner.buyUsd.toFixed(2)}`,`SELL: $${winner.sellUsd.toFixed(2)}`,`IMBALANCE: ${winner.imbalancePct.toFixed(1)}%`,`TRADES: ${winner.trades}`,'','➡️ Polymarket 5M',url].join('\n');await sendTelegramMessage(message);alerted.add(periodKey);console.log(`[crowd-flow] ALERT SENT period=${winner.periodStart} winner=${winner.symbol} imbalance=${winner.imbalancePct.toFixed(1)}%`);}
+(async()=>{console.log(`[crowd-flow] start MULTI-EXCHANGE 5M IMBALANCE: ${SYMBOLS.join(', ')}; Binance + Bybit + OKX + Gate + Hyperliquid; signal=MAX ABS(CVD)/(BUY+SELL)`);await Promise.all(SYMBOLS.map(loadGateContractSize));for(const symbol of SYMBOLS){connectBinance(symbol);connectBybit(symbol);connectOkx(symbol);connectGate(symbol);connectHyperliquid(symbol);}await closeCompletedPeriods();setInterval(()=>closeCompletedPeriods().catch(e=>console.error(`[crowd-flow] close failed: ${e.message}`)),POLL_MS);})();
