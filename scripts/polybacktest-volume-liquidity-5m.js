@@ -34,26 +34,35 @@ async function market(s) {
   const x = unwrapMarket(d, s);
   const id = x.id ?? x.market_id;
   console.log(`[polybacktest] market ${s} id=${id}`);
-  return {id, slug:x.slug || s};
+  return {id, slug:x.slug || s, raw:x};
 }
 
-async function snapshotLiquidity(id, endMs) {
+function extractVolume(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const keys = ['volume','volume_usd','volumeUsd','total_volume','totalVolume','trading_volume','tradingVolume'];
+  for (const key of keys) {
+    const value = obj[key];
+    if (Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+async function snapshotVolume(id, endMs, fallbackMarket) {
   const candidates = [endMs - 2000,endMs - 5000,endMs - 10000,endMs - 15000,endMs - 30000,endMs - 60000,endMs - 120000];
   for (const ts of candidates) {
     try {
       console.log(`[polybacktest] snapshot ${id} ts=${new Date(ts).toISOString()}`);
       const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
       const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
-      if (!s) continue;
-      const sum = b => [...(b?.bids || []),...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
-      const liquidity = sum(s.orderbook_up) + sum(s.orderbook_down);
-      console.log(`[polybacktest] snapshot OK ${id} time=${s.time} liquidity=${liquidity.toFixed(2)}`);
-      return liquidity;
+      const volume = extractVolume(s) ?? extractVolume(d.data) ?? extractVolume(d) ?? extractVolume(fallbackMarket);
+      if (volume == null) continue;
+      console.log(`[polybacktest] snapshot OK ${id} time=${s?.time ?? 'n/a'} volume=${volume.toFixed(2)}`);
+      return volume;
     } catch (e) {
       console.log(`[polybacktest] snapshot miss ${id}: ${e.message}`);
     }
   }
-  throw new Error(`No usable snapshot for market ${id}`);
+  throw new Error(`No usable volume for market ${id}`);
 }
 
 async function send(text) {
@@ -88,7 +97,7 @@ async function send(text) {
   return false;
 }
 
-async function processPeriod(boundary, previousLiq, streak) {
+async function processPeriod(boundary, previousVolume, streak) {
   const completedStart = boundary - PERIOD;
   const previousStart = boundary - 2*PERIOD;
   const completedSlug = slug(completedStart);
@@ -97,26 +106,26 @@ async function processPeriod(boundary, previousLiq, streak) {
   console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
 
   const completed = await market(completedSlug);
-  let previousValue = previousLiq;
+  let previousValue = previousVolume;
   if (previousValue == null) {
     const previous = await market(previousSlug);
     console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
-    previousValue = await snapshotLiquidity(previous.id, completedStart);
+    previousValue = await snapshotVolume(previous.id, completedStart, previous.raw);
   } else {
-    console.log(`[polybacktest] previous liquidity carried forward=${previousValue.toFixed(2)}`);
+    console.log(`[polybacktest] previous volume carried forward=${previousValue.toFixed(2)}`);
     console.log(`[polybacktest] completed id=${completed.id}`);
   }
 
-  const completedLiq = await snapshotLiquidity(completed.id, boundary);
-  const delta = completedLiq - previousValue;
+  const completedVolume = await snapshotVolume(completed.id, boundary, completed.raw);
+  const delta = completedVolume - previousValue;
   const pct = previousValue === 0 ? null : (delta / previousValue) * 100;
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
   // Changes below 3% are ignored for alerting only. They do NOT break the streak.
   if (pct == null || Math.abs(pct) < MIN_CHANGE_PCT) {
-    console.log(`[polybacktest] no alert: liquidity change ${change} is below ${MIN_CHANGE_PCT}% threshold; streak preserved (${streak.count} ${streak.direction || 'none'})`);
-    return { liquidity: completedLiq, streak };
+    console.log(`[polybacktest] no alert: volume change ${change} is below ${MIN_CHANGE_PCT}% threshold; streak preserved (${streak.count} ${streak.direction || 'none'})`);
+    return { volume: completedVolume, streak };
   }
 
   let nextStreak;
@@ -129,14 +138,14 @@ async function processPeriod(boundary, previousLiq, streak) {
 
   if (nextStreak < 2) {
     console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is 2`);
-    return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
+    return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
   }
 
   const text = [
     '🔥 BTC · 5M',
     `PREVIOUS: $${previousValue.toFixed(2)}`,
-    `LAST 5M: $${completedLiq.toFixed(2)}`,
-    `LIQUIDITY ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
+    `LAST 5M: $${completedVolume.toFixed(2)}`,
+    `VOLUME ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
     `STREAK: ${nextStreak}× ${nextDirection}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
@@ -146,15 +155,15 @@ async function processPeriod(boundary, previousLiq, streak) {
   console.log('[polybacktest] sending Telegram now');
   await send(text);
   console.log(`[polybacktest] period complete ${nextSlug}`);
-  return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
+  return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = nextBoundary();
-  let previousLiq = null;
+  let previousVolume = null;
   let streak = {direction: null, count: 0};
-  console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
+  console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] alert rule: 2+ consecutive qualifying moves; changes below 3% are ignored and do not reset streak');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
@@ -163,8 +172,8 @@ async function main() {
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
     try {
-      const result = await processPeriod(boundary, previousLiq, streak);
-      previousLiq = result.liquidity;
+      const result = await processPeriod(boundary, previousVolume, streak);
+      previousVolume = result.volume;
       streak = result.streak;
     } catch (e) {
       console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
