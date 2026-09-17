@@ -1,4 +1,4 @@
-name: PolyBackTest Volume Liquidity 5M
+name: PolyBackTest Volume 5M
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     - cron: '4-59/5 * * * *'
 
 concurrency:
-  group: polybacktest-volume-liquidity-5m
+  group: polybacktest-volume-5m
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Run PolyBackTest monitor
+      - name: Run PolyBackTest volume monitor
         run: node scripts/polybacktest-volume-liquidity-5m.js
         env:
           POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
