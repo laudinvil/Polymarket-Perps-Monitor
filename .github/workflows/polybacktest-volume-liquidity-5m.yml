@@ -1,6 +1,10 @@
 name: PolyBackTest Volume 5M
 
 on:
+  push:
+    paths:
+      - 'scripts/polybacktest-volume-liquidity-5m.js'
+      - '.github/workflows/polybacktest-volume-liquidity-5m.yml'
   workflow_dispatch:
   schedule:
     - cron: '7 */6 * * *'
