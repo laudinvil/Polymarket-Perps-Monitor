@@ -3,7 +3,7 @@ const { findMarketByEpoch, constructMarketUrl } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD_MS = 5 * 60 * 1000;
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'BNB'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE'];
 const EXCHANGES = ['binance', 'bybit', 'okx', 'gate', 'hyperliquid'];
 const state = new Map();
 const alertedPeriods = new Set();
