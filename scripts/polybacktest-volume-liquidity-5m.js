@@ -1,5 +1,4 @@
 const { env, exitCode } = require('node:process');
-const nodeProcess = require('node:process');
 
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
@@ -118,5 +117,5 @@ async function main() {
 
 main().catch(err => {
   console.error(`[polybacktest] FAILED ${err.stack || err.message}`);
-  nodeProcess.exitCode = 1;
+  require('node:process').exitCode = 1;
 });
