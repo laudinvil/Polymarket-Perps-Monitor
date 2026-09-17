@@ -49,6 +49,10 @@ function money(v) {
   return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function polymarketUrl(slug) {
+  return slug ? `https://polymarket.com/event/${slug}` : null;
+}
+
 async function sendTelegram(text) {
   const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
@@ -104,7 +108,7 @@ async function process() {
       console.log(JSON.stringify(row));
       process.stdout.write(`STRATEGY ${row.slug} ${row.combination} V=${row.volumeChangePct.toFixed(2)}% L=${row.liquidityChangePct.toFixed(2)}% WINNER=${row.winner}\n`);
 
-      const text = [
+      const lines = [
         `🔥 BTC · POLYBACKTEST 5M`,
         `VOLUME: ${row.volumeDirection} ${row.volumeChangePct >= 0 ? '+' : ''}${row.volumeChangePct.toFixed(2)}%`,
         `LIQUIDITY: ${row.liquidityDirection} ${row.liquidityChangePct >= 0 ? '+' : ''}${row.liquidityChangePct.toFixed(2)}%`,
@@ -113,7 +117,10 @@ async function process() {
         `COMBINATION: ${row.combination}`,
         `WINNER: ${row.winner || 'N/A'}`,
         `PERIOD: ${new Date(row.period).toISOString()} → ${new Date(row.periodEnd).toISOString()}`
-      ].join('\n');
+      ];
+      const url = polymarketUrl(row.slug);
+      if (url) lines.push(`\n➡️ POLYMARKET 5M\n${url}`);
+      const text = lines.join('\n');
 
       try {
         await sendTelegram(text);
