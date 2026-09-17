@@ -3,6 +3,7 @@ const { findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
+const CVD_ALERTS_ENABLED = false;
 const periods = new Map();
 const alerted = new Set();
 let lastDirection = null;
@@ -30,7 +31,7 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  if (direction !== 'NEUTRAL') lastDirection = direction;
  alerted.add(start); periods.delete(start);
  console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} trades=${data.trades} consecutive=${consecutiveDirectionPeriods}`);
- if (direction === 'NEUTRAL' || consecutiveDirectionPeriods < 3) continue;
+ if (!CVD_ALERTS_ENABLED || direction === 'NEUTRAL' || consecutiveDirectionPeriods < 3) continue;
  if (await isCvdCooldown(start)) { console.log(`[cvd-5m] TIMEOUT 1 PERIOD period=${start}`); continue; }
  const sign = cvd >= 0 ? '+' : '';
  const title = direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
@@ -41,4 +42,4 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  console.log(`[cvd-5m] ALERT SENT period=${start}`);
  }
 }
-(async () => { console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; 1-period timeout enabled'); await loadLastDirection(); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
+(async () => { console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; ALERTS DISABLED'); await loadLastDirection(); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
