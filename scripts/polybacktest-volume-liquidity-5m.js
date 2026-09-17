@@ -98,7 +98,8 @@ async function getMarkets() {
 async function getDetails(market) {
   const coin = String(COIN).toLowerCase();
   const d = await api(`/markets/${encodeURIComponent(market.id)}?coin=${encodeURIComponent(coin)}`);
-  const x = d.market || d.data || d;
+  const x = d.market ?? d.data?.market ?? d.data ?? d;
+  console.log(`[polybacktest] detail ${market.id} volume=${x.final_volume ?? x.volume ?? x.total_volume ?? 'missing'} liquidity=${x.final_liquidity ?? x.liquidity ?? 'missing'}`);
   return {
     ...market,
     volume: num(x.final_volume ?? x.volume ?? x.total_volume),
