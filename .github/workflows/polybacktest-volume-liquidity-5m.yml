@@ -1,0 +1,28 @@
+name: BTC PolyBackTest Volume Liquidity 5M
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: polybacktest-volume-liquidity-5m
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --check scripts/polybacktest-volume-liquidity-5m.js
+      - name: Run BTC PolyBackTest strategy
+        run: node scripts/polybacktest-volume-liquidity-5m.js
