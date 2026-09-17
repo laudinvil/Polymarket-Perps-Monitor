@@ -1,3 +1,4 @@
+// Continuous 5m watcher: scheduling is handled by the workflow.
 const { env } = require('node:process');
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'btc';
