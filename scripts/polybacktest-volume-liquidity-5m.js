@@ -18,18 +18,31 @@ async function api(path) {
   if (!r.ok) throw new Error(`PolyBackTest ${r.status}: ${t}`);
   return JSON.parse(t);
 }
+
+function unwrapMarket(d, fallbackSlug) {
+  const candidates = [d?.market,d?.data?.market,d?.data,d?.result?.market,d?.result,Array.isArray(d)?d[0]:null,d];
+  const x = candidates.find(v => v && typeof v === 'object' && !Array.isArray(v) && (v.id != null || v.market_id != null || v.slug != null));
+  if (!x) throw new Error(`PolyBackTest market payload has no id for ${fallbackSlug}`);
+  return x;
+}
+
 async function market(s) {
   const d = await api(`/markets/by-slug/${encodeURIComponent(s)}?coin=${COIN}`);
-  const x = d.market || d;
-  return {id:x.id, slug:x.slug || s, volume:x.final_volume ?? x.volume ?? x.total_volume ?? x.current_volume ?? null};
+  const x = unwrapMarket(d, s);
+  const id = x.id ?? x.market_id;
+  const volume = x.final_volume ?? x.volume ?? x.total_volume ?? x.current_volume ?? null;
+  console.log(`[polybacktest] market ${s} id=${id} volume=${volume ?? 'missing'}`);
+  return {id, slug:x.slug || s, volume};
 }
+
 async function snapshotLiquidity(id, ts) {
-  const d = await api(`/markets/${id}/snapshot-at/${ts}?coin=${COIN}`);
-  const s = Array.isArray(d.snapshots) ? d.snapshots[0] : d.snapshot;
-  if (!s) throw new Error(`No snapshot ${id}`);
+  const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
+  const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
+  if (!s) throw new Error(`No snapshot ${id} at ${ts}`);
   const sum = b => [...(b?.bids || []), ...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
   return sum(s.orderbook_up) + sum(s.orderbook_down);
 }
+
 async function send(text) {
   const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})});
   const t = await r.text();
@@ -48,12 +61,10 @@ async function main() {
   const nextSlug = slug(boundary);
   console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
 
-  // Only completed markets are queried. The new market is NEVER required for the alert.
   const completed = await market(completedSlug);
   const previous = await market(previousSlug);
   console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
 
-  // One snapshot immediately before each close; no waiting for final_volume and no new-market snapshot.
   const previousLiq = await snapshotLiquidity(previous.id, completedStart - 2000);
   const completedLiq = await snapshotLiquidity(completed.id, boundary - 2000);
 
