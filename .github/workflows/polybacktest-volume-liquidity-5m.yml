@@ -2,6 +2,10 @@ name: PolyBackTest Volume Liquidity 5M
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/polybacktest-volume-liquidity-5m.js'
+      - '.github/workflows/polybacktest-volume-liquidity-5m.yml'
   schedule:
     - cron: '*/5 * * * *'
 
@@ -16,12 +20,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
       - name: Run PolyBackTest monitor
         env:
           POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
