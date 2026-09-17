@@ -3,7 +3,7 @@ const { findMarketByEpoch, constructMarketUrl } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const PERIOD_MS = 5 * 60 * 1000;
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'DOGE', 'BNB'];
+const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'BNB'];
 const EXCHANGES = ['binance', 'bybit', 'okx', 'gate', 'hyperliquid'];
 const state = new Map();
 const alertedPeriods = new Set();
@@ -35,7 +35,7 @@ function connectBinance(symbol) {
 function connectBybit(symbol) {
   const ws = new WebSocket('wss://stream.bybit.com/v5/public/linear');
   ws.on('open', () => { ws.send(JSON.stringify({ op: 'subscribe', args: [`publicTrade.${symbol}USDT`] })); console.log(`[crowd-flow] Bybit connected ${symbol}`); });
-  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of (x.data || [])) { const price = Number(t.p), qty = Number(t.v), ts = Number(t.T); addTrade(symbol, ts, String(t.S).toLowerCase(), price * qty, 'bybit'); } } catch (e) { console.warn(`[crowd-flow] Bybit parse ${symbol}: ${e.message}`); } });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of x.data || []) { const price = Number(t.p), qty = Number(t.v), ts = Number(t.T); addTrade(symbol, ts, t.S === 'Buy' ? 'buy' : 'sell', price * qty, 'bybit'); } } catch (e) { console.warn(`[crowd-flow] Bybit parse ${symbol}: ${e.message}`); } });
   ws.on('close', () => setTimeout(() => connectBybit(symbol), 3000));
   ws.on('error', e => console.warn(`[crowd-flow] Bybit ${symbol}: ${e.message}`));
   sockets.push(ws);
@@ -43,91 +43,70 @@ function connectBybit(symbol) {
 function connectOkx(symbol) {
   const ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
   ws.on('open', () => { ws.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'trades', instId: `${symbol}-USDT-SWAP` }] })); console.log(`[crowd-flow] OKX connected ${symbol}`); });
-  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of (x.data || [])) { const price = Number(t.p), qty = Number(t.sz), ts = Number(t.ts); addTrade(symbol, ts, String(t.side).toLowerCase(), price * qty, 'okx'); } } catch (e) { console.warn(`[crowd-flow] OKX parse ${symbol}: ${e.message}`); } });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of x.data || []) { const price = Number(t.px), size = Number(t.sz), ts = Number(t.ts); addTrade(symbol, ts, t.side === 'buy' ? 'buy' : 'sell', price * size * 0.01, 'okx'); } } catch (e) { console.warn(`[crowd-flow] OKX parse ${symbol}: ${e.message}`); } });
   ws.on('close', () => setTimeout(() => connectOkx(symbol), 3000));
   ws.on('error', e => console.warn(`[crowd-flow] OKX ${symbol}: ${e.message}`));
   sockets.push(ws);
 }
-function connectGate(symbol) {
-  const ws = new WebSocket('wss://fx-ws.gateio.ws/v4/ws/usdt');
-  ws.on('open', () => { ws.send(JSON.stringify({ time: Math.floor(Date.now() / 1000), channel: 'futures.trades', event: 'subscribe', payload: [`${symbol}_USDT`] })); console.log(`[crowd-flow] Gate connected ${symbol}`); });
-  ws.on('message', raw => { try { const x = JSON.parse(raw); if (x.event !== 'update' || x.channel !== 'futures.trades') return; const rows = Array.isArray(x.result) ? x.result : [x.result]; for (const t of rows) { const price = Number(t.price), size = Number(t.size), ts = Number(t.create_time_ms || t.time_ms || Number(t.time) * 1000); addTrade(symbol, ts, size >= 0 ? 'buy' : 'sell', price * Math.abs(size), 'gate'); } } catch (e) { console.warn(`[crowd-flow] Gate parse ${symbol}: ${e.message}`); } });
-  ws.on('close', () => setTimeout(() => connectGate(symbol), 3000));
-  ws.on('error', e => console.warn(`[crowd-flow] Gate ${symbol}: ${e.message}`));
-  sockets.push(ws);
+async function connectGate(symbol) {
+  try {
+    const r = await fetch(`https://api.gateio.ws/api/v4/futures/usdt/contracts/${symbol}_USDT`);
+    const meta = await r.json();
+    const contractSize = Number(meta.quanto_multiplier || meta.contract_size || 1);
+    const ws = new WebSocket('wss://fx-ws.gateio.ws/v4/ws/usdt');
+    ws.on('open', () => { ws.send(JSON.stringify({ time: Math.floor(Date.now()/1000), channel: 'futures.trades', event: 'subscribe', payload: [`${symbol}_USDT`] })); console.log(`[crowd-flow] Gate connected ${symbol}`); });
+    ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of x.result || []) { const price = Number(t.price), size = Number(t.size), ts = Number(t.create_time_ms || Date.now()); addTrade(symbol, ts, size >= 0 ? 'buy' : 'sell', Math.abs(size) * contractSize * price, 'gate'); } } catch (e) { console.warn(`[crowd-flow] Gate parse ${symbol}: ${e.message}`); } });
+    ws.on('close', () => setTimeout(() => connectGate(symbol), 3000));
+    ws.on('error', e => console.warn(`[crowd-flow] Gate ${symbol}: ${e.message}`));
+    sockets.push(ws);
+  } catch (e) { console.warn(`[crowd-flow] Gate setup ${symbol}: ${e.message}`); setTimeout(() => connectGate(symbol), 5000); }
 }
 function connectHyperliquid(symbol) {
   const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
   ws.on('open', () => { ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: symbol } })); console.log(`[crowd-flow] Hyperliquid connected ${symbol}`); });
-  ws.on('message', raw => { try { const x = JSON.parse(raw); const rows = Array.isArray(x.data) ? x.data : []; for (const t of rows) { const price = Number(t.px), qty = Number(t.sz), ts = Number(t.time); const side = String(t.side).toUpperCase(); addTrade(symbol, ts, side === 'B' ? 'buy' : side === 'A' ? 'sell' : null, price * qty, 'hyperliquid'); } } catch (e) { console.warn(`[crowd-flow] Hyperliquid parse ${symbol}: ${e.message}`); } });
+  ws.on('message', raw => { try { const x = JSON.parse(raw); for (const t of x.data || []) { const price = Number(t.px), size = Number(t.sz), ts = Number(t.time); const side = t.side === 'A' || t.side === 'BUY' ? 'buy' : 'sell'; addTrade(symbol, ts, side, price * size, 'hyperliquid'); } } catch (e) { console.warn(`[crowd-flow] Hyperliquid parse ${symbol}: ${e.message}`); } });
   ws.on('close', () => setTimeout(() => connectHyperliquid(symbol), 3000));
   ws.on('error', e => console.warn(`[crowd-flow] Hyperliquid ${symbol}: ${e.message}`));
   sockets.push(ws);
 }
-function connectAll() {
-  for (const symbol of SYMBOLS) {
-    connectBinance(symbol); connectBybit(symbol); connectOkx(symbol); connectGate(symbol); connectHyperliquid(symbol);
+function closeCompletedPeriods() {
+  const now = Date.now();
+  const current = periodStart(now);
+  const completed = [...state.values()].filter(b => b.periodStart < current);
+  const byPeriod = new Map();
+  for (const b of completed) {
+    if (!byPeriod.has(b.periodStart)) byPeriod.set(b.periodStart, []);
+    byPeriod.get(b.periodStart).push(b);
   }
-  console.log(`[crowd-flow] started ${SYMBOLS.length} coins × ${EXCHANGES.length} exchanges = ${SYMBOLS.length * EXCHANGES.length} streams`);
-}
-async function convexPost(data) {
-  const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN;
-  if (!base || !token) throw new Error('Convex environment variables missing');
-  const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ type: 'crowdFlow.period', data }) });
-  if (!response.ok) throw new Error(`Convex ${response.status}`);
-}
-async function claimAlert(periodStart, symbol) {
-  const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN;
-  if (!base || !token) return true;
-  try {
-    const response = await fetch(`${base.replace(/\/$/, '')}/claim-crowd-flow-alert`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ periodStart, symbol, alertType: 'MAX_IMBALANCE' }) });
-    if (!response.ok) return true;
-    const result = await response.json().catch(() => ({}));
-    return result.claimed !== false;
-  } catch (e) {
-    console.warn(`[crowd-flow] claim failed: ${e.message}; sending alert anyway`);
-    return true;
-  }
-}
-function completedBuckets(completedStart) { return [...state.values()].filter(x => x.periodStart === completedStart); }
-async function processPeriod(completedStart) {
-  const rows = completedBuckets(completedStart);
-  if (!rows.length) { console.log(`[crowd-flow] period=${completedStart} no data`); return; }
-  const enriched = rows.map(x => {
-    const total = x.buyUsd + x.sellUsd;
-    const cvdUsd = x.buyUsd - x.sellUsd;
-    const imbalancePct = total > 0 ? Math.abs(cvdUsd) / total * 100 : 0;
-    return { ...x, cvdUsd, imbalancePct, direction: cvdUsd >= 0 ? 'BUY' : 'SELL', periodEnd: completedStart + PERIOD_MS };
-  });
-  const winner = enriched.filter(x => x.buyUsd + x.sellUsd > 0).sort((a, b) => b.imbalancePct - a.imbalancePct)[0];
-  console.log(`[crowd-flow] period=${completedStart} rows=${enriched.length} winner=${winner ? `${winner.symbol} ${winner.imbalancePct.toFixed(2)}%` : 'none'}`);
-
-  for (const x of enriched) {
-    try {
-      await convexPost({ symbol: x.symbol, periodStart: x.periodStart, periodEnd: x.periodEnd, buyUsd: x.buyUsd, sellUsd: x.sellUsd, cvdUsd: x.cvdUsd, imbalancePct: x.imbalancePct, trades: x.trades, exchanges: x.exchanges, direction: x.direction, recordedAt: Date.now() });
-    } catch (e) {
-      console.error(`[crowd-flow] Convex failed ${x.symbol} period=${completedStart}: ${e.message}`);
+  for (const [p, rows] of byPeriod) {
+    for (const b of rows) {
+      const total = b.buyUsd + b.sellUsd;
+      b.cvdUsd = b.buyUsd - b.sellUsd;
+      b.imbalancePct = total > 0 ? Math.abs(b.cvdUsd) / total * 100 : 0;
+      b.direction = b.cvdUsd >= 0 ? 'BUY' : 'SELL';
+      console.log(`[crowd-flow] closed ${b.symbol} ${p} BUY=${b.buyUsd.toFixed(2)} SELL=${b.sellUsd.toFixed(2)} CVD=${b.cvdUsd.toFixed(2)} IMB=${b.imbalancePct.toFixed(2)} TRADES=${b.trades}`);
+    }
+    rows.sort((a, b) => b.imbalancePct - a.imbalancePct);
+    const winner = rows[0];
+    if (winner && !alertedPeriods.has(p) && winner.imbalancePct > 0) {
+      alertedPeriods.add(p);
+      sendAlert(winner).catch(e => console.warn(`[crowd-flow] alert error: ${e.message}`));
+    }
+    for (const b of rows) {
+      fetch(`${process.env.CONVEX_URL}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.CONVEX_INGEST_TOKEN}` }, body: JSON.stringify({ type: 'crowdFlow.period', symbol: b.symbol, periodStart: b.periodStart, buyUsd: b.buyUsd, sellUsd: b.sellUsd, cvdUsd: b.cvdUsd, imbalancePct: b.imbalancePct, trades: b.trades, direction: b.direction }) }).catch(e => console.warn(`[crowd-flow] convex ${b.symbol}: ${e.message}`));
+      state.delete(`${b.symbol}:${b.periodStart}`);
     }
   }
-  if (!winner || alertedPeriods.has(String(completedStart))) return;
-  const claimed = await claimAlert(completedStart, winner.symbol);
-  if (!claimed) { console.log(`[crowd-flow] alert already claimed period=${completedStart} symbol=${winner.symbol}`); return; }
-  let url = constructMarketUrl(winner.symbol, completedStart + PERIOD_MS, '5m');
-  try {
-    const market = await findMarketByEpoch(winner.symbol, completedStart + PERIOD_MS, '5m');
-    if (market?.url) url = market.url;
-  } catch (e) { console.warn(`[crowd-flow] market lookup failed: ${e.message}; using fallback URL`); }
-  const sign = winner.cvdUsd >= 0 ? 'BUY' : 'SELL';
-  const message = [`🔥 ${winner.symbol} · 5M CVD IMBALANCE`,`IMBALANCE: ${winner.imbalancePct.toFixed(2)}% → ${sign}`,`CVD: ${winner.cvdUsd >= 0 ? '+' : '-'}$${Math.abs(winner.cvdUsd).toFixed(0)}`,`BUY: $${winner.buyUsd.toFixed(0)}`,`SELL: $${winner.sellUsd.toFixed(0)}`,`TRADES: ${winner.trades}`,'',`➡️ NEXT · Polymarket 5M`,url].join('\n');
-  await sendTelegramMessage(message);
-  alertedPeriods.add(String(completedStart));
-  console.log(`[crowd-flow] ALERT period=${completedStart} winner=${winner.symbol} imbalance=${winner.imbalancePct.toFixed(2)}% cvd=${winner.cvdUsd.toFixed(0)}`);
-  for (const x of enriched) state.delete(`${x.symbol}:${x.periodStart}`);
 }
-async function tick() {
-  const completedStart = periodStart(Date.now()) - PERIOD_MS;
-  try { await processPeriod(completedStart); } catch (e) { console.error(`[crowd-flow] PERIOD FAILED ${completedStart}: ${e.stack || e.message}`); }
+async function sendAlert(b) {
+  const claimed = await fetch(`${process.env.CONVEX_URL}/claim-crowd-flow-alert`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.CONVEX_INGEST_TOKEN}` }, body: JSON.stringify({ symbol: b.symbol, periodStart: b.periodStart }) }).then(r => r.json());
+  if (!claimed.ok) return;
+  const market = await findMarketByEpoch(b.symbol, Date.now(), '5m');
+  const url = market ? constructMarketUrl(market) : '';
+  const arrow = b.direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
+  const text = `🔥 ${b.symbol} · 5M · ${arrow}\nCVD: ${b.cvdUsd >= 0 ? '+' : '-'}$${Math.abs(b.cvdUsd).toFixed(0)}\nBUY: $${b.buyUsd.toFixed(0)}\nSELL: $${b.sellUsd.toFixed(0)}\nIMBALANCE: ${b.imbalancePct.toFixed(1)}%\nTRADES: ${b.trades}\n\n➡️ Polymarket 5M\n${url}`;
+  await sendTelegramMessage(text);
 }
-process.on('SIGTERM', () => { for (const ws of sockets) try { ws.close(); } catch {} process.exit(0); });
-process.on('SIGINT', () => { for (const ws of sockets) try { ws.close(); } catch {} process.exit(0); });
-(async () => { console.log(`[crowd-flow] CVD 5m monitor: ${SYMBOLS.join(', ')}; exchanges=${EXCHANGES.join(', ')}; winner=max absolute imbalance per 5m period`); connectAll(); await tick(); setInterval(tick, 15000); })();
+for (const symbol of SYMBOLS) { connectBinance(symbol); connectBybit(symbol); connectOkx(symbol); connectGate(symbol); connectHyperliquid(symbol); }
+setInterval(closeCompletedPeriods, 15000);
+console.log(`[crowd-flow] started symbols=${SYMBOLS.join(',')} exchanges=${EXCHANGES.join(',')}`);
