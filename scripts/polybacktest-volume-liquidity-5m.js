@@ -55,8 +55,8 @@ function nextBoundary(now = Date.now()) {
   return d.getTime();
 }
 
-function marketSlug(endMs) {
-  return `btc-updown-5m-${Math.floor(endMs / 1000) - 300}`;
+function marketSlug(startMs) {
+  return `btc-updown-5m-${Math.floor(startMs / 1000)}`;
 }
 
 async function getMarketBySlug(slug) {
@@ -70,7 +70,6 @@ async function getMarketBySlug(slug) {
   const volumeRaw = x.volume ?? x.total_volume ?? x.current_volume ?? x.final_volume;
   const volume = volumeRaw == null ? null : num(volumeRaw);
   console.log(`[polybacktest] market ${slug} id=${id} volume=${volume == null ? 'missing' : volume} final_volume=${x.final_volume ?? 'missing'}`);
-
   return { id, slug: x.slug ?? slug, volume };
 }
 
@@ -80,39 +79,35 @@ function sumBook(book) {
     .reduce((sum, level) => sum + num(level.price) * num(level.size), 0);
 }
 
-async function snapshotRequest(marketId, timestamp) {
-  const path = `/markets/${encodeURIComponent(marketId)}/snapshot-at/${timestamp}?coin=${COIN}`;
-  console.log(`[polybacktest] GET ${path}`);
-  return api(path);
-}
-
-async function getBoundarySnapshot(market, boundaryMs, isCurrent) {
-  // A newly opened Polymarket market can have its first stored snapshot a few
-  // seconds after the boundary. Try the exact boundary first, then +5s.
-  const candidates = isCurrent ? [boundaryMs, boundaryMs + 5000] : [boundaryMs, boundaryMs - 2000];
+async function getEndLiquidity(market, endMs) {
+  // Use a snapshot just before the market ends. The exact end timestamp can
+  // have no stored snapshot because the market is no longer active then.
+  const candidates = [endMs - 2000, endMs - 1000];
   let lastError;
   for (const ts of candidates) {
     try {
-      const d = await snapshotRequest(market.id, ts);
+      const path = `/markets/${encodeURIComponent(market.id)}/snapshot-at/${ts}?coin=${COIN}`;
+      console.log(`[polybacktest] GET ${path}`);
+      const d = await api(path);
       const snapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
-      if (!snapshots.length) throw new Error(`empty snapshot response`);
+      if (!snapshots.length) throw new Error('empty snapshot response');
       const s = snapshots[0];
       const liquidity = sumBook(s.orderbook_up) + sumBook(s.orderbook_down);
-      console.log(`[polybacktest] snapshot ${market.id} requested=${ts} actual=${s.time} liquidity=${liquidity.toFixed(2)} price_up=${s.price_up ?? 'n/a'} price_down=${s.price_down ?? 'n/a'}`);
+      console.log(`[polybacktest] end snapshot ${market.id} requested=${ts} actual=${s.time} liquidity=${liquidity.toFixed(2)}`);
       if (liquidity > 0) return { liquidity, snapshotTime: s.time };
-      lastError = new Error(`zero liquidity`);
+      lastError = new Error('zero liquidity');
     } catch (err) {
       lastError = err;
-      console.log(`[polybacktest] snapshot miss ${market.id} at ${ts}: ${err.message}`);
+      console.log(`[polybacktest] end snapshot miss ${market.id} at ${ts}: ${err.message}`);
     }
   }
-  throw lastError || new Error(`No usable snapshot for ${market.id}`);
+  throw lastError || new Error(`No usable end snapshot for ${market.id}`);
 }
 
-function alertText(prev, curr, boundaryMs) {
-  const volumeAvailable = prev.volume != null && curr.volume != null && prev.volume > 0;
-  const vd = volumeAvailable ? pct(prev.volume, curr.volume) : null;
-  const ld = pct(prev.liquidity, curr.liquidity);
+function alertText(previous, completed, nextMarket, completedEndMs) {
+  const volumeAvailable = previous.volume != null && completed.volume != null && previous.volume > 0;
+  const vd = volumeAvailable ? pct(previous.volume, completed.volume) : null;
+  const ld = pct(previous.liquidity, completed.liquidity);
   const combination = volumeAvailable
     ? (vd >= 0 && ld >= 0 ? 'VOLUME ↑ + LIQUIDITY ↑' : vd < 0 && ld < 0 ? 'VOLUME ↓ + LIQUIDITY ↓' : 'MIXED')
     : 'LIQUIDITY ONLY (VOLUME NOT YET PUBLISHED)';
@@ -122,40 +117,45 @@ function alertText(prev, curr, boundaryMs) {
     `🔥 BTC · POLYBACKTEST 5M`,
     volumeAvailable ? `VOLUME: ${vd >= 0 ? 'UP' : 'DOWN'} ${fmtPct(vd)}` : `VOLUME: NOT YET PUBLISHED`,
     `LIQUIDITY: ${ld >= 0 ? 'UP' : 'DOWN'} ${fmtPct(ld)}`,
-    volumeAvailable ? `VOLUME: ${fmtUsd(prev.volume)} → ${fmtUsd(curr.volume)}` : `VOLUME: ${prev.volume == null ? 'N/A' : fmtUsd(prev.volume)} → N/A`,
-    `LIQUIDITY: ${fmtUsd(prev.liquidity)} → ${fmtUsd(curr.liquidity)}`,
+    volumeAvailable ? `VOLUME: ${fmtUsd(previous.volume)} → ${fmtUsd(completed.volume)}` : `VOLUME: ${previous.volume == null ? 'N/A' : fmtUsd(previous.volume)} → N/A`,
+    `LIQUIDITY: ${fmtUsd(previous.liquidity)} → ${fmtUsd(completed.liquidity)}`,
     `COMBINATION: ${combination}`,
     `WINNER: ${winner}`,
-    `PERIOD: ${new Date(boundaryMs - 300000).toISOString()} → ${new Date(boundaryMs).toISOString()}`,
+    `COMPLETED: ${new Date(completedEndMs - 300000).toISOString()} → ${new Date(completedEndMs).toISOString()}`,
     '',
-    '➡️ POLYMARKET 5M', `https://polymarket.com/event/${curr.slug}`,
+    '➡️ NEXT · POLYMARKET 5M', `https://polymarket.com/event/${nextMarket.slug}`,
   ].join('\n');
 }
 
 async function main() {
-  console.log('[polybacktest] exact-boundary BTC 5m watcher (snapshot-at)');
+  console.log('[polybacktest] boundary BTC 5m watcher (completed-period metrics)');
 
   const boundary = nextBoundary();
   const wait = Math.max(0, boundary - Date.now());
   console.log(`[polybacktest] boundary=${new Date(boundary).toISOString()} wait=${Math.ceil(wait / 1000)}s`);
   if (wait) await sleep(wait);
 
-  const currentSlug = marketSlug(boundary);
-  const previousEnd = boundary - 300000;
-  const previousSlug = marketSlug(previousEnd);
-  console.log(`[polybacktest] target=${currentSlug} previous=${previousSlug}`);
+  // At the boundary, the market ending now is the completed period.
+  // Compare it with the immediately preceding completed period.
+  const completedStart = boundary - 300000;
+  const previousStart = boundary - 600000;
+  const completedSlug = marketSlug(completedStart);
+  const previousSlug = marketSlug(previousStart);
+  const nextSlug = marketSlug(boundary);
+  console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
 
-  const curr = await getMarketBySlug(currentSlug);
-  const prev = await getMarketBySlug(previousSlug);
+  const completed = await getMarketBySlug(completedSlug);
+  const previous = await getMarketBySlug(previousSlug);
+  const nextMarket = await getMarketBySlug(nextSlug);
 
-  curr.boundary = await getBoundarySnapshot(curr, boundary, true);
-  prev.boundary = await getBoundarySnapshot(prev, previousEnd, false);
-  curr.liquidity = curr.boundary.liquidity;
-  prev.liquidity = prev.boundary.liquidity;
+  completed.boundary = await getEndLiquidity(completed, boundary);
+  previous.boundary = await getEndLiquidity(previous, completedStart);
+  completed.liquidity = completed.boundary.liquidity;
+  previous.liquidity = previous.boundary.liquidity;
 
-  console.log(`[polybacktest] values volume=${prev.volume ?? 'N/A'}->${curr.volume ?? 'N/A'} liquidity=${prev.liquidity}->${curr.liquidity}`);
-  await sendTelegram(alertText(prev, curr, boundary));
-  console.log(`[polybacktest] TELEGRAM SENT ${curr.id}`);
+  console.log(`[polybacktest] values volume=${previous.volume ?? 'N/A'}->${completed.volume ?? 'N/A'} liquidity=${previous.liquidity}->${completed.liquidity}`);
+  await sendTelegram(alertText(previous, completed, nextMarket, boundary));
+  console.log(`[polybacktest] TELEGRAM SENT next=${nextMarket.id}`);
 }
 
 main().catch(err => {
