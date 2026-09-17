@@ -39,3 +39,4 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  }
 }
 (async () => { console.log(`[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; alerts enabled; imbalance >= ${MIN_IMBALANCE_PCT}%`); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
+// Trigger a fresh Actions run from the already-correct 41% threshold code.
