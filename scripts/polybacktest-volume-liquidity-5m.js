@@ -80,15 +80,14 @@ async function main() {
   const completedLiq = await snapshotLiquidity(completed.id, boundary);
   const delta = completedLiq - previousLiq;
   const pct = previousLiq === 0 ? null : (delta / previousLiq) * 100;
-  const direction = delta > 0 ? 'LIQUIDITY ↑' : delta < 0 ? 'LIQUIDITY ↓' : 'LIQUIDITY →';
+  const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
   const text = [
-    '🔥 BTC · 5M LIQUIDITY',
+    '🔥 BTC · 5M',
     `PREVIOUS: $${previousLiq.toFixed(2)}`,
     `LAST 5M: $${completedLiq.toFixed(2)}`,
-    `${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
-    `PERIOD: ${completedSlug}`,
+    `LIQUIDITY ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
