@@ -66,11 +66,14 @@ async function send(text) {
       try { d = JSON.parse(raw); } catch { throw new Error(`invalid JSON response: ${raw}`); }
       const messageId = d.result?.message_id;
       const actualChatId = d.result?.chat?.id;
-      console.log(`[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_id=${actualChatId ?? 'none'}`);
+      const chatType = d.result?.chat?.type ?? 'unknown';
+      const chatIdText = String(actualChatId ?? '');
+      const chatSuffix = chatIdText ? chatIdText.slice(-4) : 'none';
+      console.log(`[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`);
       const expected = String(env.TELEGRAM_CHAT_ID);
       const chatMatches = !/^-?\d+$/.test(expected) || String(actualChatId ?? '') === expected;
       if (r.ok && d.ok === true && messageId && chatMatches) {
-        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId} chat_id=${actualChatId}`);
+        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId} chat_type=${chatType} chat_id_suffix=${chatSuffix}`);
         return true;
       }
       throw new Error(`Telegram API did not confirm delivery: ${raw}`);
