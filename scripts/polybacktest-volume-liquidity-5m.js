@@ -30,28 +30,19 @@ async function market(s) {
   const d = await api(`/markets/by-slug/${encodeURIComponent(s)}?coin=${COIN}`);
   const x = unwrapMarket(d, s);
   const id = x.id ?? x.market_id;
-  const volume = x.final_volume ?? x.volume ?? x.total_volume ?? x.current_volume ?? null;
-  console.log(`[polybacktest] market ${s} id=${id} volume=${volume ?? 'missing'}`);
-  return {id, slug:x.slug || s, volume};
+  console.log(`[polybacktest] market ${s} id=${id}`);
+  return {id, slug:x.slug || s};
 }
 
 async function snapshotLiquidity(id, endMs) {
-  const candidates = [
-    endMs - 2000,
-    endMs - 5000,
-    endMs - 10000,
-    endMs - 15000,
-    endMs - 30000,
-    endMs - 60000,
-    endMs - 120000
-  ];
+  const candidates = [endMs - 2000,endMs - 5000,endMs - 10000,endMs - 15000,endMs - 30000,endMs - 60000,endMs - 120000];
   for (const ts of candidates) {
     try {
       console.log(`[polybacktest] snapshot ${id} ts=${new Date(ts).toISOString()}`);
       const d = await api(`/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`);
       const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
       if (!s) continue;
-      const sum = b => [...(b?.bids || []), ...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
+      const sum = b => [...(b?.bids || []),...(b?.asks || [])].reduce((a,l)=>a+num(l.price)*num(l.size),0);
       const liquidity = sum(s.orderbook_up) + sum(s.orderbook_down);
       console.log(`[polybacktest] snapshot OK ${id} time=${s.time} liquidity=${liquidity.toFixed(2)}`);
       return liquidity;
@@ -70,9 +61,9 @@ async function send(text) {
 
 async function main() {
   const boundary = nextBoundary();
-  console.log(`[polybacktest] boundary BTC 5m watcher`);
+  console.log(`[polybacktest] liquidity-only BTC 5m watcher`);
   console.log(`[polybacktest] waiting for ${new Date(boundary).toISOString()}`);
-  while (Date.now() < boundary) await sleep(Math.min(1000, boundary-Date.now()));
+  while (Date.now() < boundary) await sleep(Math.min(1000,boundary-Date.now()));
 
   const completedStart = boundary - PERIOD;
   const previousStart = boundary - 2*PERIOD;
@@ -87,23 +78,21 @@ async function main() {
 
   const previousLiq = await snapshotLiquidity(previous.id, completedStart);
   const completedLiq = await snapshotLiquidity(completed.id, boundary);
-
-  const volumeText = previous.volume != null && completed.volume != null
-    ? `$${num(previous.volume).toFixed(2)} → $${num(completed.volume).toFixed(2)}`
-    : 'NOT YET PUBLISHED';
-  const dv = previous.volume != null && completed.volume != null ? num(completed.volume)-num(previous.volume) : null;
-  const dl = completedLiq-previousLiq;
-  const combination = dv == null ? (dl >= 0 ? 'LIQUIDITY ↑' : 'LIQUIDITY ↓') : dv >= 0 && dl >= 0 ? 'VOLUME ↑ + LIQUIDITY ↑' : dv < 0 && dl < 0 ? 'VOLUME ↓ + LIQUIDITY ↓' : 'MIXED';
+  const delta = completedLiq - previousLiq;
+  const pct = previousLiq === 0 ? null : (delta / previousLiq) * 100;
+  const direction = delta > 0 ? 'LIQUIDITY ↑' : delta < 0 ? 'LIQUIDITY ↓' : 'LIQUIDITY →';
+  const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
   const text = [
-    '🔥 BTC · POLYBACKTEST 5M',
-    `VOLUME: ${volumeText}`,
-    `LIQUIDITY: $${previousLiq.toFixed(2)} → $${completedLiq.toFixed(2)}`,
-    `COMBINATION: ${combination}`,
-    `COMPLETED: ${completedSlug}`,
-    '➡️ NEXT · POLYMARKET 5M',
+    '🔥 BTC · 5M LIQUIDITY',
+    `PREVIOUS: $${previousLiq.toFixed(2)}`,
+    `LAST 5M: $${completedLiq.toFixed(2)}`,
+    `${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
+    `PERIOD: ${completedSlug}`,
+    '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
+
   console.log('[polybacktest] sending Telegram now');
   await send(text);
   console.log(`[polybacktest] TELEGRAM SENT ${nextSlug}`);
