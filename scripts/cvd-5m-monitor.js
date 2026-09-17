@@ -3,12 +3,10 @@ const { findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 const PERIOD_MS = 5 * 60 * 1000;
 const POLL_MS = 15000;
-const CVD_ALERTS_ENABLED = false;
+const CVD_ALERTS_ENABLED = true;
+const MIN_IMBALANCE_PCT = 40;
 const periods = new Map();
 const alerted = new Set();
-let lastDirection = null;
-let consecutiveDirectionPeriods = 0;
-let consecutiveDirection = null;
 let gateContractSize = 0.0001;
 function bucket(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
 function getPeriod(start) { if (!periods.has(start)) periods.set(start, { buyUsd: 0, sellUsd: 0, buyEvents: 0, sellEvents: 0, trades: 0, exchanges: {} }); return periods.get(start); }
@@ -21,17 +19,15 @@ async function loadGateContractSize() { try { const r = await fetch('https://api
 function connectGate() { connect('gate', 'wss://fx-ws.gateio.ws/v4/ws/usdt', m => { if (!Array.isArray(m.result)) return; for (const t of m.result) { const size = Number(t.size), price = Number(t.price), ts = Number(t.create_time_ms || Number(t.create_time || 0) * 1000); addTrade('gate', ts, size >= 0 ? 'BUY' : 'SELL', Math.abs(size) * gateContractSize * price); } }).on('open', function () { this.send(JSON.stringify({ time: Math.floor(Date.now() / 1000), channel: 'futures.trades', event: 'subscribe', payload: ['BTC_USDT'] })); }); }
 function connectHyperliquid() { connect('hyperliquid', 'wss://api.hyperliquid.xyz/ws', m => { if (m.channel !== 'trades') return; for (const t of (m.data || [])) { const side = String(t.side || '').toUpperCase(); const normalized = side === 'A' || side === 'BUY' ? 'BUY' : side === 'B' || side === 'SELL' ? 'SELL' : null; addTrade('hyperliquid', Number(t.time), normalized, Number(t.px) * Number(t.sz)); } }).on('open', function () { this.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: 'BTC' } })); }); }
 async function convexPost(data) { const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN; if (!base || !token) throw new Error('Convex environment variables missing'); const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ type: 'cvd5m.period', data }) }); const text = await response.text(); if (!response.ok) throw new Error(`Convex ${response.status}: ${text}`); console.log(`[cvd-5m] Convex saved period=${data.periodStart} response=${text || 'ok'}`); }
-async function loadLastDirection() { try { const base = process.env.CONVEX_URL; if (!base) return; const r = await fetch(`${base.replace(/\/$/, '')}/cvd-5m/periods?symbol=BTC&limit=20`); if (!r.ok) return; const rows = await r.json(); const list = Array.isArray(rows) ? rows : rows?.periods; if (!Array.isArray(list) || !list.length) return; const chronological = [...list].sort((a, b) => Number(a.periodStart) - Number(b.periodStart)); const nonNeutral = chronological.filter(r => r?.direction === 'BUY' || r?.direction === 'SELL'); const latest = nonNeutral[nonNeutral.length - 1]; if (!latest) return; lastDirection = latest.direction; consecutiveDirection = latest.direction; consecutiveDirectionPeriods = 1; for (let i = nonNeutral.length - 2; i >= 0; i--) { if (nonNeutral[i].direction !== latest.direction) break; consecutiveDirectionPeriods += 1; } console.log(`[cvd-5m] previous direction=${lastDirection}; consecutive=${consecutiveDirectionPeriods}`); } catch (e) { console.error(`[cvd-5m] previous direction load failed: ${e.message}`); } }
 async function isCvdCooldown(periodStart) { try { const base = process.env.CONVEX_URL; if (!base) return false; const r = await fetch(`${base.replace(/\/$/, '')}/cvd-5m/latest-alert?symbol=BTC`); if (!r.ok) return false; const rows = await r.json(); const latest = Array.isArray(rows) ? rows[0] : rows?.[0]; if (!latest) return false; const lastAlertPeriod = Number(latest.periodStart); if (!Number.isFinite(lastAlertPeriod)) return false; return periodStart <= lastAlertPeriod + PERIOD_MS; } catch (e) { console.error(`[cvd-5m] cooldown check failed: ${e.message}`); return false; } }
 async function claimCvdAlert(periodStart) { const base = process.env.CONVEX_URL, token = process.env.CONVEX_INGEST_TOKEN; if (!base || !token) throw new Error('Convex environment variables missing'); const r = await fetch(`${base.replace(/\/$/, '')}/claim-cvd-5m-alert`, { method:'POST', headers:{'content-type':'application/json',authorization:`Bearer ${token}`}, body:JSON.stringify({symbol:'BTC',periodStart,sentAt:Date.now()}) }); if (!r.ok) throw new Error(`Convex CVD claim ${r.status}`); const result = await r.json(); return result?.claimed === true; }
-async function closeCompletedPeriods() { const current = bucket(Date.now()); for (const [start, data] of periods) { if (start >= current || alerted.has(start)) continue; const total = data.buyUsd + data.sellUsd, cvd = data.buyUsd - data.sellUsd; const imbalancePct = total > 0 ? Math.abs(cvd) / total * 100 : 0; const direction = cvd > 0 ? 'BUY' : cvd < 0 ? 'SELL' : 'NEUTRAL'; if (direction === 'NEUTRAL') { consecutiveDirection = null; consecutiveDirectionPeriods = 0; } else if (direction === consecutiveDirection) { consecutiveDirectionPeriods += 1; } else { consecutiveDirection = direction; consecutiveDirectionPeriods = 1; }
+async function closeCompletedPeriods() { const current = bucket(Date.now()); for (const [start, data] of periods) { if (start >= current || alerted.has(start)) continue; const total = data.buyUsd + data.sellUsd, cvd = data.buyUsd - data.sellUsd; const imbalancePct = total > 0 ? Math.abs(cvd) / total * 100 : 0; const direction = cvd > 0 ? 'BUY' : cvd < 0 ? 'SELL' : 'NEUTRAL';
  const currentMarket = await findMarketByEpoch('BTC', current, '5m');
  const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(current / 1000)}`;
  await convexPost({ symbol: 'BTC', periodStart: start, periodEnd: start + PERIOD_MS, buyUsd: Number(data.buyUsd.toFixed(2)), sellUsd: Number(data.sellUsd.toFixed(2)), cvdUsd: Number(cvd.toFixed(2)), imbalancePct: Number(imbalancePct.toFixed(4)), buyEvents: data.buyEvents, sellEvents: data.sellEvents, trades: data.trades, direction, recordedAt: Date.now() });
- if (direction !== 'NEUTRAL') lastDirection = direction;
  alerted.add(start); periods.delete(start);
- console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} trades=${data.trades} consecutive=${consecutiveDirectionPeriods}`);
- if (!CVD_ALERTS_ENABLED || direction === 'NEUTRAL' || consecutiveDirectionPeriods < 3) continue;
+ console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} imbalance=${imbalancePct.toFixed(1)}% trades=${data.trades}`);
+ if (!CVD_ALERTS_ENABLED || direction === 'NEUTRAL' || imbalancePct < MIN_IMBALANCE_PCT) continue;
  if (await isCvdCooldown(start)) { console.log(`[cvd-5m] TIMEOUT 1 PERIOD period=${start}`); continue; }
  const sign = cvd >= 0 ? '+' : '';
  const title = direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
@@ -42,4 +38,4 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  console.log(`[cvd-5m] ALERT SENT period=${start}`);
  }
 }
-(async () => { console.log('[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; ALERTS DISABLED'); await loadLastDirection(); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
+(async () => { console.log(`[cvd-5m] start BTC 5m MULTI-EXCHANGE CVD: Binance + Bybit + OKX + Gate + Hyperliquid; alerts enabled; imbalance >= ${MIN_IMBALANCE_PCT}%`); await loadGateContractSize(); connectBinance(); connectBybit(); connectOkx(); connectGate(); connectHyperliquid(); await closeCompletedPeriods(); setInterval(() => closeCompletedPeriods().catch(e => console.error(`[cvd-5m] close failed: ${e.message}`)), POLL_MS); })();
