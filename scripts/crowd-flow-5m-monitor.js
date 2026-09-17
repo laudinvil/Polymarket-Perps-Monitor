@@ -107,20 +107,7 @@ async function loadPeriod(symbol, periodStart) {
   const imbalancePct = total > 0 ? Math.abs(cvdUsd) / total * 100 : 0;
   const direction = cvdUsd > 0 ? 'BUY' : cvdUsd < 0 ? 'SELL' : 'NEUTRAL';
 
-  return {
-    symbol,
-    market,
-    trades: trades.length,
-    buyUsd,
-    sellUsd,
-    cvdUsd,
-    imbalancePct,
-    buyEvents,
-    sellEvents,
-    direction,
-    closeUp,
-    closeDown
-  };
+  return { symbol, market, trades: trades.length, buyUsd, sellUsd, cvdUsd, imbalancePct, buyEvents, sellEvents, direction, closeUp, closeDown };
 }
 
 async function saveCompletedPeriod(periodStart, data) {
@@ -131,12 +118,6 @@ async function saveCompletedPeriod(periodStart, data) {
     periodStart,
     periodEnd: periodStart + PERIOD,
     trades: data.trades,
-    buyUsd: Number(data.buyUsd.toFixed(2)),
-    sellUsd: Number(data.sellUsd.toFixed(2)),
-    cvdUsd: Number(data.cvdUsd.toFixed(2)),
-    imbalancePct: Number(data.imbalancePct.toFixed(4)),
-    buyEvents: data.buyEvents,
-    sellEvents: data.sellEvents,
     direction: data.direction,
     closeUp: data.closeUp ?? undefined,
     closeDown: data.closeDown ?? undefined,
@@ -149,7 +130,6 @@ async function saveCompletedPeriod(periodStart, data) {
 async function alertMaxImbalance(periodStart, results) {
   const candidates = results.filter(x => x && x.direction !== 'NEUTRAL' && x.imbalancePct > 0);
   if (!candidates.length || alertedPeriods.has(String(periodStart))) return;
-
   candidates.sort((a, b) => b.imbalancePct - a.imbalancePct);
   const winner = candidates[0];
   const claimed = await claimCrowdFlowAlert(periodStart, winner.symbol);
@@ -187,13 +167,11 @@ async function tick() {
       console.error(`[crowd-flow] ${symbol} PERIOD LOAD FAILED period=${completedStart}: ${e.message}`);
       return null;
     })));
-
     for (const result of results) {
       if (!result) continue;
       try { await saveCompletedPeriod(completedStart, result); }
       catch (e) { console.error(`[crowd-flow] ${result.symbol} STATS SAVE FAILED: ${e.message}`); }
     }
-
     await alertMaxImbalance(completedStart, results);
   } catch (e) {
     console.error(`[crowd-flow] TICK FAILED period=${completedStart}: ${e.message}`);
