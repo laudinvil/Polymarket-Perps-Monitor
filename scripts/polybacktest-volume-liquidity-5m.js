@@ -101,7 +101,7 @@ async function getDetails(market) {
   };
 }
 
-async function process() {
+async function pollOnce() {
   const markets = await getMarkets();
   if (!markets.length) return;
   const market = markets[markets.length - 1];
@@ -129,7 +129,7 @@ async function process() {
 console.log('[polybacktest] start BTC 5m');
 
 async function loop() {
-  try { await process(); }
+  try { await pollOnce(); }
   catch (err) { console.error(`[polybacktest] LOOP FAILED ${err.stack || err.message}`); }
   setTimeout(loop, POLL_MS);
 }
