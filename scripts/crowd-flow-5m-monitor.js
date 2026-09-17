@@ -1,26 +1,89 @@
-const WebSocket = require('ws');
-const { findMarketByEpoch } = require('../src/polymarket');
+const { bucketStart, findMarketByEpoch } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
-const PERIOD_MS = 5 * 60 * 1000;
-const POLL_MS = 15000;
-const SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'DOGE', 'BNB'];
-const periods = new Map();
-const processed = new Set();
-const alerted = new Set();
-const gateContractSize = {};
+const PERIOD = 300000;
+const ALERT_THRESHOLD = 2500;
+const DATA_API = 'https://data-api.polymarket.com/trades';
+const saved = new Set();
+const alertedPeriods = new Set();
+let previousTrades = null;
+let increaseStreak = 0;
+let previousPeriodStart = null;
+const start = () => bucketStart(Date.now(), '5m');
 
-function bucket(ts) { return Math.floor(ts / PERIOD_MS) * PERIOD_MS; }
-function getPeriod(symbol, start) { const key = `${symbol}:${start}`; if (!periods.has(key)) periods.set(key, { symbol, start, buyUsd:0, sellUsd:0, buyEvents:0, sellEvents:0, trades:0 }); return periods.get(key); }
-function addTrade(symbol, exchange, ts, side, usd) { if (!SYMBOLS.includes(symbol) || !Number.isFinite(ts) || !Number.isFinite(usd) || usd <= 0 || !side) return; const p=getPeriod(symbol,bucket(ts)); p.trades++; if(side==='BUY'){p.buyUsd+=usd;p.buyEvents++;} else {p.sellUsd+=usd;p.sellEvents++;} }
-function connect(name,url,onMessage){const ws=new WebSocket(url);ws.on('open',()=>console.log(`[crowd-flow] ${name} connected`));ws.on('message',raw=>{try{onMessage(JSON.parse(raw.toString()));}catch(e){console.error(`[crowd-flow] ${name} parse: ${e.message}`);}});ws.on('error',e=>console.error(`[crowd-flow] ${name} error: ${e.message}`));ws.on('close',()=>{console.error(`[crowd-flow] ${name} disconnected; reconnecting`);setTimeout(()=>connect(name,url,onMessage),3000);});return ws;}
-function connectBinance(symbol){connect(`binance-${symbol}`,`wss://fstream.binance.com/ws/${symbol.toLowerCase()}usdt@aggTrade`,m=>addTrade(symbol,'binance',Number(m.T),m.m?'SELL':'BUY',Number(m.p)*Number(m.q)));}
-function connectBybit(symbol){connect(`bybit-${symbol}`,'wss://stream.bybit.com/v5/public/linear',m=>{for(const t of(m.data||[])){const s=String(t.S||'').toUpperCase();addTrade(symbol,'bybit',Number(t.T),s==='BUY'?'BUY':s==='SELL'?'SELL':null,Number(t.p)*Number(t.v));}}).on('open',function(){this.send(JSON.stringify({op:'subscribe',args:[`publicTrade.${symbol}USDT`]}));});}
-function connectOkx(symbol){connect(`okx-${symbol}`,'wss://ws.okx.com:8443/ws/v5/public',m=>{for(const t of(m.data||[])){const s=String(t.side||'').toUpperCase();addTrade(symbol,'okx',Number(t.ts),s==='BUY'?'BUY':s==='SELL'?'SELL':null,Number(t.px)*Number(t.sz)*0.01);}}).on('open',function(){this.send(JSON.stringify({op:'subscribe',args:[{channel:'trades',instId:`${symbol}-USDT-SWAP`}]}));});}
-async function loadGateContractSize(symbol){try{const r=await fetch(`https://api.gateio.ws/api/v4/futures/usdt/contracts/${symbol}_USDT`);if(!r.ok)throw new Error(`Gate contract ${r.status}`);const j=await r.json();const v=Number(j.quanto_multiplier||j.contract_size);gateContractSize[symbol]=Number.isFinite(v)&&v>0?v:0.0001;}catch(e){gateContractSize[symbol]=0.0001;console.error(`[crowd-flow] Gate ${symbol}: ${e.message}`);}}
-function connectGate(symbol){connect(`gate-${symbol}`,'wss://fx-ws.gateio.ws/v4/ws/usdt',m=>{if(!Array.isArray(m.result))return;for(const t of m.result){const size=Number(t.size),price=Number(t.price),ts=Number(t.create_time_ms||Number(t.create_time||0)*1000);addTrade(symbol,'gate',ts,size>=0?'BUY':'SELL',Math.abs(size)*(gateContractSize[symbol]||0.0001)*price);}}).on('open',function(){this.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:'futures.trades',event:'subscribe',payload:[`${symbol}_USDT`]}));});}
-function connectHyperliquid(symbol){connect(`hyperliquid-${symbol}`,'wss://api.hyperliquid.xyz/ws',m=>{if(m.channel!=='trades')return;for(const t of(m.data||[])){const s=String(t.side||'').toUpperCase();const side=s==='A'||s==='BUY'?'BUY':s==='B'||s==='SELL'?'SELL':null;addTrade(symbol,'hyperliquid',Number(t.time),side,Number(t.px)*Number(t.sz));}}).on('open',function(){this.send(JSON.stringify({method:'subscribe',subscription:{type:'trades',coin:symbol}}));});}
-async function convexPost(data){const base=process.env.CONVEX_URL,token=process.env.CONVEX_INGEST_TOKEN;if(!base||!token)throw new Error('Convex environment variables missing');const r=await fetch(`${base.replace(/\/$/,'')}/ingest`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({type:'crowdFlow.period',data})});const text=await r.text();if(!r.ok)throw new Error(`Convex ${r.status}: ${text}`);}
-async function claimAlert(periodStart,symbol){const base=process.env.CONVEX_URL,token=process.env.CONVEX_INGEST_TOKEN;const r=await fetch(`${base.replace(/\/$/,'')}/claim-crowd-flow-alert`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({symbol,periodStart,alertType:'MAX_IMBALANCE',sentAt:Date.now()})});if(!r.ok)throw new Error(`Convex claim ${r.status}`);return(await r.json())?.claimed===true;}
-async function closeCompletedPeriods(){const current=bucket(Date.now());const candidates=[];for(const[key,data]of periods){if(data.start>=current||processed.has(key))continue;const total=data.buyUsd+data.sellUsd,cvd=data.buyUsd-data.sellUsd,imbalance=total>0?Math.abs(cvd)/total*100:0,direction=cvd>0?'BUY':cvd<0?'SELL':'NEUTRAL';const saved={symbol:data.symbol,periodStart:data.start,periodEnd:data.start+PERIOD_MS,buyUsd:Number(data.buyUsd.toFixed(2)),sellUsd:Number(data.sellUsd.toFixed(2)),cvdUsd:Number(cvd.toFixed(2)),imbalancePct:Number(imbalance.toFixed(4)),buyEvents:data.buyEvents,sellEvents:data.sellEvents,trades:data.trades,direction,recordedAt:Date.now()};try{await convexPost(saved);}catch(e){console.error(`[crowd-flow] ${data.symbol} SAVE FAILED: ${e.message}`);continue;}processed.add(key);periods.delete(key);console.log(`[crowd-flow] SAVED ${data.symbol} period=${data.start} direction=${direction} imbalance=${imbalance.toFixed(1)}% trades=${data.trades}`);if(direction!=='NEUTRAL'&&imbalance>0)candidates.push({...saved,rawImbalance:imbalance});}if(!candidates.length)return;candidates.sort((a,b)=>b.rawImbalance-a.rawImbalance);const winner=candidates[0],periodKey=String(winner.periodStart);if(alerted.has(periodKey))return;const claimed=await claimAlert(winner.periodStart,winner.symbol);if(!claimed){alerted.add(periodKey);return;}const market=await findMarketByEpoch(winner.symbol,current,'5m');const url=market?.url||`https://polymarket.com/event/${winner.symbol.toLowerCase()}-updown-5m-${Math.floor(current/1000)}`;const title=winner.direction==='BUY'?'⬆️ BUY UP':'⬇️ BUY DOWN';const message=[`🔥 ${winner.symbol} · 5M · ${title}`,`CVD: ${winner.cvdUsd>=0?'+':''}$${winner.cvdUsd.toFixed(2)}`,`BUY: $${winner.buyUsd.toFixed(2)}`,`SELL: $${winner.sellUsd.toFixed(2)}`,`IMBALANCE: ${winner.imbalancePct.toFixed(1)}%`,`TRADES: ${winner.trades}`,'','➡️ Polymarket 5M',url].join('\n');await sendTelegramMessage(message);alerted.add(periodKey);console.log(`[crowd-flow] ALERT SENT period=${winner.periodStart} winner=${winner.symbol} imbalance=${winner.imbalancePct.toFixed(1)}%`);}
-(async()=>{console.log(`[crowd-flow] start MULTI-EXCHANGE 5M IMBALANCE: ${SYMBOLS.join(', ')}; Binance + Bybit + OKX + Gate + Hyperliquid; signal=MAX ABS(CVD)/(BUY+SELL)`);await Promise.all(SYMBOLS.map(loadGateContractSize));for(const symbol of SYMBOLS){connectBinance(symbol);connectBybit(symbol);connectOkx(symbol);connectGate(symbol);connectHyperliquid(symbol);}await closeCompletedPeriods();setInterval(()=>closeCompletedPeriods().catch(e=>console.error(`[crowd-flow] close failed: ${e.message}`)),POLL_MS);})();
+async function convexPost(data) {
+  const base = process.env.CONVEX_URL;
+  const token = process.env.CONVEX_INGEST_TOKEN;
+  if (!base || !token) throw new Error('Convex environment variables missing');
+  const response = await fetch(`${base.replace(/\/$/, '')}/ingest`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ type: 'crowdFlow.period', data }) });
+  if (!response.ok) throw new Error(`Convex ${response.status}`);
+}
+
+async function fetchFullPeriodTrades(market, periodStart) {
+  if (!market?.conditionId) return null;
+  const startSec = Math.floor(periodStart / 1000), endSec = startSec + 300;
+  const rows = [], seenRows = new Set(); let offset = 0; const limit = 10000;
+  while (true) {
+    const url = new URL(DATA_API);
+    url.searchParams.set('market', market.conditionId); url.searchParams.set('start', String(startSec)); url.searchParams.set('end', String(endSec)); url.searchParams.set('takerOnly', 'true'); url.searchParams.set('limit', String(limit)); url.searchParams.set('offset', String(offset));
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Data API ${response.status}`);
+    const page = await response.json(); if (!Array.isArray(page)) throw new Error('Data API invalid response');
+    for (const trade of page) {
+      const ts = Number(trade.timestamp); if (!Number.isFinite(ts) || ts < startSec || ts >= endSec) continue;
+      const id = `${trade.transactionHash || ''}:${trade.asset || ''}:${trade.timestamp}:${trade.price}:${trade.size}`;
+      if (seenRows.has(id)) continue; seenRows.add(id); rows.push(trade);
+    }
+    if (page.length < limit) break; offset += limit; if (offset > 10000) throw new Error('Data API pagination cap reached inside 5m period');
+  }
+  return rows;
+}
+
+async function loadPeriod(periodStart) {
+  const market = await findMarketByEpoch('BTC', periodStart, '5m');
+  if (!market?.tokenIds?.UP || !market?.tokenIds?.DOWN) return null;
+  const trades = await fetchFullPeriodTrades(market, periodStart); if (trades === null) return null;
+  let closeUp = null, closeDown = null, closeUpTs = -Infinity, closeDownTs = -Infinity;
+  const upToken = String(market.tokenIds.UP), downToken = String(market.tokenIds.DOWN);
+  for (const trade of trades) {
+    const asset = String(trade.asset || ''), price = Number(trade.price), ts = Number(trade.timestamp);
+    if (!Number.isFinite(price) || !Number.isFinite(ts)) continue;
+    if (asset === upToken && ts >= closeUpTs) { closeUp = price; closeUpTs = ts; }
+    if (asset === downToken && ts >= closeDownTs) { closeDown = price; closeDownTs = ts; }
+  }
+  return { market, trades: trades.length, closeUp, closeDown };
+}
+
+async function saveCompletedPeriod(periodStart, data, previous) {
+  const key = String(periodStart); if (saved.has(key)) return;
+  await convexPost({ symbol: 'BTC', periodStart, periodEnd: periodStart + PERIOD, trades: data.trades, previousTrades: previous ?? undefined, change: previous == null ? undefined : data.trades - previous, closeUp: data.closeUp ?? undefined, closeDown: data.closeDown ?? undefined, recordedAt: Date.now() });
+  saved.add(key); console.log(`[crowd-flow] SAVED BTC period=${periodStart} trades=${data.trades} previous=${previous ?? 'N/A'}`);
+}
+
+async function alertIfNeeded(periodStart, current, previous, streak) {
+  const thresholdHit = current.trades >= ALERT_THRESHOLD;
+  const streakHit = previous != null && current.trades > previous && streak >= 2;
+  if ((!thresholdHit && !streakHit) || alertedPeriods.has(String(periodStart))) return;
+  const currentStart = periodStart + PERIOD;
+  const currentMarket = await findMarketByEpoch('BTC', currentStart, '5m');
+  const currentUrl = currentMarket?.url || `https://polymarket.com/event/btc-updown-5m-${Math.floor(currentStart / 1000)}`;
+  const lines = ['🔥 BTC · 5M', `TRADES: ${current.trades}`];
+  if (thresholdHit) { lines.push(`THRESHOLD: ${ALERT_THRESHOLD}+`); lines.push('BUY DOWN'); }
+  else if (streakHit) { lines.push(`PREVIOUS: ${previous}`); lines.push(`CHANGE: UP +${current.trades - previous}`); }
+  lines.push(`CLOSE UP: ${current.closeUp ?? 'N/A'}`, `CLOSE DOWN: ${current.closeDown ?? 'N/A'}`, '', '➡️ CURRENT · Polymarket 5M', currentUrl);
+  await sendTelegramMessage(lines.join('\n')); alertedPeriods.add(String(periodStart));
+  console.log(`[crowd-flow] ALERT BTC period=${periodStart} trades=${current.trades} thresholdHit=${thresholdHit} streakHit=${streakHit} streak=${streak}`);
+}
+
+async function tick() {
+  const completedStart = start() - PERIOD;
+  try {
+    const current = await loadPeriod(completedStart); if (!current || previousPeriodStart === completedStart) return;
+    const priorTrades = previousTrades; const isIncrease = priorTrades != null && current.trades > priorTrades; const nextStreak = isIncrease ? increaseStreak + 1 : 0;
+    try { await saveCompletedPeriod(completedStart, current, priorTrades); } catch (e) { console.error(`[crowd-flow] STATS SAVE FAILED period=${completedStart}: ${e.message}`); }
+    try { await alertIfNeeded(completedStart, current, priorTrades, nextStreak); } catch (e) { console.error(`[crowd-flow] ALERT FAILED period=${completedStart}: ${e.message}`); }
+    previousTrades = current.trades; increaseStreak = nextStreak; previousPeriodStart = completedStart;
+  } catch (e) { console.error(`[crowd-flow] PERIOD LOAD FAILED period=${completedStart}: ${e.message}`); }
+}
+
+(async () => { console.log(`[crowd-flow] start BTC 5m monitor (threshold ${ALERT_THRESHOLD}+ OR 2+ consecutive increases)`); await tick(); setInterval(tick, 30000); })();
