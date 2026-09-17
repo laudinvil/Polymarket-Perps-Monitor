@@ -2,6 +2,7 @@ name: PolyBackTest Volume 5M
 
 on:
   workflow_dispatch:
+  push:
   schedule:
     - cron: '7 */6 * * *'
 
