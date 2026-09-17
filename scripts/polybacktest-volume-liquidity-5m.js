@@ -4,7 +4,7 @@ const API = 'https://api.polybacktest.com/v4';
 const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
-const RUN_MS = 345 * 60 * 1000;
+const RUN_MS = 358 * 60 * 1000;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
