@@ -4,7 +4,6 @@ const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
 const TYPE = '5m';
 const POLL_MS = 3000;
-const WATCH_MS = 120000;
 const DETAIL_RETRY_MS = 2500;
 
 const apiKey = env.POLYBACKTEST_API_KEY;
@@ -112,19 +111,17 @@ function alertText(prev, curr) {
 }
 async function finalize(market) {
   let curr = null;
-  const deadline = Date.now() + 45000;
-  while (Date.now() < deadline) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     curr = await getDetails(market);
-    if (curr) break;
-    await sleep(DETAIL_RETRY_MS);
+    if (curr) return curr;
+    if (attempt < 2) await sleep(DETAIL_RETRY_MS);
   }
-  if (!curr) throw new Error(`Market ${market.id} did not expose final_volume within 45s`);
-  return curr;
+  throw new Error(`Market ${market.id} has no final_volume at boundary`);
 }
 async function main() {
   console.log('[polybacktest] boundary-anchored BTC 5m watcher');
   const boundary = nextBoundary();
-  let markets = await getMarkets();
+  const markets = await getMarkets();
   const candidates = markets.filter(m => Math.abs(endMs(m) - boundary) <= 15000);
   if (!candidates.length) throw new Error(`No BTC 5m market found ending near boundary ${new Date(boundary).toISOString()}`);
   const target = candidates[candidates.length - 1];
@@ -135,24 +132,15 @@ async function main() {
 
   const wait = Math.max(0, boundary - Date.now());
   if (wait) await sleep(wait);
-  const deadline = Date.now() + WATCH_MS;
-  while (Date.now() < deadline) {
-    try {
-      console.log(`[polybacktest] processing target ${target.id} immediately after boundary`);
-      const curr = await finalize(target);
-      const prev = await getDetails(previous);
-      if (!prev) throw new Error(`Previous market ${previous.id} has no final_volume`);
-      prev.liquidity = await getLiquidity(previous);
-      curr.liquidity = await getLiquidity(target);
-      console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
-      await sendTelegram(alertText(prev, curr));
-      console.log(`[polybacktest] TELEGRAM SENT ${target.id}`);
-      return;
-    } catch (err) {
-      console.log(`[polybacktest] processing retry: ${err.message}`);
-      await sleep(POLL_MS);
-    }
-  }
-  throw new Error(`Failed to send boundary alert for ${target.id} within ${WATCH_MS / 1000}s`);
+
+  console.log(`[polybacktest] processing target ${target.id} at boundary`);
+  const curr = await finalize(target);
+  const prev = await getDetails(previous);
+  if (!prev) throw new Error(`Previous market ${previous.id} has no final_volume at boundary`);
+  prev.liquidity = await getLiquidity(previous);
+  curr.liquidity = await getLiquidity(target);
+  console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
+  await sendTelegram(alertText(prev, curr));
+  console.log(`[polybacktest] TELEGRAM SENT ${target.id}`);
 }
 main().catch(err => { console.error(`[polybacktest] FAILED ${err.stack || err.message}`); require('node:process').exitCode = 1; });
