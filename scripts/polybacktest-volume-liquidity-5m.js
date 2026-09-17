@@ -88,7 +88,7 @@ async function send(text) {
   return false;
 }
 
-async function processPeriod(boundary, previousLiq) {
+async function processPeriod(boundary, previousLiq, streak) {
   const completedStart = boundary - PERIOD;
   const previousStart = boundary - 2*PERIOD;
   const completedSlug = slug(completedStart);
@@ -113,26 +113,43 @@ async function processPeriod(boundary, previousLiq) {
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
+  let nextStreak;
+  if (delta > 0) nextStreak = streak.direction === '↑' ? streak.count + 1 : 1;
+  else if (delta < 0) nextStreak = streak.direction === '↓' ? streak.count + 1 : 1;
+  else nextStreak = 0;
+  const nextDirection = delta > 0 ? '↑' : delta < 0 ? '↓' : null;
+
+  console.log(`[polybacktest] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`);
+
+  if (nextStreak < 2) {
+    console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is 2`);
+    return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
+  }
+
   const text = [
     '🔥 BTC · 5M',
     `PREVIOUS: $${previousValue.toFixed(2)}`,
     `LAST 5M: $${completedLiq.toFixed(2)}`,
     `LIQUIDITY ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
+    `STREAK: ${nextStreak}× ${nextDirection}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
+  console.log(`[polybacktest] alert qualified: streak=${nextStreak} direction=${nextDirection}`);
   console.log('[polybacktest] sending Telegram now');
   await send(text);
   console.log(`[polybacktest] period complete ${nextSlug}`);
-  return completedLiq;
+  return { liquidity: completedLiq, streak: {direction: nextDirection, count: nextStreak} };
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = nextBoundary();
   let previousLiq = null;
+  let streak = {direction: null, count: 0};
   console.log('[polybacktest] liquidity-only BTC 5m continuous watcher');
+  console.log('[polybacktest] alert rule: 2+ consecutive liquidity moves in the same direction');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   while (Date.now() < stopAt) {
@@ -141,7 +158,9 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
-      previousLiq = await processPeriod(boundary, previousLiq);
+      const result = await processPeriod(boundary, previousLiq, streak);
+      previousLiq = result.liquidity;
+      streak = result.streak;
     } catch (e) {
       console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
     }
