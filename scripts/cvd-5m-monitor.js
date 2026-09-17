@@ -27,9 +27,11 @@ async function closeCompletedPeriods() { const current = bucket(Date.now()); for
  alerted.add(start); periods.delete(start);
  console.log(`[cvd-5m] SAVED period=${start} direction=${direction} cvd=${cvd.toFixed(2)} imbalance=${imbalancePct.toFixed(1)}% trades=${data.trades}`);
  if (!CVD_ALERTS_ENABLED || direction === 'NEUTRAL' || imbalancePct < MIN_IMBALANCE_PCT) continue;
+ const alertImbalancePct = Number(imbalancePct.toFixed(1));
+ if (alertImbalancePct < MIN_IMBALANCE_PCT) { console.log(`[cvd-5m] BELOW THRESHOLD period=${start} raw=${imbalancePct.toFixed(4)}% displayed=${alertImbalancePct}% threshold=${MIN_IMBALANCE_PCT}%`); continue; }
  const sign = cvd >= 0 ? '+' : '';
  const title = direction === 'BUY' ? '⬆️ BUY UP' : '⬇️ BUY DOWN';
- const message = [`🔥 BTC · 5M · ${title}`, `CVD: ${sign}$${cvd.toFixed(2)}`, `BUY: $${data.buyUsd.toFixed(2)}`, `SELL: $${data.sellUsd.toFixed(2)}`, `IMBALANCE: ${imbalancePct.toFixed(1)}%`, `TRADES: ${data.trades}`, '', '➡️ Polymarket 5M', currentUrl].join('\n');
+ const message = [`🔥 BTC · 5M · ${title}`, `CVD: ${sign}$${cvd.toFixed(2)}`, `BUY: $${data.buyUsd.toFixed(2)}`, `SELL: $${data.sellUsd.toFixed(2)}`, `IMBALANCE: ${alertImbalancePct.toFixed(1)}%`, `TRADES: ${data.trades}`, '', '➡️ Polymarket 5M', currentUrl].join('\n');
  const claimed = await claimCvdAlert(start);
  if (!claimed) { console.log(`[cvd-5m] DUPLICATE SUPPRESSED period=${start}`); continue; }
  await sendTelegramMessage(message);
