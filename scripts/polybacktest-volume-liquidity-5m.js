@@ -1,10 +1,13 @@
 const API_KEY = String(process.env.POLYBACKTEST_API_KEY || '').trim();
+const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const TELEGRAM_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '').trim();
 const BASE = 'https://api.polybacktest.com/v4';
 const COIN = 'btc';
 const TYPE = '5m';
 const POLL_MS = 60_000;
 
 if (!API_KEY) throw new Error('POLYBACKTEST_API_KEY is required');
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) throw new Error('Telegram secrets are required');
 
 const headers = { 'X-API-Key': API_KEY };
 const seen = new Set();
@@ -40,6 +43,19 @@ function direction(a, b) {
 function pct(a, b) {
   if (!Number.isFinite(a) || a === 0 || !Number.isFinite(b)) return null;
   return ((b / a) - 1) * 100;
+}
+
+function money(v) {
+  return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+async function sendTelegram(text) {
+  const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true })
+  });
+  if (!r.ok) throw new Error(`Telegram ${r.status}: ${await r.text()}`);
 }
 
 function record(m, prev) {
@@ -83,10 +99,30 @@ async function process() {
       volume: Number(m.final_volume),
       liquidity: Number(m.final_liquidity)
     };
+
     if (row) {
       console.log(JSON.stringify(row));
       process.stdout.write(`STRATEGY ${row.slug} ${row.combination} V=${row.volumeChangePct.toFixed(2)}% L=${row.liquidityChangePct.toFixed(2)}% WINNER=${row.winner}\n`);
+
+      const text = [
+        `🔥 BTC · POLYBACKTEST 5M`,
+        `VOLUME: ${row.volumeDirection} ${row.volumeChangePct >= 0 ? '+' : ''}${row.volumeChangePct.toFixed(2)}%`,
+        `LIQUIDITY: ${row.liquidityDirection} ${row.liquidityChangePct >= 0 ? '+' : ''}${row.liquidityChangePct.toFixed(2)}%`,
+        `VOLUME: $${money(row.previousVolume)} → $${money(row.volume)}`,
+        `LIQUIDITY: $${money(row.previousLiquidity)} → $${money(row.liquidity)}`,
+        `COMBINATION: ${row.combination}`,
+        `WINNER: ${row.winner || 'N/A'}`,
+        `PERIOD: ${new Date(row.period).toISOString()} → ${new Date(row.periodEnd).toISOString()}`
+      ].join('\n');
+
+      try {
+        await sendTelegram(text);
+        console.log(`TELEGRAM SENT ${row.slug}`);
+      } catch (e) {
+        console.error(`TELEGRAM FAILED ${row.slug}: ${e.stack || e.message}`);
+      }
     }
+
     previous = current;
     seen.add(String(id));
   }
