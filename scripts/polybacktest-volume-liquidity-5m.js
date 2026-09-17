@@ -1,6 +1,6 @@
 const { env } = require('node:process');
 
-const API = 'https://api.polybacktest.com/v4';
+const API = 'https://api.polybacktest.com/v2';
 const COIN = 'BTC';
 const TYPE = '5m';
 
@@ -98,7 +98,7 @@ function formatAlert(prev, curr) {
 }
 
 async function getMarkets() {
-  const path = `/markets?coin=${encodeURIComponent(COIN.toLowerCase())}&market_type=${encodeURIComponent(TYPE)}&status=resolved`;
+  const path = `/markets?coin=${encodeURIComponent(COIN.toLowerCase())}&market_type=${encodeURIComponent(TYPE)}&resolved=true`;
   console.log(`[polybacktest] GET ${path}`);
   const data = await api(path);
   const markets = Array.isArray(data) ? data : data.markets || data.data?.markets || data.data || data.results || [];
@@ -112,26 +112,19 @@ async function getMarkets() {
     .sort((a, b) => new Date(a.end).getTime() - new Date(b.end).getTime());
 }
 
-function findMarketPayload(value, depth = 0) {
-  if (!value || typeof value !== 'object' || depth > 5) return null;
-  if (!Array.isArray(value) && ('final_volume' in value || 'final_liquidity' in value)) return value;
-  for (const child of Object.values(value)) {
-    const found = findMarketPayload(child, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
 async function getDetails(market) {
   const coin = String(COIN).toLowerCase();
   const d = await api(`/markets/${encodeURIComponent(market.id)}?coin=${encodeURIComponent(coin)}`);
-  const x = findMarketPayload(d) || d.market || d.data?.market || d.data || d;
+  const x = d.market || d.data?.market || d.data || d;
   console.log(`[polybacktest] detail ${market.id} volume=${x.final_volume ?? 'missing'} liquidity=${x.final_liquidity ?? 'missing'} keys=${Object.keys(x).slice(0, 20).join(',')}`);
+  if (x.final_volume == null || x.final_liquidity == null) {
+    throw new Error(`PolyBackTest market ${market.id} has no final_volume/final_liquidity`);
+  }
   return {
     ...market,
     slug: x.slug ?? x.event_slug ?? x.polymarket_slug ?? market.slug,
-    volume: num(x.final_volume ?? x.volume ?? x.total_volume),
-    liquidity: num(x.final_liquidity ?? x.liquidity),
+    volume: num(x.final_volume),
+    liquidity: num(x.final_liquidity),
     period: x.period ?? x.end_time ?? x.endTime ?? x.end ?? market.end,
   };
 }
