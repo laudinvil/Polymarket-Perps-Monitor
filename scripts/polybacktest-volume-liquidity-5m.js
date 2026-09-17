@@ -1,4 +1,4 @@
-const { env, exitCode } = require('node:process');
+const { env } = require('node:process');
 
 const API = 'https://api.polybacktest.com/v4';
 const COIN = 'BTC';
@@ -89,7 +89,8 @@ async function getMarkets() {
 }
 
 async function getDetails(market) {
-  const d = await api(`/markets/${encodeURIComponent(market.id)}`);
+  const coin = String(COIN).toLowerCase();
+  const d = await api(`/markets/${encodeURIComponent(market.id)}?coin=${encodeURIComponent(coin)}`);
   const x = d.market || d.data || d;
   return {
     ...market,
