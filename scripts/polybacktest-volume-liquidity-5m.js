@@ -11,7 +11,14 @@ const tgChatId = env.TELEGRAM_CHAT_ID;
 if (!apiKey) throw new Error('POLYBACKTEST_API_KEY is required');
 if (!tgToken || !tgChatId) throw new Error('TELEGRAM secrets are required');
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let lastPolyBackTestRequest = 0;
+
 async function api(path) {
+  const wait = Math.max(0, 1100 - (Date.now() - lastPolyBackTestRequest));
+  if (wait) await sleep(wait);
+  lastPolyBackTestRequest = Date.now();
+
   const res = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
   });
@@ -109,7 +116,8 @@ async function main() {
   const currMarket = markets[markets.length - 1];
   console.log(`[polybacktest] comparing ${prevMarket.id} -> ${currMarket.id}`);
 
-  const [prev, curr] = await Promise.all([getDetails(prevMarket), getDetails(currMarket)]);
+  const prev = await getDetails(prevMarket);
+  const curr = await getDetails(currMarket);
   console.log(`[polybacktest] values volume=${prev.volume}->${curr.volume} liquidity=${prev.liquidity}->${curr.liquidity}`);
 
   await sendTelegram(formatAlert(prev, curr));
