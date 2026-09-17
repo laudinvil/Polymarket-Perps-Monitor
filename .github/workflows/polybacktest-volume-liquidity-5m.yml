@@ -7,11 +7,12 @@ on:
       - 'scripts/polybacktest-volume-liquidity-5m.js'
       - '.github/workflows/polybacktest-volume-liquidity-5m.yml'
   schedule:
-    - cron: '*/5 * * * *'
+    # Offset from minute 0 to reduce GitHub Actions scheduler congestion.
+    - cron: '2-59/5 * * * *'
 
 concurrency:
   group: polybacktest-volume-liquidity-5m
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run:
