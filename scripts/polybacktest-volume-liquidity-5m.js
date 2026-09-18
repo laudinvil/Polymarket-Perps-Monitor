@@ -159,39 +159,43 @@ async function polybacktestMarket(slug) {
 }
 
 async function liquiditySnapshot(id, endMs) {
-  const timestamps = [
-    endMs - 2000,
-    endMs - 5000,
-    endMs - 10000,
-    endMs - 15000,
-    endMs - 30000,
-    endMs - 60000,
-    endMs - 120000
-  ];
+  // Use only a snapshot immediately at the completed-period boundary.
+  // Do not fall back to an older snapshot: that can make liquidity stale
+  // and invalidly comparable with the completed 5m volume.
+  const timestamp = endMs - 1000;
 
-  for (const timestamp of timestamps) {
-    try {
-      const data = await polybacktest(
-        '/markets/' + encodeURIComponent(id) + '/snapshot-at/' + timestamp + '?coin=btc'
-      );
+  const data = await polybacktest(
+    '/markets/' + encodeURIComponent(id) + '/snapshot-at/' + timestamp + '?coin=btc'
+  );
 
-      const snapshot = Array.isArray(data.snapshots)
-        ? data.snapshots[0]
-        : (data.snapshot || data.data?.snapshot);
+  const snapshot = Array.isArray(data.snapshots)
+    ? data.snapshots[0]
+    : (data.snapshot || data.data?.snapshot);
 
-      if (!snapshot) continue;
-
-      const bookValue = book =>
-        [...(book?.bids || []), ...(book?.asks || [])]
-          .reduce((sum, level) => sum + number(level.price) * number(level.size), 0);
-
-      return bookValue(snapshot.orderbook_up) + bookValue(snapshot.orderbook_down);
-    } catch (error) {
-      console.log('[combined-5m] snapshot retry: ' + error.message);
-    }
+  if (!snapshot) {
+    throw new Error(
+      'No snapshot at completed-period boundary for market ' + id +
+      ' requested=' + new Date(timestamp).toISOString()
+    );
   }
 
-  throw new Error('No usable liquidity snapshot for market ' + id);
+  const bookValue = book =>
+    [...(book?.bids || []), ...(book?.asks || [])]
+      .reduce((sum, level) => sum + number(level.price) * number(level.size), 0);
+
+  const up = bookValue(snapshot.orderbook_up);
+  const down = bookValue(snapshot.orderbook_down);
+  const liquidity = up + down;
+
+  console.log(
+    '[combined-5m] liquidity snapshot requested=' + new Date(timestamp).toISOString() +
+    ' actual=' + (snapshot.time || 'unknown') +
+    ' up=' + up.toFixed(2) +
+    ' down=' + down.toFixed(2) +
+    ' total=' + liquidity.toFixed(2)
+  );
+
+  return liquidity;
 }
 
 async function sendTelegram(message) {
@@ -242,7 +246,112 @@ async function processPeriod(boundary) {
     '🔥 BTC · 5M',
     'VOLUME: $' + volume.toFixed(2),
     'LIQUIDITY: $' + liquidity.toFixed(2),
-    'IMBALANCE: ' + arrow + ' ' + (liquidity > 0 ? (Math.abs(difference) / liquidity * 100).toFixed(2) + '%' : 'N/A'),
+    'IMBALANCE: ' + arrow + ' 
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  console.log('[combined-5m] alert completed=' + completedSlug +
+    ' volume=' + volume.toFixed(2) +
+    ' liquidity=' + liquidity.toFixed(2) +
+    ' imbalance=' + arrow + ' 
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow();
+
+  console.log('[combined-5m] clean BTC-only 5m monitor started');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error('[combined-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + Math.abs(difference).toFixed(2),
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  console.log('[combined-5m] alert volume=' + volume.toFixed(2) +
+    ' liquidity=' + liquidity.toFixed(2) +
+    ' imbalance=' + arrow + ' $' + Math.abs(difference).toFixed(2));
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow();
+
+  console.log('[combined-5m] clean BTC-only 5m monitor started');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error('[combined-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + Math.abs(difference).toFixed(2));
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow();
+
+  console.log('[combined-5m] clean BTC-only 5m monitor started');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error('[combined-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + Math.abs(difference).toFixed(2),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
