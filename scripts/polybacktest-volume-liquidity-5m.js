@@ -158,8 +158,202 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
   for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
     try {
       const stats = await tradeStats(conditionId, start, end, slug);
-      console.log('[combined-5m] trades attempt ' + attempt + '/' + TRADES_RETRIES +
+      console.log('[combined-5m] volume attempt ' + attempt + '/' + TRADES_RETRIES +
         ' volume=
+    } catch (error) {
+      lastError = error;
+      console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
+      if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
+    }
+  }
+
+  throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
+}
+
+async function processPeriod(boundary) {
+  const activeStart = boundary - PERIOD;
+  const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
+  const activeSlug = marketSlug(activeStart);
+  const nextSlug = marketSlug(boundary);
+  const previousStart = activeStart - PERIOD;
+  const previousSlug = marketSlug(previousStart);
+
+  console.log('[combined-5m] evaluating active=' + activeSlug +
+    ' end=' + new Date(evaluationEndMs).toISOString() +
+    ' boundary=' + new Date(boundary).toISOString());
+
+  const polymarketMarket = await findMarket(activeSlug);
+  const { volume } = await getReliableTradeStats(
+    polymarketMarket.conditionId,
+    activeStart / 1000,
+    evaluationEndMs / 1000,
+    activeSlug
+  );
+
+  const previousMarket = await findMarket(previousSlug);
+  const { volume: previousVolume } = await getReliableTradeStats(
+    previousMarket.conditionId,
+    previousStart / 1000,
+    activeStart / 1000,
+    previousSlug
+  );
+
+  const change = previousVolume > 0
+    ? ((volume - previousVolume) / previousVolume) * 100
+    : 0;
+
+  console.log('[combined-5m] current volume=$' + volume.toFixed(2) +
+    ' previous volume=$' + previousVolume.toFixed(2) +
+    ' change=' + change.toFixed(2) + '%');
+
+  const message = [
+    '🔥 BTC · 5M',
+    'VOLUME: $' + volume.toFixed(2),
+    'CHANGE: ' + (change >= 0 ? '+' : '') + change.toFixed(2) + '%',
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+
+  // On every workflow restart, never replay an already completed 5M period.
+  // Start from the next period boundary and evaluate it 60s before it ends.
+  let boundary = boundaryNow() + PERIOD;
+
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[combined-5m] BTC-only 5m trades monitor started');
+  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error(
+        '[combined-5m] PERIOD FAILED ' +
+        new Date(boundary).toISOString() + ': ' + error.message
+      );
+      // Keep the same boundary on failure so the period can be retried,
+      // but never advance into a different period after a failed attempt.
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + stats.volume.toFixed(2));
+      return stats;
+    } catch (error) {
+      lastError = error;
+      console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
+      if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
+    }
+  }
+
+  throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
+}
+
+async function processPeriod(boundary) {
+  const activeStart = boundary - PERIOD;
+  const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
+  const activeSlug = marketSlug(activeStart);
+  const nextSlug = marketSlug(boundary);
+
+  console.log(
+    '[combined-5m] evaluating active=' + activeSlug +
+    ' end=' + new Date(evaluationEndMs).toISOString() +
+    ' boundary=' + new Date(boundary).toISOString()
+  );
+
+  const polymarketMarket = await findMarket(activeSlug);
+
+  const { trades, volume } = await getReliableTradeStats(
+    polymarketMarket.conditionId,
+    activeStart / 1000,
+    evaluationEndMs / 1000,
+    activeSlug
+  );
+
+  const ratio = volume > 0 ? (trades / volume) * 100 : 0;
+
+  console.log('[combined-5m] ratio=' + ratio.toFixed(4) + '%');
+
+  const btc24h = await getBtc24hChange();
+  console.log('[combined-5m] BTC 24h change=' + btc24h.toFixed(4) + '%');
+
+  if (btc24h >= 5) {
+    console.log('[combined-5m] BTC 24h growth >= +5% — alert ignored');
+    return;
+  }
+
+  if (ratio > 5.5) {
+    console.log('[combined-5m] above 5.5% — alert ignored');
+    return;
+  }
+
+  const message = [
+    '🔥 BTC · 5M',
+    'TRADES: ' + trades,
+    'VOLUME: $' + volume.toFixed(2),
+    'TRADES/VOLUME: ' + ratio.toFixed(4) + '%',
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+
+  // On every workflow restart, never replay an already completed 5M period.
+  // Start from the next period boundary and evaluate it 60s before it ends.
+  let boundary = boundaryNow() + PERIOD;
+
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[combined-5m] BTC-only 5m trades monitor started');
+  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error(
+        '[combined-5m] PERIOD FAILED ' +
+        new Date(boundary).toISOString() + ': ' + error.message
+      );
+      // Keep the same boundary on failure so the period can be retried,
+      // but never advance into a different period after a failed attempt.
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + stats.volume.toFixed(2));
       return stats;
     } catch (error) {
       lastError = error;
