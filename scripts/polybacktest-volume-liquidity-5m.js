@@ -5,7 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const POLYBACKTEST_API = 'https://api.polybacktest.com/v4';
 
 const PERIOD = 300000;
-const ALERT_LEAD_MS = 0;
+const ALERT_LEAD_MS = 2500;
 const POLYMARKET_GAP = 1000;
 const POLYBACKTEST_GAP = 1600;
 const FETCH_TIMEOUT_MS = 5000;
