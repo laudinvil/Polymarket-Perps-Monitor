@@ -260,14 +260,14 @@ async function processPeriod(boundary) {
 
   const text = [
     '🔥 BTC · 5M',
-    'LAST 5M: $' + volume.toFixed(2),
+    'LAST VOLUME: $' + volume.toFixed(2),
     'LAST LIQUIDITY: $' + liquidity.toFixed(2),
     'IMBALANCE: ' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
 
-  console.log('[combined-5m] alert last5m=' + volume.toFixed(2) + ' lastLiquidity=' + liquidity.toFixed(2) + ' imbalance=' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'));
+  console.log('[combined-5m] alert lastVolume=' + volume.toFixed(2) + ' lastLiquidity=' + liquidity.toFixed(2) + ' imbalance=' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'));
   await send(text);
 }
 
