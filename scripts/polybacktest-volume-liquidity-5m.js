@@ -267,7 +267,7 @@ async function processPeriod(boundary) {
     'IMBALANCE: ' + arrow + ' $' + difference.toFixed(2),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
-  ].join('\\n');
+  ].join('\n');
 
   console.log('[combined-5m] alert volume=' + volume.toFixed(2) + ' liquidity=' + liquidity.toFixed(2) + ' imbalance=' + arrow + difference.toFixed(2));
   await send(text);
