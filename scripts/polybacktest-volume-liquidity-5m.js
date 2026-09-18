@@ -143,7 +143,7 @@ async function processPeriod(boundary, previousVolume) {
     `VOLUME ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
-  ].join('\\n');
+  ].join('\n');
 
   console.log('[polybacktest] alert qualified: every non-zero volume change');
   await send(text);
