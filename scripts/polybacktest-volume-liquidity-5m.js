@@ -50,7 +50,7 @@ async function market(s) {
   throw lastError;
 }
 async function tradeVolume(conditionId, marketSlug) {
-  const start = Number(marketSlug.match(/-(\\d+)$/)?.[1]);
+  const start = Number(marketSlug.match(/-(\d+)$/)?.[1]);
   if (!Number.isFinite(start)) throw new Error('Invalid 5m slug timestamp: ' + marketSlug);
 
   const startTs = start;
@@ -257,8 +257,8 @@ async function main() {
         const previous = await market(slug(boundary - PERIOD));
         const retryBaseline = await tradeVolume(previous.conditionId, previous.slug);
         if (!retryBaseline.complete) {
-          console.log('[polybacktest] BASELINE STILL INCOMPLETE: keep watcher alive and retry next boundary');
-          boundary += PERIOD;
+          console.log('[polybacktest] BASELINE STILL INCOMPLETE: keep watcher alive; retry SAME boundary');
+          await sleep(15000);
           continue;
         }
         previousVolume = retryBaseline.volume;
