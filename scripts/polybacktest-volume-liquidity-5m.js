@@ -12,7 +12,7 @@ const POLYMARKET_GAP = 1000;
 const POLYBACKTEST_GAP = 1600;
 const MARKET_RETRY_MS = 15000;
 const MARKET_RETRIES = 8;
-const FETCH_TIMEOUT_MS = 20000;
+const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 
 let lastPolymarketApi = 0;
