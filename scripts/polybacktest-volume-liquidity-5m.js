@@ -263,7 +263,7 @@ async function processPeriod(boundary) {
 
   const text = [
     '🔥 BTC · 5M',
-    'LAST 5M: 
+    'LAST VOLUME: 
     'LAST LIQUIDITY: $' + liquidity.toFixed(2),
     'IMBALANCE: ' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
     '➡️ NEXT · Polymarket 5M',
