@@ -112,7 +112,7 @@ async function tradeStats(conditionId, start, end, slug) {
     }
 
     if (reachedStart || !pagination.has_more || !pagination.next_cursor) {
-      if (volume <= 0) throw new Error('Trades API returned 0 volume for active period');
+      if (volume <= 0) throw new Error('Trades API returned 0 volume for ' + slug);
       return { volume };
     }
 
@@ -152,7 +152,7 @@ async function sendTelegram(message) {
   throw new Error('Telegram delivery failed');
 }
 
-async function getReliableTradeStats(conditionId, start, end, slug) {
+async function getReliableVolume(conditionId, start, end, slug) {
   let lastError;
 
   for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
@@ -183,16 +183,16 @@ async function processPeriod(boundary) {
     ' end=' + new Date(evaluationEndMs).toISOString() +
     ' boundary=' + new Date(boundary).toISOString());
 
-  const polymarketMarket = await findMarket(activeSlug);
-  const { volume } = await getReliableTradeStats(
-    polymarketMarket.conditionId,
+  const activeMarket = await findMarket(activeSlug);
+  const { volume } = await getReliableVolume(
+    activeMarket.conditionId,
     activeStart / 1000,
     evaluationEndMs / 1000,
     activeSlug
   );
 
   const previousMarket = await findMarket(previousSlug);
-  const { volume: previousVolume } = await getReliableTradeStats(
+  const { volume: previousVolume } = await getReliableVolume(
     previousMarket.conditionId,
     previousStart / 1000,
     activeStart / 1000,
@@ -203,108 +203,10 @@ async function processPeriod(boundary) {
     ? ((volume - previousVolume) / previousVolume) * 100
     : 0;
 
-  console.log('[combined-5m] current volume=
-    '🔥 BTC · 5M',
-    'VOLUME: $' + volume.toFixed(2),
-    'CHANGE: ' + (change >= 0 ? '+' : '') + change.toFixed(2) + '%',
-    '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
-
-  await sendTelegram(message);
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-
-  // On every workflow restart, never replay an already completed 5M period.
-  // Start from the next period boundary and evaluate it 60s before it ends.
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[combined-5m] BTC-only 5m trades monitor started');
-  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    try {
-      await processPeriod(boundary);
-      boundary += PERIOD;
-    } catch (error) {
-      console.error(
-        '[combined-5m] PERIOD FAILED ' +
-        new Date(boundary).toISOString() + ': ' + error.message
-      );
-      // Keep the same boundary on failure so the period can be retried,
-      // but never advance into a different period after a failed attempt.
-      await sleep(1000);
-    }
-  }
-}
-
-main().catch(error => {
-  console.error('[combined-5m] FAILED', error);
-  process.exit(1);
-});
- + volume.toFixed(2) +
-    ' previous volume=
-    '🔥 BTC · 5M',
-    'VOLUME: $' + volume.toFixed(2),
-    'CHANGE: ' + (change >= 0 ? '+' : '') + change.toFixed(2) + '%',
-    '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
-
-  await sendTelegram(message);
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-
-  // On every workflow restart, never replay an already completed 5M period.
-  // Start from the next period boundary and evaluate it 60s before it ends.
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[combined-5m] BTC-only 5m trades monitor started');
-  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    try {
-      await processPeriod(boundary);
-      boundary += PERIOD;
-    } catch (error) {
-      console.error(
-        '[combined-5m] PERIOD FAILED ' +
-        new Date(boundary).toISOString() + ': ' + error.message
-      );
-      // Keep the same boundary on failure so the period can be retried,
-      // but never advance into a different period after a failed attempt.
-      await sleep(1000);
-    }
-  }
-}
-
-main().catch(error => {
-  console.error('[combined-5m] FAILED', error);
-  process.exit(1);
-});
- + previousVolume.toFixed(2) +
+  console.log('[combined-5m] current volume=$' + volume.toFixed(2) +
+    ' previous volume=$' + previousVolume.toFixed(2) +
     ' change=' + change.toFixed(2) + '%');
 
-  // Alert only when the current 5M volume changed by at least 40%
-  // versus the immediately previous 5M period, in either direction.
   if (Math.abs(change) < 40) {
     console.log('[combined-5m] change within -40%..+40% — alert ignored');
     return;
@@ -324,14 +226,12 @@ main().catch(error => {
 async function main() {
   const stopAt = Date.now() + RUN_MS;
 
-  // On every workflow restart, never replay an already completed 5M period.
-  // Start from the next period boundary and evaluate it 60s before it ends.
   let boundary = boundaryNow() + PERIOD;
 
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
-  console.log('[combined-5m] BTC-only 5m trades monitor started');
+  console.log('[combined-5m] BTC-only 5m volume monitor started');
   console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
 
   while (Date.now() < stopAt) {
@@ -347,8 +247,6 @@ async function main() {
         '[combined-5m] PERIOD FAILED ' +
         new Date(boundary).toISOString() + ': ' + error.message
       );
-      // Keep the same boundary on failure so the period can be retried,
-      // but never advance into a different period after a failed attempt.
       await sleep(1000);
     }
   }
