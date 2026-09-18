@@ -12,8 +12,8 @@ const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
-const TRADES_RETRIES = 6;
-const TRADES_RETRY_MS = 1000;
+const TRADES_RETRIES = 4;
+const TRADES_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 let lastPolyBackTestApi = 0;
@@ -91,30 +91,47 @@ async function tradeCount(conditionId, start, slug) {
 
   const end = start + 300;
   const pageSize = 1000;
+  let cursor = null;
   let tradesInWindow = 0;
 
-  for (let page = 0; page < 1000; page++) {
-    const offset = page * pageSize;
-    const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
-      '&limit=' + pageSize + '&offset=' + offset +
-      '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
+  for (let page = 0; page < 100; page++) {
+    const params = new URLSearchParams({
+      condition: conditionId,
+      limit: String(pageSize)
+    });
+    if (cursor) params.set('cursor', cursor);
 
+    const url = DATA_API + '/v2/trades?' + params.toString();
     const response = await fetchTimeout(url);
     const body = await response.text();
-    if (!response.ok) throw new Error('Polymarket Data API ' + response.status + ': ' + body);
+    if (!response.ok) throw new Error('Polymarket Data API v2 ' + response.status + ': ' + body);
 
-    const trades = JSON.parse(body);
-    if (!Array.isArray(trades)) throw new Error('Invalid trades response for ' + slug);
+    const payload = JSON.parse(body);
+    const trades = Array.isArray(payload?.data) ? payload.data : [];
+    const pagination = payload?.pagination || {};
+
+    if (!Array.isArray(trades)) {
+      throw new Error('Invalid v2 trades response for ' + slug);
+    }
 
     let reachedStart = false;
 
     for (const trade of trades) {
-      let timestamp = Number(trade.timestamp);
+      let timestamp = Number(
+        trade.timestamp ??
+        trade.ts ??
+        trade.created_at ??
+        trade.createdAt
+      );
+
       if (Number.isFinite(timestamp) && timestamp > 1e12) timestamp /= 1000;
+
       if (!Number.isFinite(timestamp) && typeof trade.timestamp === 'string') {
         const parsed = Date.parse(trade.timestamp);
         if (Number.isFinite(parsed)) timestamp = parsed / 1000;
       }
+
+      if (!Number.isFinite(timestamp)) continue;
 
       if (timestamp < start) {
         reachedStart = true;
@@ -126,12 +143,15 @@ async function tradeCount(conditionId, start, slug) {
       }
     }
 
-    if (reachedStart || trades.length < pageSize) return tradesInWindow;
+    if (reachedStart || !pagination.has_more || !pagination.next_cursor) {
+      return tradesInWindow;
+    }
+
+    cursor = pagination.next_cursor;
   }
 
   throw new Error('Trades window incomplete for ' + slug);
 }
-
 function unwrapMarket(data, slug) {
   const candidates = [
     data?.market,
