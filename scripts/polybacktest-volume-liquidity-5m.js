@@ -210,12 +210,16 @@ async function processPeriod(boundary) {
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow();
+
+  // On every workflow restart, never replay an already completed 5M period.
+  // Start from the next period boundary and evaluate it 60s before it ends.
+  let boundary = boundaryNow() + PERIOD;
 
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
   console.log('[combined-5m] BTC-only 5m trades monitor started');
+  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
 
   while (Date.now() < stopAt) {
     const wait = boundary - ALERT_LEAD_MS - Date.now();
@@ -230,6 +234,8 @@ async function main() {
         '[combined-5m] PERIOD FAILED ' +
         new Date(boundary).toISOString() + ': ' + error.message
       );
+      // Keep the same boundary on failure so the period can be retried,
+      // but never advance into a different period after a failed attempt.
       await sleep(1000);
     }
   }
