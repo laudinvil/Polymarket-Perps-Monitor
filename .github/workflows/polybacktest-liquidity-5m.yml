@@ -5,4 +5,10 @@ on:
 
 # Disabled: volume and liquidity are now handled by
 # polybacktest-volume-liquidity-5m.yml.
-# Kept only to avoid deleting the historical workflow file.
+
+jobs:
+  disabled:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Disabled. Use PolyBackTest Volume + Liquidity 5M."
