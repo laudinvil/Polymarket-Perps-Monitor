@@ -203,6 +203,11 @@ async function processPeriod(boundary) {
     return;
   }
 
+  if (ratio > 5.5) {
+    console.log('[combined-5m] above 5.5% — alert ignored');
+    return;
+  }
+
   const message = [
     '🔥 BTC · 5M',
     'TRADES: ' + trades,
