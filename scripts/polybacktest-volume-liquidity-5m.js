@@ -26,70 +26,30 @@ async function api(path) {
 
 async function market(s) {
   let lastError;
-
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
       const d = await api('/markets?slug=' + encodeURIComponent(s));
       const x = Array.isArray(d) ? d.find(v => v && v.slug === s) : null;
-
       if (!x) throw new Error('Market ' + s + ' not found in Polymarket Gamma');
 
       const id = x.id ?? x.market_id;
       const conditionId = x.conditionId ?? x.condition_id;
-      if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
+      const volume = Number(x.volume);
 
-      return { id, slug: x.slug || s, conditionId };
-    } catch (e) {
-      lastError = e;
+      if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
+      if (!Number.isFinite(volume)) throw new Error('Market ' + s + ' has no numeric Gamma volume');
+
+      return { id, slug: x.slug || s, conditionId, volume };
+    } catch (err) {
+      lastError = err;
       if (attempt < MARKET_RETRIES) {
-        console.log('[polybacktest] market ' + s +
-          ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + e.message);
+        console.log('[polybacktest] market ' + s + ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + err.message);
         await sleep(MARKET_RETRY_MS);
       }
     }
   }
-
   throw lastError;
 }
-
-async function tradeVolume(conditionId, marketSlug) {
-  const PAGE_SIZE = 500;
-  const MAX_PAGES = 100;
-  let volume = 0;
-  let totalTrades = 0;
-
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const offset = page * PAGE_SIZE;
-    const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
-      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=true';
-
-    const r = await fetch(url);
-    const t = await r.text();
-    if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
-
-    const trades = JSON.parse(t);
-    if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
-
-    totalTrades += trades.length;
-
-    for (const tr of trades) {
-      const size = Number(tr.size);
-      const price = Number(tr.price);
-      if (Number.isFinite(size) && Number.isFinite(price)) volume += size * price;
-    }
-
-    if (trades.length < PAGE_SIZE) break;
-  }
-
-  if (totalTrades >= PAGE_SIZE * MAX_PAGES) {
-    throw new Error('Trade pagination limit reached for ' + marketSlug);
-  }
-
-  console.log('[polybacktest] trades market=' + marketSlug + ' count=' + totalTrades +
-    ' TRADE_VOLUME_USDC=' + volume.toFixed(2));
-  return volume;
-}
-
 async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -151,7 +111,7 @@ async function processPeriod(boundary, previousVolume) {
   );
 
   const completed = await market(completedSlug);
-  const completedVolume = await tradeVolume(completed.conditionId, completedSlug);
+  const completedVolume = completed.volume;
 
   const delta = completedVolume - previousVolume;
   const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
@@ -189,7 +149,7 @@ async function main() {
   let boundary = currentBoundary();
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: Polymarket Data API trades, paginated; full condition history, not a single 10k-trade page');
+  console.log('[polybacktest] source: Polymarket Gamma market.volume for each exact completed 5m market; no trade reconstruction');
   console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
   console.log('[polybacktest] alert text: no streak field');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
@@ -199,7 +159,7 @@ async function main() {
 
   try {
     const previous = await market(slug(boundary - PERIOD));
-    previousVolume = await tradeVolume(previous.conditionId, previous.slug);
+    previousVolume = previous.volume;
 
     console.log(
       `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
@@ -217,7 +177,7 @@ async function main() {
     try {
       if (previousVolume == null) {
         const previous = await market(slug(boundary - PERIOD));
-        previousVolume = await tradeVolume(previous.conditionId, previous.slug);
+        previousVolume = previous.volume;
       }
 
       previousVolume = await processPeriod(boundary, previousVolume);
