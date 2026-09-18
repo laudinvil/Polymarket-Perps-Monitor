@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: polybacktest-volume-5m
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:
