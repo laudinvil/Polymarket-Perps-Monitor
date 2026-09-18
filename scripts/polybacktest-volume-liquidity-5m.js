@@ -2,12 +2,10 @@ const { env } = require('node:process');
 
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
-const POLYBACKTEST_API = 'https://api.polybacktest.com/v4';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 60000;
 const POLYMARKET_GAP = 1000;
-const POLYBACKTEST_GAP = 1600;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 const MARKET_RETRIES = 8;
@@ -16,7 +14,6 @@ const TRADES_RETRIES = 4;
 const TRADES_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
-let lastPolyBackTestApi = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
@@ -44,19 +41,6 @@ async function polymarket(path) {
   return JSON.parse(body);
 }
 
-async function polybacktest(path) {
-  const wait = POLYBACKTEST_GAP - (Date.now() - lastPolyBackTestApi);
-  if (wait > 0) await sleep(wait);
-  lastPolyBackTestApi = Date.now();
-
-  const response = await fetchTimeout(POLYBACKTEST_API + path, {
-    headers: { Authorization: 'Bearer ' + env.POLYBACKTEST_API_KEY }
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error('PolyBackTest ' + response.status + ': ' + body);
-  return JSON.parse(body);
-}
-
 async function findMarket(slug) {
   let lastError;
 
@@ -72,10 +56,7 @@ async function findMarket(slug) {
       const conditionId = market.conditionId ?? market.condition_id;
       if (!conditionId) throw new Error('Market ' + slug + ' has no conditionId');
 
-      return {
-        id: market.id ?? market.market_id,
-        conditionId
-      };
+      return { conditionId };
     } catch (error) {
       lastError = error;
       console.log('[combined-5m] market retry ' + attempt + '/' + MARKET_RETRIES + ': ' + error.message);
@@ -143,69 +124,6 @@ async function tradeStats(conditionId, start, end, slug) {
   throw new Error('Trades window incomplete for ' + slug);
 }
 
-
-function unwrapMarket(data, slug) {
-  const candidates = [
-    data?.market,
-    data?.data?.market,
-    data?.result?.market,
-    data?.result,
-    Array.isArray(data) ? data[0] : null,
-    data
-  ];
-
-  const market = candidates.find(value =>
-    value && typeof value === 'object' && !Array.isArray(value) &&
-    (value.id != null || value.market_id != null || value.slug != null)
-  );
-
-  if (!market) throw new Error('PolyBackTest market has no id for ' + slug);
-  return market;
-}
-
-async function polybacktestMarket(slug) {
-  const data = await polybacktest('/markets/by-slug/' + encodeURIComponent(slug) + '?coin=btc');
-  const market = unwrapMarket(data, slug);
-  return market.id ?? market.market_id;
-}
-
-async function liquiditySnapshot(id, endMs) {
-  const timestamp = endMs - 1000;
-
-  const data = await polybacktest(
-    '/markets/' + encodeURIComponent(id) + '/snapshot-at/' + timestamp + '?coin=btc'
-  );
-
-  const snapshot = Array.isArray(data.snapshots)
-    ? data.snapshots[0]
-    : (data.snapshot || data.data?.snapshot);
-
-  if (!snapshot) {
-    throw new Error(
-      'No snapshot at evaluation boundary for market ' + id +
-      ' requested=' + new Date(timestamp).toISOString()
-    );
-  }
-
-  const bookValue = book =>
-    [...(book?.bids || []), ...(book?.asks || [])]
-      .reduce((sum, level) => sum + number(level.price) * number(level.size), 0);
-
-  const up = bookValue(snapshot.orderbook_up);
-  const down = bookValue(snapshot.orderbook_down);
-  const liquidity = up + down;
-
-  console.log(
-    '[combined-5m] liquidity snapshot requested=' + new Date(timestamp).toISOString() +
-    ' actual=' + (snapshot.time || 'unknown') +
-    ' up=' + up.toFixed(2) +
-    ' down=' + down.toFixed(2) +
-    ' total=' + liquidity.toFixed(2)
-  );
-
-  return liquidity;
-}
-
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -255,7 +173,6 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
   throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
-
 async function processPeriod(boundary) {
   const activeStart = boundary - PERIOD;
   const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
@@ -268,32 +185,21 @@ async function processPeriod(boundary) {
     ' boundary=' + new Date(boundary).toISOString()
   );
 
-  const [polymarketMarket, polybacktestId] = await Promise.all([
-    findMarket(activeSlug),
-    polybacktestMarket(activeSlug)
-  ]);
+  const polymarketMarket = await findMarket(activeSlug);
 
-  const stats = await getReliableTradeStats(
+  const { trades, volume } = await getReliableTradeStats(
     polymarketMarket.conditionId,
     activeStart / 1000,
     evaluationEndMs / 1000,
     activeSlug
   );
 
-  const { trades, volume } = stats;
   const ratio = volume > 0 ? (trades / volume) * 100 : 0;
 
   const message = [
     '🔥 BTC · 5M',
     'TRADES: ' + trades,
-    'VOLUME: 
-    '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
-
-  await sendTelegram(message);
-}
- + volume.toFixed(2),
+    'VOLUME: $' + volume.toFixed(2),
     'TRADES/VOLUME: ' + ratio.toFixed(4) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
