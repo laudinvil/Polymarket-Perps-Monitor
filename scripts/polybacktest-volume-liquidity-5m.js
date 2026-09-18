@@ -53,21 +53,39 @@ async function market(s) {
 }
 
 async function tradeVolume(conditionId, marketSlug) {
-  const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) + '&limit=10000&takerOnly=true';
-  const r = await fetch(url);
-  const t = await r.text();
-  if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
-  const trades = JSON.parse(t);
-  if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
-
+  const PAGE_SIZE = 500;
+  const MAX_PAGES = 100;
   let volume = 0;
-  for (const tr of trades) {
-    const size = Number(tr.size);
-    const price = Number(tr.price);
-    if (Number.isFinite(size) && Number.isFinite(price)) volume += size * price;
+  let totalTrades = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * PAGE_SIZE;
+    const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
+      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=true';
+
+    const r = await fetch(url);
+    const t = await r.text();
+    if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
+
+    const trades = JSON.parse(t);
+    if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
+
+    totalTrades += trades.length;
+
+    for (const tr of trades) {
+      const size = Number(tr.size);
+      const price = Number(tr.price);
+      if (Number.isFinite(size) && Number.isFinite(price)) volume += size * price;
+    }
+
+    if (trades.length < PAGE_SIZE) break;
   }
 
-  console.log('[polybacktest] trades market=' + marketSlug + ' count=' + trades.length +
+  if (totalTrades >= PAGE_SIZE * MAX_PAGES) {
+    throw new Error('Trade pagination limit reached for ' + marketSlug);
+  }
+
+  console.log('[polybacktest] trades market=' + marketSlug + ' count=' + totalTrades +
     ' TRADE_VOLUME_USDC=' + volume.toFixed(2));
   return volume;
 }
@@ -171,7 +189,7 @@ async function main() {
   let boundary = currentBoundary();
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: Polymarket Data API trades summed as size * price for exact 5m condition');
+  console.log('[polybacktest] source: Polymarket Data API trades, paginated; full condition history, not a single 10k-trade page');
   console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
   console.log('[polybacktest] alert text: no streak field');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
