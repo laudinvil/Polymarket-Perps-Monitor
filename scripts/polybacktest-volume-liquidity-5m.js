@@ -198,8 +198,8 @@ async function processPeriod(boundary, previousVolume) {
     `pct=${change} direction=${direction}`
   );
 
-  if (delta === 0) {
-    console.log('[polybacktest] no alert: volume change is zero');
+  if (pct == null || (pct > -8 && pct < 8) || delta === 0) {
+    console.log('[polybacktest] no alert: change is inside -8%..+8% ignore band');
     return completedVolume;
   }
 
@@ -212,7 +212,7 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
-  console.log('[polybacktest] alert qualified: every non-zero volume change');
+  console.log('[polybacktest] alert qualified: volume change <= -8% or >= +8%');
   await send(text);
 
   return completedVolume;
@@ -223,8 +223,8 @@ async function main() {
   let boundary = currentBoundary();
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: Polymarket Gamma market.volume for each exact completed 5m market; no trade reconstruction');
-  console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
+  console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
+  console.log('[polybacktest] alert rule: change <= -8% or >= +8%; values between -8% and +8% are ignored');
   console.log('[polybacktest] alert text: no streak field');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
@@ -255,7 +255,14 @@ async function main() {
     try {
       if (previousVolume == null) {
         const previous = await market(slug(boundary - PERIOD));
-        previousVolume = previous.volume;
+        const retryBaseline = await tradeVolume(previous.conditionId, previous.slug);
+        if (!retryBaseline.complete) {
+          console.log('[polybacktest] BASELINE STILL INCOMPLETE: keep watcher alive and retry next boundary');
+          boundary += PERIOD;
+          continue;
+        }
+        previousVolume = retryBaseline.volume;
+        console.log(`[polybacktest] BASELINE RECOVERED previous completed 5m=${previous.slug} volume=${previousVolume.toFixed(2)}`);
       }
 
       previousVolume = await processPeriod(boundary, previousVolume);
