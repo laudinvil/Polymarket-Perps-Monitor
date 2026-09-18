@@ -55,8 +55,11 @@ async function tradeVolume(conditionId, marketSlug) {
 
   const startTs = start;
   const endTs = start + 300;
-  const PAGE_SIZE = 1000;
-  const MAX_PAGES = 1000;
+  // The current v1 /trades endpoint documents offset pagination with a
+  // maximum page size of 500. Trades are already returned newest-first,
+  // so do not send unsupported sort parameters.
+  const PAGE_SIZE = 500;
+  const MAX_PAGES = 20;
   let volume = 0;
   let totalTrades = 0;
   let reachedWindowEnd = false;
@@ -65,7 +68,7 @@ async function tradeVolume(conditionId, marketSlug) {
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_SIZE;
     const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
-      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
+      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false';
 
     const r = await fetch(url);
     const t = await r.text();
@@ -92,6 +95,8 @@ async function tradeVolume(conditionId, marketSlug) {
       }
     }
 
+    // /trades is newest-first. Once we see a trade before the 5m window,
+    // the complete window has been covered.
     if (reachedWindowEnd || trades.length < PAGE_SIZE) {
       complete = true;
       break;
@@ -182,8 +187,7 @@ async function processPeriod(boundary, previousVolume) {
   const completed = await market(completedSlug);
   const completedResult = await tradeVolume(completed.conditionId, completedSlug);
   if (!completedResult.complete) {
-    console.log('[polybacktest] SKIP alert: incomplete volume for ' + completedSlug);
-    return previousVolume;
+    throw new Error('INCOMPLETE_VOLUME_RETRY:' + completedSlug);
   }
   const completedVolume = completedResult.volume;
 
@@ -290,6 +294,14 @@ async function main() {
         `volume=${previousVolume.toFixed(2)}`
       );
     } catch (e) {
+      if (e.message.startsWith('INCOMPLETE_VOLUME_RETRY:')) {
+        console.log(
+          '[polybacktest] completed period data is incomplete; retry SAME boundary in 15s'
+        );
+        await sleep(15000);
+        continue;
+      }
+
       console.error(
         `[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`
       );
