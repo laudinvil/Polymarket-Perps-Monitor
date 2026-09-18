@@ -113,8 +113,6 @@ async function tradeVolume(conditionId, marketSlug) {
 
     for (const tr of trades) {
       let ts = Number(tr.timestamp);
-      // Polymarket Data API has returned timestamps in both seconds and milliseconds.
-      // Normalize to Unix seconds before applying the exact 5m window.
       if (Number.isFinite(ts) && ts > 1e12) ts /= 1000;
       if (!Number.isFinite(ts) && typeof tr.timestamp === 'string') {
         const parsed = Date.parse(tr.timestamp);
@@ -257,19 +255,18 @@ async function processPeriod(boundary) {
   console.log('[combined-5m] STEP 4/4 PolyBackTest liquidity snapshot');
   const liquidity = await snapshotLiquidity(pbMarket.id, boundary);
 
-  const difference = Math.abs(volume - liquidity);
-  const arrow = volume > liquidity ? '↑' : volume < liquidity ? '↓' : '→';
+  const imbalancePct = liquidity > 0 ? (volume / liquidity) * 100 : null;
 
   const text = [
     '🔥 BTC · 5M',
-    'VOLUME: $' + volume.toFixed(2),
-    'LIQUIDITY: $' + liquidity.toFixed(2),
-    'IMBALANCE: ' + arrow + ' $' + difference.toFixed(2),
+    'LAST 5M: $' + volume.toFixed(2),
+    'LAST LIQUIDITY: $' + liquidity.toFixed(2),
+    'IMBALANCE: ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
 
-  console.log('[combined-5m] alert volume=' + volume.toFixed(2) + ' liquidity=' + liquidity.toFixed(2) + ' imbalance=' + arrow + difference.toFixed(2));
+  console.log('[combined-5m] alert last5m=' + volume.toFixed(2) + ' lastLiquidity=' + liquidity.toFixed(2) + ' imbalance=' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'));
   await send(text);
 }
 
@@ -292,7 +289,6 @@ async function main() {
       boundary += PERIOD;
     } catch (e) {
       console.error('[combined-5m] PERIOD FAILED boundary=' + new Date(boundary).toISOString() + ': ' + e.message);
-      // Never skip a completed period after a data/API failure.
       await sleep(1000);
     }
   }
