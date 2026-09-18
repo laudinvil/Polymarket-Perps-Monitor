@@ -6,7 +6,7 @@ const { env } = require('node:process');
 
 const API = 'https://api.polybacktest.com';
 const PERIOD = 300000;
-const RETRY_MS = 15000;
+const RETRY_MS = 1000;
 const RETRIES = 8;
 const RUN_MS = 358 * 60 * 1000;
 
