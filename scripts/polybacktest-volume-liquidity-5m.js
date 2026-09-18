@@ -198,8 +198,8 @@ async function processPeriod(boundary, previousVolume) {
     `pct=${change} direction=${direction}`
   );
 
-  if (pct == null || (pct > -8 && pct < 8) || delta === 0) {
-    console.log('[polybacktest] no alert: change is inside -8%..+8% ignore band');
+  if (delta === 0) {
+    console.log('[polybacktest] no alert: volume change is zero');
     return completedVolume;
   }
 
@@ -212,7 +212,7 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
-  console.log('[polybacktest] alert qualified: volume change <= -8% or >= +8%');
+  console.log('[polybacktest] alert qualified: every non-zero volume change');
   await send(text);
 
   return completedVolume;
@@ -224,7 +224,7 @@ async function main() {
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
-  console.log('[polybacktest] alert rule: change <= -8% or >= +8%; values between -8% and +8% are ignored');
+  console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
   console.log('[polybacktest] alert text: no streak field');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
