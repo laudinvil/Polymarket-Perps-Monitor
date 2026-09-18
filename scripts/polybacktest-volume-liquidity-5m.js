@@ -1,71 +1,93 @@
-// Continuous 5m watcher: scheduling is handled by the workflow.
+// Continuous BTC 5m monitor: volume vs liquidity imbalance.
+// One alert per completed 5m period.
+// Volume: exact Polymarket trades. Liquidity: PolyBackTest snapshot-at.
+
 const { env } = require('node:process');
-const API = 'https://gamma-api.polymarket.com';
+
+const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
+const POLYBACKTEST_API = 'https://api.polybacktest.com/v4';
 const PERIOD = 300000;
-const GAP = 1000;
+const POLYMARKET_GAP = 1000;
+const POLYBACKTEST_GAP = 1600;
 const MARKET_RETRY_MS = 15000;
 const MARKET_RETRIES = 8;
 const RUN_MS = 358 * 60 * 1000;
-let lastApi = 0;
+
+let lastPolymarketApi = 0;
+let lastPolyBackTestApi = 0;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const currentBoundary = () => Math.floor(Date.now() / PERIOD) * PERIOD;
-const slug = start => `btc-updown-5m-${Math.floor(start / 1000)}`;
+const slug = start => 'btc-updown-5m-' + Math.floor(start / 1000);
+const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 
-async function api(path) {
-  const wait = GAP - (Date.now() - lastApi);
+async function polymarketApi(path) {
+  const wait = POLYMARKET_GAP - (Date.now() - lastPolymarketApi);
   if (wait > 0) await sleep(wait);
-  lastApi = Date.now();
+  lastPolymarketApi = Date.now();
 
-  const r = await fetch(API + path);
+  const r = await fetch(POLYMARKET_API + path);
   const t = await r.text();
-  if (!r.ok) throw new Error('Polymarket Gamma ' + r.status + ': ' + t);
+  if (!r.ok) throw new Error('Polymarket ' + r.status + ': ' + t);
+  return JSON.parse(t);
+}
+
+async function polybacktestApi(path) {
+  const wait = POLYBACKTEST_GAP - (Date.now() - lastPolyBackTestApi);
+  if (wait > 0) await sleep(wait);
+  lastPolyBackTestApi = Date.now();
+
+  const r = await fetch(POLYBACKTEST_API + path, {
+    headers: { Authorization: 'Bearer ' + env.POLYBACKTEST_API_KEY }
+  });
+  const t = await r.text();
+  if (!r.ok) throw new Error('PolyBackTest ' + r.status + ': ' + t);
   return JSON.parse(t);
 }
 
 async function market(s) {
   let lastError;
+
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
-      const d = await api('/markets?slug=' + encodeURIComponent(s));
+      const d = await polymarketApi('/markets?slug=' + encodeURIComponent(s));
       const x = Array.isArray(d) ? d.find(v => v && v.slug === s) : null;
       if (!x) throw new Error('Market ' + s + ' not found in Polymarket Gamma');
 
       const id = x.id ?? x.market_id;
       const conditionId = x.conditionId ?? x.condition_id;
-      
-
       if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
 
       return { id, slug: x.slug || s, conditionId };
     } catch (err) {
       lastError = err;
       if (attempt < MARKET_RETRIES) {
-        console.log('[polybacktest] market ' + s + ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + err.message);
+        console.log('[combined-5m] market ' + s + ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + err.message);
         await sleep(MARKET_RETRY_MS);
       }
     }
   }
+
   throw lastError;
 }
+
 async function tradeVolume(conditionId, marketSlug) {
-  const start = Number(marketSlug.match(/-(\d+)$/)?.[1]);
+  const start = Number(marketSlug.match(/-(\\d+)$/)?.[1]);
   if (!Number.isFinite(start)) throw new Error('Invalid 5m slug timestamp: ' + marketSlug);
 
-  const startTs = start;
-  const endTs = start + 300;
+  const end = start + 300;
   const PAGE_SIZE = 1000;
   const MAX_PAGES = 1000;
   let volume = 0;
-  let totalTrades = 0;
-  let reachedWindowEnd = false;
+  let totalRows = 0;
   let complete = false;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_SIZE;
     const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
-      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
+      '&limit=' + PAGE_SIZE + '&offset=' + offset +
+      '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
 
     const r = await fetch(url);
     const t = await r.text();
@@ -74,58 +96,102 @@ async function tradeVolume(conditionId, marketSlug) {
     const trades = JSON.parse(t);
     if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
 
-    totalTrades += trades.length;
+    totalRows += trades.length;
+    let reachedWindowStart = false;
 
     for (const tr of trades) {
       const ts = Number(tr.timestamp);
       const size = Number(tr.size);
       const price = Number(tr.price);
 
-      if (ts < startTs) {
-        reachedWindowEnd = true;
+      if (ts < start) {
+        reachedWindowStart = true;
         break;
       }
 
-      if (ts >= startTs && ts < endTs &&
-          Number.isFinite(size) && Number.isFinite(price)) {
+      if (ts >= start && ts < end && Number.isFinite(size) && Number.isFinite(price)) {
         volume += size * price;
       }
     }
 
-    // /trades is newest-first. Once we see a trade before the 5m window,
-    // the complete window has been covered.
-    if (reachedWindowEnd || trades.length < PAGE_SIZE) {
+    if (reachedWindowStart || trades.length < PAGE_SIZE) {
       complete = true;
       break;
     }
   }
 
   if (!complete) {
-    console.log(
-      '[polybacktest] INCOMPLETE_VOLUME market=' + marketSlug +
-      ' window=' + startTs + '-' + endTs +
-      ' rows=' + totalTrades +
-      ' pages=' + MAX_PAGES +
-      ' action=SKIP_ALERT_CONTINUE'
-    );
-    return { volume: 0, complete: false };
+    throw new Error('Volume window incomplete for ' + marketSlug + ' rows=' + totalRows);
   }
 
-  console.log(
-    '[polybacktest] trades market=' + marketSlug +
-    ' window=' + startTs + '-' + endTs +
-    ' rows=' + totalTrades +
-    ' VOLUME_USDC=' + volume.toFixed(2)
-  );
+  console.log('[combined-5m] VOLUME market=' + marketSlug + ' rows=' + totalRows + ' value=' + volume.toFixed(2));
+  return volume;
+}
 
-  return { volume, complete: true };
+function unwrapMarket(d, fallbackSlug) {
+  const candidates = [
+    d?.market,
+    d?.data?.market,
+    d?.result?.market,
+    d?.result,
+    Array.isArray(d) ? d[0] : null,
+    d
+  ];
+
+  const x = candidates.find(v => v && typeof v === 'object' && !Array.isArray(v) &&
+    (v.id != null || v.market_id != null || v.slug != null));
+
+  if (!x) throw new Error('PolyBackTest market payload has no id for ' + fallbackSlug);
+  return x;
+}
+
+async function polybacktestMarket(s) {
+  const d = await polybacktestApi('/markets/by-slug/' + encodeURIComponent(s) + '?coin=btc');
+  const x = unwrapMarket(d, s);
+  const id = x.id ?? x.market_id;
+  console.log('[combined-5m] LIQUIDITY market=' + s + ' id=' + id);
+  return { id, slug: x.slug || s };
+}
+
+async function snapshotLiquidity(id, endMs) {
+  const candidates = [
+    endMs - 2000,
+    endMs - 5000,
+    endMs - 10000,
+    endMs - 15000,
+    endMs - 30000,
+    endMs - 60000,
+    endMs - 120000
+  ];
+
+  for (const ts of candidates) {
+    try {
+      const d = await polybacktestApi(
+        '/markets/' + encodeURIComponent(id) + '/snapshot-at/' + ts + '?coin=btc'
+      );
+
+      const s = Array.isArray(d.snapshots) ? d.snapshots[0] : (d.snapshot || d.data?.snapshot);
+      if (!s) continue;
+
+      const sum = book => [...(book?.bids || []), ...(book?.asks || [])]
+        .reduce((a, l) => a + num(l.price) * num(l.size), 0);
+
+      const liquidity = sum(s.orderbook_up) + sum(s.orderbook_down);
+      console.log('[combined-5m] LIQUIDITY id=' + id + ' snapshot=' + s.time + ' value=' + liquidity.toFixed(2));
+      return liquidity;
+    } catch (e) {
+      console.log('[combined-5m] snapshot miss id=' + id + ' ts=' + ts + ': ' + e.message);
+    }
+  }
+
+  throw new Error('No usable liquidity snapshot for market ' + id);
 }
 
 async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(
-        `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+        'https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/sendMessage',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -140,102 +206,57 @@ async function send(text) {
       const raw = await r.text();
       const d = JSON.parse(raw);
       const messageId = d.result?.message_id;
-      const actualChatId = d.result?.chat?.id;
-      const chatType = d.result?.chat?.type ?? 'unknown';
-      const chatIdText = String(actualChatId ?? '');
-      const chatSuffix = chatIdText ? chatIdText.slice(-4) : 'none';
 
-      console.log(
-        `[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} ` +
-        `message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`
-      );
+      console.log('[combined-5m] Telegram attempt=' + attempt + ' status=' + r.status + ' ok=' + d.ok + ' message_id=' + (messageId ?? 'none'));
 
-      const expected = String(env.TELEGRAM_CHAT_ID);
-      const chatMatches =
-        !/^-?\\d+$/.test(expected) || String(actualChatId ?? '') === expected;
-
-      if (r.ok && d.ok === true && messageId && chatMatches) {
-        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId}`);
-        return true;
-      }
-
-      throw new Error(`Telegram API did not confirm delivery: ${raw}`);
+      if (r.ok && d.ok === true && messageId) return true;
+      throw new Error('Telegram API did not confirm delivery: ' + raw);
     } catch (e) {
-      console.log(`[polybacktest] Telegram attempt=${attempt} failed: ${e.message}`);
+      console.log('[combined-5m] Telegram attempt=' + attempt + ' failed: ' + e.message);
       if (attempt < 3) await sleep(2000 * attempt);
     }
   }
 
-  console.log('[polybacktest] WARNING: Telegram delivery was not confirmed after 3 attempts; continuing without failing workflow');
-  return false;
+  throw new Error('Telegram delivery was not confirmed');
 }
 
-async function processPeriod(boundary, previousVolume) {
+async function processPeriod(boundary) {
   const completedStart = boundary - PERIOD;
   const completedSlug = slug(completedStart);
   const nextSlug = slug(boundary);
-  const ALERT_VOLUME = 40000;
 
-  console.log(`[polybacktest] completed=${completedSlug} next=${nextSlug}`);
+  console.log('[combined-5m] completed=' + completedSlug + ' next=' + nextSlug);
 
-  const completed = await market(completedSlug);
-  const completedResult = await tradeVolume(completed.conditionId, completedSlug);
-  if (!completedResult.complete) {
-    console.log('[polybacktest] SKIP alert: incomplete volume for ' + completedSlug);
-    return previousVolume;
-  }
+  const pmMarket = await market(completedSlug);
+  const volume = await tradeVolume(pmMarket.conditionId, completedSlug);
 
-  const completedVolume = completedResult.volume;
+  const pbMarket = await polybacktestMarket(completedSlug);
+  const liquidity = await snapshotLiquidity(pbMarket.id, boundary);
 
-  console.log(
-    `[polybacktest] PERIOD RESULT last5m=${completedVolume.toFixed(2)}`
-  );
-
-  if (completedVolume < ALERT_VOLUME) {
-    console.log(
-      `[polybacktest] no alert: LAST 5M $${completedVolume.toFixed(2)} < $${ALERT_VOLUME.toFixed(2)}`
-    );
-    return completedVolume;
-  }
+  const difference = Math.abs(volume - liquidity);
+  const arrow = volume > liquidity ? '↑' : volume < liquidity ? '↓' : '→';
 
   const text = [
     '🔥 BTC · 5M',
-    `LAST 5M: $${completedVolume.toFixed(2)}`,
+    'VOLUME: $' + volume.toFixed(2),
+    'LIQUIDITY: $' + liquidity.toFixed(2),
+    'IMBALANCE: ' + arrow + ' $' + difference.toFixed(2),
     '➡️ NEXT · Polymarket 5M',
-    `https://polymarket.com/event/${nextSlug}`
+    'https://polymarket.com/event/' + nextSlug
   ].join('\\n');
 
-  console.log('[polybacktest] alert qualified: LAST 5M >= $40000');
+  console.log('[combined-5m] alert volume=' + volume.toFixed(2) + ' liquidity=' + liquidity.toFixed(2) + ' imbalance=' + arrow + difference.toFixed(2));
   await send(text);
-
-  return completedVolume;
 }
+
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = currentBoundary();
 
-  console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
-  console.log('[polybacktest] alert rule: every completed 5m period with non-zero volume change');
-  console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
-  console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
-
-  let previousVolume;
-  try {
-    const previous = await market(slug(boundary - PERIOD));
-    const previousResult = await tradeVolume(previous.conditionId, previous.slug);
-  if (!previousResult.complete) {
-    throw new Error('Initial baseline volume incomplete for ' + previous.slug);
-  }
-  previousVolume = previousResult.volume;
-
-    console.log(
-      `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
-      `volume=${previousVolume.toFixed(2)}`
-    );
-  } catch (e) {
-    console.error('[polybacktest] BASELINE FAILED: ' + e.message);
-  }
+  console.log('[combined-5m] BTC-only combined 5m monitor');
+  console.log('[combined-5m] volume source: Polymarket Data API trades');
+  console.log('[combined-5m] liquidity source: PolyBackTest snapshot-at');
+  console.log('[combined-5m] rule: one alert for every completed period; no threshold, streak, percentage, or comparison filter');
 
   while (Date.now() < stopAt) {
     const wait = boundary - Date.now();
@@ -243,37 +264,19 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
-      if (previousVolume == null) {
-        const previous = await market(slug(boundary - PERIOD));
-        const retryBaseline = await tradeVolume(previous.conditionId, previous.slug);
-        if (!retryBaseline.complete) {
-          console.log('[polybacktest] BASELINE STILL INCOMPLETE: keep watcher alive; retry SAME boundary');
-          await sleep(15000);
-          continue;
-        }
-        previousVolume = retryBaseline.volume;
-        console.log(`[polybacktest] BASELINE RECOVERED previous completed 5m=${previous.slug} volume=${previousVolume.toFixed(2)}`);
-      }
-
-      previousVolume = await processPeriod(boundary, previousVolume);
-
-      console.log(
-        `[polybacktest] PERIOD COMPLETE boundary=${new Date(boundary).toISOString()} ` +
-        `volume=${previousVolume.toFixed(2)}`
-      );
+      await processPeriod(boundary);
+      boundary += PERIOD;
     } catch (e) {
-      console.error(
-        `[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`
-      );
+      console.error('[combined-5m] PERIOD FAILED boundary=' + new Date(boundary).toISOString() + ': ' + e.message);
+      // Never skip a completed period after a data/API failure.
+      await sleep(1000);
     }
-
-    boundary += PERIOD;
   }
 
-  console.log('[polybacktest] watcher window complete');
+  console.log('[combined-5m] watcher window complete');
 }
 
 main().catch(e => {
-  console.error('[polybacktest] FAILED', e);
+  console.error('[combined-5m] FAILED', e);
   process.exit(1);
 });
