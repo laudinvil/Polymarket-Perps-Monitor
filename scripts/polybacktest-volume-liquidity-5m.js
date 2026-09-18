@@ -174,7 +174,7 @@ async function processPeriod(boundary, previousVolume) {
   const completedStart = boundary - PERIOD;
   const completedSlug = slug(completedStart);
   const nextSlug = slug(boundary);
-  const ALERT_VOLUME = 50000;
+  const ALERT_VOLUME = 40000;
 
   console.log(`[polybacktest] completed=${completedSlug} next=${nextSlug}`);
 
@@ -205,7 +205,7 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\\n');
 
-  console.log('[polybacktest] alert qualified: LAST 5M >= $50000');
+  console.log('[polybacktest] alert qualified: LAST 5M >= $40000');
   await send(text);
 
   return completedVolume;
