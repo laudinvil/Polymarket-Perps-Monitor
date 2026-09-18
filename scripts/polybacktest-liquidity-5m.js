@@ -1,5 +1,6 @@
-// Continuous 5m BTC liquidity watcher using the same PolyBackTest snapshot logic that produced the working alerts.
-// Alerts are generated from consecutive 5m boundary liquidity snapshots.
+// Continuous BTC 5m liquidity watcher.
+// Sends one alert for every completed 5m period.
+// Uses PolyBackTest snapshot-at. No comparisons, streaks, or percentage thresholds.
 
 const { env } = require('node:process');
 
@@ -14,19 +15,19 @@ let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const nextBoundary = () => Math.floor(Date.now() / PERIOD + 1) * PERIOD;
-const slug = start => `btc-updown-5m-${Math.floor(start / 1000)}`;
+const slug = start => 'btc-updown-5m-' + Math.floor(start / 1000);
 
 async function api(path) {
   const wait = GAP - (Date.now() - lastApi);
   if (wait > 0) await sleep(wait);
   lastApi = Date.now();
 
-  const r = await fetch(`${API}${path}`, {
-    headers: { Authorization: `Bearer ${env.POLYBACKTEST_API_KEY}` }
+  const r = await fetch(API + path, {
+    headers: { Authorization: 'Bearer ' + env.POLYBACKTEST_API_KEY }
   });
   const t = await r.text();
 
-  if (!r.ok) throw new Error(`PolyBackTest ${r.status}: ${t}`);
+  if (!r.ok) throw new Error('PolyBackTest ' + r.status + ': ' + t);
   return JSON.parse(t);
 }
 
@@ -45,16 +46,16 @@ function unwrapMarket(d, fallbackSlug) {
       (v.id != null || v.market_id != null || v.slug != null)
   );
 
-  if (!x) throw new Error(`PolyBackTest market payload has no id for ${fallbackSlug}`);
+  if (!x) throw new Error('PolyBackTest market payload has no id for ' + fallbackSlug);
   return x;
 }
 
 async function market(s) {
-  const d = await api(`/markets/by-slug/${encodeURIComponent(s)}?coin=${COIN}`);
+  const d = await api('/markets/by-slug/' + encodeURIComponent(s) + '?coin=' + COIN);
   const x = unwrapMarket(d, s);
   const id = x.id ?? x.market_id;
 
-  console.log(`[liquidity-5m] market ${s} id=${id}`);
+  console.log('[liquidity-5m] market ' + s + ' id=' + id);
   return { id, slug: x.slug || s };
 }
 
@@ -71,12 +72,10 @@ async function snapshotLiquidity(id, endMs) {
 
   for (const ts of candidates) {
     try {
-      console.log(
-        `[liquidity-5m] snapshot id=${id} ts=${new Date(ts).toISOString()}`
-      );
+      console.log('[liquidity-5m] snapshot id=' + id + ' ts=' + new Date(ts).toISOString());
 
       const d = await api(
-        `/markets/${encodeURIComponent(id)}/snapshot-at/${ts}?coin=${COIN}`
+        '/markets/' + encodeURIComponent(id) + '/snapshot-at/' + ts + '?coin=' + COIN
       );
 
       const s = Array.isArray(d.snapshots)
@@ -89,28 +88,28 @@ async function snapshotLiquidity(id, endMs) {
         [...(b?.bids || []), ...(b?.asks || [])]
           .reduce((a, l) => a + num(l.price) * num(l.size), 0);
 
-      const liquidity =
-        sum(s.orderbook_up) +
-        sum(s.orderbook_down);
+      const liquidity = sum(s.orderbook_up) + sum(s.orderbook_down);
 
       console.log(
-        `[liquidity-5m] snapshot OK id=${id} time=${s.time} liquidity=${liquidity.toFixed(2)}`
+        '[liquidity-5m] snapshot OK id=' + id +
+        ' time=' + s.time +
+        ' liquidity=' + liquidity.toFixed(2)
       );
 
       return liquidity;
     } catch (e) {
-      console.log(`[liquidity-5m] snapshot miss id=${id}: ${e.message}`);
+      console.log('[liquidity-5m] snapshot miss id=' + id + ': ' + e.message);
     }
   }
 
-  throw new Error(`No usable snapshot for market ${id}`);
+  throw new Error('No usable snapshot for market ' + id);
 }
 
 async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const r = await fetch(
-        `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+        'https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/sendMessage',
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -123,155 +122,63 @@ async function send(text) {
       );
 
       const raw = await r.text();
-      let d;
-      try {
-        d = JSON.parse(raw);
-      } catch {
-        throw new Error(`invalid JSON response: ${raw}`);
-      }
-
+      const d = JSON.parse(raw);
       const messageId = d.result?.message_id;
-      const actualChatId = d.result?.chat?.id;
-      const chatType = d.result?.chat?.type ?? 'unknown';
-      const chatIdText = String(actualChatId ?? '');
-      const chatSuffix = chatIdText ? chatIdText.slice(-4) : 'none';
 
       console.log(
-        `[liquidity-5m] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`
+        '[liquidity-5m] Telegram attempt=' + attempt +
+        ' status=' + r.status +
+        ' ok=' + d.ok +
+        ' message_id=' + (messageId ?? 'none')
       );
 
-      const expected = String(env.TELEGRAM_CHAT_ID);
-      const chatMatches =
-        !/^-?\d+$/.test(expected) ||
-        String(actualChatId ?? '') === expected;
-
-      if (r.ok && d.ok === true && messageId && chatMatches) {
-        console.log(
-          `[liquidity-5m] TELEGRAM CONFIRMED message_id=${messageId} chat_type=${chatType} chat_id_suffix=${chatSuffix}`
-        );
+      if (r.ok && d.ok === true && messageId) {
+        console.log('[liquidity-5m] TELEGRAM CONFIRMED message_id=' + messageId);
         return true;
       }
 
-      throw new Error(`Telegram API did not confirm delivery: ${raw}`);
+      throw new Error('Telegram API did not confirm delivery: ' + raw);
     } catch (e) {
-      console.log(
-        `[liquidity-5m] Telegram attempt=${attempt} failed: ${e.message}`
-      );
+      console.log('[liquidity-5m] Telegram attempt=' + attempt + ' failed: ' + e.message);
       if (attempt < 3) await sleep(2000 * attempt);
     }
   }
 
-  console.log(
-    '[liquidity-5m] WARNING: Telegram delivery was not confirmed after 3 attempts; continuing without failing workflow'
-  );
-  return false;
+  throw new Error('Telegram delivery was not confirmed');
 }
 
-async function processPeriod(boundary, previousLiq, streak) {
-  const completedStart = boundary - PERIOD;
-  const previousStart = boundary - 2 * PERIOD;
-  const completedSlug = slug(completedStart);
-  const previousSlug = slug(previousStart);
+async function processPeriod(boundary) {
+  const completedSlug = slug(boundary - PERIOD);
   const nextSlug = slug(boundary);
 
-  console.log(
-    `[liquidity-5m] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`
-  );
+  console.log('[liquidity-5m] completed=' + completedSlug + ' next=' + nextSlug);
 
   const completed = await market(completedSlug);
-
-  let previousValue = previousLiq;
-
-  if (previousValue == null) {
-    const previous = await market(previousSlug);
-    console.log(
-      `[liquidity-5m] ids ${previous.id} -> ${completed.id}`
-    );
-    previousValue = await snapshotLiquidity(previous.id, completedStart);
-  } else {
-    console.log(
-      `[liquidity-5m] previous liquidity carried forward=${previousValue.toFixed(2)}`
-    );
-    console.log(`[liquidity-5m] completed id=${completed.id}`);
-  }
-
-  const completedLiq = await snapshotLiquidity(completed.id, boundary);
-
-  const delta = completedLiq - previousValue;
-  const pct = previousValue === 0 ? null : (delta / previousValue) * 100;
-  const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
-  const change = pct == null
-    ? 'N/A'
-    : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
-
-  let nextStreak;
-
-  if (delta > 0) {
-    nextStreak = streak.direction === '↑' ? streak.count + 1 : 1;
-  } else if (delta < 0) {
-    nextStreak = streak.direction === '↓' ? streak.count + 1 : 1;
-  } else {
-    nextStreak = 0;
-  }
-
-  const nextDirection =
-    delta > 0 ? '↑' :
-    delta < 0 ? '↓' :
-    null;
-
-  console.log(
-    `[liquidity-5m] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`
-  );
-
-  if (nextStreak < 2) {
-    console.log(
-      `[liquidity-5m] no alert: streak=${nextStreak}, minimum is 2`
-    );
-
-    return {
-      liquidity: completedLiq,
-      streak: { direction: nextDirection, count: nextStreak }
-    };
-  }
+  const liquidity = await snapshotLiquidity(completed.id, boundary);
 
   const text = [
     '🔥 BTC · 5M',
-    `PREVIOUS: $${previousValue.toFixed(2)}`,
-    `LAST 5M: $${completedLiq.toFixed(2)}`,
-    `LIQUIDITY ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
-    `STREAK: ${nextStreak}× ${nextDirection}`,
+    'LIQUIDITY: $' + liquidity.toFixed(2),
     '➡️ NEXT · Polymarket 5M',
-    `https://polymarket.com/event/${nextSlug}`
+    'https://polymarket.com/event/' + nextSlug
   ].join('\n');
 
-  console.log(
-    `[liquidity-5m] alert qualified: streak=${nextStreak} direction=${nextDirection}`
-  );
   console.log('[liquidity-5m] sending Telegram now');
-
   await send(text);
 
-  console.log(`[liquidity-5m] period complete ${nextSlug}`);
-
-  return {
-    liquidity: completedLiq,
-    streak: { direction: nextDirection, count: nextStreak }
-  };
+  console.log(
+    '[liquidity-5m] PERIOD COMPLETE completed=' + completedSlug +
+    ' next=' + nextSlug
+  );
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = nextBoundary();
-  let previousLiq = null;
-  let streak = { direction: null, count: 0 };
 
-  console.log('[liquidity-5m] liquidity-only BTC 5m continuous watcher');
-  console.log(
-    '[liquidity-5m] alert rule: 2+ consecutive liquidity moves in the same direction'
-  );
-  console.log(
-    `[liquidity-5m] run window until ${new Date(stopAt).toISOString()}`
-  );
+  console.log('[liquidity-5m] BTC-only 5m liquidity watcher');
+  console.log('[liquidity-5m] source: PolyBackTest snapshot-at');
+  console.log('[liquidity-5m] rule: one alert for every completed period; no comparisons; no streaks');
 
   while (Date.now() < stopAt) {
     const wait = boundary - Date.now();
@@ -279,16 +186,16 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
-      const result = await processPeriod(boundary, previousLiq, streak);
-      previousLiq = result.liquidity;
-      streak = result.streak;
+      await processPeriod(boundary);
+      boundary += PERIOD;
     } catch (e) {
       console.error(
-        `[liquidity-5m] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`
+        '[liquidity-5m] PERIOD FAILED boundary=' +
+        new Date(boundary).toISOString() + ': ' + e.message
       );
+      // Do not skip the period after a data/API failure.
+      await sleep(1000);
     }
-
-    boundary += PERIOD;
   }
 
   console.log('[liquidity-5m] watcher window complete');
