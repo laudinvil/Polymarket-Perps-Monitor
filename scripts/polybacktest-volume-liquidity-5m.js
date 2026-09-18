@@ -1,6 +1,6 @@
 // Continuous 5m watcher: scheduling is handled by the workflow.
 const { env } = require('node:process');
-const API = 'https://api.polybacktest.com/v2';
+const API = 'https://api.polybacktest.com/v3/btc';
 const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
@@ -36,14 +36,14 @@ async function market(s) {
   let lastError;
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
-      // v2 lists current BTC 5m markets and includes final_volume in market metadata.
-      // Fetch a broad current window, then select the exact completed slug.
-      const d = await api(`/markets?coin=${COIN}&market_type=5m&limit=100`);
-      const markets = Array.isArray(d?.markets) ? d.markets : Array.isArray(d?.data) ? d.data : [];
+      // v3 returns BTC markets in a cursor-paginated data array.
+      // Ask specifically for resolved 5m markets so final_volume is available.
+      const d = await api(`/markets?type=5m&resolved=true&limit=100`);
+      const markets = Array.isArray(d?.data) ? d.data : [];
       const x = markets.find(v => v && v.slug === s);
-      if (!x) throw new Error(`Market ${s} not found in v2 BTC 5m market list`);
+      if (!x) throw new Error(`Market ${s} not found in v3 BTC resolved 5m market list`);
       const id = x.market_id ?? x.id;
-      const finalVolume = Number(x.final_volume ?? x.finalVolume);
+      const finalVolume = Number(x.final_volume);
       if (!Number.isFinite(finalVolume)) throw new Error(`Market ${s} id=${id} has no final_volume yet`);
       console.log(`[polybacktest] market ${s} id=${id} final_volume=${finalVolume.toFixed(2)} attempt=${attempt}`);
       return {id, slug:x.slug || s, finalVolume};
@@ -166,7 +166,7 @@ async function main() {
   let boundary = currentBoundary();
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] first processing boundary=' + new Date(boundary).toISOString() + ' (last completed period)');
-  console.log('[polybacktest] source: PolyBackTest v2 BTC 5m market list final_volume');
+  console.log('[polybacktest] source: PolyBackTest v3 BTC resolved 5m market list final_volume');
   console.log('[polybacktest] alert rule: every non-zero change counts; alert on 2+ consecutive same-direction changes');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
