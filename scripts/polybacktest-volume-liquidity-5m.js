@@ -263,7 +263,89 @@ async function processPeriod(boundary) {
 
   const text = [
     '🔥 BTC · 5M',
-    'LAST 5M: ,
+    'LAST 5M: 
+    'LAST LIQUIDITY: $' + liquidity.toFixed(2),
+    'IMBALANCE: ' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  console.log('[combined-5m] alert last5m=' + volume.toFixed(2) + ' lastLiquidity=' + liquidity.toFixed(2) + ' imbalance=' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'));
+  await send(text);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = currentBoundary();
+
+  console.log('[combined-5m] BTC-only combined 5m monitor');
+  console.log('[combined-5m] volume source: Polymarket Data API trades');
+  console.log('[combined-5m] liquidity source: PolyBackTest snapshot-at');
+  console.log('[combined-5m] rule: one alert for every completed period; no threshold, streak, percentage, or comparison filter');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (e) {
+      console.error('[combined-5m] PERIOD FAILED boundary=' + new Date(boundary).toISOString() + ': ' + e.message);
+      await sleep(1000);
+    }
+  }
+
+  console.log('[combined-5m] watcher window complete');
+}
+
+main().catch(e => {
+  console.error('[combined-5m] FAILED', e);
+  process.exit(1);
+});
+ + volume.toFixed(2),
+    'LAST LIQUIDITY: $' + liquidity.toFixed(2),
+    'IMBALANCE: ' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  console.log('[combined-5m] alert last5m=' + volume.toFixed(2) + ' lastLiquidity=' + liquidity.toFixed(2) + ' imbalance=' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'));
+  await send(text);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = currentBoundary();
+
+  console.log('[combined-5m] BTC-only combined 5m monitor');
+  console.log('[combined-5m] volume source: Polymarket Data API trades');
+  console.log('[combined-5m] liquidity source: PolyBackTest snapshot-at');
+  console.log('[combined-5m] rule: one alert for every completed period; no threshold, streak, percentage, or comparison filter');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (e) {
+      console.error('[combined-5m] PERIOD FAILED boundary=' + new Date(boundary).toISOString() + ': ' + e.message);
+      await sleep(1000);
+    }
+  }
+
+  console.log('[combined-5m] watcher window complete');
+}
+
+main().catch(e => {
+  console.error('[combined-5m] FAILED', e);
+  process.exit(1);
+});
+ + volume.toFixed(2),
     'LAST LIQUIDITY: $' + liquidity.toFixed(2),
     'IMBALANCE: ' + imbalanceArrow + ' ' + (imbalancePct == null ? 'N/A' : imbalancePct.toFixed(2) + '%'),
     '➡️ NEXT · Polymarket 5M',
