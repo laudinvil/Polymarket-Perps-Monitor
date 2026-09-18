@@ -1,6 +1,6 @@
 // Continuous 5m watcher: scheduling is handled by the workflow.
 const { env } = require('node:process');
-const API = 'https://api.polybacktest.com/v4';
+const API = 'https://api.polybacktest.com/v1';
 const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
@@ -35,13 +35,8 @@ async function market(s) {
   const id = x.id ?? x.market_id;
   let finalVolume = x.final_volume ?? x.finalVolume;
 
-  // v4 market-by-slug should expose final_volume for a completed market.
-  // If the response omits it, fetch the canonical market-by-ID record.
-  if (!Number.isFinite(Number(finalVolume))) {
-    const md = await api(`/markets/${encodeURIComponent(id)}?coin=${COIN}`);
-    const m = unwrapMarket(md, s);
-    finalVolume = m.final_volume ?? m.finalVolume;
-  }
+  // v1 market-by-slug returns completed market metadata, including final_volume.
+  // v4 market metadata does not expose volume, so v1 is used for this volume-only monitor.
 
   if (!Number.isFinite(Number(finalVolume))) {
     throw new Error(`Market ${s} id=${id} has no final_volume`);
@@ -151,7 +146,7 @@ async function main() {
   let previousVolume = null;
   let streak = {direction: null, count: 0};
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: PolyBackTest market final_volume (not snapshots/liquidity)');
+  console.log('[polybacktest] source: PolyBackTest v1 market final_volume (not snapshots/liquidity)');
   console.log(`[polybacktest] alert rule: ${MIN_STREAK}+ consecutive qualifying moves; changes below ${MIN_CHANGE_PCT}% are ignored and do not reset streak`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
