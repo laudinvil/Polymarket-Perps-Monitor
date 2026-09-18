@@ -62,9 +62,12 @@ async function market(s) {
 
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
-      const d = await polymarketApi('/markets?slug=' + encodeURIComponent(s));
-      const x = Array.isArray(d) ? d.find(v => v && v.slug === s) : null;
-      if (!x) throw new Error('Market ' + s + ' not found in Polymarket Gamma');
+      const d = await polymarketApi('/events?slug=' + encodeURIComponent(s));
+      const event = Array.isArray(d) ? d.find(v => v && v.slug === s) : null;
+      const markets = Array.isArray(event?.markets) ? event.markets : [];
+      const x = markets.find(v => v && (v.slug === s || v.conditionId || v.condition_id)) || markets[0];
+
+      if (!x) throw new Error('Event ' + s + ' has no market in Polymarket Gamma');
 
       const id = x.id ?? x.market_id;
       const conditionId = x.conditionId ?? x.condition_id;
