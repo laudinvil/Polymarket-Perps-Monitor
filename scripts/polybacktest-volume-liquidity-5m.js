@@ -247,13 +247,12 @@ async function processPeriod(boundary) {
 
   const message = [
     '🔥 BTC · 5M',
-    'VOLUME: 
-
-  console.log(
-    '[combined-5m] alert completed=' + completedSlug +
-    ' volume=' + volume.toFixed(2) +
-    ' liquidity=' + liquidity.toFixed(2)
-  );
+    'VOLUME: $' + volume.toFixed(2) + volumeMark,
+    'LIQUIDITY: $' + liquidity.toFixed(2) + liquidityMark,
+    'DIFFERENCE: ' + percentage.toFixed(2) + '%',
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
 
   await sendTelegram(message);
 }
