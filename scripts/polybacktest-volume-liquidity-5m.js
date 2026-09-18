@@ -56,10 +56,11 @@ async function tradeVolume(conditionId, marketSlug) {
   const startTs = start;
   const endTs = start + 300;
   const PAGE_SIZE = 1000;
-  const MAX_PAGES = 10;
+  const MAX_PAGES = 1000;
   let volume = 0;
   let totalTrades = 0;
   let reachedWindowEnd = false;
+  let complete = false;
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_SIZE;
@@ -91,11 +92,20 @@ async function tradeVolume(conditionId, marketSlug) {
       }
     }
 
-    if (reachedWindowEnd || trades.length < PAGE_SIZE) break;
+    if (reachedWindowEnd || trades.length < PAGE_SIZE) {
+      complete = true;
+      break;
+    }
   }
 
-  if (!reachedWindowEnd && totalTrades >= PAGE_SIZE * MAX_PAGES) {
-    throw new Error('Trade history exceeds supported 5m scan window for ' + marketSlug);
+  if (!complete) {
+    console.log(
+      '[polybacktest] INCOMPLETE_VOLUME market=' + marketSlug +
+      ' window=' + startTs + '-' + endTs +
+      ' rows=' + totalTrades +
+      ' pages=' + MAX_PAGES
+    );
+    return { volume: 0, complete: false };
   }
 
   console.log(
@@ -105,7 +115,7 @@ async function tradeVolume(conditionId, marketSlug) {
     ' VOLUME_USDC=' + volume.toFixed(2)
   );
 
-  return volume;
+  return { volume, complete: true };
 }
 
 async function send(text) {
@@ -169,7 +179,12 @@ async function processPeriod(boundary, previousVolume) {
   );
 
   const completed = await market(completedSlug);
-  const completedVolume = await tradeVolume(completed.conditionId, completedSlug);
+  const completedResult = await tradeVolume(completed.conditionId, completedSlug);
+  if (!completedResult.complete) {
+    console.log('[polybacktest] SKIP alert: incomplete volume for ' + completedSlug);
+    return previousVolume;
+  }
+  const completedVolume = completedResult.volume;
 
   const delta = completedVolume - previousVolume;
   const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
@@ -217,7 +232,11 @@ async function main() {
 
   try {
     const previous = await market(slug(boundary - PERIOD));
-    previousVolume = await tradeVolume(previous.conditionId, previous.slug);
+    const previousResult = await tradeVolume(previous.conditionId, previous.slug);
+  if (!previousResult.complete) {
+    throw new Error('Initial baseline volume incomplete for ' + previous.slug);
+  }
+  previousVolume = previousResult.volume;
 
     console.log(
       `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
