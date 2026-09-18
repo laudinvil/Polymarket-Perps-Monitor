@@ -5,7 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const POLYBACKTEST_API = 'https://api.polybacktest.com/v4';
 
 const PERIOD = 300000;
-const ALERT_LEAD_MS = 10000;
+const ALERT_LEAD_MS = 0;
 const POLYMARKET_GAP = 1000;
 const POLYBACKTEST_GAP = 1600;
 const FETCH_TIMEOUT_MS = 5000;
@@ -233,11 +233,19 @@ async function processPeriod(boundary) {
   const completedSlug = marketSlug(completedStart);
   const nextSlug = marketSlug(boundary);
 
-  const polymarketMarket = await findMarket(completedSlug);
-  const volume = await tradeVolume(polymarketMarket.conditionId, completedStart / 1000, completedSlug);
+  // Start immediately at the exact boundary. The completed period must be fully closed
+  // before calculating its final volume/liquidity; starting 10s early caused stale/missing
+  // boundary data and delayed retries.
+  const [polymarketMarket, polybacktestId] = await Promise.all([
+    findMarket(completedSlug),
+    polybacktestMarket(completedSlug)
+  ]);
 
-  const polybacktestId = await polybacktestMarket(completedSlug);
-  const liquidity = await liquiditySnapshot(polybacktestId, boundary);
+  // These two independent data reads can run in parallel to minimize alert latency.
+  const [volume, liquidity] = await Promise.all([
+    tradeVolume(polymarketMarket.conditionId, completedStart / 1000, completedSlug),
+    liquiditySnapshot(polybacktestId, boundary)
+  ]);
 
   const percentage = Math.min(volume, liquidity) > 0
     ? (Math.abs(volume - liquidity) / Math.min(volume, liquidity)) * 100
@@ -261,8 +269,7 @@ async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow();
 
-  // Finish the completed period before the next 5m market begins.
-  // The completed period is already fully closed; only the alert is sent early.
+  // Wait for the exact 5m boundary, then process the just-completed period immediately.
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
