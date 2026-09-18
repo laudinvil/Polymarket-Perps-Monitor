@@ -1,24 +1,22 @@
 // Continuous 5m watcher: scheduling is handled by the workflow.
 const { env } = require('node:process');
 const API = 'https://gamma-api.polymarket.com';
-const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1000;
 const MARKET_RETRY_MS = 15000;
 const MARKET_RETRIES = 8;
 const RUN_MS = 358 * 60 * 1000;
-const MIN_CHANGE_PCT = 0;
-const MIN_STREAK = 2;
 let lastApi = 0;
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const currentBoundary = () => Math.floor(Date.now() / PERIOD) * PERIOD;
-const nextBoundary = () => currentBoundary() + PERIOD;
 const slug = start => `btc-updown-5m-${Math.floor(start / 1000)}`;
 
 async function api(path) {
   const wait = GAP - (Date.now() - lastApi);
   if (wait > 0) await sleep(wait);
   lastApi = Date.now();
+
   const r = await fetch(API + path);
   const t = await r.text();
   if (!r.ok) throw new Error('Polymarket Gamma ' + r.status + ': ' + t);
@@ -27,33 +25,54 @@ async function api(path) {
 
 async function market(s) {
   let lastError;
+
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
       const d = await api('/markets?slug=' + encodeURIComponent(s));
       const x = Array.isArray(d) ? d.find(v => v && v.slug === s) : null;
+
       if (!x) throw new Error('Market ' + s + ' not found in Polymarket Gamma');
+
       const id = x.id ?? x.market_id;
       const volume = Number(x.volumeNum ?? x.volume);
-      if (!Number.isFinite(volume)) throw new Error('Market ' + s + ' id=' + id + ' has no numeric volume');
-      console.log('[polybacktest] market ' + s + ' id=' + id + ' POLYMARKET_VOLUME=' + volume.toFixed(2) + ' attempt=' + attempt);
-      return {id, slug:x.slug || s, finalVolume:volume};
+
+      if (!Number.isFinite(volume)) {
+        throw new Error('Market ' + s + ' id=' + id + ' has no numeric volume');
+      }
+
+      console.log('[polybacktest] market ' + s + ' id=' + id +
+        ' POLYMARKET_VOLUME=' + volume.toFixed(2) + ' attempt=' + attempt);
+
+      return { id, slug: x.slug || s, volume };
     } catch (e) {
       lastError = e;
       if (attempt < MARKET_RETRIES) {
-        console.log('[polybacktest] market ' + s + ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + e.message);
+        console.log('[polybacktest] market ' + s +
+          ' not ready (attempt ' + attempt + '/' + MARKET_RETRIES + '): ' + e.message);
         await sleep(MARKET_RETRY_MS);
       }
     }
   }
+
   throw lastError;
 }
+
 async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method:'POST', headers:{'content-type':'application/json'},
-        body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
-      });
+      const r = await fetch(
+        `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text,
+            disable_web_page_preview: false
+          })
+        }
+      );
+
       const raw = await r.text();
       const d = JSON.parse(raw);
       const messageId = d.result?.message_id;
@@ -61,130 +80,132 @@ async function send(text) {
       const chatType = d.result?.chat?.type ?? 'unknown';
       const chatIdText = String(actualChatId ?? '');
       const chatSuffix = chatIdText ? chatIdText.slice(-4) : 'none';
-      console.log(`[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`);
+
+      console.log(
+        `[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} ` +
+        `message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`
+      );
+
       const expected = String(env.TELEGRAM_CHAT_ID);
-      const chatMatches = !/^-?\\d+$/.test(expected) || String(actualChatId ?? '') === expected;
+      const chatMatches =
+        !/^-?\\d+$/.test(expected) || String(actualChatId ?? '') === expected;
+
       if (r.ok && d.ok === true && messageId && chatMatches) {
         console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId}`);
         return true;
       }
+
       throw new Error(`Telegram API did not confirm delivery: ${raw}`);
     } catch (e) {
       console.log(`[polybacktest] Telegram attempt=${attempt} failed: ${e.message}`);
       if (attempt < 3) await sleep(2000 * attempt);
     }
   }
+
   console.log('[polybacktest] WARNING: Telegram delivery was not confirmed after 3 attempts; continuing without failing workflow');
   return false;
 }
 
-async function processPeriod(boundary, previousVolume, streak) {
+async function processPeriod(boundary, previousVolume) {
   const completedStart = boundary - PERIOD;
-  const previousStart = boundary - 2*PERIOD;
+  const previousStart = boundary - 2 * PERIOD;
   const completedSlug = slug(completedStart);
   const previousSlug = slug(previousStart);
   const nextSlug = slug(boundary);
-  console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
+
+  console.log(
+    `[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`
+  );
 
   const completed = await market(completedSlug);
-  let previousValue = previousVolume;
-  if (previousValue == null) {
-    const previous = await market(previousSlug);
-    console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
-    previousValue = previous.finalVolume;
-  }
+  const completedVolume = completed.volume;
 
-  const completedVolume = completed.finalVolume;
-  const delta = completedVolume - previousValue;
-  const pct = previousValue === 0 ? null : (delta / previousValue) * 100;
+  const delta = completedVolume - previousVolume;
+  const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
-  if (pct == null) {
-    console.log(`[polybacktest] no alert: previous volume is zero; streak preserved (${streak.count} ${streak.direction || 'none'})`);
-    return { volume: completedVolume, streak };
-  }
+  console.log(
+    `[polybacktest] PERIOD RESULT previous=${previousVolume.toFixed(2)} ` +
+    `last5m=${completedVolume.toFixed(2)} delta=${delta.toFixed(2)} ` +
+    `pct=${change} direction=${direction}`
+  );
 
-  let nextStreak;
-  if (delta > 0) nextStreak = streak.direction === '↑' ? streak.count + 1 : 1;
-  else if (delta < 0) nextStreak = streak.direction === '↓' ? streak.count + 1 : 1;
-  else nextStreak = streak.count;
-  const nextDirection = delta > 0 ? '↑' : delta < 0 ? '↓' : streak.direction;
-
-  console.log(`[polybacktest] direction=${direction} delta=${delta.toFixed(2)} pct=${change} streak=${nextStreak}${nextDirection ? ` ${nextDirection}` : ''}`);
-
-  if (nextStreak < MIN_STREAK) {
-    console.log(`[polybacktest] no alert: streak=${nextStreak}, minimum is ${MIN_STREAK}`);
-    return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
+  if (delta === 0) {
+    console.log('[polybacktest] no alert: volume change is zero');
+    return completedVolume;
   }
 
   const text = [
     '🔥 BTC · 5M',
-    `PREVIOUS: $${previousValue.toFixed(2)}`,
+    `PREVIOUS: $${previousVolume.toFixed(2)}`,
     `LAST 5M: $${completedVolume.toFixed(2)}`,
     `VOLUME ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
-    `STREAK: ${nextStreak}× ${nextDirection}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
   ].join('\\n');
 
-  console.log(`[polybacktest] alert qualified: streak=${nextStreak} direction=${nextDirection}`);
+  console.log('[polybacktest] alert qualified: every non-zero volume change');
   await send(text);
-  return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
-}
 
-async function restoreHistory(firstBoundary) {
-  const periods = [];
-  for (let i = 3; i >= 1; i--) {
-    const start = firstBoundary - i * PERIOD;
-    periods.push(await market(slug(start)));
-  }
-  let streak = {direction: null, count: 0};
-  for (let i = 1; i < periods.length; i++) {
-    const delta = periods[i].finalVolume - periods[i - 1].finalVolume;
-    if (delta > 0) streak = {direction: '↑', count: streak.direction === '↑' ? streak.count + 1 : 1};
-    else if (delta < 0) streak = {direction: '↓', count: streak.direction === '↓' ? streak.count + 1 : 1};
-  }
-  console.log(`[polybacktest] restored history: ${periods.map(x => x.slug + '=' + x.finalVolume.toFixed(2)).join(' | ')}`);
-  console.log(`[polybacktest] restored streak=${streak.count} ${streak.direction || 'none'}`);
-  return {previousVolume: periods[periods.length - 1].finalVolume, streak};
+  return completedVolume;
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = currentBoundary();
+
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] first processing boundary=' + new Date(boundary).toISOString() + ' (last completed period)');
   console.log('[polybacktest] source: Polymarket Gamma market volume by exact 5m slug');
-  console.log('[polybacktest] alert rule: every non-zero change counts; alert on 2+ consecutive same-direction changes');
+  console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
+  console.log('[polybacktest] alert text: no streak field');
+  console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
-  let previousVolume = null;
-  let streak = {direction: null, count: 0};
+  let previousVolume;
 
   try {
-    const restored = await restoreHistory(boundary);
-    previousVolume = restored.previousVolume;
-    streak = restored.streak;
+    const previous = await market(slug(boundary - PERIOD));
+    previousVolume = previous.volume;
+
+    console.log(
+      `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
+      `volume=${previousVolume.toFixed(2)}`
+    );
   } catch (e) {
-    console.error(`[polybacktest] HISTORY RESTORE FAILED: ${e.message}`);
+    console.error('[polybacktest] BASELINE FAILED: ' + e.message);
   }
 
   while (Date.now() < stopAt) {
     const wait = boundary - Date.now();
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
+
     try {
-      const result = await processPeriod(boundary, previousVolume, streak);
-      previousVolume = result.volume;
-      streak = result.streak;
-      console.log('[polybacktest] PERIOD COMPLETE boundary=' + new Date(boundary).toISOString() + ' volume=' + previousVolume.toFixed(2) + ' streak=' + streak.count + ' ' + (streak.direction || 'none'));
+      if (previousVolume == null) {
+        const previous = await market(slug(boundary - PERIOD));
+        previousVolume = previous.volume;
+      }
+
+      previousVolume = await processPeriod(boundary, previousVolume);
+
+      console.log(
+        `[polybacktest] PERIOD COMPLETE boundary=${new Date(boundary).toISOString()} ` +
+        `volume=${previousVolume.toFixed(2)}`
+      );
     } catch (e) {
-      console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
+      console.error(
+        `[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`
+      );
     }
+
     boundary += PERIOD;
   }
+
   console.log('[polybacktest] watcher window complete');
 }
 
-main().catch(e=>{console.error('[polybacktest] FAILED',e);process.exit(1);});
+main().catch(e => {
+  console.error('[polybacktest] FAILED', e);
+  process.exit(1);
+});
