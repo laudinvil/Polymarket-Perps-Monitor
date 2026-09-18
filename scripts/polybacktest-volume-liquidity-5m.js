@@ -12,6 +12,7 @@ const POLYMARKET_GAP = 1000;
 const POLYBACKTEST_GAP = 1600;
 const MARKET_RETRY_MS = 15000;
 const MARKET_RETRIES = 8;
+const FETCH_TIMEOUT_MS = 20000;
 const RUN_MS = 358 * 60 * 1000;
 
 let lastPolymarketApi = 0;
@@ -22,12 +23,22 @@ const currentBoundary = () => Math.floor(Date.now() / PERIOD) * PERIOD;
 const slug = start => 'btc-updown-5m-' + Math.floor(start / 1000);
 const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function polymarketApi(path) {
   const wait = POLYMARKET_GAP - (Date.now() - lastPolymarketApi);
   if (wait > 0) await sleep(wait);
   lastPolymarketApi = Date.now();
 
-  const r = await fetch(POLYMARKET_API + path);
+  const r = await fetchWithTimeout(POLYMARKET_API + path);
   const t = await r.text();
   if (!r.ok) throw new Error('Polymarket ' + r.status + ': ' + t);
   return JSON.parse(t);
@@ -38,7 +49,7 @@ async function polybacktestApi(path) {
   if (wait > 0) await sleep(wait);
   lastPolyBackTestApi = Date.now();
 
-  const r = await fetch(POLYBACKTEST_API + path, {
+  const r = await fetchWithTimeout(POLYBACKTEST_API + path, {
     headers: { Authorization: 'Bearer ' + env.POLYBACKTEST_API_KEY }
   });
   const t = await r.text();
@@ -89,7 +100,8 @@ async function tradeVolume(conditionId, marketSlug) {
       '&limit=' + PAGE_SIZE + '&offset=' + offset +
       '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
 
-    const r = await fetch(url);
+    console.log('[combined-5m] VOLUME request page=' + page + ' offset=' + offset);
+    const r = await fetchWithTimeout(url);
     const t = await r.text();
     if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
 
@@ -222,15 +234,20 @@ async function send(text) {
 
 async function processPeriod(boundary) {
   const completedStart = boundary - PERIOD;
+  console.log('[combined-5m] PROCESS boundary=' + new Date(boundary).toISOString());
   const completedSlug = slug(completedStart);
   const nextSlug = slug(boundary);
 
   console.log('[combined-5m] completed=' + completedSlug + ' next=' + nextSlug);
 
+  console.log('[combined-5m] STEP 1/4 Polymarket market ' + completedSlug);
   const pmMarket = await market(completedSlug);
+  console.log('[combined-5m] STEP 2/4 Polymarket volume');
   const volume = await tradeVolume(pmMarket.conditionId, completedSlug);
 
+  console.log('[combined-5m] STEP 3/4 PolyBackTest market');
   const pbMarket = await polybacktestMarket(completedSlug);
+  console.log('[combined-5m] STEP 4/4 PolyBackTest liquidity snapshot');
   const liquidity = await snapshotLiquidity(pbMarket.id, boundary);
 
   const difference = Math.abs(volume - liquidity);
