@@ -38,10 +38,6 @@ async function market(s) {
       const conditionId = x.conditionId ?? x.condition_id;
       if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
 
-      if (!Number.isFinite(volume)) {
-        throw new Error('Market ' + s + ' id=' + id + ' has no numeric volume');
-      }
-
       return { id, slug: x.slug || s, conditionId };
     } catch (e) {
       lastError = e;
