@@ -198,7 +198,7 @@ async function processPeriod(boundary, previousVolume) {
     `pct=${change} direction=${direction}`
   );
 
-  const qualifies = pct != null && delta !== 0;
+  const qualifies = delta !== 0;
 
   if (!qualifies) {
     console.log('[polybacktest] streak ignored: zero volume change');
@@ -241,7 +241,7 @@ async function main() {
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
   console.log('[polybacktest] alert rule: 2+ consecutive same-direction non-zero volume changes');
-  console.log('[polybacktest] streak threshold: none; trigger: 2 consecutive non-zero moves');
+  console.log('[polybacktest] streak threshold: none; trigger: 2 consecutive non-zero moves (including from zero baseline)');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
