@@ -207,8 +207,8 @@ async function processPeriod(boundary) {
     ' previous volume=$' + previousVolume.toFixed(2) +
     ' change=' + change.toFixed(2) + '%');
 
-  if (Math.abs(change) > 10) {
-    console.log('[combined-5m] change outside -10%..+10% — alert ignored');
+  if (change < -10 || change > 8) {
+    console.log('[combined-5m] change outside -10%..+8% — alert ignored');
     return;
   }
 
