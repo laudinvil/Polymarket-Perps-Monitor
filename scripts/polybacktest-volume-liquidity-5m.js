@@ -242,7 +242,7 @@ async function processPeriod(boundary) {
     '🔥 BTC · 5M',
     'VOLUME: $' + volume.toFixed(2),
     'LIQUIDITY: $' + liquidity.toFixed(2),
-    'IMBALANCE: ' + arrow + ' $' + Math.abs(difference).toFixed(2),
+    'IMBALANCE: ' + arrow + ' ' + (liquidity > 0 ? (Math.abs(difference) / liquidity * 100).toFixed(2) + '%' : 'N/A'),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
