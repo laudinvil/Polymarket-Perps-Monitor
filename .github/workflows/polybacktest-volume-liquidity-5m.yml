@@ -1,4 +1,4 @@
-name: PolyBackTest Volume 5M
+name: PolyBackTest Volume + Liquidity 5M
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
     - cron: '7 */6 * * *'
 
 concurrency:
-  group: polybacktest-volume-5m
+  group: polybacktest-5m-combined
   cancel-in-progress: true
 
 jobs:
@@ -24,11 +24,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Run PolyBackTest volume monitor
+      - name: Run combined volume and liquidity monitor
         run: node scripts/polybacktest-volume-liquidity-5m.js
         env:
           POLYBACKTEST_API_KEY: ${{ secrets.POLYBACKTEST_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-# Force run for corrected PolyBackTest v1 volume source
