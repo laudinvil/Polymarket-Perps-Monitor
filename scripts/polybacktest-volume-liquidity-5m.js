@@ -198,8 +198,25 @@ async function processPeriod(boundary, previousVolume) {
     `pct=${change} direction=${direction}`
   );
 
-  if (delta === 0) {
-    console.log('[polybacktest] no alert: volume change is zero');
+  const STREAK_MIN_PCT = 3;
+  const qualifies = pct != null && (pct >= STREAK_MIN_PCT || pct <= -STREAK_MIN_PCT);
+
+  if (!qualifies) {
+    console.log('[polybacktest] streak ignored: change below 3%; streak unchanged');
+    return completedVolume;
+  }
+
+  if (streakDirection === direction) {
+    streakCount += 1;
+  } else {
+    streakDirection = direction;
+    streakCount = 1;
+  }
+
+  console.log('[polybacktest] streak direction=' + streakDirection + ' count=' + streakCount + ' change=' + change);
+
+  if (streakCount < 2) {
+    console.log('[polybacktest] no alert: streak requires 2 consecutive qualifying moves');
     return completedVolume;
   }
 
@@ -212,7 +229,7 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
-  console.log('[polybacktest] alert qualified: every non-zero volume change');
+  console.log('[polybacktest] alert qualified: 2+ consecutive same-direction moves >= 3%');
   await send(text);
 
   return completedVolume;
@@ -224,12 +241,14 @@ async function main() {
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
-  console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
-  console.log('[polybacktest] alert text: no streak field');
+  console.log('[polybacktest] alert rule: 2+ consecutive same-direction volume changes >= 3%; sub-3% moves do not reset streak');
+  console.log('[polybacktest] streak threshold: 3%; trigger: 2 consecutive qualifying moves');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   let previousVolume;
+  let streakDirection = null;
+  let streakCount = 0;
 
   try {
     const previous = await market(slug(boundary - PERIOD));
