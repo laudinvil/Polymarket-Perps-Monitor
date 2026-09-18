@@ -203,6 +203,11 @@ async function processPeriod(boundary) {
     return;
   }
 
+  if (volume < 19000) {
+    console.log('[combined-5m] volume below $19000 — alert ignored');
+    return;
+  }
+
   if (ratio > 5.5) {
     console.log('[combined-5m] above 5.5% — alert ignored');
     return;
