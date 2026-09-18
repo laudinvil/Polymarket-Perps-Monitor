@@ -109,9 +109,7 @@ async function tradeCount(conditionId, start, end, slug) {
     const trades = Array.isArray(payload?.data) ? payload.data : [];
     const pagination = payload?.pagination || {};
 
-    if (!Array.isArray(trades)) {
-      throw new Error('Invalid v2 trades response for ' + slug);
-    }
+    if (!Array.isArray(trades)) throw new Error('Invalid v2 trades response for ' + slug);
 
     let reachedStart = false;
 
@@ -137,9 +135,7 @@ async function tradeCount(conditionId, start, end, slug) {
         break;
       }
 
-      if (timestamp >= start && timestamp < end) {
-        tradesInWindow++;
-      }
+      if (timestamp >= start && timestamp < end) tradesInWindow++;
     }
 
     if (reachedStart || !pagination.has_more || !pagination.next_cursor) {
@@ -151,6 +147,7 @@ async function tradeCount(conditionId, start, end, slug) {
 
   throw new Error('Trades window incomplete for ' + slug);
 }
+
 function unwrapMarket(data, slug) {
   const candidates = [
     data?.market,
@@ -189,7 +186,7 @@ async function liquiditySnapshot(id, endMs) {
 
   if (!snapshot) {
     throw new Error(
-      'No snapshot at completed-period boundary for market ' + id +
+      'No snapshot at evaluation boundary for market ' + id +
       ' requested=' + new Date(timestamp).toISOString()
     );
   }
@@ -256,7 +253,7 @@ async function getReliableTrades(conditionId, start, end, slug) {
         return trades;
       }
 
-      throw new Error('Trades API returned 0 trades for completed period');
+      throw new Error('Trades API returned 0 trades for active period');
     } catch (error) {
       lastError = error;
       console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
@@ -268,13 +265,16 @@ async function getReliableTrades(conditionId, start, end, slug) {
 }
 
 async function processPeriod(boundary) {
-  // Evaluate the ACTIVE 5M period before its boundary instead of waiting for it to close.
-  // The alert is intentionally sent 60s before the boundary and the metrics are measured
-  // through the actual evaluation time.
   const activeStart = boundary - PERIOD;
   const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
   const activeSlug = marketSlug(activeStart);
   const nextSlug = marketSlug(boundary);
+
+  console.log(
+    '[combined-5m] evaluating active=' + activeSlug +
+    ' end=' + new Date(evaluationEndMs).toISOString() +
+    ' boundary=' + new Date(boundary).toISOString()
+  );
 
   const [polymarketMarket, polybacktestId] = await Promise.all([
     findMarket(activeSlug),
@@ -298,40 +298,7 @@ async function processPeriod(boundary) {
   const message = [
     '🔥 BTC · 5M',
     'TRADES: ' + trades + tradesMark,
-    'LIQUIDITY: 
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow();
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[combined-5m] BTC-only 5m trades monitor started');
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    try {
-      await processPeriod(boundary);
-      boundary += PERIOD;
-    } catch (error) {
-      console.error(
-        '[combined-5m] PERIOD FAILED ' +
-        new Date(boundary).toISOString() + ': ' + error.message
-      );
-      await sleep(1000);
-    }
-  }
-}
-
-main().catch(error => {
-  console.error('[combined-5m] FAILED', error);
-  process.exit(1);
-});
- + liquidity.toFixed(2) + liquidityMark,
+    'LIQUIDITY: $' + liquidity.toFixed(2) + liquidityMark,
     'TRADES/LIQUIDITY: ' + ratio.toFixed(4) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
