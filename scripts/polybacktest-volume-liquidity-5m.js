@@ -65,7 +65,7 @@ async function tradeVolume(conditionId, marketSlug) {
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE_SIZE;
     const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
-      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false';
+      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false&sortBy=timestamp&sortDirection=desc';
 
     const r = await fetch(url);
     const t = await r.text();
@@ -103,7 +103,8 @@ async function tradeVolume(conditionId, marketSlug) {
       '[polybacktest] INCOMPLETE_VOLUME market=' + marketSlug +
       ' window=' + startTs + '-' + endTs +
       ' rows=' + totalTrades +
-      ' pages=' + MAX_PAGES
+      ' pages=' + MAX_PAGES +
+      ' action=SKIP_ALERT_CONTINUE'
     );
     return { volume: 0, complete: false };
   }
