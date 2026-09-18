@@ -1,6 +1,7 @@
 // Continuous 5m watcher: scheduling is handled by the workflow.
 const { env } = require('node:process');
 const API = 'https://gamma-api.polymarket.com';
+const DATA_API = 'https://data-api.polymarket.com';
 const PERIOD = 300000;
 const GAP = 1000;
 const MARKET_RETRY_MS = 15000;
@@ -34,16 +35,14 @@ async function market(s) {
       if (!x) throw new Error('Market ' + s + ' not found in Polymarket Gamma');
 
       const id = x.id ?? x.market_id;
-      const volume = Number(x.volumeNum ?? x.volume);
+      const conditionId = x.conditionId ?? x.condition_id;
+      if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
 
       if (!Number.isFinite(volume)) {
         throw new Error('Market ' + s + ' id=' + id + ' has no numeric volume');
       }
 
-      console.log('[polybacktest] market ' + s + ' id=' + id +
-        ' POLYMARKET_VOLUME=' + volume.toFixed(2) + ' attempt=' + attempt);
-
-      return { id, slug: x.slug || s, volume };
+      return { id, slug: x.slug || s, conditionId };
     } catch (e) {
       lastError = e;
       if (attempt < MARKET_RETRIES) {
@@ -55,6 +54,26 @@ async function market(s) {
   }
 
   throw lastError;
+}
+
+async function tradeVolume(conditionId, marketSlug) {
+  const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) + '&limit=10000&takerOnly=true';
+  const r = await fetch(url);
+  const t = await r.text();
+  if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
+  const trades = JSON.parse(t);
+  if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
+
+  let volume = 0;
+  for (const tr of trades) {
+    const size = Number(tr.size);
+    const price = Number(tr.price);
+    if (Number.isFinite(size) && Number.isFinite(price)) volume += size * price;
+  }
+
+  console.log('[polybacktest] trades market=' + marketSlug + ' count=' + trades.length +
+    ' TRADE_VOLUME_USDC=' + volume.toFixed(2));
+  return volume;
 }
 
 async function send(text) {
@@ -118,7 +137,7 @@ async function processPeriod(boundary, previousVolume) {
   );
 
   const completed = await market(completedSlug);
-  const completedVolume = completed.volume;
+  const completedVolume = await tradeVolume(completed.conditionId, completedSlug);
 
   const delta = completedVolume - previousVolume;
   const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
@@ -156,7 +175,7 @@ async function main() {
   let boundary = currentBoundary();
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: Polymarket Gamma market volume by exact 5m slug');
+  console.log('[polybacktest] source: Polymarket Data API trades summed as size * price for exact 5m condition');
   console.log('[polybacktest] alert rule: every non-zero volume change; NO STREAK FILTER');
   console.log('[polybacktest] alert text: no streak field');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
@@ -166,7 +185,7 @@ async function main() {
 
   try {
     const previous = await market(slug(boundary - PERIOD));
-    previousVolume = previous.volume;
+    previousVolume = await tradeVolume(previous.conditionId, previous.slug);
 
     console.log(
       `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
@@ -184,7 +203,7 @@ async function main() {
     try {
       if (previousVolume == null) {
         const previous = await market(slug(boundary - PERIOD));
-        previousVolume = previous.volume;
+        previousVolume = await tradeVolume(previous.conditionId, previous.slug);
       }
 
       previousVolume = await processPeriod(boundary, previousVolume);
