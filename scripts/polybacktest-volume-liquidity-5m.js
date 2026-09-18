@@ -12,6 +12,8 @@ const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
+const VOLUME_RETRIES = 6;
+const VOLUME_RETRY_MS = 1000;
 
 let lastPolymarketApi = 0;
 let lastPolyBackTestApi = 0;
@@ -90,6 +92,7 @@ async function tradeVolume(conditionId, start, slug) {
   const end = start + 300;
   const pageSize = 1000;
   let volume = 0;
+  let tradesInWindow = 0;
 
   for (let page = 0; page < 1000; page++) {
     const offset = page * pageSize;
@@ -124,10 +127,11 @@ async function tradeVolume(conditionId, start, slug) {
 
       if (timestamp >= start && timestamp < end && Number.isFinite(size) && Number.isFinite(price)) {
         volume += size * price;
+        tradesInWindow++;
       }
     }
 
-    if (reachedStart || trades.length < pageSize) return volume;
+    if (reachedStart || trades.length < pageSize) return { volume, tradesInWindow };
   }
 
   throw new Error('Volume window incomplete for ' + slug);
@@ -228,6 +232,33 @@ async function sendTelegram(message) {
   throw new Error('Telegram delivery failed');
 }
 
+async function getReliableVolume(conditionId, start, slug) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= VOLUME_RETRIES; attempt++) {
+    try {
+      const result = await tradeVolume(conditionId, start, slug);
+
+      if (result.tradesInWindow > 0 && result.volume > 0) {
+        console.log('[combined-5m] volume attempt ' + attempt + '/' + VOLUME_RETRIES +
+          ' trades=' + result.tradesInWindow + ' volume=' + result.volume.toFixed(2));
+        return result.volume;
+      }
+
+      throw new Error(
+        'Volume API returned no usable trades: trades=' + result.tradesInWindow +
+        ' volume=' + result.volume.toFixed(2)
+      );
+    } catch (error) {
+      lastError = error;
+      console.log('[combined-5m] volume retry ' + attempt + '/' + VOLUME_RETRIES + ': ' + error.message);
+      if (attempt < VOLUME_RETRIES) await sleep(VOLUME_RETRY_MS);
+    }
+  }
+
+  throw new Error('Volume unavailable after retries for ' + slug + ': ' + lastError.message);
+}
+
 async function processPeriod(boundary) {
   const completedStart = boundary - PERIOD;
   const completedSlug = marketSlug(completedStart);
@@ -243,7 +274,7 @@ async function processPeriod(boundary) {
 
   // These two independent data reads can run in parallel to minimize alert latency.
   const [volume, liquidity] = await Promise.all([
-    tradeVolume(polymarketMarket.conditionId, completedStart / 1000, completedSlug),
+    getReliableVolume(polymarketMarket.conditionId, completedStart / 1000, completedSlug),
     liquiditySnapshot(polybacktestId, boundary)
   ]);
 
