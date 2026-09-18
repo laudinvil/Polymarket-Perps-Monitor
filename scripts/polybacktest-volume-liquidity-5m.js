@@ -11,7 +11,8 @@ const MIN_CHANGE_PCT = 0;
 const MIN_STREAK = 2;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const nextBoundary = () => Math.floor(Date.now() / PERIOD + 1) * PERIOD;
+const currentBoundary = () => Math.floor(Date.now() / PERIOD) * PERIOD;
+const nextBoundary = () => currentBoundary() + PERIOD;
 const slug = start => `btc-updown-5m-${Math.floor(start / 1000)}`;
 
 async function api(path) {
@@ -158,8 +159,9 @@ async function restoreHistory(firstBoundary) {
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
-  let boundary = nextBoundary();
+  let boundary = currentBoundary();
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
+  console.log('[polybacktest] first processing boundary=' + new Date(boundary).toISOString() + ' (last completed period)');
   console.log('[polybacktest] source: PolyBackTest v1 market final_volume');
   console.log('[polybacktest] alert rule: every non-zero change counts; alert on 2+ consecutive same-direction changes');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
@@ -183,6 +185,7 @@ async function main() {
       const result = await processPeriod(boundary, previousVolume, streak);
       previousVolume = result.volume;
       streak = result.streak;
+      console.log('[polybacktest] PERIOD COMPLETE boundary=' + new Date(boundary).toISOString() + ' volume=' + previousVolume.toFixed(2) + ' streak=' + streak.count + ' ' + (streak.direction || 'none'));
     } catch (e) {
       console.error(`[polybacktest] PERIOD FAILED boundary=${new Date(boundary).toISOString()}: ${e.message}`);
     }
