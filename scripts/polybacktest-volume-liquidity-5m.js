@@ -34,12 +34,11 @@ async function market(s) {
 
       const id = x.id ?? x.market_id;
       const conditionId = x.conditionId ?? x.condition_id;
-      const volume = Number(x.volume);
+      
 
       if (!conditionId) throw new Error('Market ' + s + ' has no conditionId');
-      if (!Number.isFinite(volume)) throw new Error('Market ' + s + ' has no numeric Gamma volume');
 
-      return { id, slug: x.slug || s, conditionId, volume };
+      return { id, slug: x.slug || s, conditionId };
     } catch (err) {
       lastError = err;
       if (attempt < MARKET_RETRIES) {
@@ -50,6 +49,65 @@ async function market(s) {
   }
   throw lastError;
 }
+async function tradeVolume(conditionId, marketSlug) {
+  const start = Number(marketSlug.match(/-(\\d+)$/)?.[1]);
+  if (!Number.isFinite(start)) throw new Error('Invalid 5m slug timestamp: ' + marketSlug);
+
+  const startTs = start;
+  const endTs = start + 300;
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 10;
+  let volume = 0;
+  let totalTrades = 0;
+  let reachedWindowEnd = false;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * PAGE_SIZE;
+    const url = DATA_API + '/trades?market=' + encodeURIComponent(conditionId) +
+      '&limit=' + PAGE_SIZE + '&offset=' + offset + '&takerOnly=false';
+
+    const r = await fetch(url);
+    const t = await r.text();
+    if (!r.ok) throw new Error('Polymarket Data API ' + r.status + ': ' + t);
+
+    const trades = JSON.parse(t);
+    if (!Array.isArray(trades)) throw new Error('Unexpected trades response for ' + marketSlug);
+
+    totalTrades += trades.length;
+
+    for (const tr of trades) {
+      const ts = Number(tr.timestamp);
+      const size = Number(tr.size);
+      const price = Number(tr.price);
+
+      if (ts < startTs) {
+        reachedWindowEnd = true;
+        break;
+      }
+
+      if (ts >= startTs && ts < endTs &&
+          Number.isFinite(size) && Number.isFinite(price)) {
+        volume += size * price;
+      }
+    }
+
+    if (reachedWindowEnd || trades.length < PAGE_SIZE) break;
+  }
+
+  if (!reachedWindowEnd && totalTrades >= PAGE_SIZE * MAX_PAGES) {
+    throw new Error('Trade history exceeds supported 5m scan window for ' + marketSlug);
+  }
+
+  console.log(
+    '[polybacktest] trades market=' + marketSlug +
+    ' window=' + startTs + '-' + endTs +
+    ' rows=' + totalTrades +
+    ' VOLUME_USDC=' + volume.toFixed(2)
+  );
+
+  return volume;
+}
+
 async function send(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -111,7 +169,7 @@ async function processPeriod(boundary, previousVolume) {
   );
 
   const completed = await market(completedSlug);
-  const completedVolume = completed.volume;
+  const completedVolume = await tradeVolume(completed.conditionId, completedSlug);
 
   const delta = completedVolume - previousVolume;
   const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
@@ -159,7 +217,7 @@ async function main() {
 
   try {
     const previous = await market(slug(boundary - PERIOD));
-    previousVolume = previous.volume;
+    previousVolume = await tradeVolume(previous.conditionId, previous.slug);
 
     console.log(
       `[polybacktest] BASELINE previous completed 5m=${previous.slug} ` +
