@@ -83,9 +83,8 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function tradeVolume(conditionId, slug) {
-  const start = Number(slug.match(/-(\d+)$/)?.[1]);
-  if (!Number.isFinite(start)) throw new Error('Invalid slug timestamp: ' + slug);
+async function tradeVolume(conditionId, start, slug) {
+  if (!Number.isFinite(start)) throw new Error('Invalid period start: ' + start);
 
   const end = start + 300;
   const pageSize = 1000;
@@ -234,19 +233,15 @@ async function processPeriod(boundary) {
   const nextSlug = marketSlug(boundary);
 
   const polymarketMarket = await findMarket(completedSlug);
-  const volume = await tradeVolume(polymarketMarket.conditionId, completedSlug);
+  const volume = await tradeVolume(polymarketMarket.conditionId, completedStart / 1000, completedSlug);
 
   const polybacktestId = await polybacktestMarket(completedSlug);
   const liquidity = await liquiditySnapshot(polybacktestId, boundary);
-
-  const difference = volume - liquidity;
-  const arrow = difference > 0 ? '↑' : difference < 0 ? '↓' : '→';
 
   const message = [
     '🔥 BTC · 5M',
     'VOLUME: $' + volume.toFixed(2),
     'LIQUIDITY: $' + liquidity.toFixed(2),
-    'IMBALANCE: ' + arrow + ' $' + Math.abs(difference).toFixed(2),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
@@ -254,8 +249,7 @@ async function processPeriod(boundary) {
   console.log(
     '[combined-5m] alert completed=' + completedSlug +
     ' volume=' + volume.toFixed(2) +
-    ' liquidity=' + liquidity.toFixed(2) +
-    ' imbalance=' + arrow + ' $' + Math.abs(difference).toFixed(2)
+    ' liquidity=' + liquidity.toFixed(2)
   );
 
   await sendTelegram(message);
