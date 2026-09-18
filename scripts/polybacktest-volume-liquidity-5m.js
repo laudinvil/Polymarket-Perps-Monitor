@@ -159,15 +159,16 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
     try {
       const stats = await tradeStats(conditionId, start, end, slug);
       console.log('[combined-5m] volume attempt ' + attempt + '/' + TRADES_RETRIES +
-        ' volume=
+        ' volume=$' + stats.volume.toFixed(2));
+      return stats;
     } catch (error) {
       lastError = error;
-      console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
+      console.log('[combined-5m] volume retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
       if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
     }
   }
 
-  throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
+  throw new Error('Volume unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
 async function processPeriod(boundary) {
