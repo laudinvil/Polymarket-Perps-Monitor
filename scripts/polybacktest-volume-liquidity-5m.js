@@ -198,8 +198,8 @@ async function processPeriod(boundary) {
 
   console.log('[combined-5m] ratio=' + ratio.toFixed(4) + '%');
 
-  if (ratio > 5) {
-    console.log('[combined-5m] above 5% — alert ignored');
+  if (ratio > 5.5) {
+    console.log('[combined-5m] above 5.5% — alert ignored');
     return;
   }
 
