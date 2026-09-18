@@ -86,12 +86,11 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function tradeCount(conditionId, start, end, slug) {
-  if (!Number.isFinite(start)) throw new Error('Invalid period start: ' + start);
-
+async function tradeStats(conditionId, start, end, slug) {
   const pageSize = 1000;
   let cursor = null;
-  let tradesInWindow = 0;
+  let trades = 0;
+  let volume = 0;
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
@@ -100,27 +99,18 @@ async function tradeCount(conditionId, start, end, slug) {
     });
     if (cursor) params.set('cursor', cursor);
 
-    const url = DATA_API + '/v2/trades?' + params.toString();
-    const response = await fetchTimeout(url);
+    const response = await fetchTimeout(DATA_API + '/v2/trades?' + params.toString());
     const body = await response.text();
     if (!response.ok) throw new Error('Polymarket Data API v2 ' + response.status + ': ' + body);
 
     const payload = JSON.parse(body);
-    const trades = Array.isArray(payload?.data) ? payload.data : [];
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
     const pagination = payload?.pagination || {};
-
-    if (!Array.isArray(trades)) throw new Error('Invalid v2 trades response for ' + slug);
 
     let reachedStart = false;
 
-    for (const trade of trades) {
-      let timestamp = Number(
-        trade.timestamp ??
-        trade.ts ??
-        trade.created_at ??
-        trade.createdAt
-      );
-
+    for (const trade of rows) {
+      let timestamp = Number(trade.timestamp ?? trade.ts ?? trade.created_at ?? trade.createdAt);
       if (Number.isFinite(timestamp) && timestamp > 1e12) timestamp /= 1000;
 
       if (!Number.isFinite(timestamp) && typeof trade.timestamp === 'string') {
@@ -129,17 +119,22 @@ async function tradeCount(conditionId, start, end, slug) {
       }
 
       if (!Number.isFinite(timestamp)) continue;
-
       if (timestamp < start) {
         reachedStart = true;
         break;
       }
 
-      if (timestamp >= start && timestamp < end) tradesInWindow++;
+      if (timestamp >= start && timestamp < end) {
+        trades++;
+        const size = number(trade.size ?? trade.amount ?? trade.quantity);
+        const price = number(trade.price ?? trade.execution_price);
+        volume += size * price;
+      }
     }
 
     if (reachedStart || !pagination.has_more || !pagination.next_cursor) {
-      return tradesInWindow;
+      if (trades <= 0) throw new Error('Trades API returned 0 trades for active period');
+      return { trades, volume };
     }
 
     cursor = pagination.next_cursor;
@@ -147,6 +142,7 @@ async function tradeCount(conditionId, start, end, slug) {
 
   throw new Error('Trades window incomplete for ' + slug);
 }
+
 
 function unwrapMarket(data, slug) {
   const candidates = [
@@ -240,20 +236,15 @@ async function sendTelegram(message) {
   throw new Error('Telegram delivery failed');
 }
 
-async function getReliableTrades(conditionId, start, end, slug) {
+async function getReliableTradeStats(conditionId, start, end, slug) {
   let lastError;
 
   for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
     try {
-      const trades = await tradeCount(conditionId, start, end, slug);
-
-      if (trades > 0) {
-        console.log('[combined-5m] trades attempt ' + attempt + '/' + TRADES_RETRIES +
-          ' count=' + trades);
-        return trades;
-      }
-
-      throw new Error('Trades API returned 0 trades for active period');
+      const stats = await tradeStats(conditionId, start, end, slug);
+      console.log('[combined-5m] trades attempt ' + attempt + '/' + TRADES_RETRIES +
+        ' count=' + stats.trades + ' volume=$' + stats.volume.toFixed(2));
+      return stats;
     } catch (error) {
       lastError = error;
       console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
@@ -263,6 +254,7 @@ async function getReliableTrades(conditionId, start, end, slug) {
 
   throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
 }
+
 
 async function processPeriod(boundary) {
   const activeStart = boundary - PERIOD;
@@ -281,25 +273,28 @@ async function processPeriod(boundary) {
     polybacktestMarket(activeSlug)
   ]);
 
-  const [trades, liquidity] = await Promise.all([
-    getReliableTrades(
-      polymarketMarket.conditionId,
-      activeStart / 1000,
-      evaluationEndMs / 1000,
-      activeSlug
-    ),
-    liquiditySnapshot(polybacktestId, evaluationEndMs)
-  ]);
+  const stats = await getReliableTradeStats(
+    polymarketMarket.conditionId,
+    activeStart / 1000,
+    evaluationEndMs / 1000,
+    activeSlug
+  );
 
-  const ratio = liquidity > 0 ? (trades / liquidity) * 100 : 0;
-  const liquidityMark = liquidity > trades ? ' ⚠️' : '';
-  const tradesMark = trades > liquidity ? ' ⚠️' : '';
+  const { trades, volume } = stats;
+  const ratio = volume > 0 ? (trades / volume) * 100 : 0;
 
   const message = [
     '🔥 BTC · 5M',
-    'TRADES: ' + trades + tradesMark,
-    'LIQUIDITY: $' + liquidity.toFixed(2) + liquidityMark,
-    'TRADES/LIQUIDITY: ' + ratio.toFixed(4) + '%',
+    'TRADES: ' + trades,
+    'VOLUME: 
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  await sendTelegram(message);
+}
+ + volume.toFixed(2),
+    'TRADES/VOLUME: ' + ratio.toFixed(4) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
