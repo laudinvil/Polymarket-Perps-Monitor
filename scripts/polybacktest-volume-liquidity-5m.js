@@ -112,7 +112,14 @@ async function tradeVolume(conditionId, marketSlug) {
     let reachedWindowStart = false;
 
     for (const tr of trades) {
-      const ts = Number(tr.timestamp);
+      let ts = Number(tr.timestamp);
+      // Polymarket Data API has returned timestamps in both seconds and milliseconds.
+      // Normalize to Unix seconds before applying the exact 5m window.
+      if (Number.isFinite(ts) && ts > 1e12) ts /= 1000;
+      if (!Number.isFinite(ts) && typeof tr.timestamp === 'string') {
+        const parsed = Date.parse(tr.timestamp);
+        if (Number.isFinite(parsed)) ts = parsed / 1000;
+      }
       const size = Number(tr.size);
       const price = Number(tr.price);
 
