@@ -177,9 +177,7 @@ async function processPeriod(boundary, previousVolume) {
   const previousSlug = slug(previousStart);
   const nextSlug = slug(boundary);
 
-  console.log(
-    `[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`
-  );
+  console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
 
   const completed = await market(completedSlug);
   const completedResult = await tradeVolume(completed.conditionId, completedSlug);
@@ -187,37 +185,17 @@ async function processPeriod(boundary, previousVolume) {
     console.log('[polybacktest] SKIP alert: incomplete volume for ' + completedSlug);
     return previousVolume;
   }
-  const completedVolume = completedResult.volume;
 
+  const completedVolume = completedResult.volume;
   const delta = completedVolume - previousVolume;
   const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
-  console.log(
-    `[polybacktest] PERIOD RESULT previous=${previousVolume.toFixed(2)} ` +
-    `last5m=${completedVolume.toFixed(2)} delta=${delta.toFixed(2)} ` +
-    `pct=${change} direction=${direction}`
-  );
+  console.log(`[polybacktest] PERIOD RESULT previous=${previousVolume.toFixed(2)} last5m=${completedVolume.toFixed(2)} delta=${delta.toFixed(2)} pct=${change} direction=${direction}`);
 
-  const qualifies = delta !== 0;
-
-  if (!qualifies) {
-    console.log('[polybacktest] streak ignored: zero volume change');
-    return completedVolume;
-  }
-
-  if (streakDirection === direction) {
-    streakCount += 1;
-  } else {
-    streakDirection = direction;
-    streakCount = 1;
-  }
-
-  console.log('[polybacktest] streak direction=' + streakDirection + ' count=' + streakCount + ' change=' + change);
-
-  if (streakCount < 2) {
-    console.log('[polybacktest] no alert: streak requires 2 consecutive qualifying moves');
+  if (delta === 0) {
+    console.log('[polybacktest] no alert: zero volume change');
     return completedVolume;
   }
 
@@ -230,27 +208,21 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
-  console.log('[polybacktest] alert qualified: 2+ consecutive same-direction non-zero moves');
+  console.log('[polybacktest] alert qualified: non-zero volume change');
   await send(text);
-
   return completedVolume;
 }
-
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = currentBoundary();
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
-  console.log('[polybacktest] alert rule: 2+ consecutive same-direction non-zero volume changes');
-  console.log('[polybacktest] streak threshold: none; trigger: 2 consecutive non-zero moves (including from zero baseline)');
+  console.log('[polybacktest] alert rule: every completed 5m period with non-zero volume change');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   let previousVolume;
-  let streakDirection = null;
-  let streakCount = 0;
-
   try {
     const previous = await market(slug(boundary - PERIOD));
     const previousResult = await tradeVolume(previous.conditionId, previous.slug);
