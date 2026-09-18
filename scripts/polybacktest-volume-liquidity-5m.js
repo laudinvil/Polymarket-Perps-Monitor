@@ -5,6 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const POLYBACKTEST_API = 'https://api.polybacktest.com/v4';
 
 const PERIOD = 300000;
+const ALERT_LEAD_MS = 10000;
 const POLYMARKET_GAP = 1000;
 const POLYBACKTEST_GAP = 1600;
 const FETCH_TIMEOUT_MS = 5000;
@@ -259,10 +260,15 @@ async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow();
 
+  // Finish the completed period before the next 5m market begins.
+  // The completed period is already fully closed; only the alert is sent early.
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
   console.log('[combined-5m] clean BTC-only 5m monitor started');
 
   while (Date.now() < stopAt) {
-    const wait = boundary - Date.now();
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
 
