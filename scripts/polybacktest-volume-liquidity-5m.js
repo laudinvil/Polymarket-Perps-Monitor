@@ -70,7 +70,6 @@ async function findMarket(slug) {
 async function tradeStats(conditionId, start, end, slug) {
   const pageSize = 1000;
   let cursor = null;
-  let trades = 0;
   let volume = 0;
 
   for (let page = 0; page < 100; page++) {
@@ -106,7 +105,6 @@ async function tradeStats(conditionId, start, end, slug) {
       }
 
       if (timestamp >= start && timestamp < end) {
-        trades++;
         const size = number(trade.size ?? trade.amount ?? trade.quantity);
         const price = number(trade.price ?? trade.execution_price);
         volume += size * price;
@@ -114,8 +112,8 @@ async function tradeStats(conditionId, start, end, slug) {
     }
 
     if (reachedStart || !pagination.has_more || !pagination.next_cursor) {
-      if (trades <= 0) throw new Error('Trades API returned 0 trades for active period');
-      return { trades, volume };
+      if (volume <= 0) throw new Error('Trades API returned 0 volume for active period');
+      return { volume };
     }
 
     cursor = pagination.next_cursor;
@@ -161,7 +159,7 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
     try {
       const stats = await tradeStats(conditionId, start, end, slug);
       console.log('[combined-5m] trades attempt ' + attempt + '/' + TRADES_RETRIES +
-        ' count=' + stats.trades + ' volume=$' + stats.volume.toFixed(2));
+        ' volume=
       return stats;
     } catch (error) {
       lastError = error;
@@ -173,21 +171,100 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
   throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
-async function getBtc24hChange() {
-  const end = Date.now();
-  const start = end - 24 * 60 * 60 * 1000;
-  const url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=2&endTime=' + end;
-  const response = await fetchTimeout(url);
-  const body = await response.text();
-  if (!response.ok) throw new Error('Binance BTC 24h API ' + response.status + ': ' + body);
-  const rows = JSON.parse(body);
-  if (!Array.isArray(rows) || rows.length < 2) throw new Error('Binance BTC 24h data unavailable');
+async function processPeriod(boundary) {
+  const activeStart = boundary - PERIOD;
+  const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
+  const activeSlug = marketSlug(activeStart);
+  const nextSlug = marketSlug(boundary);
+  const previousStart = activeStart - PERIOD;
+  const previousSlug = marketSlug(previousStart);
 
-  const current = number(rows[rows.length - 1][4]);
-  const previous = number(rows[rows.length - 2][4]);
-  if (!(current > 0) || !(previous > 0)) throw new Error('Invalid Binance BTC prices');
+  console.log('[combined-5m] evaluating active=' + activeSlug +
+    ' end=' + new Date(evaluationEndMs).toISOString() +
+    ' boundary=' + new Date(boundary).toISOString());
 
-  return ((current - previous) / previous) * 100;
+  const polymarketMarket = await findMarket(activeSlug);
+  const { volume } = await getReliableTradeStats(
+    polymarketMarket.conditionId,
+    activeStart / 1000,
+    evaluationEndMs / 1000,
+    activeSlug
+  );
+
+  const previousMarket = await findMarket(previousSlug);
+  const { volume: previousVolume } = await getReliableTradeStats(
+    previousMarket.conditionId,
+    previousStart / 1000,
+    activeStart / 1000,
+    previousSlug
+  );
+
+  const change = previousVolume > 0
+    ? ((volume - previousVolume) / previousVolume) * 100
+    : 0;
+
+  console.log('[combined-5m] current volume=$' + volume.toFixed(2) +
+    ' previous volume=$' + previousVolume.toFixed(2) +
+    ' change=' + change.toFixed(2) + '%');
+
+  const message = [
+    '🔥 BTC · 5M',
+    'VOLUME: $' + volume.toFixed(2),
+    'CHANGE: ' + (change >= 0 ? '+' : '') + change.toFixed(2) + '%',
+    '➡️ NEXT · Polymarket 5M',
+    'https://polymarket.com/event/' + nextSlug
+  ].join('\n');
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+
+  // On every workflow restart, never replay an already completed 5M period.
+  // Start from the next period boundary and evaluate it 60s before it ends.
+  let boundary = boundaryNow() + PERIOD;
+
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[combined-5m] BTC-only 5m trades monitor started');
+  console.log('[combined-5m] first new period boundary=' + new Date(boundary).toISOString());
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error(
+        '[combined-5m] PERIOD FAILED ' +
+        new Date(boundary).toISOString() + ': ' + error.message
+      );
+      // Keep the same boundary on failure so the period can be retried,
+      // but never advance into a different period after a failed attempt.
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + stats.volume.toFixed(2));
+      return stats;
+    } catch (error) {
+      lastError = error;
+      console.log('[combined-5m] trades retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
+      if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
+    }
+  }
+
+  throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
 async function processPeriod(boundary) {
