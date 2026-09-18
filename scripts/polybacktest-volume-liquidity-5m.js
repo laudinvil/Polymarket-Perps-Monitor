@@ -5,7 +5,7 @@ const COIN = 'btc';
 const PERIOD = 300000;
 const GAP = 1600;
 const RUN_MS = 358 * 60 * 1000;
-const MIN_CHANGE_PCT = 3;
+const MIN_CHANGE_PCT = 0;
 const MIN_STREAK = 2;
 let lastApi = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -33,16 +33,8 @@ async function market(s) {
   const d = await api(`/markets/by-slug/${encodeURIComponent(s)}?coin=${COIN}`);
   const x = unwrapMarket(d, s);
   const id = x.id ?? x.market_id;
-  let finalVolume = x.final_volume ?? x.finalVolume;
-
-  // v1 market-by-slug returns completed market metadata, including final_volume.
-  // v4 market metadata does not expose volume, so v1 is used for this volume-only monitor.
-
-  if (!Number.isFinite(Number(finalVolume))) {
-    throw new Error(`Market ${s} id=${id} has no final_volume`);
-  }
-
-  finalVolume = Number(finalVolume);
+  const finalVolume = Number(x.final_volume ?? x.finalVolume);
+  if (!Number.isFinite(finalVolume)) throw new Error(`Market ${s} id=${id} has no final_volume`);
   console.log(`[polybacktest] market ${s} id=${id} final_volume=${finalVolume.toFixed(2)}`);
   return {id, slug:x.slug || s, finalVolume};
 }
@@ -55,8 +47,7 @@ async function send(text) {
         body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
       });
       const raw = await r.text();
-      let d;
-      try { d = JSON.parse(raw); } catch { throw new Error(`invalid JSON response: ${raw}`); }
+      const d = JSON.parse(raw);
       const messageId = d.result?.message_id;
       const actualChatId = d.result?.chat?.id;
       const chatType = d.result?.chat?.type ?? 'unknown';
@@ -64,9 +55,9 @@ async function send(text) {
       const chatSuffix = chatIdText ? chatIdText.slice(-4) : 'none';
       console.log(`[polybacktest] Telegram attempt=${attempt} status=${r.status} ok=${d.ok} message_id=${messageId ?? 'none'} chat_type=${chatType} chat_id_suffix=${chatSuffix}`);
       const expected = String(env.TELEGRAM_CHAT_ID);
-      const chatMatches = !/^-?\d+$/.test(expected) || String(actualChatId ?? '') === expected;
+      const chatMatches = !/^-?\\d+$/.test(expected) || String(actualChatId ?? '') === expected;
       if (r.ok && d.ok === true && messageId && chatMatches) {
-        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId} chat_type=${chatType} chat_id_suffix=${chatSuffix}`);
+        console.log(`[polybacktest] TELEGRAM CONFIRMED message_id=${messageId}`);
         return true;
       }
       throw new Error(`Telegram API did not confirm delivery: ${raw}`);
@@ -93,9 +84,6 @@ async function processPeriod(boundary, previousVolume, streak) {
     const previous = await market(previousSlug);
     console.log(`[polybacktest] ids ${previous.id} -> ${completed.id}`);
     previousValue = previous.finalVolume;
-  } else {
-    console.log(`[polybacktest] previous final_volume carried forward=${previousValue.toFixed(2)}`);
-    console.log(`[polybacktest] completed id=${completed.id}`);
   }
 
   const completedVolume = completed.finalVolume;
@@ -104,9 +92,8 @@ async function processPeriod(boundary, previousVolume, streak) {
   const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
   const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
-  // Changes below 3% are ignored for alerting only. They do NOT break the streak.
-  if (pct == null || Math.abs(pct) < MIN_CHANGE_PCT) {
-    console.log(`[polybacktest] no alert: volume change ${change} is below ${MIN_CHANGE_PCT}% threshold; streak preserved (${streak.count} ${streak.direction || 'none'})`);
+  if (pct == null) {
+    console.log(`[polybacktest] no alert: previous volume is zero; streak preserved (${streak.count} ${streak.direction || 'none'})`);
     return { volume: completedVolume, streak };
   }
 
@@ -131,12 +118,10 @@ async function processPeriod(boundary, previousVolume, streak) {
     `STREAK: ${nextStreak}× ${nextDirection}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
-  ].join('\n');
+  ].join('\\n');
 
   console.log(`[polybacktest] alert qualified: streak=${nextStreak} direction=${nextDirection}`);
-  console.log('[polybacktest] sending Telegram now');
   await send(text);
-  console.log(`[polybacktest] period complete ${nextSlug}`);
   return { volume: completedVolume, streak: {direction: nextDirection, count: nextStreak} };
 }
 
@@ -146,8 +131,8 @@ async function main() {
   let previousVolume = null;
   let streak = {direction: null, count: 0};
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
-  console.log('[polybacktest] source: PolyBackTest v1 market final_volume (not snapshots/liquidity)');
-  console.log(`[polybacktest] alert rule: ${MIN_STREAK}+ consecutive qualifying moves; changes below ${MIN_CHANGE_PCT}% are ignored and do not reset streak`);
+  console.log('[polybacktest] source: PolyBackTest v1 market final_volume');
+  console.log('[polybacktest] alert rule: every non-zero change counts; alert on 2+ consecutive same-direction changes');
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
   while (Date.now() < stopAt) {
