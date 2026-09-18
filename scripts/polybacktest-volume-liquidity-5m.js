@@ -198,11 +198,10 @@ async function processPeriod(boundary, previousVolume) {
     `pct=${change} direction=${direction}`
   );
 
-  const STREAK_MIN_PCT = 3;
-  const qualifies = pct != null && (pct >= STREAK_MIN_PCT || pct <= -STREAK_MIN_PCT);
+  const qualifies = pct != null && delta !== 0;
 
   if (!qualifies) {
-    console.log('[polybacktest] streak ignored: change below 3%; streak unchanged');
+    console.log('[polybacktest] streak ignored: zero volume change');
     return completedVolume;
   }
 
@@ -229,7 +228,7 @@ async function processPeriod(boundary, previousVolume) {
     `https://polymarket.com/event/${nextSlug}`
   ].join('\n');
 
-  console.log('[polybacktest] alert qualified: 2+ consecutive same-direction moves >= 3%');
+  console.log('[polybacktest] alert qualified: 2+ consecutive same-direction non-zero moves');
   await send(text);
 
   return completedVolume;
@@ -241,8 +240,8 @@ async function main() {
 
   console.log('[polybacktest] volume-only BTC 5m continuous watcher');
   console.log('[polybacktest] source: timestamped Polymarket trades for each exact completed 5m market');
-  console.log('[polybacktest] alert rule: 2+ consecutive same-direction volume changes >= 3%; sub-3% moves do not reset streak');
-  console.log('[polybacktest] streak threshold: 3%; trigger: 2 consecutive qualifying moves');
+  console.log('[polybacktest] alert rule: 2+ consecutive same-direction non-zero volume changes');
+  console.log('[polybacktest] streak threshold: none; trigger: 2 consecutive non-zero moves');
   console.log(`[polybacktest] first processing boundary=${new Date(boundary).toISOString()}`);
   console.log(`[polybacktest] run window until ${new Date(stopAt).toISOString()}`);
 
