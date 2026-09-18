@@ -172,12 +172,11 @@ async function send(text) {
 
 async function processPeriod(boundary, previousVolume) {
   const completedStart = boundary - PERIOD;
-  const previousStart = boundary - 2 * PERIOD;
   const completedSlug = slug(completedStart);
-  const previousSlug = slug(previousStart);
   const nextSlug = slug(boundary);
+  const ALERT_VOLUME = 50000;
 
-  console.log(`[polybacktest] completed=${completedSlug} previous=${previousSlug} next=${nextSlug}`);
+  console.log(`[polybacktest] completed=${completedSlug} next=${nextSlug}`);
 
   const completed = await market(completedSlug);
   const completedResult = await tradeVolume(completed.conditionId, completedSlug);
@@ -187,29 +186,28 @@ async function processPeriod(boundary, previousVolume) {
   }
 
   const completedVolume = completedResult.volume;
-  const delta = completedVolume - previousVolume;
-  const pct = previousVolume === 0 ? null : (delta / previousVolume) * 100;
-  const direction = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
-  const change = pct == null ? 'N/A' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
-  console.log(`[polybacktest] PERIOD RESULT previous=${previousVolume.toFixed(2)} last5m=${completedVolume.toFixed(2)} delta=${delta.toFixed(2)} pct=${change} direction=${direction}`);
+  console.log(
+    `[polybacktest] PERIOD RESULT last5m=${completedVolume.toFixed(2)}`
+  );
 
-  if (delta === 0) {
-    console.log('[polybacktest] no alert: zero volume change');
+  if (completedVolume < ALERT_VOLUME) {
+    console.log(
+      `[polybacktest] no alert: LAST 5M $${completedVolume.toFixed(2)} < $${ALERT_VOLUME.toFixed(2)}`
+    );
     return completedVolume;
   }
 
   const text = [
     '🔥 BTC · 5M',
-    `PREVIOUS: $${previousVolume.toFixed(2)}`,
     `LAST 5M: $${completedVolume.toFixed(2)}`,
-    `VOLUME ${direction}: $${Math.abs(delta).toFixed(2)} · ${change}`,
     '➡️ NEXT · Polymarket 5M',
     `https://polymarket.com/event/${nextSlug}`
-  ].join('\n');
+  ].join('\\n');
 
-  console.log('[polybacktest] alert qualified: non-zero volume change');
+  console.log('[polybacktest] alert qualified: LAST 5M >= $50000');
   await send(text);
+
   return completedVolume;
 }
 async function main() {
