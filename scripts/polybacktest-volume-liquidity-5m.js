@@ -173,6 +173,23 @@ async function getReliableTradeStats(conditionId, start, end, slug) {
   throw new Error('Trades unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
+async function getBtc24hChange() {
+  const end = Date.now();
+  const start = end - 24 * 60 * 60 * 1000;
+  const url = 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=2&endTime=' + end;
+  const response = await fetchTimeout(url);
+  const body = await response.text();
+  if (!response.ok) throw new Error('Binance BTC 24h API ' + response.status + ': ' + body);
+  const rows = JSON.parse(body);
+  if (!Array.isArray(rows) || rows.length < 2) throw new Error('Binance BTC 24h data unavailable');
+
+  const current = number(rows[rows.length - 1][4]);
+  const previous = number(rows[rows.length - 2][4]);
+  if (!(current > 0) || !(previous > 0)) throw new Error('Invalid Binance BTC prices');
+
+  return ((current - previous) / previous) * 100;
+}
+
 async function processPeriod(boundary) {
   const activeStart = boundary - PERIOD;
   const evaluationEndMs = Math.min(Date.now(), boundary - 1000);
@@ -197,6 +214,14 @@ async function processPeriod(boundary) {
   const ratio = volume > 0 ? (trades / volume) * 100 : 0;
 
   console.log('[combined-5m] ratio=' + ratio.toFixed(4) + '%');
+
+  const btc24h = await getBtc24hChange();
+  console.log('[combined-5m] BTC 24h change=' + btc24h.toFixed(4) + '%');
+
+  if (btc24h >= 5) {
+    console.log('[combined-5m] BTC 24h growth >= +5% — alert ignored');
+    return;
+  }
 
   if (ratio > 5.5) {
     console.log('[combined-5m] above 5.5% — alert ignored');
