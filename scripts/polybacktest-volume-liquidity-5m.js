@@ -84,7 +84,7 @@ async function market(s) {
 }
 
 async function tradeVolume(conditionId, marketSlug) {
-  const start = Number(marketSlug.match(/-(\\d+)$/)?.[1]);
+  const start = Number(marketSlug.match(/-(\d+)$/)?.[1]);
   if (!Number.isFinite(start)) throw new Error('Invalid 5m slug timestamp: ' + marketSlug);
 
   const end = start + 300;
