@@ -239,10 +239,105 @@ async function processPeriod(boundary) {
   const polybacktestId = await polybacktestMarket(completedSlug);
   const liquidity = await liquiditySnapshot(polybacktestId, boundary);
 
+  const percentage = Math.min(volume, liquidity) > 0
+    ? (Math.abs(volume - liquidity) / Math.min(volume, liquidity)) * 100
+    : 0;
+  const volumeMark = volume > liquidity ? ' ⚠️' : '';
+  const liquidityMark = liquidity > volume ? ' ⚠️' : '';
+
   const message = [
     '🔥 BTC · 5M',
-    'VOLUME: $' + volume.toFixed(2),
-    'LIQUIDITY: $' + liquidity.toFixed(2),
+    'VOLUME: 
+
+  console.log(
+    '[combined-5m] alert completed=' + completedSlug +
+    ' volume=' + volume.toFixed(2) +
+    ' liquidity=' + liquidity.toFixed(2)
+  );
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow();
+
+  // Finish the completed period before the next 5m market begins.
+  // The completed period is already fully closed; only the alert is sent early.
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[combined-5m] clean BTC-only 5m monitor started');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error(
+        '[combined-5m] PERIOD FAILED ' +
+        new Date(boundary).toISOString() + ': ' + error.message
+      );
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + volume.toFixed(2) + volumeMark,
+    'LIQUIDITY: 
+
+  console.log(
+    '[combined-5m] alert completed=' + completedSlug +
+    ' volume=' + volume.toFixed(2) +
+    ' liquidity=' + liquidity.toFixed(2)
+  );
+
+  await sendTelegram(message);
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow();
+
+  // Finish the completed period before the next 5m market begins.
+  // The completed period is already fully closed; only the alert is sent early.
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[combined-5m] clean BTC-only 5m monitor started');
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    try {
+      await processPeriod(boundary);
+      boundary += PERIOD;
+    } catch (error) {
+      console.error(
+        '[combined-5m] PERIOD FAILED ' +
+        new Date(boundary).toISOString() + ': ' + error.message
+      );
+      await sleep(1000);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error('[combined-5m] FAILED', error);
+  process.exit(1);
+});
+ + liquidity.toFixed(2) + liquidityMark,
+    'DIFFERENCE: ' + percentage.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
