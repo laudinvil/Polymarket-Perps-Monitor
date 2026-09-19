@@ -221,27 +221,38 @@ async function processPeriod(coin, boundary) {
   );
 
   const activeMarket = await findMarket(activeSlug);
-  const stats = await getReliableOI(activeMarket, activeSlug);
+  const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
 
-  const totalOI = stats.UP + stats.DOWN;
-  const imbalance = totalOI > 0
-    ? (stats.DOWN - stats.UP) / totalOI * 100
+  const holderTotal = stats.UP.holders + stats.DOWN.holders;
+  const holderImbalance = holderTotal > 0
+    ? (stats.DOWN.holders - stats.UP.holders) / holderTotal * 100
     : 0;
 
-  if (stats.DOWN <= stats.UP) {
-    console.log(
-      '[positions-5m] IGNORE ' + activeSlug +
-      ' DOWN OI=$' + stats.DOWN.toFixed(2) +
-      ' <= UP OI=$' + stats.UP.toFixed(2)
-    );
-    return false;
-  }
+  const shareTotal = stats.UP.shares + stats.DOWN.shares;
+  const shareImbalance = shareTotal > 0
+    ? (stats.DOWN.shares - stats.UP.shares) / shareTotal * 100
+    : 0;
+
+  const topTotal = stats.UP.topValue + stats.DOWN.topValue;
+  const topHolderImbalance = topTotal > 0
+    ? (stats.DOWN.topValue - stats.UP.topValue) / topTotal * 100
+    : 0;
 
   const message = [
     '🔥 ' + coin + ' · 5M',
-    'UP OI: $' + stats.UP.toFixed(2),
-    'DOWN OI: $' + stats.DOWN.toFixed(2) + ' 🔥',
-    'OI IMBALANCE: ' + imbalance.toFixed(2) + '% 🔥',
+    '',
+    'UP HOLDERS: ' + stats.UP.holders,
+    'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
+    'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
+    '',
+    'UP SHARES: ' + stats.UP.shares.toFixed(2),
+    'DOWN SHARES: ' + stats.DOWN.shares.toFixed(2) + (stats.DOWN.shares > stats.UP.shares ? ' 🔥' : ''),
+    'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
+    '',
+    'TOP UP HOLDER: $' + stats.UP.topValue.toFixed(2),
+    'TOP DOWN HOLDER: $' + stats.DOWN.topValue.toFixed(2) + (stats.DOWN.topValue > stats.UP.topValue ? ' 🔥' : ''),
+    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
+    '',
     '➡️ NEXT · Polymarket 5M',
     '<https://polymarket.com/event/' + nextSlug + '>'
   ].join('\n');
@@ -249,7 +260,6 @@ async function processPeriod(coin, boundary) {
   await sendTelegram(message);
   return true;
 }
-
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
