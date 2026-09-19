@@ -5,8 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 30000;
-const MIN_IMBALANCE_PCT = 8.8;
-const MAX_IMBALANCE_PCT = 19.5;
+const COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'DOGE', 'BNB'];
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -19,7 +18,7 @@ let lastPolymarketApi = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
-const marketSlug = start => 'btc-updown-5m-' + Math.floor(start / 1000);
+const marketSlug = (coin, start) => coin.toLowerCase() + '-updown-5m-' + Math.floor(start / 1000);
 
 async function fetchTimeout(url, options = {}) {
   const controller = new AbortController();
@@ -169,47 +168,38 @@ async function sendTelegram(message) {
   throw new Error('Telegram delivery failed');
 }
 
-async function processPeriod(boundary) {
+async function processPeriod(coin, boundary) {
   const activeStart = boundary - PERIOD;
-  const activeSlug = marketSlug(activeStart);
-  const nextSlug = marketSlug(boundary);
+  const activeSlug = marketSlug(coin, activeStart);
+  const nextSlug = marketSlug(coin, boundary);
 
   console.log(
-    '[positions-5m] evaluating active=' + activeSlug +
+    '[positions-5m] evaluating ' + coin +
+    ' active=' + activeSlug +
     ' at 4:30; boundary=' + new Date(boundary).toISOString()
   );
 
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliablePositions(activeMarket.conditionId, activeSlug);
 
-  if (stats.UP <= stats.DOWN) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' UP wallets=' + stats.UP + ' <= DOWN wallets=' + stats.DOWN);
-    return false;
-  }
-
   const totalWallets = stats.UP + stats.DOWN;
   const imbalance = totalWallets > 0
-    ? (stats.UP - stats.DOWN) / totalWallets * 100
+    ? (stats.DOWN - stats.UP) / totalWallets * 100
     : 0;
 
-  if (imbalance <= MIN_IMBALANCE_PCT) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (<= ' + MIN_IMBALANCE_PCT + '%)');
-    return false;
-  }
-
-  if (imbalance > MAX_IMBALANCE_PCT) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (> ' + MAX_IMBALANCE_PCT + '%)');
+  if (stats.DOWN <= stats.UP) {
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' DOWN wallets=' + stats.DOWN + ' <= UP wallets=' + stats.UP);
     return false;
   }
 
   const message = [
-    '🔥 BTC · 5M',
-    'UP: ' + stats.UP + ' wallets 🔥',
-    'DOWN: ' + stats.DOWN + ' wallets',
+    '🔥 ' + coin + ' · 5M',
+    'UP: ' + stats.UP + ' wallets',
+    'DOWN: ' + stats.DOWN + ' wallets 🔥',
     'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
+  ].join('\\n');
 
   await sendTelegram(message);
   return true;
@@ -218,12 +208,11 @@ async function processPeriod(boundary) {
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
-  let consecutiveAlerts = 0;
 
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
-  console.log('[positions-5m] BTC-only 5m positions monitor started');
+  console.log('[positions-5m] 5m positions monitor started: ' + COINS.join(', '));
   console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
 
   while (Date.now() < stopAt) {
@@ -231,29 +220,22 @@ async function main() {
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
 
-    try {
-      if (consecutiveAlerts >= 3) {
-        console.log('[positions-5m] COOLDOWN ' + marketSlug(boundary - PERIOD) + ' — third consecutive alert reached; one full period silent');
-        consecutiveAlerts = 0;
-        boundary += PERIOD;
-        continue;
-      }
+    const results = await Promise.allSettled(
+      COINS.map(coin => processPeriod(coin, boundary))
+    );
 
-      const alerted = await processPeriod(boundary);
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const coin = COINS[i];
 
-      if (alerted) {
-        consecutiveAlerts += 1;
-        console.log('[positions-5m] consecutive alerts=' + consecutiveAlerts + '/3');
+      if (result.status === 'fulfilled') {
+        if (result.value) console.log('[positions-5m] ' + coin + ' DOWN imbalance alert sent');
       } else {
-        consecutiveAlerts = 0;
-        console.log('[positions-5m] streak reset: silent period');
+        console.error('[positions-5m] ' + coin + ' PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + result.reason.message);
       }
-
-      boundary += PERIOD;
-    } catch (error) {
-      console.error('[positions-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
-      await sleep(1000);
     }
+
+    boundary += PERIOD;
   }
 }
 
