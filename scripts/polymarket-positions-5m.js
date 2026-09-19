@@ -98,7 +98,7 @@ async function positionStats(conditionId, slug) {
       const outcome = String(position.outcome || '').trim().toUpperCase();
       if (outcome !== 'UP' && outcome !== 'DOWN') continue;
 
-      const wallet = String(position.proxy_wallet || '').trim();
+      const wallet = String(position.proxyWallet ?? position.proxy_wallet ?? '').trim();
       if (!wallet) continue;
 
       stats[outcome].wallets.add(wallet);
