@@ -5,7 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 30000;
-const MIN_IMBALANCE_PCT = 4.7;
+const MIN_IMBALANCE_PCT = 6.1;
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -198,7 +198,7 @@ async function processPeriod(boundary) {
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP + ' wallets ⚠️',
+    'UP: ' + stats.UP + ' wallets 🔥',
     'DOWN: ' + stats.DOWN + ' wallets',
     'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
