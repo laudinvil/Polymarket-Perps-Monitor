@@ -98,7 +98,7 @@ async function positionStats(conditionId, slug) {
       const outcome = String(position.outcome || '').trim().toUpperCase();
       if (outcome !== 'UP' && outcome !== 'DOWN') continue;
 
-      const wallet = String(position.proxyWallet ?? position.proxy_wallet ?? '').trim();
+      const wallet = String(position.proxy_wallet || '').trim();
       if (!wallet) continue;
 
       stats[outcome].wallets.add(wallet);
@@ -182,29 +182,29 @@ async function processPeriod(boundary) {
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliablePositions(activeMarket.conditionId, activeSlug);
 
-  const totalWallets = stats.UP + stats.DOWN;
-  const imbalance = totalWallets > 0
-    ? (stats.UP - stats.DOWN) / totalWallets * 100
-    : 0;
-
   if (stats.UP <= stats.DOWN) {
     console.log('[positions-5m] IGNORE ' + activeSlug + ' UP wallets=' + stats.UP + ' <= DOWN wallets=' + stats.DOWN);
     return false;
   }
 
+  const totalWallets = stats.UP + stats.DOWN;
+  const imbalance = totalWallets > 0
+    ? (stats.UP - stats.DOWN) / totalWallets * 100
+    : 0;
+
   if (imbalance <= MIN_IMBALANCE_PCT) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' imbalance=' + imbalance.toFixed(2) + '% <= ' + MIN_IMBALANCE_PCT + '%');
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (<= ' + MIN_IMBALANCE_PCT + '%)');
     return false;
   }
 
   if (imbalance > MAX_IMBALANCE_PCT) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' imbalance=' + imbalance.toFixed(2) + '% > ' + MAX_IMBALANCE_PCT + '%');
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (> ' + MAX_IMBALANCE_PCT + '%)');
     return false;
   }
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP + ' wallets',
+    'UP: ' + stats.UP + ' wallets 🔥',
     'DOWN: ' + stats.DOWN + ' wallets',
     'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
@@ -218,6 +218,7 @@ async function processPeriod(boundary) {
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
+  let consecutiveAlerts = 0;
 
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
@@ -231,9 +232,22 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
+      if (consecutiveAlerts >= 3) {
+        console.log('[positions-5m] COOLDOWN ' + marketSlug(boundary - PERIOD) + ' — third consecutive alert reached; one full period silent');
+        consecutiveAlerts = 0;
+        boundary += PERIOD;
+        continue;
+      }
+
       const alerted = await processPeriod(boundary);
 
-      if (alerted) console.log('[positions-5m] UP imbalance alert sent');
+      if (alerted) {
+        consecutiveAlerts += 1;
+        console.log('[positions-5m] consecutive alerts=' + consecutiveAlerts + '/3');
+      } else {
+        consecutiveAlerts = 0;
+        console.log('[positions-5m] streak reset: silent period');
+      }
 
       boundary += PERIOD;
     } catch (error) {
