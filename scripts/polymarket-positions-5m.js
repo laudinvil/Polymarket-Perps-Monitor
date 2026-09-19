@@ -244,14 +244,16 @@ async function processPeriod(coin, boundary) {
     '🔥 ' + coin + ' · 5M',
     '',
     'UP HOLDERS: ' + stats.UP.holders + (stats.UP.holders > stats.DOWN.holders ? ' 🔥' : ''),
-    'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders >= stats.UP.holders ? ' 🔥' : ''),
+    'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
     'UP SHARES: ' + stats.UP.shares.toFixed(2) + (stats.UP.shares > stats.DOWN.shares ? ' 🔥' : ''),
     'DOWN SHARES: ' + stats.DOWN.shares.toFixed(2) + (stats.DOWN.shares > stats.UP.shares ? ' 🔥' : ''),
     'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
     '',
-    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES (
+    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' + (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
+    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES ($' + stats.DOWN.topValue.toFixed(2) + ')' + (stats.DOWN.topShares > stats.UP.topShares ? ' 🔥' : ''),
+    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
     '➡️ NEXT · Polymarket 5M',
     '<https://polymarket.com/event/' + nextSlug + '>'
