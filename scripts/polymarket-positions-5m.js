@@ -12,6 +12,7 @@ const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
 const POSITIONS_RETRIES = 4;
 const POSITIONS_RETRY_MS = 500;
+const MAX_IMBALANCE_PCT = 20;
 
 let lastPolymarketApi = 0;
 
@@ -209,13 +210,20 @@ async function processPeriod(boundary) {
   const imbalance = totalValue > 0
     ? Math.abs(stats.UP.currentValue - stats.DOWN.currentValue) / totalValue * 100
     : 0;
-  const imbalanceSide = upHigher ? 'UP' : downHigher ? 'DOWN' : 'EQUAL';
+
+  if (imbalance > MAX_IMBALANCE_PCT) {
+    console.log(
+      '[positions-5m] IGNORE ' + activeSlug +
+      ' imbalance=' + imbalance.toFixed(2) + '% > ' + MAX_IMBALANCE_PCT + '%'
+    );
+    return;
+  }
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.currentValue.toFixed(2),
-    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.currentValue.toFixed(2),
-    'IMBALANCE: ' + imbalance.toFixed(2) + '% · ' + imbalanceSide,
+    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.currentValue.toFixed(2) + (upHigher ? ' ⚠️' : ''),
+    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.currentValue.toFixed(2) + (downHigher ? ' ⚠️' : ''),
+    'IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
