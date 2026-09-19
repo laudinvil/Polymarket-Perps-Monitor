@@ -99,6 +99,10 @@ async function holderStats(conditionId, slug) {
     UP: { holders: 0, shares: 0, topShares: 0, topValue: 0 },
     DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0 }
   };
+  const holdersByOutcome = {
+    UP: new Map(),
+    DOWN: new Map()
+  };
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
@@ -127,21 +131,41 @@ async function holderStats(conditionId, slug) {
       const shares = Number(position.current_size ?? 0);
       if (!Number.isFinite(shares) || shares <= 0) continue;
 
-      stats[outcome].holders += 1;
-      stats[outcome].shares += shares;
-
       const currentValue = Number(position.current_value ?? position.currentValue ?? 0);
       const value = Number.isFinite(currentValue) && currentValue >= 0 ? currentValue : 0;
 
-      // The economically largest holder is the position with the highest
-      // current dollar value. Shares are kept only for display.
-      if (value > stats[outcome].topValue) {
-        stats[outcome].topShares = shares;
-        stats[outcome].topValue = value;
-      }
+      // Aggregate by wallet: the API can expose more than one position row
+      // for the same holder. Holder count and top-holder size must be wallet-based.
+      const wallet = String(
+        position.proxyWallet ??
+        position.proxy_wallet ??
+        position.user ??
+        position.owner ??
+        position.address ??
+        ''
+      ).trim().toLowerCase();
+
+      // Without a wallet identifier we cannot safely deduplicate the row.
+      // Keep the row as a unique fallback rather than silently merging holders.
+      const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rows.indexOf(position));
+      const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0, value: 0 };
+      holder.shares += shares;
+      holder.value += value;
+      holdersByOutcome[outcome].set(holderKey, holder);
     }
 
     if (!pagination.has_more || !pagination.next_cursor) {
+      for (const outcome of ['UP', 'DOWN']) {
+        const holders = holdersByOutcome[outcome];
+        stats[outcome].holders = holders.size;
+        for (const holder of holders.values()) {
+          stats[outcome].shares += holder.shares;
+          if (holder.value > stats[outcome].topValue) {
+            stats[outcome].topShares = holder.shares;
+            stats[outcome].topValue = holder.value;
+          }
+        }
+      }
       return stats;
     }
 
