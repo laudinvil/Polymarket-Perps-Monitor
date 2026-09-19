@@ -43,14 +43,12 @@ async function polymarket(path) {
 
 async function findMarket(slug) {
   let lastError;
-
   for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
     try {
       const data = await polymarket('/events?slug=' + encodeURIComponent(slug));
       const event = Array.isArray(data) ? data.find(item => item && item.slug === slug) : null;
       const markets = Array.isArray(event?.markets) ? event.markets : [];
       const market = markets.find(item => item && item.slug === slug) || markets[0];
-
       if (!market) throw new Error('Event ' + slug + ' has no market');
 
       const conditionId = market.conditionId ?? market.condition_id;
@@ -58,37 +56,32 @@ async function findMarket(slug) {
 
       let tokenIds = market.clobTokenIds ?? market.clob_token_ids ?? market.tokens;
       let outcomes = market.outcomes;
-
       if (typeof tokenIds === 'string') {
         try { tokenIds = JSON.parse(tokenIds); } catch { tokenIds = null; }
       }
       if (typeof outcomes === 'string') {
         try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
       }
-
       if (!Array.isArray(tokenIds) || tokenIds.length < 2) {
         throw new Error('Market ' + slug + ' has no two CLOB token ids');
       }
-
-      if (!Array.isArray(outcomes) || outcomes.length < 2) {
-        outcomes = ['UP', 'DOWN'];
-      }
+      if (!Array.isArray(outcomes) || outcomes.length < 2) outcomes = ['UP', 'DOWN'];
 
       const normalized = outcomes.map(value => String(value).trim().toUpperCase());
       const upIndex = normalized.findIndex(value => value === 'UP');
       const downIndex = normalized.findIndex(value => value === 'DOWN');
 
-      const upTokenId = String(tokenIds[upIndex >= 0 ? upIndex : 0]);
-      const downTokenId = String(tokenIds[downIndex >= 0 ? downIndex : 1]);
-
-      return { conditionId, upTokenId, downTokenId };
+      return {
+        conditionId,
+        upTokenId: String(tokenIds[upIndex >= 0 ? upIndex : 0]),
+        downTokenId: String(tokenIds[downIndex >= 0 ? downIndex : 1])
+      };
     } catch (error) {
       lastError = error;
       console.log('[positions-5m] market retry ' + attempt + '/' + MARKET_RETRIES + ': ' + error.message);
       if (attempt < MARKET_RETRIES) await sleep(MARKET_RETRY_MS);
     }
   }
-
   throw lastError;
 }
 
@@ -96,13 +89,10 @@ async function holderStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { holders: 0, shares: 0, netShares: 0, topShares: 0, topValue: 0 },
-    DOWN: { holders: 0, shares: 0, netShares: 0, topShares: 0, topValue: 0 }
+    UP: { holders: 0, shares: 0, topShares: 0, topValue: 0 },
+    DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0 }
   };
-  const holdersByOutcome = {
-    UP: new Map(),
-    DOWN: new Map()
-  };
+  const holdersByOutcome = { UP: new Map(), DOWN: new Map() };
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
@@ -144,7 +134,6 @@ async function holderStats(conditionId, slug) {
 
       const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rowIndex);
       const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0, value: 0 };
-
       holder.shares += shares;
       holder.value += value;
       holdersByOutcome[outcome].set(holderKey, holder);
@@ -158,27 +147,13 @@ async function holderStats(conditionId, slug) {
         for (const holder of holders.values()) {
           stats[outcome].shares += holder.shares;
 
-          if (holder.value > stats[outcome].topValue) {
+          // Top holder is defined by share count, not mark-to-market dollar value.
+          if (holder.shares > stats[outcome].topShares) {
             stats[outcome].topShares = holder.shares;
             stats[outcome].topValue = holder.value;
           }
         }
       }
-
-      // Raw UP/DOWN token supply is structurally close to paired binary shares.
-      // Measure directional exposure per wallet instead: only the larger side
-      // of a wallet's UP/DOWN holdings contributes to that side's net shares.
-      const wallets = new Set([
-        ...holdersByOutcome.UP.keys(),
-        ...holdersByOutcome.DOWN.keys()
-      ]);
-      for (const wallet of wallets) {
-        const up = holdersByOutcome.UP.get(wallet)?.shares || 0;
-        const down = holdersByOutcome.DOWN.get(wallet)?.shares || 0;
-        if (up > down) stats.UP.netShares += up - down;
-        if (down > up) stats.DOWN.netShares += down - up;
-      }
-
       return stats;
     }
 
@@ -190,11 +165,9 @@ async function holderStats(conditionId, slug) {
 
 async function getReliableHolderStats(conditionId, slug) {
   let lastError;
-
   for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
     try {
       const stats = await holderStats(conditionId, slug);
-
       console.log(
         '[positions-5m] ' + slug +
         ' UP holders=' + stats.UP.holders +
@@ -206,22 +179,14 @@ async function getReliableHolderStats(conditionId, slug) {
         ' TOP UP=$' + stats.UP.topValue.toFixed(2) +
         ' TOP DOWN=$' + stats.DOWN.topValue.toFixed(2)
       );
-
       return stats;
     } catch (error) {
       lastError = error;
-      console.log(
-        '[positions-5m] holders retry ' + attempt + '/' +
-        POSITIONS_RETRIES + ': ' + error.message
-      );
+      console.log('[positions-5m] holders retry ' + attempt + '/' + POSITIONS_RETRIES + ': ' + error.message);
       if (attempt < POSITIONS_RETRIES) await sleep(POSITIONS_RETRY_MS);
     }
   }
-
-  throw new Error(
-    'Holder data unavailable after retries for ' + slug + ': ' +
-    lastError.message
-  );
+  throw new Error('Holder data unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
 async function sendTelegram(message) {
@@ -242,7 +207,6 @@ async function sendTelegram(message) {
 
       const body = await response.text();
       const data = JSON.parse(body);
-
       if (response.ok && data.ok === true && data.result?.message_id) return;
       throw new Error('Telegram delivery not confirmed: ' + body);
     } catch (error) {
@@ -250,7 +214,6 @@ async function sendTelegram(message) {
       if (attempt < 3) await sleep(2000 * attempt);
     }
   }
-
   throw new Error('Telegram delivery failed');
 }
 
@@ -273,14 +236,19 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  const shareMax = Math.max(stats.UP.netShares, stats.DOWN.netShares);
-  const shareImbalance = shareMax > 0
-    ? Math.abs(stats.DOWN.netShares - stats.UP.netShares) / shareMax * 100
+  // Total UP/DOWN shares in a binary market are structurally paired.
+  // Use average shares per holder for the distribution imbalance.
+  const upAvgShares = stats.UP.holders > 0 ? stats.UP.shares / stats.UP.holders : 0;
+  const downAvgShares = stats.DOWN.holders > 0 ? stats.DOWN.shares / stats.DOWN.holders : 0;
+  const avgSharesMax = Math.max(upAvgShares, downAvgShares);
+  const shareImbalance = avgSharesMax > 0
+    ? Math.abs(downAvgShares - upAvgShares) / avgSharesMax * 100
     : 0;
 
-  const topValueMax = Math.max(stats.UP.topValue, stats.DOWN.topValue);
-  const topHolderImbalance = topValueMax > 0
-    ? Math.abs(stats.DOWN.topValue - stats.UP.topValue) / topValueMax * 100
+  // Top-holder comparison is based on shares, not price-dependent dollar value.
+  const topSharesMax = Math.max(stats.UP.topShares, stats.DOWN.topShares);
+  const topHolderImbalance = topSharesMax > 0
+    ? Math.abs(stats.DOWN.topShares - stats.UP.topShares) / topSharesMax * 100
     : 0;
 
   const message = [
@@ -290,14 +258,14 @@ async function processPeriod(coin, boundary) {
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
-    'UP NET SHARES: ' + stats.UP.netShares.toFixed(2) + (stats.UP.netShares > stats.DOWN.netShares ? ' 🔥' : ''),
-    'DOWN NET SHARES: ' + stats.DOWN.netShares.toFixed(2) + (stats.DOWN.netShares > stats.UP.netShares ? ' 🔥' : ''),
+    'UP SHARES/HOLDER: ' + upAvgShares.toFixed(2) + (upAvgShares > downAvgShares ? ' 🔥' : ''),
+    'DOWN SHARES/HOLDER: ' + downAvgShares.toFixed(2) + (downAvgShares > upAvgShares ? ' 🔥' : ''),
     'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
     '',
     'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' +
-      (stats.UP.topValue > stats.DOWN.topValue ? ' 🔥' : ''),
+      (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
     'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES ($' + stats.DOWN.topValue.toFixed(2) + ')' +
-      (stats.DOWN.topValue > stats.UP.topValue ? ' 🔥' : ''),
+      (stats.DOWN.topShares > stats.UP.topShares ? ' 🔥' : ''),
     'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
     '➡️ NEXT · Polymarket 5M',
