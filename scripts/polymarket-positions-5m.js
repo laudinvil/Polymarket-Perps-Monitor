@@ -12,7 +12,6 @@ const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
 const POSITIONS_RETRIES = 4;
 const POSITIONS_RETRY_MS = 500;
-const MAX_IMBALANCE_PCT = 20;
 
 let lastPolymarketApi = 0;
 
@@ -71,8 +70,8 @@ async function positionStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0, largestPosition: 0 },
-    DOWN: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0, largestPosition: 0 }
+    UP: { wallets: new Set() },
+    DOWN: { wallets: new Set() }
   };
 
   for (let page = 0; page < 100; page++) {
@@ -100,27 +99,13 @@ async function positionStats(conditionId, slug) {
       const wallet = String(position.proxy_wallet || '').trim();
       if (!wallet) continue;
 
-      const s = stats[outcome];
-      s.wallets.add(wallet);
-
-      const currentValue = Number(position.current_value);
-      const currentSize = Number(position.current_size);
-      const entryCost = Number(position.entry_cost_usdc);
-      const totalCost = Number(position.total_cost_usdc);
-
-      if (Number.isFinite(currentValue) && currentValue > 0) {
-        s.currentValue += currentValue;
-        if (currentValue > s.largestPosition) s.largestPosition = currentValue;
-      }
-      if (Number.isFinite(currentSize) && currentSize > 0) s.currentSize += currentSize;
-      if (Number.isFinite(entryCost) && entryCost > 0) s.entryCost += entryCost;
-      if (Number.isFinite(totalCost) && totalCost > 0) s.totalCost += totalCost;
+      stats[outcome].wallets.add(wallet);
     }
 
     if (!pagination.has_more || !pagination.next_cursor) {
       return {
-        UP: { ...stats.UP, wallets: stats.UP.wallets.size },
-        DOWN: { ...stats.DOWN, wallets: stats.DOWN.wallets.size }
+        UP: stats.UP.wallets.size,
+        DOWN: stats.DOWN.wallets.size
       };
     }
 
@@ -136,20 +121,11 @@ async function getReliablePositions(conditionId, slug) {
   for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
     try {
       const stats = await positionStats(conditionId, slug);
-      for (const side of ['UP', 'DOWN']) {
-        const s = stats[side];
-        const averageValue = s.wallets > 0 ? s.currentValue / s.wallets : 0;
-        console.log(
-          '[positions-5m] ' + slug + ' ' + side +
-          ' wallets=' + s.wallets +
-          ' currentValue=$' + s.currentValue.toFixed(2) +
-          ' avgValuePerWallet=$' + averageValue.toFixed(2) +
-          ' largestPosition=$' + s.largestPosition.toFixed(2) +
-          ' currentSize=' + s.currentSize.toFixed(2) +
-          ' entryCost=$' + s.entryCost.toFixed(2) +
-          ' totalCost=$' + s.totalCost.toFixed(2)
-        );
-      }
+      console.log(
+        '[positions-5m] ' + slug +
+        ' UP wallets=' + stats.UP +
+        ' DOWN wallets=' + stats.DOWN
+      );
       return stats;
     } catch (error) {
       lastError = error;
@@ -204,26 +180,18 @@ async function processPeriod(boundary) {
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliablePositions(activeMarket.conditionId, activeSlug);
 
-  const totalValue = stats.UP.currentValue + stats.DOWN.currentValue;
-  const upHigher = stats.UP.currentValue > stats.DOWN.currentValue;
-  const downHigher = stats.DOWN.currentValue > stats.UP.currentValue;
-  const imbalance = totalValue > 0
-    ? Math.abs(stats.UP.currentValue - stats.DOWN.currentValue) / totalValue * 100
+  const totalWallets = stats.UP + stats.DOWN;
+  const upHigher = stats.UP > stats.DOWN;
+  const downHigher = stats.DOWN > stats.UP;
+  const imbalance = totalWallets > 0
+    ? Math.abs(stats.UP - stats.DOWN) / totalWallets * 100
     : 0;
-
-  if (imbalance > MAX_IMBALANCE_PCT) {
-    console.log(
-      '[positions-5m] IGNORE ' + activeSlug +
-      ' imbalance=' + imbalance.toFixed(2) + '% > ' + MAX_IMBALANCE_PCT + '%'
-    );
-    return;
-  }
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.currentValue.toFixed(2) + (upHigher ? ' ⚠️' : ''),
-    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.currentValue.toFixed(2) + (downHigher ? ' ⚠️' : ''),
-    'IMBALANCE: ' + imbalance.toFixed(2) + '%',
+    'UP: ' + stats.UP + ' wallets' + (upHigher ? ' ⚠️' : ''),
+    'DOWN: ' + stats.DOWN + ' wallets' + (downHigher ? ' ⚠️' : ''),
+    'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
