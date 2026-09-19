@@ -1,16 +1,16 @@
-name: PolyBackTest Positions 5M
+name: Polymarket Positions 5M BTC
 
 on:
   push:
     paths:
-      - 'scripts/polybacktest-positions-5m.js'
-      - '.github/workflows/polybacktest-positions-5m.yml'
+      - 'scripts/polymarket-positions-5m.js'
+      - '.github/workflows/polymarket-positions-5m.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 */6 * * *'
 
 concurrency:
-  group: polybacktest-positions-5m
+  group: polymarket-positions-5m
   cancel-in-progress: true
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 24
       - name: Run BTC positions 5M monitor
-        run: node scripts/polybacktest-positions-5m.js
+        run: node scripts/polymarket-positions-5m.js
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
