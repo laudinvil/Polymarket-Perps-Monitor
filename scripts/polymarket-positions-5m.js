@@ -96,8 +96,8 @@ async function holderStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { holders: 0, shares: 0, topShares: 0, topValue: 0 },
-    DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0 }
+    UP: { holders: 0, shares: 0, netShares: 0, topShares: 0, topValue: 0 },
+    DOWN: { holders: 0, shares: 0, netShares: 0, topShares: 0, topValue: 0 }
   };
   const holdersByOutcome = {
     UP: new Map(),
@@ -163,6 +163,20 @@ async function holderStats(conditionId, slug) {
             stats[outcome].topValue = holder.value;
           }
         }
+      }
+
+      // Raw UP/DOWN token supply is structurally close to paired binary shares.
+      // Measure directional exposure per wallet instead: only the larger side
+      // of a wallet's UP/DOWN holdings contributes to that side's net shares.
+      const wallets = new Set([
+        ...holdersByOutcome.UP.keys(),
+        ...holdersByOutcome.DOWN.keys()
+      ]);
+      for (const wallet of wallets) {
+        const up = holdersByOutcome.UP.get(wallet)?.shares || 0;
+        const down = holdersByOutcome.DOWN.get(wallet)?.shares || 0;
+        if (up > down) stats.UP.netShares += up - down;
+        if (down > up) stats.DOWN.netShares += down - up;
       }
 
       return stats;
@@ -259,9 +273,9 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  const shareMax = Math.max(stats.UP.shares, stats.DOWN.shares);
+  const shareMax = Math.max(stats.UP.netShares, stats.DOWN.netShares);
   const shareImbalance = shareMax > 0
-    ? Math.abs(stats.DOWN.shares - stats.UP.shares) / shareMax * 100
+    ? Math.abs(stats.DOWN.netShares - stats.UP.netShares) / shareMax * 100
     : 0;
 
   const topValueMax = Math.max(stats.UP.topValue, stats.DOWN.topValue);
@@ -276,8 +290,8 @@ async function processPeriod(coin, boundary) {
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
-    'UP SHARES: ' + stats.UP.shares.toFixed(2) + (stats.UP.shares > stats.DOWN.shares ? ' 🔥' : ''),
-    'DOWN SHARES: ' + stats.DOWN.shares.toFixed(2) + (stats.DOWN.shares > stats.UP.shares ? ' 🔥' : ''),
+    'UP NET SHARES: ' + stats.UP.netShares.toFixed(2) + (stats.UP.netShares > stats.DOWN.netShares ? ' 🔥' : ''),
+    'DOWN NET SHARES: ' + stats.DOWN.netShares.toFixed(2) + (stats.DOWN.netShares > stats.UP.netShares ? ' 🔥' : ''),
     'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
     '',
     'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' +
