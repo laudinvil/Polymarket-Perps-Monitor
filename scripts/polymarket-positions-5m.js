@@ -70,8 +70,8 @@ async function positionStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0 },
-    DOWN: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0 }
+    UP: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0, largestPosition: 0 },
+    DOWN: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0, largestPosition: 0 }
   };
 
   for (let page = 0; page < 100; page++) {
@@ -107,7 +107,10 @@ async function positionStats(conditionId, slug) {
       const entryCost = Number(position.entry_cost_usdc);
       const totalCost = Number(position.total_cost_usdc);
 
-      if (Number.isFinite(currentValue) && currentValue > 0) s.currentValue += currentValue;
+      if (Number.isFinite(currentValue) && currentValue > 0) {
+        s.currentValue += currentValue;
+        if (currentValue > s.largestPosition) s.largestPosition = currentValue;
+      }
       if (Number.isFinite(currentSize) && currentSize > 0) s.currentSize += currentSize;
       if (Number.isFinite(entryCost) && entryCost > 0) s.entryCost += entryCost;
       if (Number.isFinite(totalCost) && totalCost > 0) s.totalCost += totalCost;
@@ -134,10 +137,13 @@ async function getReliablePositions(conditionId, slug) {
       const stats = await positionStats(conditionId, slug);
       for (const side of ['UP', 'DOWN']) {
         const s = stats[side];
+        const averageValue = s.wallets > 0 ? s.currentValue / s.wallets : 0;
         console.log(
           '[positions-5m] ' + slug + ' ' + side +
           ' wallets=' + s.wallets +
           ' currentValue=$' + s.currentValue.toFixed(2) +
+          ' avgValuePerWallet=$' + averageValue.toFixed(2) +
+          ' largestPosition=$' + s.largestPosition.toFixed(2) +
           ' currentSize=' + s.currentSize.toFixed(2) +
           ' entryCost=$' + s.entryCost.toFixed(2) +
           ' totalCost=$' + s.totalCost.toFixed(2)
