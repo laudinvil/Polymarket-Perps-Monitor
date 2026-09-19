@@ -12,6 +12,7 @@ on:
 concurrency:
   group: polymarket-positions-5m
   cancel-in-progress: true
+  # Keep exactly one Positions 5M monitor run active.
 
 jobs:
   run:
