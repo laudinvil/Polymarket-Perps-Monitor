@@ -115,8 +115,8 @@ async function positionStats(conditionId, slug) {
 
     if (!pagination.has_more || !pagination.next_cursor) {
       return {
-        UP: { wallets: stats.UP.wallets.size, ...stats.UP },
-        DOWN: { wallets: stats.DOWN.wallets.size, ...stats.DOWN }
+        UP: { ...stats.UP, wallets: stats.UP.wallets.size },
+        DOWN: { ...stats.DOWN, wallets: stats.DOWN.wallets.size }
       };
     }
 
