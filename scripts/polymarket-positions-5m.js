@@ -108,9 +108,7 @@ async function holderStats(conditionId, slug) {
     const params = new URLSearchParams({
       condition: conditionId,
       status: 'OPEN',
-      limit: String(pageSize),
-      filter_type: 'TOKENS',
-      filter_amount: '0.1'
+      limit: String(pageSize)
     });
     if (cursor) params.set('cursor', cursor);
 
@@ -124,7 +122,8 @@ async function holderStats(conditionId, slug) {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
     const pagination = payload?.pagination || {};
 
-    for (const position of rows) {
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const position = rows[rowIndex];
       const outcome = String(position.outcome || '').trim().toUpperCase();
       if (outcome !== 'UP' && outcome !== 'DOWN') continue;
 
@@ -134,8 +133,6 @@ async function holderStats(conditionId, slug) {
       const currentValue = Number(position.current_value ?? position.currentValue ?? 0);
       const value = Number.isFinite(currentValue) && currentValue >= 0 ? currentValue : 0;
 
-      // Aggregate by wallet: the API can expose more than one position row
-      // for the same holder. Holder count and top-holder size must be wallet-based.
       const wallet = String(
         position.proxyWallet ??
         position.proxy_wallet ??
@@ -145,10 +142,9 @@ async function holderStats(conditionId, slug) {
         ''
       ).trim().toLowerCase();
 
-      // Without a wallet identifier we cannot safely deduplicate the row.
-      // Keep the row as a unique fallback rather than silently merging holders.
-      const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rows.indexOf(position));
+      const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rowIndex);
       const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0, value: 0 };
+
       holder.shares += shares;
       holder.value += value;
       holdersByOutcome[outcome].set(holderKey, holder);
@@ -158,14 +154,17 @@ async function holderStats(conditionId, slug) {
       for (const outcome of ['UP', 'DOWN']) {
         const holders = holdersByOutcome[outcome];
         stats[outcome].holders = holders.size;
+
         for (const holder of holders.values()) {
           stats[outcome].shares += holder.shares;
+
           if (holder.value > stats[outcome].topValue) {
             stats[outcome].topShares = holder.shares;
             stats[outcome].topValue = holder.value;
           }
         }
       }
+
       return stats;
     }
 
@@ -265,8 +264,6 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.shares - stats.UP.shares) / shareMax * 100
     : 0;
 
-  // Compare top holders by their actual current dollar value.
-  // Shares alone are not comparable across UP/DOWN because their token prices differ.
   const topValueMax = Math.max(stats.UP.topValue, stats.DOWN.topValue);
   const topHolderImbalance = topValueMax > 0
     ? Math.abs(stats.DOWN.topValue - stats.UP.topValue) / topValueMax * 100
@@ -283,118 +280,14 @@ async function processPeriod(coin, boundary) {
     'DOWN SHARES: ' + stats.DOWN.shares.toFixed(2) + (stats.DOWN.shares > stats.UP.shares ? ' 🔥' : ''),
     'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
     '',
-    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES (
+    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' +
+      (stats.UP.topValue > stats.DOWN.topValue ? ' 🔥' : ''),
+    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES ($' + stats.DOWN.topValue.toFixed(2) + ')' +
+      (stats.DOWN.topValue > stats.UP.topValue ? ' 🔥' : ''),
     'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
     '➡️ NEXT · Polymarket 5M',
-    '<https://polymarket.com/event/' + nextSlug + '>'
-  ].join('\n');
-
-  await sendTelegram(message);
-  return true;
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
-  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    const results = await Promise.allSettled(
-      COINS.map(coin => processPeriod(coin, boundary))
-    );
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const coin = COINS[i];
-
-      if (result.status === 'fulfilled') {
-        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
-      } else {
-        console.error(
-          '[positions-5m] ' + coin +
-          ' PERIOD FAILED ' + new Date(boundary).toISOString() +
-          ': ' + result.reason.message
-        );
-      }
-    }
-
-    boundary += PERIOD;
-  }
-}
-
-main().catch(error => {
-  console.error('[positions-5m] FAILED', error);
-  process.exit(1);
-});
- + stats.UP.topValue.toFixed(2) + ')' + (stats.UP.topValue > stats.DOWN.topValue ? ' 🔥' : ''),
-    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES (
-    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
-    '',
-    '➡️ NEXT · Polymarket 5M',
-    '<https://polymarket.com/event/' + nextSlug + '>'
-  ].join('\n');
-
-  await sendTelegram(message);
-  return true;
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
-  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    const results = await Promise.allSettled(
-      COINS.map(coin => processPeriod(coin, boundary))
-    );
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const coin = COINS[i];
-
-      if (result.status === 'fulfilled') {
-        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
-      } else {
-        console.error(
-          '[positions-5m] ' + coin +
-          ' PERIOD FAILED ' + new Date(boundary).toISOString() +
-          ': ' + result.reason.message
-        );
-      }
-    }
-
-    boundary += PERIOD;
-  }
-}
-
-main().catch(error => {
-  console.error('[positions-5m] FAILED', error);
-  process.exit(1);
-});
- + stats.DOWN.topValue.toFixed(2) + ')' + (stats.DOWN.topValue > stats.UP.topValue ? ' 🔥' : ''),
-    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
-    '',
-    '➡️ NEXT · Polymarket 5M',
-    '<https://polymarket.com/event/' + nextSlug + '>'
+    'https://polymarket.com/event/' + nextSlug
   ].join('\n');
 
   await sendTelegram(message);
