@@ -238,6 +238,9 @@ async function main() {
       if (alerted) {
         consecutiveAlerts += 1;
         console.log('[positions-5m] consecutive alerts=' + consecutiveAlerts + '/3');
+      } else {
+        consecutiveAlerts = 0;
+        console.log('[positions-5m] streak reset: silent period');
       }
 
       boundary += PERIOD;
