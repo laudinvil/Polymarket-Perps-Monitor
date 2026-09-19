@@ -225,7 +225,7 @@ async function processPeriod(coin, boundary) {
 
   const holderTotal = stats.UP.holders + stats.DOWN.holders;
   const holderImbalance = holderTotal > 0
-    ? (stats.DOWN.holders - stats.UP.holders) / holderTotal * 100
+    ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderTotal * 100
     : 0;
 
   const shareTotal = stats.UP.shares + stats.DOWN.shares;
@@ -241,8 +241,8 @@ async function processPeriod(coin, boundary) {
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
-    'UP HOLDERS: ' + stats.UP.holders,
-    'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
+    'UP HOLDERS: ' + stats.UP.holders + (stats.UP.holders > stats.DOWN.holders ? ' 🔥' : ''),
+    'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders >= stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
     'UP SHARES: ' + stats.UP.shares.toFixed(2),
