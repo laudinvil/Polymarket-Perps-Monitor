@@ -249,9 +249,9 @@ async function processPeriod(coin, boundary) {
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
-    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' +
+    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES' +
       (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
-    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES ($' + stats.DOWN.topValue.toFixed(2) + ')' +
+    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES' +
       (stats.DOWN.topShares > stats.UP.topShares ? ' 🔥' : ''),
     'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
