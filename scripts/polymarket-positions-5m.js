@@ -5,6 +5,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 30000;
+const MIN_IMBALANCE_PCT = 6;
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -186,6 +187,11 @@ async function processPeriod(boundary) {
   const imbalance = totalWallets > 0
     ? Math.abs(stats.UP - stats.DOWN) / totalWallets * 100
     : 0;
+
+  if (imbalance < MIN_IMBALANCE_PCT) {
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (< ' + MIN_IMBALANCE_PCT + '%)');
+    return;
+  }
 
   const message = [
     '🔥 BTC · 5M',
