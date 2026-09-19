@@ -183,7 +183,7 @@ async function processPeriod(boundary) {
 
   if (stats.UP <= stats.DOWN) {
     console.log('[positions-5m] IGNORE ' + activeSlug + ' UP wallets=' + stats.UP + ' <= DOWN wallets=' + stats.DOWN);
-    return;
+    return false;
   }
 
   const totalWallets = stats.UP + stats.DOWN;
@@ -193,7 +193,7 @@ async function processPeriod(boundary) {
 
   if (imbalance <= MIN_IMBALANCE_PCT) {
     console.log('[positions-5m] IGNORE ' + activeSlug + ' wallet imbalance=' + imbalance.toFixed(2) + '% (<= ' + MIN_IMBALANCE_PCT + '%)');
-    return;
+    return false;
   }
 
   const message = [
@@ -206,11 +206,13 @@ async function processPeriod(boundary) {
   ].join('\n');
 
   await sendTelegram(message);
+  return true;
 }
 
 async function main() {
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
+  let consecutiveAlerts = 0;
 
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
@@ -224,7 +226,20 @@ async function main() {
     if (Date.now() >= stopAt) break;
 
     try {
-      await processPeriod(boundary);
+      if (consecutiveAlerts >= 3) {
+        console.log('[positions-5m] COOLDOWN ' + marketSlug(boundary - PERIOD) + ' — third consecutive alert reached; one full period silent');
+        consecutiveAlerts = 0;
+        boundary += PERIOD;
+        continue;
+      }
+
+      const alerted = await processPeriod(boundary);
+
+      if (alerted) {
+        consecutiveAlerts += 1;
+        console.log('[positions-5m] consecutive alerts=' + consecutiveAlerts + '/3');
+      }
+
       boundary += PERIOD;
     } catch (error) {
       console.error('[positions-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
