@@ -4,7 +4,7 @@ const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
-const ALERT_LEAD_MS = 60000;
+const ALERT_LEAD_MS = 30000;
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -174,7 +174,7 @@ async function processPeriod(boundary) {
 
   console.log(
     '[positions-5m] evaluating active=' + activeSlug +
-    ' during 4th minute; boundary=' + new Date(boundary).toISOString()
+    ' at 4:30; boundary=' + new Date(boundary).toISOString()
   );
 
   const activeMarket = await findMarket(activeSlug);
@@ -207,7 +207,7 @@ async function main() {
   if (initialWait > 0) await sleep(initialWait);
 
   console.log('[positions-5m] BTC-only 5m positions monitor started');
-  console.log('[positions-5m] first evaluation=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
+  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
 
   while (Date.now() < stopAt) {
     const wait = boundary - ALERT_LEAD_MS - Date.now();
