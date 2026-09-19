@@ -48,7 +48,7 @@ async function findMarket(slug) {
       const data = await polymarket('/events?slug=' + encodeURIComponent(slug));
       const event = Array.isArray(data) ? data.find(item => item && item.slug === slug) : null;
       const markets = Array.isArray(event?.markets) ? event.markets : [];
-      const market = markets.find(item => item && (item.slug === slug || item.conditionId || item.condition_id)) || markets[0];
+      const market = markets.find(item => item && item.slug === slug) || markets[0];
 
       if (!market) throw new Error('Event ' + slug + ' has no market');
 
@@ -70,16 +70,14 @@ async function positionStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { wallets: new Set(), value: 0 },
-    DOWN: { wallets: new Set(), value: 0 }
+    UP: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0 },
+    DOWN: { wallets: new Set(), currentValue: 0, currentSize: 0, entryCost: 0, totalCost: 0 }
   };
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
       condition: conditionId,
       status: 'OPEN',
-      sortBy: 'CURRENT_VALUE',
-      sortDirection: 'DESC',
       limit: String(pageSize)
     });
     if (cursor) params.set('cursor', cursor);
@@ -101,21 +99,24 @@ async function positionStats(conditionId, slug) {
       const wallet = String(position.proxy_wallet || '').trim();
       if (!wallet) continue;
 
-      const value = Number(position.current_value);
-      stats[outcome].wallets.add(wallet);
-      if (Number.isFinite(value) && value > 0) stats[outcome].value += value;
+      const s = stats[outcome];
+      s.wallets.add(wallet);
+
+      const currentValue = Number(position.current_value);
+      const currentSize = Number(position.current_size);
+      const entryCost = Number(position.entry_cost_usdc);
+      const totalCost = Number(position.total_cost_usdc);
+
+      if (Number.isFinite(currentValue) && currentValue > 0) s.currentValue += currentValue;
+      if (Number.isFinite(currentSize) && currentSize > 0) s.currentSize += currentSize;
+      if (Number.isFinite(entryCost) && entryCost > 0) s.entryCost += entryCost;
+      if (Number.isFinite(totalCost) && totalCost > 0) s.totalCost += totalCost;
     }
 
     if (!pagination.has_more || !pagination.next_cursor) {
       return {
-        UP: {
-          wallets: stats.UP.wallets.size,
-          value: stats.UP.value
-        },
-        DOWN: {
-          wallets: stats.DOWN.wallets.size,
-          value: stats.DOWN.value
-        }
+        UP: { wallets: stats.UP.wallets.size, ...stats.UP },
+        DOWN: { wallets: stats.DOWN.wallets.size, ...stats.DOWN }
       };
     }
 
@@ -131,13 +132,17 @@ async function getReliablePositions(conditionId, slug) {
   for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
     try {
       const stats = await positionStats(conditionId, slug);
-      console.log(
-        '[positions-5m] ' + slug +
-        ' UP wallets=' + stats.UP.wallets +
-        ' value=$' + stats.UP.value.toFixed(2) +
-        ' DOWN wallets=' + stats.DOWN.wallets +
-        ' value=$' + stats.DOWN.value.toFixed(2)
-      );
+      for (const side of ['UP', 'DOWN']) {
+        const s = stats[side];
+        console.log(
+          '[positions-5m] ' + slug + ' ' + side +
+          ' wallets=' + s.wallets +
+          ' currentValue=$' + s.currentValue.toFixed(2) +
+          ' currentSize=' + s.currentSize.toFixed(2) +
+          ' entryCost=$' + s.entryCost.toFixed(2) +
+          ' totalCost=$' + s.totalCost.toFixed(2)
+        );
+      }
       return stats;
     } catch (error) {
       lastError = error;
@@ -192,15 +197,13 @@ async function processPeriod(boundary) {
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliablePositions(activeMarket.conditionId, activeSlug);
 
-  const upHigher = stats.UP.value > stats.DOWN.value;
-  const downHigher = stats.DOWN.value > stats.UP.value;
-  const upMark = upHigher ? ' ⚠️' : '';
-  const downMark = downHigher ? ' ⚠️' : '';
+  const upHigher = stats.UP.currentValue > stats.DOWN.currentValue;
+  const downHigher = stats.DOWN.currentValue > stats.UP.currentValue;
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.value.toFixed(2) + upMark,
-    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.value.toFixed(2) + downMark,
+    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.currentValue.toFixed(2) + (upHigher ? ' ⚠️' : ''),
+    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.currentValue.toFixed(2) + (downHigher ? ' ⚠️' : ''),
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
@@ -227,10 +230,7 @@ async function main() {
       await processPeriod(boundary);
       boundary += PERIOD;
     } catch (error) {
-      console.error(
-        '[positions-5m] PERIOD FAILED ' +
-        new Date(boundary).toISOString() + ': ' + error.message
-      );
+      console.error('[positions-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
       await sleep(1000);
     }
   }
