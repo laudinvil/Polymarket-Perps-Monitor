@@ -5,6 +5,8 @@ const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 30000;
+const MIN_IMBALANCE_PCT = 8.8;
+const MAX_IMBALANCE_PCT = 19.5;
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -182,18 +184,28 @@ async function processPeriod(boundary) {
 
   const totalWallets = stats.UP + stats.DOWN;
   const imbalance = totalWallets > 0
-    ? (stats.DOWN - stats.UP) / totalWallets * 100
+    ? (stats.UP - stats.DOWN) / totalWallets * 100
     : 0;
 
-  if (stats.DOWN <= stats.UP) {
-    console.log('[positions-5m] IGNORE ' + activeSlug + ' DOWN wallets=' + stats.DOWN + ' <= UP wallets=' + stats.UP);
+  if (stats.UP <= stats.DOWN) {
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' UP wallets=' + stats.UP + ' <= DOWN wallets=' + stats.DOWN);
+    return false;
+  }
+
+  if (imbalance <= MIN_IMBALANCE_PCT) {
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' imbalance=' + imbalance.toFixed(2) + '% <= ' + MIN_IMBALANCE_PCT + '%');
+    return false;
+  }
+
+  if (imbalance > MAX_IMBALANCE_PCT) {
+    console.log('[positions-5m] IGNORE ' + activeSlug + ' imbalance=' + imbalance.toFixed(2) + '% > ' + MAX_IMBALANCE_PCT + '%');
     return false;
   }
 
   const message = [
     '🔥 BTC · 5M',
     'UP: ' + stats.UP + ' wallets',
-    'DOWN: ' + stats.DOWN + ' wallets 🔥',
+    'DOWN: ' + stats.DOWN + ' wallets',
     'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
@@ -221,7 +233,7 @@ async function main() {
     try {
       const alerted = await processPeriod(boundary);
 
-      if (alerted) console.log('[positions-5m] DOWN imbalance alert sent');
+      if (alerted) console.log('[positions-5m] UP imbalance alert sent');
 
       boundary += PERIOD;
     } catch (error) {
