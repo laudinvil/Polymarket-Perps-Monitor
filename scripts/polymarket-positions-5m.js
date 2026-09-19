@@ -227,19 +227,21 @@ async function processPeriod(coin, boundary) {
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
 
-  const holderTotal = stats.UP.holders + stats.DOWN.holders;
-  const holderImbalance = holderTotal > 0
-    ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderTotal * 100
+  const holderMax = Math.max(stats.UP.holders, stats.DOWN.holders);
+  const holderImbalance = holderMax > 0
+    ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  const shareTotal = stats.UP.shares + stats.DOWN.shares;
-  const shareImbalance = shareTotal > 0
-    ? Math.abs(stats.DOWN.shares - stats.UP.shares) / shareTotal * 100
+  const shareMax = Math.max(stats.UP.shares, stats.DOWN.shares);
+  const shareImbalance = shareMax > 0
+    ? Math.abs(stats.DOWN.shares - stats.UP.shares) / shareMax * 100
     : 0;
 
-  const topTotal = stats.UP.topShares + stats.DOWN.topShares;
-  const topHolderImbalance = topTotal > 0
-    ? Math.abs(stats.DOWN.topShares - stats.UP.topShares) / topTotal * 100
+  // Compare top holders by their actual current dollar value.
+  // Shares alone are not comparable across UP/DOWN because their token prices differ.
+  const topValueMax = Math.max(stats.UP.topValue, stats.DOWN.topValue);
+  const topHolderImbalance = topValueMax > 0
+    ? Math.abs(stats.DOWN.topValue - stats.UP.topValue) / topValueMax * 100
     : 0;
 
   const message = [
