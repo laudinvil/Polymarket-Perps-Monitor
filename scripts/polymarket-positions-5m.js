@@ -267,7 +267,7 @@ async function main() {
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
-  console.log('[positions-5m] 5m OI monitor started: ' + COINS.join(', '));
+  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
   console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
 
   while (Date.now() < stopAt) {
