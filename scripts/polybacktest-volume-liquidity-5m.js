@@ -207,8 +207,8 @@ async function processPeriod(boundary) {
     ' previous volume=$' + previousVolume.toFixed(2) +
     ' change=' + change.toFixed(2) + '%');
 
-  if (Math.abs(change) < 30) {
-    console.log('[combined-5m] change below 30% in absolute value — alert ignored');
+  if (Math.abs(change) < 40) {
+    console.log('[combined-5m] change below 40% in absolute value — alert ignored');
     return;
   }
 
