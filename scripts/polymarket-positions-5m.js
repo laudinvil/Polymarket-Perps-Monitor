@@ -89,8 +89,8 @@ async function holderStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { holders: 0, shares: 0, topShares: 0, topValue: 0 },
-    DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0 }
+    UP: { holders: 0, shares: 0, topShares: 0, topValue: 0, top10Shares: 0 },
+    DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0, top10Shares: 0 }
   };
   const holdersByOutcome = { UP: new Map(), DOWN: new Map() };
 
@@ -143,6 +143,9 @@ async function holderStats(conditionId, slug) {
       for (const outcome of ['UP', 'DOWN']) {
         const holders = holdersByOutcome[outcome];
         stats[outcome].holders = holders.size;
+
+        const rankedHolders = [...holders.values()].sort((a, b) => b.shares - a.shares);
+        stats[outcome].top10Shares = rankedHolders.slice(0, 10).reduce((sum, holder) => sum + holder.shares, 0);
 
         for (const holder of holders.values()) {
           stats[outcome].shares += holder.shares;
@@ -236,13 +239,12 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  // Total UP/DOWN shares in a binary market are structurally paired.
-  // Use average shares per holder for the distribution imbalance.
-  const upAvgShares = stats.UP.holders > 0 ? stats.UP.shares / stats.UP.holders : 0;
-  const downAvgShares = stats.DOWN.holders > 0 ? stats.DOWN.shares / stats.DOWN.holders : 0;
-  const avgSharesMax = Math.max(upAvgShares, downAvgShares);
-  const shareImbalance = avgSharesMax > 0
-    ? Math.abs(downAvgShares - upAvgShares) / avgSharesMax * 100
+  // Top-10 concentration measures holder distribution independently of holder count.
+  const upTop10Pct = stats.UP.shares > 0 ? stats.UP.top10Shares / stats.UP.shares * 100 : 0;
+  const downTop10Pct = stats.DOWN.shares > 0 ? stats.DOWN.top10Shares / stats.DOWN.shares * 100 : 0;
+  const top10Max = Math.max(upTop10Pct, downTop10Pct);
+  const top10Imbalance = top10Max > 0
+    ? Math.abs(downTop10Pct - upTop10Pct) / top10Max * 100
     : 0;
 
   // Top-holder comparison is based on shares, not price-dependent dollar value.
@@ -258,9 +260,9 @@ async function processPeriod(coin, boundary) {
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
-    'UP SHARES/HOLDER: ' + upAvgShares.toFixed(2) + (upAvgShares > downAvgShares ? ' 🔥' : ''),
-    'DOWN SHARES/HOLDER: ' + downAvgShares.toFixed(2) + (downAvgShares > upAvgShares ? ' 🔥' : ''),
-    'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
+    'TOP 10 UP SHARES: ' + upTop10Pct.toFixed(2) + '%' + (upTop10Pct > downTop10Pct ? ' 🔥' : ''),
+    'TOP 10 DOWN SHARES: ' + downTop10Pct.toFixed(2) + '%' + (downTop10Pct > upTop10Pct ? ' 🔥' : ''),
+    'TOP 10 IMBALANCE: ' + top10Imbalance.toFixed(2) + '%',
     '',
     'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' +
       (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
