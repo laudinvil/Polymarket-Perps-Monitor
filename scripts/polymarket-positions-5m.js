@@ -11,8 +11,8 @@ const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
-const OI_RETRIES = 4;
-const OI_RETRY_MS = 500;
+const POSITIONS_RETRIES = 4;
+const POSITIONS_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 
@@ -92,61 +92,93 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function fetchOutcomeOI(tokenId, slug, label) {
-  const paths = [
-    '/v2/oi?market=' + encodeURIComponent(tokenId),
-    '/oi?market=' + encodeURIComponent(tokenId)
-  ];
+async function holderStats(conditionId, slug) {
+  const pageSize = 1000;
+  let cursor = null;
+  const stats = {
+    UP: { holders: 0, shares: 0, topValue: 0 },
+    DOWN: { holders: 0, shares: 0, topValue: 0 }
+  };
 
-  let lastError;
+  for (let page = 0; page < 100; page++) {
+    const params = new URLSearchParams({
+      condition: conditionId,
+      status: 'OPEN',
+      limit: String(pageSize),
+      filter_type: 'TOKENS',
+      filter_amount: '0.1'
+    });
+    if (cursor) params.set('cursor', cursor);
 
-  for (const path of paths) {
-    try {
-      const response = await fetchTimeout(DATA_API + path);
-      const body = await response.text();
-      if (!response.ok) {
-        throw new Error('Polymarket Data API OI ' + response.status + ': ' + body);
-      }
-
-      const payload = JSON.parse(body);
-      const candidates = [
-        payload?.data?.value,
-        payload?.data?.openInterest,
-        payload?.value,
-        payload?.openInterest
-      ];
-
-      const value = candidates.map(Number).find(number => Number.isFinite(number) && number >= 0);
-      if (value === undefined) {
-        throw new Error('OI response has no numeric value: ' + body);
-      }
-
-      return value;
-    } catch (error) {
-      lastError = error;
-      console.log('[positions-5m] ' + label + ' OI path failed for ' + slug + ': ' + error.message);
+    const response = await fetchTimeout(DATA_API + '/v2/positions?' + params.toString());
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error('Polymarket Data API positions ' + response.status + ': ' + body);
     }
+
+    const payload = JSON.parse(body);
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    const pagination = payload?.pagination || {};
+
+    for (const position of rows) {
+      const outcome = String(position.outcome || '').trim().toUpperCase();
+      if (outcome !== 'UP' && outcome !== 'DOWN') continue;
+
+      const shares = Number(position.current_size ?? 0);
+      if (!Number.isFinite(shares) || shares <= 0) continue;
+
+      stats[outcome].holders += 1;
+      stats[outcome].shares += shares;
+
+      const currentValue = Number(position.current_value ?? position.currentValue ?? 0);
+      if (Number.isFinite(currentValue) && currentValue >= stats[outcome].topValue) {
+        stats[outcome].topValue = currentValue;
+      }
+    }
+
+    if (!pagination.has_more || !pagination.next_cursor) {
+      return stats;
+    }
+
+    cursor = pagination.next_cursor;
   }
 
-  throw lastError;
+  throw new Error('Positions pagination incomplete for ' + slug);
 }
 
-async function getReliableOI(market, slug) {
+async function getReliableHolderStats(conditionId, slug) {
   let lastError;
 
-  for (let attempt = 1; attempt <= OI_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
     try {
-      const [up, down] = await Promise.all([
-        fetchOutcomeOI(market.upTokenId, slug, 'UP'),
-        fetchOutcomeOI(market.downTokenId, slug, 'DOWN')
-      ]);
-
-      const stats = { UP: up, DOWN: down };
+      const stats = await holderStats(conditionId, slug);
 
       console.log(
         '[positions-5m] ' + slug +
-        ' UP OI=
+        ' UP holders=' + stats.UP.holders +
+        ' DOWN holders=' + stats.DOWN.holders +
+        ' UP shares=' + stats.UP.shares.toFixed(2) +
+        ' DOWN shares=' + stats.DOWN.shares.toFixed(2) +
+        ' TOP UP=$' + stats.UP.topValue.toFixed(2) +
+        ' TOP DOWN=$' + stats.DOWN.topValue.toFixed(2)
+      );
 
+      return stats;
+    } catch (error) {
+      lastError = error;
+      console.log(
+        '[positions-5m] holders retry ' + attempt + '/' +
+        POSITIONS_RETRIES + ': ' + error.message
+      );
+      if (attempt < POSITIONS_RETRIES) await sleep(POSITIONS_RETRY_MS);
+    }
+  }
+
+  throw new Error(
+    'Holder data unavailable after retries for ' + slug + ': ' +
+    lastError.message
+  );
+}
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -242,7 +274,7 @@ async function main() {
       const coin = COINS[i];
 
       if (result.status === 'fulfilled') {
-        if (result.value) console.log('[positions-5m] ' + coin + ' DOWN OI alert sent');
+        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
       } else {
         console.error(
           '[positions-5m] ' + coin +
