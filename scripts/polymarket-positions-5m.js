@@ -131,9 +131,13 @@ async function holderStats(conditionId, slug) {
       stats[outcome].shares += shares;
 
       const currentValue = Number(position.current_value ?? position.currentValue ?? 0);
-      if (shares > stats[outcome].topShares) {
+      const value = Number.isFinite(currentValue) && currentValue >= 0 ? currentValue : 0;
+
+      // The economically largest holder is the position with the highest
+      // current dollar value. Shares are kept only for display.
+      if (value > stats[outcome].topValue) {
         stats[outcome].topShares = shares;
-        stats[outcome].topValue = Number.isFinite(currentValue) ? currentValue : 0;
+        stats[outcome].topValue = value;
       }
     }
 
@@ -255,8 +259,114 @@ async function processPeriod(coin, boundary) {
     'DOWN SHARES: ' + stats.DOWN.shares.toFixed(2) + (stats.DOWN.shares > stats.UP.shares ? ' 🔥' : ''),
     'SHARES IMBALANCE: ' + shareImbalance.toFixed(2) + '%',
     '',
-    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES ($' + stats.UP.topValue.toFixed(2) + ')' + (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
-    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES ($' + stats.DOWN.topValue.toFixed(2) + ')' + (stats.DOWN.topShares > stats.UP.topShares ? ' 🔥' : ''),
+    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES (
+    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
+    '',
+    '➡️ NEXT · Polymarket 5M',
+    '<https://polymarket.com/event/' + nextSlug + '>'
+  ].join('\n');
+
+  await sendTelegram(message);
+  return true;
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow() + PERIOD;
+
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
+  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    const results = await Promise.allSettled(
+      COINS.map(coin => processPeriod(coin, boundary))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const coin = COINS[i];
+
+      if (result.status === 'fulfilled') {
+        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
+      } else {
+        console.error(
+          '[positions-5m] ' + coin +
+          ' PERIOD FAILED ' + new Date(boundary).toISOString() +
+          ': ' + result.reason.message
+        );
+      }
+    }
+
+    boundary += PERIOD;
+  }
+}
+
+main().catch(error => {
+  console.error('[positions-5m] FAILED', error);
+  process.exit(1);
+});
+ + stats.UP.topValue.toFixed(2) + ')' + (stats.UP.topValue > stats.DOWN.topValue ? ' 🔥' : ''),
+    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES (
+    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
+    '',
+    '➡️ NEXT · Polymarket 5M',
+    '<https://polymarket.com/event/' + nextSlug + '>'
+  ].join('\n');
+
+  await sendTelegram(message);
+  return true;
+}
+
+async function main() {
+  const stopAt = Date.now() + RUN_MS;
+  let boundary = boundaryNow() + PERIOD;
+
+  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  if (initialWait > 0) await sleep(initialWait);
+
+  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
+  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
+
+  while (Date.now() < stopAt) {
+    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    if (Date.now() >= stopAt) break;
+
+    const results = await Promise.allSettled(
+      COINS.map(coin => processPeriod(coin, boundary))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const coin = COINS[i];
+
+      if (result.status === 'fulfilled') {
+        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
+      } else {
+        console.error(
+          '[positions-5m] ' + coin +
+          ' PERIOD FAILED ' + new Date(boundary).toISOString() +
+          ': ' + result.reason.message
+        );
+      }
+    }
+
+    boundary += PERIOD;
+  }
+}
+
+main().catch(error => {
+  console.error('[positions-5m] FAILED', error);
+  process.exit(1);
+});
+ + stats.DOWN.topValue.toFixed(2) + ')' + (stats.DOWN.topValue > stats.UP.topValue ? ' 🔥' : ''),
     'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
     '➡️ NEXT · Polymarket 5M',
