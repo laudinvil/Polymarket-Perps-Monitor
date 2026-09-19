@@ -198,7 +198,7 @@ async function processPeriod(coin, boundary) {
     'DOWN: ' + stats.DOWN + ' wallets 🔥',
     'WALLETS IMBALANCE: ' + imbalance.toFixed(2) + '%',
     '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
+    '<https://polymarket.com/event/' + nextSlug + '>'
   ].join('\\n');
 
   await sendTelegram(message);
