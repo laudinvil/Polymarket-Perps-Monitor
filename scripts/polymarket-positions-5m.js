@@ -207,80 +207,8 @@ async function processPeriod(boundary) {
 
   const message = [
     '🔥 BTC · 5M',
-    'UP: ' + stats.UP.wallets + ' wallets ·     '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
-
-  await sendTelegram(message);
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[positions-5m] BTC-only 5m positions monitor started');
-  console.log('[positions-5m] first evaluation=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    try {
-      await processPeriod(boundary);
-      boundary += PERIOD;
-    } catch (error) {
-      console.error('[positions-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
-      await sleep(1000);
-    }
-  }
-}
-
-main().catch(error => {
-  console.error('[positions-5m] FAILED', error);
-  process.exit(1);
-});
- + stats.UP.currentValue.toFixed(2),
-    'DOWN: ' + stats.DOWN.wallets + ' wallets ·     '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
-  ].join('\n');
-
-  await sendTelegram(message);
-}
-
-async function main() {
-  const stopAt = Date.now() + RUN_MS;
-  let boundary = boundaryNow() + PERIOD;
-
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
-  if (initialWait > 0) await sleep(initialWait);
-
-  console.log('[positions-5m] BTC-only 5m positions monitor started');
-  console.log('[positions-5m] first evaluation=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
-
-  while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    if (Date.now() >= stopAt) break;
-
-    try {
-      await processPeriod(boundary);
-      boundary += PERIOD;
-    } catch (error) {
-      console.error('[positions-5m] PERIOD FAILED ' + new Date(boundary).toISOString() + ': ' + error.message);
-      await sleep(1000);
-    }
-  }
-}
-
-main().catch(error => {
-  console.error('[positions-5m] FAILED', error);
-  process.exit(1);
-});
- + stats.DOWN.currentValue.toFixed(2),
+    'UP: ' + stats.UP.wallets + ' wallets · $' + stats.UP.currentValue.toFixed(2),
+    'DOWN: ' + stats.DOWN.wallets + ' wallets · $' + stats.DOWN.currentValue.toFixed(2),
     'IMBALANCE: ' + imbalance.toFixed(2) + '% · ' + imbalanceSide,
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
