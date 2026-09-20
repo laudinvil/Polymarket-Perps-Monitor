@@ -17,6 +17,7 @@ const ACTIVITY_RETRIES = 4;
 const ACTIVITY_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
+let lastAlertDirection = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
@@ -212,6 +213,25 @@ async function processPeriod(coin, boundary) {
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
 
+  let direction = null;
+  if (stats.UP.holders > stats.DOWN.holders) direction = 'UP';
+  else if (stats.DOWN.holders > stats.UP.holders) direction = 'DOWN';
+
+  if (!direction) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: holders are tied');
+    return false;
+  }
+
+  if (lastAlertDirection && direction === lastAlertDirection) {
+    console.log(
+      '[positions-5m] ' + activeSlug +
+      ' skipped: direction=' + direction +
+      ', waiting for ' + (lastAlertDirection === 'UP' ? 'DOWN' : 'UP') +
+      ' majority'
+    );
+    return false;
+  }
+
   const holderMax = Math.max(stats.UP.holders, stats.DOWN.holders);
   const holderImbalance = holderMax > 0
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
@@ -229,6 +249,8 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   await sendTelegram(message);
+  lastAlertDirection = direction;
+  console.log('[positions-5m] ' + activeSlug + ' alert sent: ' + direction + ' majority');
   return true;
 }
 
