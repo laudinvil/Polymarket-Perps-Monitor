@@ -211,9 +211,9 @@ async function processPeriod(coin, boundary) {
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
+    'TOTAL BUYS: ' + totalBuys + (stats.UP > stats.DOWN ? ' ↑' : stats.DOWN > stats.UP ? ' ↓' : ''),
     'UP BUYS: ' + stats.UP + (stats.UP > stats.DOWN ? ' 🔥' : ''),
     'DOWN BUYS: ' + stats.DOWN + (stats.DOWN > stats.UP ? ' 🔥' : ''),
-    'BUY IMBALANCE: ' + imbalance.toFixed(2) + '%,',
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
