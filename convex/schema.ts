@@ -49,6 +49,9 @@ export default defineSchema({
   esportsAlerts: defineTable({
     fingerprint: v.string(), strategy: v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
+  holderAlertState: defineTable({
+    symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")), updatedAt: v.number(),
+  }).index("by_symbol", ["symbol"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
     sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
