@@ -246,7 +246,20 @@ async function processPeriod(coin, boundary) {
 
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
-  const activity = await getReliableActivityStats(activeMarket.conditionId, activeSlug);
+
+  let activity = { buyUp: 0, buyDown: 0, sellUp: 0, sellDown: 0 };
+  try {
+    activity = await getReliableActivityStats(activeMarket.conditionId, activeSlug);
+    console.log(
+      '[positions-5m] ' + activeSlug +
+      ' BUY UP=' + activity.buyUp.toFixed(2) +
+      ' BUY DOWN=' + activity.buyDown.toFixed(2) +
+      ' SELL UP=' + activity.sellUp.toFixed(2) +
+      ' SELL DOWN=' + activity.sellDown.toFixed(2)
+    );
+  } catch (error) {
+    console.error('[positions-5m] activity unavailable for ' + activeSlug + ': ' + error.message);
+  }
 
   const buyMax = Math.max(activity.buyUp, activity.buyDown);
   const buyImbalance = buyMax > 0 ? Math.abs(activity.buyUp - activity.buyDown) / buyMax * 100 : 0;
