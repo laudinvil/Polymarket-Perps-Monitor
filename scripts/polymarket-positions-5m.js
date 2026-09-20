@@ -278,7 +278,7 @@ async function processPeriod(coin, boundary) {
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
-  ].join('\\n');
+  ].join('\n');
 
   await sendTelegram(message);
   console.log(
