@@ -203,15 +203,26 @@ async function processPeriod(coin, boundary) {
     boundary
   );
 
+  const previousStart = activeStart - PERIOD;
+  const previousSlug = marketSlug(coin, previousStart);
+  const previousMarket = await findMarket(previousSlug);
+  const previousStats = await getReliableBuyStats(
+    previousMarket.conditionId,
+    previousSlug,
+    previousStart,
+    activeStart
+  );
+
   const totalBuys = stats.UP + stats.DOWN;
-  const imbalance = totalBuys > 0
-    ? Math.abs(stats.UP - stats.DOWN) / totalBuys * 100
-    : 0;
+  const previousTotalBuys = previousStats.UP + previousStats.DOWN;
+  const totalDirection =
+    totalBuys > previousTotalBuys ? ' ↑' :
+    totalBuys < previousTotalBuys ? ' ↓' : '';
 
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
-    'TOTAL BUYS: ' + totalBuys + (stats.UP > stats.DOWN ? ' ↑' : stats.DOWN > stats.UP ? ' ↓' : ''),
+    'TOTAL BUYS: ' + totalBuys + totalDirection,
     'UP BUYS: ' + stats.UP + (stats.UP > stats.DOWN ? ' 🔥' : ''),
     'DOWN BUYS: ' + stats.DOWN + (stats.DOWN > stats.UP ? ' 🔥' : ''),
     '',
@@ -224,7 +235,8 @@ async function processPeriod(coin, boundary) {
     '[positions-5m] ' + activeSlug +
     ' BUY alert sent: UP=' + stats.UP +
     ', DOWN=' + stats.DOWN +
-    ', imbalance=' + imbalance.toFixed(2) + '%'
+    ', TOTAL=' + totalBuys +
+    ', PREVIOUS TOTAL=' + previousTotalBuys
   );
   return true;
 }
