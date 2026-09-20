@@ -7,8 +7,6 @@ const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
-const MAX_HOLDER_IMBALANCE = 25;
-const MIN_HOLDER_IMBALANCE = 0.5;
 const COINS = ['BTC'];
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
@@ -20,6 +18,8 @@ const POSITIONS_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 let lastAlertDirection = null;
+let lastAlertCount = 0;
+let lastAlertImbalance = null;
 let lastAlertBoundary = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -175,7 +175,7 @@ async function getReliableHolderStats(conditionId, slug) {
 }
 
 async function getPersistedDirection(coin) {
-  if (!CONVEX_INGEST_TOKEN) return { available: false, direction: null };
+  if (!CONVEX_INGEST_TOKEN) return { available: false, direction: null, count: 0, imbalance: null };
   try {
     const response = await fetchTimeout(CONVEX_SITE_URL + '/holder-alert-state?symbol=' + encodeURIComponent(coin), {
       headers: { authorization: 'Bearer ' + CONVEX_INGEST_TOKEN }
@@ -184,7 +184,9 @@ async function getPersistedDirection(coin) {
     const row = await response.json();
     return {
       available: true,
-      direction: row?.lastDirection === 'UP' || row?.lastDirection === 'DOWN' ? row.lastDirection : null
+      direction: row?.lastDirection === 'UP' || row?.lastDirection === 'DOWN' ? row.lastDirection : null,
+      count: Number.isFinite(Number(row?.directionCount)) ? Number(row.directionCount) : 0,
+      imbalance: Number.isFinite(Number(row?.lastImbalance)) ? Number(row.lastImbalance) : null
     };
   } catch (error) {
     console.error('[positions-5m] Convex state read failed: ' + error.message);
@@ -192,7 +194,7 @@ async function getPersistedDirection(coin) {
   }
 }
 
-async function persistDirection(coin, direction) {
+async function persistDirection(coin, direction, count, imbalance) {
   if (!CONVEX_INGEST_TOKEN) {
     console.log('[positions-5m] Convex state disabled: CONVEX_INGEST_TOKEN missing');
     return;
@@ -201,7 +203,7 @@ async function persistDirection(coin, direction) {
     const response = await fetchTimeout(CONVEX_SITE_URL + '/holder-alert-state', {
       method: 'POST',
       headers: { authorization: 'Bearer ' + CONVEX_INGEST_TOKEN, 'content-type': 'application/json' },
-      body: JSON.stringify({ symbol: coin, lastDirection: direction, updatedAt: Date.now() })
+      body: JSON.stringify({ symbol: coin, lastDirection: direction, directionCount: count, lastImbalance: imbalance, updatedAt: Date.now() })
     });
     if (!response.ok) throw new Error('Convex state ' + response.status);
   } catch (error) {
@@ -265,18 +267,8 @@ async function processPeriod(coin, boundary) {
     console.log('[positions-5m] ' + activeSlug + ' skipped: persistent alert state unavailable');
     return false;
   }
-  const effectiveLastDirection = persistedState.direction || lastAlertDirection;
   if (lastAlertBoundary === boundary) {
     console.log('[positions-5m] ' + activeSlug + ' skipped: alert already processed for this boundary');
-    return false;
-  }
-  if (effectiveLastDirection && direction === effectiveLastDirection) {
-    console.log(
-      '[positions-5m] ' + activeSlug +
-      ' skipped: direction=' + direction +
-      ', waiting for ' + (effectiveLastDirection === 'UP' ? 'DOWN' : 'UP') +
-      ' majority'
-    );
     return false;
   }
 
@@ -285,15 +277,26 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  if (holderImbalance < MIN_HOLDER_IMBALANCE) {
-    console.log('[positions-5m] ' + activeSlug + ' skipped: holder imbalance=' + holderImbalance.toFixed(2) + '% < ' + MIN_HOLDER_IMBALANCE + '%');
+  const effectiveLastDirection = persistedState.direction || lastAlertDirection;
+  const effectiveCount = persistedState.direction ? persistedState.count : lastAlertCount;
+  const effectiveLastImbalance = persistedState.direction ? persistedState.imbalance : lastAlertImbalance;
+
+  if (effectiveLastDirection) {
+    const expectedDirection = effectiveCount < 2
+      ? effectiveLastDirection
+      : (effectiveLastDirection === 'UP' ? 'DOWN' : 'UP');
+    if (direction !== expectedDirection) {
+      console.log('[positions-5m] ' + activeSlug + ' skipped: sequence=' + effectiveLastDirection + ' ' + effectiveCount + '/2, waiting for ' + expectedDirection + ' majority');
+      return false;
+    }
+  }
+
+  if (effectiveLastImbalance !== null && holderImbalance <= effectiveLastImbalance) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: imbalance=' + holderImbalance.toFixed(2) + '% is not greater than previous=' + effectiveLastImbalance.toFixed(2) + '%');
     return false;
   }
 
-  if (holderImbalance > MAX_HOLDER_IMBALANCE) {
-    console.log('[positions-5m] ' + activeSlug + ' skipped: holder imbalance=' + holderImbalance.toFixed(2) + '% > ' + MAX_HOLDER_IMBALANCE + '%');
-    return false;
-  }
+  const nextCount = effectiveLastDirection === direction ? effectiveCount + 1 : 1;
 
   const message = [
     '🔥 ' + coin + ' · 5M',
@@ -308,8 +311,10 @@ async function processPeriod(coin, boundary) {
 
   await sendTelegram(message);
   lastAlertDirection = direction;
+  lastAlertCount = nextCount;
+  lastAlertImbalance = holderImbalance;
   lastAlertBoundary = boundary;
-  await persistDirection(coin, direction);
+  await persistDirection(coin, direction, nextCount, holderImbalance);
   console.log('[positions-5m] ' + activeSlug + ' alert sent: ' + direction + ' majority');
   return true;
 }
