@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "convex": "^1.31.2",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "@polymarket/client": "0.10.0",
+    "viem": "2.56.8"
   }
 }
