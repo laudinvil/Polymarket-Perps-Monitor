@@ -8,6 +8,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
 const COINS = ['BTC'];
+const MIN_UP_BUYS = 270;
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
@@ -219,14 +220,16 @@ async function processPeriod(coin, boundary) {
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
   const totalIncreased = totalBuys > previousTotalBuys;
   const downIsLarger = stats.DOWN > stats.UP;
+  const enoughUpBuys = stats.UP >= MIN_UP_BUYS;
 
-  if (!totalIncreased || !downIsLarger) {
+  if (!enoughUpBuys || !totalIncreased || !downIsLarger) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY alert rejected: TOTAL=' + totalBuys +
       ', PREVIOUS TOTAL=' + previousTotalBuys +
       ', UP=' + stats.UP +
-      ', DOWN=' + stats.DOWN
+      ', DOWN=' + stats.DOWN +
+      ', MIN UP=' + MIN_UP_BUYS
     );
     return false;
   }
