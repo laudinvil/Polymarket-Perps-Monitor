@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'scripts/polymarket-positions-5m.js'
+      - 'convex/**'
       - '.github/workflows/polymarket-positions-5m.yml'
   workflow_dispatch:
   schedule:
@@ -16,7 +17,6 @@ permissions:
 concurrency:
   group: polymarket-positions-5m
   cancel-in-progress: true
-  # Keep exactly one Positions 5M monitor run active.
 
 jobs:
   run:
@@ -29,6 +29,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install Convex CLI
+        run: npm install --no-save convex
+      - name: Deploy Convex production
+        run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       - name: Run BTC positions 5M monitor
         run: node scripts/polymarket-positions-5m.js
         env:
