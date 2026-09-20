@@ -7,6 +7,11 @@ const PERIOD_MS = 300000;
 const AUTO_TRADE_ENABLED =
   String(env.POLYMARKET_AUTO_TRADE_ENABLED || 'false').toLowerCase() === 'true';
 
+const TRADE_SIDE = String(env.POLYMARKET_TRADE_SIDE || 'up').trim().toLowerCase();
+if (!['up', 'down', 'both'].includes(TRADE_SIDE)) {
+  throw new Error('POLYMARKET_TRADE_SIDE must be up, down, or both');
+}
+
 const ORDER_AMOUNT_USD = Number(env.POLYMARKET_ORDER_AMOUNT_USD || 1);
 const DCA_BUYS_PER_PERIOD = Math.max(1, Math.floor(Number(env.POLYMARKET_DCA_BUYS_PER_PERIOD || 1)));
 const RECOVERY_MODE =
@@ -41,9 +46,7 @@ async function convexRequest(path, options = {}) {
 }
 
 async function gammaEvent(slug) {
-  const response = await fetch(
-    GAMMA_API + '/events?slug=' + encodeURIComponent(slug)
-  );
+  const response = await fetch(GAMMA_API + '/events?slug=' + encodeURIComponent(slug));
   const body = await response.text();
   if (!response.ok) throw new Error('Gamma ' + response.status + ': ' + body);
 
@@ -68,27 +71,23 @@ async function gammaEvent(slug) {
   }
 
   const normalized = outcomes.map(value => String(value).trim().toUpperCase());
-  const downIndex = normalized.findIndex(value => value === 'DOWN');
   const upIndex = normalized.findIndex(value => value === 'UP');
-  if (downIndex < 0 || upIndex < 0) throw new Error('UP/DOWN tokens not found: ' + slug);
+  const downIndex = normalized.findIndex(value => value === 'DOWN');
+  if (upIndex < 0 || downIndex < 0) throw new Error('UP/DOWN tokens not found: ' + slug);
 
-  const prices = Array.isArray(outcomePrices)
-    ? outcomePrices.map(value => Number(value))
-    : [];
-
+  const prices = Array.isArray(outcomePrices) ? outcomePrices.map(Number) : [];
   let winningOutcome = null;
   if (market.winner) {
     winningOutcome = String(market.winner).trim().toUpperCase();
-  } else if (prices.length >= 2 && prices.some(Number.isFinite)) {
+  } else if (prices.length >= 2) {
     if (prices[upIndex] >= 0.99) winningOutcome = 'UP';
     if (prices[downIndex] >= 0.99) winningOutcome = 'DOWN';
   }
 
   return {
     slug,
-    marketStart: Number(market.startDate ? Date.parse(market.startDate) : NaN),
-    marketEnd: Number(market.endDate ? Date.parse(market.endDate) : NaN),
-    assetId: String(tokenIds[downIndex]),
+    upAssetId: String(tokenIds[upIndex]),
+    downAssetId: String(tokenIds[downIndex]),
     minimumOrderSize: Number(
       market.minimumOrderSize ??
       market.minimum_order_size ??
@@ -100,31 +99,33 @@ async function gammaEvent(slug) {
   };
 }
 
-
 async function positionSnapshot(assetId) {
   const response = await fetch(
     DATA_API + '/positions?user=' + encodeURIComponent(requireEnv('POLYMARKET_DEPOSIT_WALLET'))
   );
   const body = await response.text();
   if (!response.ok) throw new Error('Positions API ' + response.status + ': ' + body);
+
   const rows = JSON.parse(body);
   const position = Array.isArray(rows)
     ? rows.find(item => String(item.asset ?? item.assetId ?? '') === String(assetId))
     : null;
-  if (!position) return { shares: 0, avgPrice: 0 };
+
   return {
-    shares: Number(position.size ?? 0),
-    avgPrice: Number(position.avgPrice ?? position.avg_price ?? 0)
+    shares: Number(position?.size ?? 0),
+    avgPrice: Number(position?.avgPrice ?? position?.avg_price ?? 0)
   };
 }
 
-async function waitForPositionIncrease(assetId, beforeShares, timeoutMs = 15000) {
+async function waitForPositionIncrease(assetId, beforeShares, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   let latest = await positionSnapshot(assetId);
+
   while (latest.shares <= beforeShares && Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 1500));
     latest = await positionSnapshot(assetId);
   }
+
   if (latest.shares <= beforeShares) {
     throw new Error('Market BUY accepted but position increase was not confirmed');
   }
@@ -195,17 +196,17 @@ function tradeId(symbol, marketStart) {
   return symbol + ':' + marketStart;
 }
 
-async function submitMarketBuy(client, market, amount) {
+async function submitMarketBuy(client, assetId, amount, minimumOrderSize) {
   const { OrderSide, OrderType, OrderPostStatus } = await import('@polymarket/client');
 
-  if (amount < market.minimumOrderSize) {
+  if (amount < minimumOrderSize) {
     throw new Error(
-      'BUY amount below market minimum: ' + amount + ' < ' + market.minimumOrderSize
+      'BUY amount below market minimum: ' + amount + ' < ' + minimumOrderSize
     );
   }
 
   const order = await client.createMarketOrder({
-    assetId: market.assetId,
+    assetId,
     side: OrderSide.BUY,
     amount,
     orderType: OrderType.FAK
@@ -213,34 +214,43 @@ async function submitMarketBuy(client, market, amount) {
 
   const matched = order?.ok === true && order?.status === OrderPostStatus.MATCHED;
   if (!matched) {
-    throw new Error(
-      'Market BUY not matched: ' + JSON.stringify({
-        ok: order?.ok,
-        status: order?.status,
-        error: order?.error,
-        orderId: order?.orderId
-      })
-    );
+    throw new Error('Market BUY not matched: ' + JSON.stringify({
+      ok: order?.ok,
+      status: order?.status,
+      error: order?.error,
+      orderId: order?.orderId
+    }));
   }
 
   return order;
 }
 
-async function buyWithRetry(client, market, amount, trade, slot) {
+async function buyWithRetry(client, market, side, amount, trade, slot) {
+  const assetId = side === 'UP' ? market.upAssetId : market.downAssetId;
   let attempt = 0;
+
   while (true) {
     attempt++;
     try {
-      const order = await submitMarketBuy(client, market, amount);
+      const order = await submitMarketBuy(
+        client,
+        assetId,
+        amount,
+        market.minimumOrderSize
+      );
+
       console.log(
         '[auto-trade] FILLED ' + trade.slug +
+        ' SIDE=' + side +
         ' DCA=' + slot + '/' + DCA_BUYS_PER_PERIOD +
-        ' attempt=' + attempt + ' amount=$' + amount
+        ' attempt=' + attempt +
+        ' amount=$' + amount
       );
       return order;
     } catch (error) {
       console.error(
         '[auto-trade] BUY RETRY ' + trade.slug +
+        ' SIDE=' + side +
         ' DCA=' + slot + '/' + DCA_BUYS_PER_PERIOD +
         ' attempt=' + attempt + ': ' + error.message
       );
@@ -249,14 +259,14 @@ async function buyWithRetry(client, market, amount, trade, slot) {
   }
 }
 
-async function settleTrade(trade, market) {
+async function settleTrade(trade) {
   const deadline = Date.now() + SETTLEMENT_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
     try {
       const latest = await gammaEvent(trade.slug);
-      if (latest.winningOutcome === 'DOWN') return 'WIN';
-      if (latest.winningOutcome === 'UP') return 'LOSS';
+      if (latest.winningOutcome === 'UP') return 'UP';
+      if (latest.winningOutcome === 'DOWN') return 'DOWN';
     } catch (error) {
       console.error('[auto-trade] settlement check failed ' + trade.slug + ': ' + error.message);
     }
@@ -267,23 +277,22 @@ async function settleTrade(trade, market) {
 }
 
 async function runTrade(symbol, slug, marketStart, marketEnd) {
-  const tradeKey = tradeId(symbol, marketStart);
   const existingRecovery = await recoveryState(symbol);
   const recovery = initialRecovery(symbol, existingRecovery);
-
   const targetBetUsd = recovery.enabled ? recovery.nextBetUsd : ORDER_AMOUNT_USD;
   const market = await gammaEvent(slug);
+
   if (!Number.isFinite(market.minimumOrderSize) || market.minimumOrderSize <= 0) {
     throw new Error('Market minimum order size unavailable: ' + slug);
   }
 
   const trade = {
-    tradeId: tradeKey,
+    tradeId: tradeId(symbol, marketStart),
     symbol,
     marketStart,
     marketEnd,
     slug,
-    outcome: 'DOWN',
+    outcome: TRADE_SIDE.toUpperCase(),
     baseOrderUsd: ORDER_AMOUNT_USD,
     targetBetUsd,
     dcaBuys: DCA_BUYS_PER_PERIOD,
@@ -303,8 +312,10 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
 
   if (!AUTO_TRADE_ENABLED) {
     console.log(
-      '[auto-trade] DISABLED: would BUY DOWN ' + slug +
-      ' total=$' + targetBetUsd + ' DCA=' + DCA_BUYS_PER_PERIOD
+      '[auto-trade] DISABLED: would BUY ' + TRADE_SIDE.toUpperCase() +
+      ' ' + slug +
+      ' total=$' + targetBetUsd +
+      ' DCA=' + DCA_BUYS_PER_PERIOD
     );
     trade.status = 'disabled';
     trade.updatedAt = Date.now();
@@ -314,43 +325,74 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
 
   const client = await getClient();
   const slotAmount = targetBetUsd / DCA_BUYS_PER_PERIOD;
-  if (slotAmount < market.minimumOrderSize) {
-    throw new Error(
-      'DCA slot amount below market minimum: $' + slotAmount +
-      ' < ' + market.minimumOrderSize
-    );
+  const orderAmounts = TRADE_SIDE === 'both'
+    ? { UP: slotAmount / 2, DOWN: slotAmount / 2 }
+    : { [TRADE_SIDE.toUpperCase()]: slotAmount };
+
+  for (const [side, amount] of Object.entries(orderAmounts)) {
+    if (amount < market.minimumOrderSize) {
+      throw new Error(
+        'DCA ' + side + ' slot amount below market minimum: $' +
+        amount + ' < ' + market.minimumOrderSize
+      );
+    }
   }
 
-  const nextStart = marketStart;
+  const position = {
+    UP: { shares: 0, avgPrice: 0 },
+    DOWN: { shares: 0, avgPrice: 0 }
+  };
+
   const interval = PERIOD_MS / DCA_BUYS_PER_PERIOD;
 
   for (let slot = 1; slot <= DCA_BUYS_PER_PERIOD; slot++) {
-    const dueAt = nextStart + (slot - 1) * interval;
+    const dueAt = marketStart + (slot - 1) * interval;
     const wait = dueAt - Date.now();
     if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
 
-    trade.buysAttempted++;
-    trade.updatedAt = Date.now();
-    await saveTrade(trade);
+    for (const [side, amount] of Object.entries(orderAmounts)) {
+      trade.buysAttempted++;
+      trade.updatedAt = Date.now();
+      await saveTrade(trade);
 
-    const before = await positionSnapshot(market.assetId);
-    const order = await buyWithRetry(client, market, slotAmount, trade, slot);
-    const after = await waitForPositionIncrease(market.assetId, before.shares);
-    const filledShares = Math.max(0, after.shares - before.shares);
-    const beforeCost = before.shares * before.avgPrice;
-    const afterCost = after.shares * after.avgPrice;
-    const incrementalCost = Math.max(0, afterCost - beforeCost);
+      const assetId = side === 'UP' ? market.upAssetId : market.downAssetId;
+      const before = await positionSnapshot(assetId);
 
-    trade.buysFilled++;
-    trade.shares = after.shares;
-    trade.spentUsd += incrementalCost > 0 ? incrementalCost : slotAmount;
-    trade.avgPrice = after.avgPrice;
-    trade.updatedAt = Date.now();
-    await saveTrade(trade);
+      await buyWithRetry(client, market, side, amount, trade, slot);
+
+      // A matched FAK is not retried here. We only wait for position confirmation,
+      // preventing a delayed Data API update from causing a duplicate BUY.
+      const after = await waitForPositionIncrease(assetId, before.shares);
+
+      const beforeCost = before.shares * before.avgPrice;
+      const afterCost = after.shares * after.avgPrice;
+      const incrementalCost = Math.max(0, afterCost - beforeCost);
+
+      position[side] = {
+        shares: after.shares,
+        avgPrice: after.avgPrice
+      };
+
+      trade.buysFilled++;
+      trade.spentUsd += incrementalCost > 0 ? incrementalCost : amount;
+      trade.shares = position.UP.shares + position.DOWN.shares;
+      trade.avgPrice = trade.shares > 0
+        ? (
+            position.UP.shares * position.UP.avgPrice +
+            position.DOWN.shares * position.DOWN.avgPrice
+          ) / trade.shares
+        : 0;
+      trade.updatedAt = Date.now();
+      await saveTrade(trade);
+    }
   }
 
-  const result = await settleTrade(trade, market);
-  const payout = result === 'WIN' ? trade.shares : 0;
+  const winningOutcome = await settleTrade(trade);
+  const winningShares = position[winningOutcome].shares;
+  const payout = winningShares;
+  const result = winningOutcome === TRADE_SIDE.toUpperCase() || TRADE_SIDE === 'both'
+    ? 'WIN'
+    : 'LOSS';
   const pnl = payout - trade.spentUsd;
 
   trade.status = result === 'WIN' ? 'won' : 'lost';
@@ -395,12 +437,13 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
   const message = [
     '🔥 BTC · 5M',
     '',
-    'BET: DOWN',
+    'BET: ' + TRADE_SIDE.toUpperCase(),
     'DCA BUYS: ' + trade.buysFilled,
     'TOTAL BET: $' + trade.spentUsd.toFixed(2),
     'AVG PRICE: ' + (trade.avgPrice || 0).toFixed(4),
     '',
     'RESULT: ' + result,
+    'WINNER: ' + winningOutcome,
     'PAYOUT: $' + payout.toFixed(2),
     'P&L: ' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2),
     '',
@@ -412,11 +455,12 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
   await sendTelegram(message);
 }
 
-function executeDownBuy(symbol, slug, marketStart, marketEnd) {
+function executeTrade(symbol, slug, marketStart, marketEnd) {
   if (!AUTO_TRADE_ENABLED) {
     console.log(
       '[auto-trade] DISABLED: signal received for ' + slug +
-      '; configured amount=$' + ORDER_AMOUNT_USD +
+      '; side=' + TRADE_SIDE +
+      ' amount=$' + ORDER_AMOUNT_USD +
       ' DCA=' + DCA_BUYS_PER_PERIOD +
       ' recovery=' + RECOVERY_MODE
     );
@@ -440,4 +484,4 @@ function executeDownBuy(symbol, slug, marketStart, marketEnd) {
   });
 }
 
-module.exports = { executeDownBuy };
+module.exports = { executeTrade, executeDownBuy: executeTrade };
