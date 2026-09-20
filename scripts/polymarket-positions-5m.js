@@ -15,6 +15,8 @@ const TRADES_RETRIES = 4;
 const TRADES_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
+let lastAlertTotalBuys = null;
+let lastAlertUpBuys = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
@@ -217,8 +219,12 @@ async function processPeriod(coin, boundary) {
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
   const totalIncreased = totalBuys > previousTotalBuys;
   const upIsLarger = stats.UP > stats.DOWN;
+  const higherThanLastAlert =
+    lastAlertTotalBuys === null ||
+    totalBuys > lastAlertTotalBuys ||
+    stats.UP > lastAlertUpBuys;
 
-  if (!totalIncreased || !upIsLarger) {
+  if (!totalIncreased || !upIsLarger || !higherThanLastAlert) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY alert rejected: TOTAL=' + totalBuys +
@@ -241,12 +247,18 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   await sendTelegram(message);
+
+  lastAlertTotalBuys = totalBuys;
+  lastAlertUpBuys = stats.UP;
+
   console.log(
     '[positions-5m] ' + activeSlug +
     ' BUY alert sent: UP=' + stats.UP +
     ', DOWN=' + stats.DOWN +
     ', TOTAL=' + totalBuys +
-    ', PREVIOUS TOTAL=' + previousTotalBuys
+    ', PREVIOUS TOTAL=' + previousTotalBuys +
+    ', LAST ALERT TOTAL=' + lastAlertTotalBuys +
+    ', LAST ALERT UP=' + lastAlertUpBuys
   );
   return true;
 }
