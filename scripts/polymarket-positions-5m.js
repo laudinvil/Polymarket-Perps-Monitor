@@ -215,16 +215,26 @@ async function processPeriod(coin, boundary) {
 
   const totalBuys = stats.UP + stats.DOWN;
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
-  const totalDirection =
-    totalBuys > previousTotalBuys ? ' ↑' :
-    totalBuys < previousTotalBuys ? ' ↓' : '';
+  const totalIncreased = totalBuys > previousTotalBuys;
+  const upIsLarger = stats.UP > stats.DOWN;
+
+  if (!totalIncreased || !upIsLarger) {
+    console.log(
+      '[positions-5m] ' + activeSlug +
+      ' BUY alert rejected: TOTAL=' + totalBuys +
+      ', PREVIOUS TOTAL=' + previousTotalBuys +
+      ', UP=' + stats.UP +
+      ', DOWN=' + stats.DOWN
+    );
+    return false;
+  }
 
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
-    'TOTAL BUYS: ' + totalBuys + totalDirection,
-    'UP BUYS: ' + stats.UP + (stats.UP > stats.DOWN ? ' 🔥' : ''),
-    'DOWN BUYS: ' + stats.DOWN + (stats.DOWN > stats.UP ? ' 🔥' : ''),
+    'TOTAL BUYS: ' + totalBuys + ' ↑',
+    'UP BUYS: ' + stats.UP + ' 🔥',
+    'DOWN BUYS: ' + stats.DOWN,
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
