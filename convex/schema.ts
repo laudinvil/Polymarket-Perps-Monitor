@@ -50,7 +50,8 @@ export default defineSchema({
     fingerprint: v.string(), strategy: v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
   holderAlertState: defineTable({
-    symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")), updatedAt: v.number(),
+    symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")),
+    directionCount: v.number(), lastImbalance: v.number(), updatedAt: v.number(),
   }).index("by_symbol", ["symbol"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
