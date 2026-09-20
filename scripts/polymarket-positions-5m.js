@@ -170,6 +170,43 @@ async function getReliableHolderStats(conditionId, slug) {
   throw new Error('Holder data unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
+async function convexRequest(path, options = {}) {
+  const response = await fetch(CONVEX_SITE_URL + path, {
+    ...options,
+    headers: {
+      authorization: 'Bearer ' + CONVEX_INGEST_TOKEN,
+      ...(options.headers || {})
+    }
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error('Convex ' + response.status + ': ' + body);
+  return body ? JSON.parse(body) : null;
+}
+
+async function getHolderSnapshot(symbol, periodStart) {
+  return await convexRequest('/holder-snapshot?symbol=' + encodeURIComponent(symbol) + '&periodStart=' + encodeURIComponent(String(periodStart)));
+}
+
+async function saveHolderSnapshot(symbol, periodStart, stats) {
+  const upHolders = stats.UP.holders;
+  const downHolders = stats.DOWN.holders;
+  await convexRequest('/ingest', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'holder.snapshot',
+      data: {
+        symbol,
+        periodStart,
+        upHolders,
+        downHolders,
+        totalHolders: upHolders + downHolders,
+        recordedAt: Date.now()
+      }
+    })
+  });
+}
+
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -213,15 +250,18 @@ async function processPeriod(coin, boundary) {
   );
 
   const activeMarket = await findMarket(activeSlug);
-  const previousMarket = await findMarket(previousSlug);
+  const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
+  const previousSnapshot = await getHolderSnapshot(coin, previousStart);
 
-  const [stats, previousStats] = await Promise.all([
-    getReliableHolderStats(activeMarket.conditionId, activeSlug),
-    getReliableHolderStats(previousMarket.conditionId, previousSlug)
-  ]);
+  await saveHolderSnapshot(coin, activeStart, stats);
+
+  if (!previousSnapshot) {
+    console.log('[positions-5m] ' + activeSlug + ' baseline saved; previous holder snapshot unavailable, alert skipped');
+    return false;
+  }
 
   const currentTotal = stats.UP.holders + stats.DOWN.holders;
-  const previousTotal = previousStats.UP.holders + previousStats.DOWN.holders;
+  const previousTotal = previousSnapshot.totalHolders;
 
   const arrow = (current, previous) => current > previous ? '↑' : current < previous ? '↓' : '→';
   const signed = (current, previous) => {
@@ -233,8 +273,8 @@ async function processPeriod(coin, boundary) {
     '🔥 ' + coin + ' · 5M',
     '',
     'TOTAL HOLDERS: ' + currentTotal + ' ' + arrow(currentTotal, previousTotal) + ' (' + signed(currentTotal, previousTotal) + ')',
-    'UP HOLDERS: ' + stats.UP.holders + ' ' + arrow(stats.UP.holders, previousStats.UP.holders) + ' (' + signed(stats.UP.holders, previousStats.UP.holders) + ')',
-    'DOWN HOLDERS: ' + stats.DOWN.holders + ' ' + arrow(stats.DOWN.holders, previousStats.DOWN.holders) + ' (' + signed(stats.DOWN.holders, previousStats.DOWN.holders) + ')',
+    'UP HOLDERS: ' + stats.UP.holders + ' ' + arrow(stats.UP.holders, previousSnapshot.upHolders) + ' (' + signed(stats.UP.holders, previousSnapshot.upHolders) + ')',
+    'DOWN HOLDERS: ' + stats.DOWN.holders + ' ' + arrow(stats.DOWN.holders, previousSnapshot.downHolders) + ' (' + signed(stats.DOWN.holders, previousSnapshot.downHolders) + ')',
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
@@ -244,8 +284,8 @@ async function processPeriod(coin, boundary) {
   console.log(
     '[positions-5m] ' + activeSlug +
     ' alert sent: total=' + currentTotal + ' previous=' + previousTotal +
-    ', UP=' + stats.UP.holders + '/' + previousStats.UP.holders +
-    ', DOWN=' + stats.DOWN.holders + '/' + previousStats.DOWN.holders
+    ', UP=' + stats.UP.holders + '/' + previousSnapshot.upHolders +
+    ', DOWN=' + stats.DOWN.holders + '/' + previousSnapshot.downHolders
   );
   return true;
 }
