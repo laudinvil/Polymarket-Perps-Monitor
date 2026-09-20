@@ -1,7 +1,5 @@
 const { env } = require('node:process');
 
-const CONVEX_SITE_URL = env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site';
-const CONVEX_INGEST_TOKEN = env.CONVEX_INGEST_TOKEN || '';
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
@@ -13,8 +11,8 @@ const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
 const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
-const POSITIONS_RETRIES = 4;
-const POSITIONS_RETRY_MS = 500;
+const TRADES_RETRIES = 4;
+const TRADES_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 
@@ -87,124 +85,75 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function holderStats(conditionId, slug) {
-  const pageSize = 1000;
+async function buyStats(conditionId, slug, periodStart, periodEnd) {
+  const stats = { UP: 0, DOWN: 0 };
   let cursor = null;
-  const stats = {
-    UP: { holders: 0 },
-    DOWN: { holders: 0 }
-  };
-  const holdersByOutcome = { UP: new Map(), DOWN: new Map() };
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
       condition: conditionId,
-      status: 'OPEN',
-      limit: String(pageSize)
+      limit: '1000'
     });
     if (cursor) params.set('cursor', cursor);
 
-    const response = await fetchTimeout(DATA_API + '/v2/positions?' + params.toString());
+    const response = await fetchTimeout(DATA_API + '/v2/trades?' + params.toString());
     const body = await response.text();
     if (!response.ok) {
-      throw new Error('Polymarket Data API positions ' + response.status + ': ' + body);
+      throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
     }
 
     const payload = JSON.parse(body);
     const rows = Array.isArray(payload?.data) ? payload.data : [];
-    const pagination = payload?.pagination || {};
 
-    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-      const position = rows[rowIndex];
-      const outcome = String(position.outcome || '').trim().toUpperCase();
-      if (outcome !== 'UP' && outcome !== 'DOWN') continue;
+    for (const trade of rows) {
+      const timestamp = Number(trade.timestamp ?? 0);
+      if (!Number.isFinite(timestamp)) continue;
 
-      const shares = Number(position.current_size ?? 0);
-      if (!Number.isFinite(shares) || shares <= 0) continue;
+      const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
 
-
-      const wallet = String(
-        position.proxyWallet ??
-        position.proxy_wallet ??
-        position.user ??
-        position.owner ??
-        position.address ??
-        ''
-      ).trim().toLowerCase();
-
-      const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rowIndex);
-      const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0 };
-      holder.shares += shares;
-            holdersByOutcome[outcome].set(holderKey, holder);
-    }
-
-    if (!pagination.has_more || !pagination.next_cursor) {
-      for (const outcome of ['UP', 'DOWN']) {
-        const holders = holdersByOutcome[outcome];
-        stats[outcome].holders = holders.size;
-
-
+      if (timestampMs >= periodEnd) continue;
+      if (timestampMs < periodStart) {
+        console.log(
+          '[positions-5m] ' + slug +
+          ' BUY stats: UP=' + stats.UP +
+          ' DOWN=' + stats.DOWN +
+          ' pages=' + (page + 1)
+        );
+        return stats;
       }
-      return stats;
+
+      if (String(trade.side || '').trim().toUpperCase() !== 'BUY') continue;
+
+      const outcome = String(trade.outcome || '').trim().toUpperCase();
+      if (outcome === 'UP') stats.UP++;
+      else if (outcome === 'DOWN') stats.DOWN++;
     }
 
+    const pagination = payload?.pagination || {};
+    if (!pagination.has_more || !pagination.next_cursor) break;
     cursor = pagination.next_cursor;
   }
 
-  throw new Error('Positions pagination incomplete for ' + slug);
+  console.log(
+    '[positions-5m] ' + slug +
+    ' BUY stats: UP=' + stats.UP +
+    ' DOWN=' + stats.DOWN
+  );
+  return stats;
 }
 
-async function getReliableHolderStats(conditionId, slug) {
+async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd) {
   let lastError;
-  for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
     try {
-      const stats = await holderStats(conditionId, slug);
-      console.log('[positions-5m] ' + slug + ' UP holders=' + stats.UP.holders + ' DOWN holders=' + stats.DOWN.holders);
-      return stats;
+      return await buyStats(conditionId, slug, periodStart, periodEnd);
     } catch (error) {
       lastError = error;
-      console.log('[positions-5m] holders retry ' + attempt + '/' + POSITIONS_RETRIES + ': ' + error.message);
-      if (attempt < POSITIONS_RETRIES) await sleep(POSITIONS_RETRY_MS);
+      console.log('[positions-5m] BUY retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
+      if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
     }
   }
-  throw new Error('Holder data unavailable after retries for ' + slug + ': ' + lastError.message);
-}
-
-async function convexRequest(path, options = {}) {
-  const response = await fetch(CONVEX_SITE_URL + path, {
-    ...options,
-    headers: {
-      authorization: 'Bearer ' + CONVEX_INGEST_TOKEN,
-      ...(options.headers || {})
-    }
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error('Convex ' + response.status + ': ' + body);
-  return body ? JSON.parse(body) : null;
-}
-
-async function getHolderSnapshot(symbol, periodStart) {
-  return await convexRequest('/holder-snapshot?symbol=' + encodeURIComponent(symbol) + '&periodStart=' + encodeURIComponent(String(periodStart)));
-}
-
-async function saveHolderSnapshot(symbol, periodStart, stats) {
-  const upHolders = stats.UP.holders;
-  const downHolders = stats.DOWN.holders;
-  await convexRequest('/ingest', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      type: 'holder.snapshot',
-      data: {
-        symbol,
-        periodStart,
-        upHolders,
-        downHolders,
-        totalHolders: upHolders + downHolders,
-        recordedAt: Date.now()
-      }
-    })
-  });
+  throw new Error('BUY data unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
 async function sendTelegram(message) {
@@ -237,44 +186,34 @@ async function sendTelegram(message) {
 
 async function processPeriod(coin, boundary) {
   const activeStart = boundary - PERIOD;
-  const previousStart = activeStart - PERIOD;
   const activeSlug = marketSlug(coin, activeStart);
-  const previousSlug = marketSlug(coin, previousStart);
   const nextSlug = marketSlug(coin, boundary);
 
   console.log(
     '[positions-5m] evaluating ' + coin +
     ' active=' + activeSlug +
-    ' previous=' + previousSlug +
     ' at 4:40; boundary=' + new Date(boundary).toISOString()
   );
 
   const activeMarket = await findMarket(activeSlug);
-  const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
-  const previousSnapshot = await getHolderSnapshot(coin, previousStart);
+  const stats = await getReliableBuyStats(
+    activeMarket.conditionId,
+    activeSlug,
+    activeStart,
+    boundary
+  );
 
-  await saveHolderSnapshot(coin, activeStart, stats);
-
-  if (!previousSnapshot) {
-    console.log('[positions-5m] ' + activeSlug + ' baseline saved; previous holder snapshot unavailable, alert skipped');
-    return false;
-  }
-
-  const currentTotal = stats.UP.holders + stats.DOWN.holders;
-  const previousTotal = previousSnapshot.totalHolders;
-
-  const arrow = (current, previous) => current > previous ? '↑' : current < previous ? '↓' : '→';
-  const signed = (current, previous) => {
-    const delta = current - previous;
-    return delta > 0 ? '+' + delta : String(delta);
-  };
+  const totalBuys = stats.UP + stats.DOWN;
+  const imbalance = totalBuys > 0
+    ? Math.abs(stats.UP - stats.DOWN) / totalBuys * 100
+    : 0;
 
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
-    'TOTAL HOLDERS: ' + currentTotal + ' ' + arrow(currentTotal, previousTotal) + ' (' + signed(currentTotal, previousTotal) + ')',
-    'UP HOLDERS: ' + stats.UP.holders + ' ' + arrow(stats.UP.holders, previousSnapshot.upHolders) + ' (' + signed(stats.UP.holders, previousSnapshot.upHolders) + ')',
-    'DOWN HOLDERS: ' + stats.DOWN.holders + ' ' + arrow(stats.DOWN.holders, previousSnapshot.downHolders) + ' (' + signed(stats.DOWN.holders, previousSnapshot.downHolders) + ')',
+    'UP BUYS: ' + stats.UP,
+    'DOWN BUYS: ' + stats.DOWN,
+    'BUY IMBALANCE: ' + imbalance.toFixed(2) + '% ' + (stats.UP > stats.DOWN || stats.DOWN > stats.UP ? '🔥' : ''),
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
@@ -283,9 +222,9 @@ async function processPeriod(coin, boundary) {
   await sendTelegram(message);
   console.log(
     '[positions-5m] ' + activeSlug +
-    ' alert sent: total=' + currentTotal + ' previous=' + previousTotal +
-    ', UP=' + stats.UP.holders + '/' + previousSnapshot.upHolders +
-    ', DOWN=' + stats.DOWN.holders + '/' + previousSnapshot.downHolders
+    ' BUY alert sent: UP=' + stats.UP +
+    ', DOWN=' + stats.DOWN +
+    ', imbalance=' + imbalance.toFixed(2) + '%'
   );
   return true;
 }
@@ -297,7 +236,7 @@ async function main() {
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
-  console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
+  console.log('[positions-5m] 5m BUY monitor started: ' + COINS.join(', '));
   console.log('[positions-5m] first evaluation (4:40)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
 
   while (Date.now() < stopAt) {
@@ -314,7 +253,7 @@ async function main() {
       const coin = COINS[i];
 
       if (result.status === 'fulfilled') {
-        if (result.value) console.log('[positions-5m] ' + coin + ' holder snapshot sent');
+        if (result.value) console.log('[positions-5m] ' + coin + ' BUY snapshot sent');
       } else {
         console.error(
           '[positions-5m] ' + coin +
