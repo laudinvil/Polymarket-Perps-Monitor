@@ -13,6 +13,8 @@ const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
 const POSITIONS_RETRIES = 4;
 const POSITIONS_RETRY_MS = 500;
+const ACTIVITY_RETRIES = 4;
+const ACTIVITY_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 
@@ -159,6 +161,41 @@ async function holderStats(conditionId, slug) {
   throw new Error('Positions pagination incomplete for ' + slug);
 }
 
+async function activityStats(conditionId, slug) {
+  const params = new URLSearchParams({ condition: conditionId, limit: '1000' });
+  const response = await fetchTimeout(DATA_API + '/v2/activity?' + params.toString());
+  const body = await response.text();
+  if (!response.ok) throw new Error('Polymarket Data API activity ' + response.status + ': ' + body);
+  const payload = JSON.parse(body);
+  const rows = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []);
+  const stats = { buyUp: 0, buyDown: 0, sellUp: 0, sellDown: 0 };
+  for (const row of rows) {
+    const side = String(row.side ?? row.type ?? '').trim().toUpperCase();
+    const outcome = String(row.outcome ?? '').trim().toUpperCase();
+    const amount = Number(row.usdcSize ?? row.usdc_size ?? row.amount ?? row.size ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    if (side === 'BUY' && outcome === 'UP') stats.buyUp += amount;
+    else if (side === 'BUY' && outcome === 'DOWN') stats.buyDown += amount;
+    else if (side === 'SELL' && outcome === 'UP') stats.sellUp += amount;
+    else if (side === 'SELL' && outcome === 'DOWN') stats.sellDown += amount;
+  }
+  return stats;
+}
+
+async function getReliableActivityStats(conditionId, slug) {
+  let lastError;
+  for (let attempt = 1; attempt <= ACTIVITY_RETRIES; attempt++) {
+    try {
+      return await activityStats(conditionId, slug);
+    } catch (error) {
+      lastError = error;
+      console.log('[positions-5m] activity retry ' + attempt + '/' + ACTIVITY_RETRIES + ': ' + error.message);
+      if (attempt < ACTIVITY_RETRIES) await sleep(ACTIVITY_RETRY_MS);
+    }
+  }
+  throw new Error('Activity data unavailable after retries for ' + slug + ': ' + lastError.message);
+}
+
 async function getReliableHolderStats(conditionId, slug) {
   let lastError;
   for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
@@ -226,6 +263,12 @@ async function processPeriod(coin, boundary) {
 
   const activeMarket = await findMarket(activeSlug);
   const stats = await getReliableHolderStats(activeMarket.conditionId, activeSlug);
+  const activity = await getReliableActivityStats(activeMarket.conditionId, activeSlug);
+
+  const buyMax = Math.max(activity.buyUp, activity.buyDown);
+  const buyImbalance = buyMax > 0 ? Math.abs(activity.buyUp - activity.buyDown) / buyMax * 100 : 0;
+  const sellMax = Math.max(activity.sellUp, activity.sellDown);
+  const sellImbalance = sellMax > 0 ? Math.abs(activity.sellUp - activity.sellDown) / sellMax * 100 : 0;
 
   const holderMax = Math.max(stats.UP.holders, stats.DOWN.holders);
   const holderImbalance = holderMax > 0
@@ -244,6 +287,8 @@ async function processPeriod(coin, boundary) {
     'UP HOLDERS: ' + stats.UP.holders + (stats.UP.holders > stats.DOWN.holders ? ' 🔥' : ''),
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
+    'BUY IMBALANCE: ' + buyImbalance.toFixed(2) + '%',
+    'SELL IMBALANCE: ' + sellImbalance.toFixed(2) + '%',
     '',
     '',
     '➡️ NEXT · Polymarket 5M',
