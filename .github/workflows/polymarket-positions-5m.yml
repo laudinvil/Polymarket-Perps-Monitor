@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'scripts/polymarket-positions-5m.js'
+      - 'scripts/polymarket-auto-trader.js'
+      - 'package.json'
       - 'convex/**'
       - '.github/workflows/polymarket-positions-5m.yml'
   workflow_dispatch:
@@ -42,3 +44,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
+          POLYMARKET_AUTO_TRADE_ENABLED: ${{ vars.POLYMARKET_AUTO_TRADE_ENABLED || 'false' }}
+          POLYMARKET_ORDER_AMOUNT_USD: ${{ vars.POLYMARKET_ORDER_AMOUNT_USD || '1' }}
+          POLYMARKET_DCA_BUYS_PER_PERIOD: ${{ vars.POLYMARKET_DCA_BUYS_PER_PERIOD || '1' }}
+          POLYMARKET_RECOVERY_MODE: ${{ vars.POLYMARKET_RECOVERY_MODE || 'false' }}
+          POLYMARKET_RECOVERY_INITIAL_BET: ${{ vars.POLYMARKET_RECOVERY_INITIAL_BET || '1' }}
+          POLYMARKET_RECOVERY_MAX_STEPS: ${{ vars.POLYMARKET_RECOVERY_MAX_STEPS || '5' }}
+          POLYMARKET_RECOVERY_MULTIPLIER: ${{ vars.POLYMARKET_RECOVERY_MULTIPLIER || '2' }}
+          POLYMARKET_TRADE_RETRY_MS: ${{ vars.POLYMARKET_TRADE_RETRY_MS || '3000' }}
+          POLYMARKET_SETTLEMENT_POLL_MS: ${{ vars.POLYMARKET_SETTLEMENT_POLL_MS || '10000' }}
+          POLYMARKET_SETTLEMENT_TIMEOUT_MS: ${{ vars.POLYMARKET_SETTLEMENT_TIMEOUT_MS || '900000' }}
+          POLYMARKET_DEPOSIT_WALLET: ${{ secrets.POLYMARKET_DEPOSIT_WALLET }}
+          POLYMARKET_PRIVATE_KEY: ${{ secrets.POLYMARKET_PRIVATE_KEY }}
