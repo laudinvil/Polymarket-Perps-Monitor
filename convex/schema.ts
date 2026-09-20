@@ -57,6 +57,19 @@ export default defineSchema({
     symbol: v.string(), periodStart: v.number(), upHolders: v.number(), downHolders: v.number(),
     totalHolders: v.number(), recordedAt: v.number(),
   }).index("by_symbol_period", ["symbol", "periodStart"]).index("by_symbol_recorded", ["symbol", "recordedAt"]),
+  liveTrades: defineTable({
+    tradeId:v.string(), symbol:v.string(), marketStart:v.number(), marketEnd:v.number(),
+    slug:v.string(), outcome:v.string(), baseOrderUsd:v.number(), targetBetUsd:v.number(),
+    dcaBuys:v.number(), recoveryEnabled:v.boolean(), recoveryStep:v.number(),
+    buysAttempted:v.number(), buysFilled:v.number(), spentUsd:v.number(), shares:v.number(),
+    avgPrice:v.optional(v.number()), status:v.string(), result:v.optional(v.string()),
+    payout:v.optional(v.number()), pnl:v.optional(v.number()), startedAt:v.number(),
+    settledAt:v.optional(v.number()), updatedAt:v.number(), error:v.optional(v.string()),
+  }).index("by_trade",["tradeId"]).index("by_market",["symbol","marketStart"]).index("by_status",["status","updatedAt"]),
+  recoveryStates: defineTable({
+    symbol:v.string(), enabled:v.boolean(), initialBetUsd:v.number(), step:v.number(),
+    maxSteps:v.number(), multiplier:v.number(), nextBetUsd:v.number(), updatedAt:v.number(),
+  }).index("by_symbol",["symbol"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
     sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
