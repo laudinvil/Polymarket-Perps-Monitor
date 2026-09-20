@@ -24,6 +24,19 @@ const cvd5mPeriods=httpAction(async(ctx,request)=>{const url=new URL(request.url
 const streakHitPeriods=httpAction(async(ctx,request)=>{const url=new URL(request.url);const symbol=String(url.searchParams.get("symbol")||"").trim()||undefined;const timeframe=String(url.searchParams.get("timeframe")||"").trim()||undefined;const requestedLimit=Number(url.searchParams.get("limit")||100);const limit=Math.min(Math.max(Number.isFinite(requestedLimit)?Math.floor(requestedLimit):100,1),500);try{return Response.json(await ctx.runQuery(api.monitor.latestStreakHitPeriods,{symbol,timeframe,limit}));}catch{return new Response("StreakHit stats query failed",{status:500});}});
 const streakHits=httpAction(async(ctx,request)=>{const url=new URL(request.url);const symbol=String(url.searchParams.get("symbol")||"").trim()||undefined;const timeframe=String(url.searchParams.get("timeframe")||"").trim()||undefined;const requestedLimit=Number(url.searchParams.get("limit")||100);const limit=Math.min(Math.max(Number.isFinite(requestedLimit)?Math.floor(requestedLimit):100,1),500);try{return Response.json(await ctx.runQuery(api.monitor.latestStreakHits,{symbol,timeframe,limit}));}catch{return new Response("StreakHit hits query failed",{status:500});}});
 const alerts=httpAction(async(ctx,request)=>{const url=new URL(request.url);const timeframe=String(url.searchParams.get("timeframe")||"").trim()||undefined;const symbol=String(url.searchParams.get("symbol")||"").trim()||undefined;const requestedLimit=Number(url.searchParams.get("limit")||50);const limit=Math.min(Math.max(Number.isFinite(requestedLimit)?Math.floor(requestedLimit):50,1),100);if(timeframe&&!['5m','15m','1h','4h'].includes(timeframe))return new Response("Invalid timeframe",{status:400});try{return Response.json(await ctx.runQuery(api.monitor.latestAlerts,{timeframe,symbol,limit}));}catch{return new Response("Alerts query failed",{status:500});}});
+const tradingRecovery=httpAction(async(ctx,request)=>{
+    if(!authorized(request))return new Response("Unauthorized",{status:401});
+    const symbol=String(new URL(request.url).searchParams.get("symbol")||"BTC");
+    try{return Response.json(await ctx.runQuery(api.monitor.getRecoveryState,{symbol}));}
+    catch{return new Response("Recovery state query failed",{status:500});}
+  });
+const latestLiveTrades=httpAction(async(ctx,request)=>{
+  if(!authorized(request))return new Response("Unauthorized",{status:401});
+  const url=new URL(request.url);const symbol=url.searchParams.get("symbol")||undefined;
+  const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),100);
+  try{return Response.json(await ctx.runQuery(api.monitor.latestLiveTrades,{symbol,limit}));}
+  catch{return new Response("Live trade history query failed",{status:500});}
+});
 const openPaperTrade=httpAction(async(ctx,request)=>{if(!authorized(request))return new Response("Unauthorized",{status:401});try{return Response.json(await ctx.runQuery(api.monitor.getOpenPaperTrade,{}));}catch{return new Response("Paper state query failed",{status:500});}});
 const latestPaperTrades=httpAction(async(ctx,request)=>{if(!authorized(request))return new Response("Unauthorized",{status:401});const limit=Math.min(Math.max(Number(new URL(request.url).searchParams.get("limit")||20),1),100);try{return Response.json(await ctx.runQuery(api.monitor.latestPaperTrades,{limit}));}catch{return new Response("Paper history query failed",{status:500});}});
 http.route({path:"/ingest",method:"POST",handler:ingest});
@@ -45,6 +58,8 @@ http.route({path:"/cvd-5m/periods",method:"GET",handler:cvd5mPeriods});
 http.route({path:"/streak-hit/periods",method:"GET",handler:streakHitPeriods});
 http.route({path:"/streak-hit/hits",method:"GET",handler:streakHits});
 http.route({path:"/alerts",method:"GET",handler:alerts});
+http.route({path:"/trading/recovery",method:"GET",handler:tradingRecovery});
+http.route({path:"/trading/history",method:"GET",handler:latestLiveTrades});
 http.route({path:"/paper/open",method:"GET",handler:openPaperTrade});
 http.route({path:"/paper/history",method:"GET",handler:latestPaperTrades});
 export default http;
