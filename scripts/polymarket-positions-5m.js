@@ -8,6 +8,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
 const MAX_HOLDER_IMBALANCE = 25;
+const MIN_HOLDER_IMBALANCE = 0.5;
 const COINS = ['BTC'];
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
@@ -271,6 +272,11 @@ async function processPeriod(coin, boundary) {
   const holderImbalance = holderMax > 0
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
+
+  if (holderImbalance < MIN_HOLDER_IMBALANCE) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: holder imbalance=' + holderImbalance.toFixed(2) + '% < ' + MIN_HOLDER_IMBALANCE + '%');
+    return false;
+  }
 
   if (holderImbalance > MAX_HOLDER_IMBALANCE) {
     console.log('[positions-5m] ' + activeSlug + ' skipped: holder imbalance=' + holderImbalance.toFixed(2) + '% > ' + MAX_HOLDER_IMBALANCE + '%');
