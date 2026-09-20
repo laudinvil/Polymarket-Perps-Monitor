@@ -1,5 +1,7 @@
 const { env } = require('node:process');
 
+const { executeDownBuy } = require('./polymarket-auto-trader');
+
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
@@ -243,6 +245,14 @@ async function processPeriod(coin, boundary) {
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
+
+  try {
+    await executeDownBuy(activeSlug);
+  } catch (error) {
+    console.error(
+      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
+    );
+  }
 
   await sendTelegram(message);
   console.log(
