@@ -20,6 +20,7 @@ const POSITIONS_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 let lastAlertDirection = null;
+let lastAlertBoundary = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
@@ -258,6 +259,10 @@ async function processPeriod(coin, boundary) {
 
   const persistedDirection = await getPersistedDirection(coin);
   const effectiveLastDirection = persistedDirection || lastAlertDirection;
+  if (lastAlertBoundary === boundary) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: alert already processed for this boundary');
+    return false;
+  }
   if (effectiveLastDirection && direction === effectiveLastDirection) {
     console.log(
       '[positions-5m] ' + activeSlug +
@@ -296,6 +301,7 @@ async function processPeriod(coin, boundary) {
 
   await sendTelegram(message);
   lastAlertDirection = direction;
+  lastAlertBoundary = boundary;
   await persistDirection(coin, direction);
   console.log('[positions-5m] ' + activeSlug + ' alert sent: ' + direction + ' majority');
   return true;
