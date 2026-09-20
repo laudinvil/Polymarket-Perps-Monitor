@@ -218,7 +218,7 @@ async function processPeriod(coin, boundary) {
   const totalIncreased = totalBuys > previousTotalBuys;
   const upIsLarger = stats.UP > stats.DOWN;
 
-  if (!totalIncreased || !upIsLarger) {
+  if (!totalIncreased) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY alert rejected: TOTAL=' + totalBuys +
@@ -232,9 +232,9 @@ async function processPeriod(coin, boundary) {
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
-    'TOTAL BUYS: ' + totalBuys + ' ↑',
-    'UP BUYS: ' + stats.UP + ' 🔥',
-    'DOWN BUYS: ' + stats.DOWN,
+    'TOTAL BUYS: ' + totalBuys + (upIsLarger ? ' ↑' : ' ↓'),
+    'UP BUYS: ' + stats.UP + (upIsLarger ? ' 🔥' : ''),
+    'DOWN BUYS: ' + stats.DOWN + (!upIsLarger ? ' 🔥' : ''),
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
