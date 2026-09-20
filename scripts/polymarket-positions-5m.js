@@ -91,8 +91,8 @@ async function holderStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { holders: 0, shares: 0, topShares: 0 },
-    DOWN: { holders: 0, shares: 0, topShares: 0 }
+    UP: { holders: 0 },
+    DOWN: { holders: 0 }
   };
   const holdersByOutcome = { UP: new Map(), DOWN: new Map() };
 
@@ -143,14 +143,7 @@ async function holderStats(conditionId, slug) {
         const holders = holdersByOutcome[outcome];
         stats[outcome].holders = holders.size;
 
-        for (const holder of holders.values()) {
-          stats[outcome].shares += holder.shares;
 
-          // Top holder is defined by share count, not mark-to-market dollar value.
-          if (holder.shares > stats[outcome].topShares) {
-            stats[outcome].topShares = holder.shares;
-                      }
-        }
       }
       return stats;
     }
@@ -172,7 +165,7 @@ async function activityStats(conditionId, slug) {
   for (const row of rows) {
     const side = String(row.side ?? row.type ?? '').trim().toUpperCase();
     const outcome = String(row.outcome ?? '').trim().toUpperCase();
-    const amount = Number(row.usdcSize ?? row.usdc_size ?? row.amount ?? row.size ?? 0);
+    const amount = Number(row.usdcSize ?? row.usdc_size ?? 0);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     if (side === 'BUY' && outcome === 'UP') stats.buyUp += amount;
     else if (side === 'BUY' && outcome === 'DOWN') stats.buyDown += amount;
@@ -201,17 +194,7 @@ async function getReliableHolderStats(conditionId, slug) {
   for (let attempt = 1; attempt <= POSITIONS_RETRIES; attempt++) {
     try {
       const stats = await holderStats(conditionId, slug);
-      console.log(
-        '[positions-5m] ' + slug +
-        ' UP holders=' + stats.UP.holders +
-        ' DOWN holders=' + stats.DOWN.holders +
-        ' UP shares=' + stats.UP.shares.toFixed(2) +
-        ' DOWN shares=' + stats.DOWN.shares.toFixed(2) +
-        ' TOP UP SHARES=' + stats.UP.topShares.toFixed(2) +
-        ' TOP DOWN SHARES=' + stats.DOWN.topShares.toFixed(2) +
-        ' TOP UP=$' + stats.UP.topValue.toFixed(2) +
-        ' TOP DOWN=$' + stats.DOWN.topValue.toFixed(2)
-      );
+      console.log('[positions-5m] ' + slug + ' UP holders=' + stats.UP.holders + ' DOWN holders=' + stats.DOWN.holders);
       return stats;
     } catch (error) {
       lastError = error;
@@ -275,12 +258,6 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
-  // Top-holder comparison is based on shares, not price-dependent dollar value.
-  const topSharesMax = Math.max(stats.UP.topShares, stats.DOWN.topShares);
-  const topHolderImbalance = topSharesMax > 0
-    ? Math.abs(stats.DOWN.topShares - stats.UP.topShares) / topSharesMax * 100
-    : 0;
-
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
@@ -289,7 +266,6 @@ async function processPeriod(coin, boundary) {
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     'BUY IMBALANCE: ' + buyImbalance.toFixed(2) + '%',
     'SELL IMBALANCE: ' + sellImbalance.toFixed(2) + '%',
-    '',
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
