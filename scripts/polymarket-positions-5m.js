@@ -250,7 +250,7 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   try {
-    await executeDownBuy(activeSlug);
+    executeDownBuy(coin, nextSlug, boundary, boundary + PERIOD).catch(() => {});
   } catch (error) {
     console.error(
       '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
