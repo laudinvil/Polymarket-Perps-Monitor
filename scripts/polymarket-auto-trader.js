@@ -45,60 +45,130 @@ async function convexRequest(path, options = {}) {
   return body ? JSON.parse(body) : null;
 }
 
+let publicClient;
+
+async function getPublicClient() {
+  if (!publicClient) {
+    const { createPublicClient } = await import('@polymarket/client');
+    publicClient = createPublicClient();
+  }
+  return publicClient;
+}
+
 async function gammaEvent(slug) {
-  const response = await fetch(GAMMA_API + '/events?slug=' + encodeURIComponent(slug));
-  const body = await response.text();
-  if (!response.ok) throw new Error('Gamma ' + response.status + ': ' + body);
+  const sdkClient = await getPublicClient();
+  const market = await sdkClient.fetchMarket({ slug });
 
-  const data = JSON.parse(body);
-  const event = Array.isArray(data) ? data.find(item => item && item.slug === slug) : null;
-  if (!event) throw new Error('Event not found: ' + slug);
+  const yes = market?.outcomes?.yes;
+  const no = market?.outcomes?.no;
 
-  const markets = Array.isArray(event.markets) ? event.markets : [];
-  const market = markets.find(item => item && item.slug === slug) || markets[0];
-  if (!market) throw new Error('Market not found: ' + slug);
-
-  let tokenIds = market.clobTokenIds ?? market.clob_token_ids;
-  let outcomes = market.outcomes;
-  let outcomePrices = market.outcomePrices ?? market.outcome_prices;
-
-  if (typeof tokenIds === 'string') tokenIds = JSON.parse(tokenIds);
-  if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
-  if (typeof outcomePrices === 'string') outcomePrices = JSON.parse(outcomePrices);
-
-  if (!Array.isArray(tokenIds) || !Array.isArray(outcomes)) {
-    throw new Error('Market has no CLOB token metadata: ' + slug);
+  if (!yes || !no) {
+    throw new Error('SDK market has no binary outcomes: ' + slug);
   }
 
-  const normalized = outcomes.map(value => String(value).trim().toUpperCase());
-  const upIndex = normalized.findIndex(value => value === 'UP');
-  const downIndex = normalized.findIndex(value => value === 'DOWN');
-  if (upIndex < 0 || downIndex < 0) throw new Error('UP/DOWN tokens not found: ' + slug);
+  const yesLabel = String(yes.label || '').trim().toUpperCase();
+  const noLabel = String(no.label || '').trim().toUpperCase();
 
-  const prices = Array.isArray(outcomePrices) ? outcomePrices.map(Number) : [];
+  let upOutcome;
+  let downOutcome;
+
+  if (yesLabel === 'UP' && noLabel === 'DOWN') {
+    upOutcome = yes;
+    downOutcome = no;
+  } else if (yesLabel === 'DOWN' && noLabel === 'UP') {
+    upOutcome = no;
+    downOutcome = yes;
+  } else {
+    throw new Error(
+      'SDK market outcomes are not UP/DOWN: ' +
+      slug +
+      ' (' +
+      yesLabel +
+      '/' +
+      noLabel +
+      ')'
+    );
+  }
+
+  const upAssetId = upOutcome.positionId;
+  const downAssetId = downOutcome.positionId;
+
+  if (!upAssetId || !downAssetId) {
+    throw new Error(
+      'V2 positionId unavailable for UP/DOWN market: ' + slug
+    );
+  }
+
+  const minimumOrderSize = Number(market?.trading?.minimumOrderSize);
+  if (!Number.isFinite(minimumOrderSize) || minimumOrderSize <= 0) {
+    throw new Error('SDK minimumOrderSize unavailable: ' + slug);
+  }
+
   let winningOutcome = null;
-  if (market.winner) {
-    winningOutcome = String(market.winner).trim().toUpperCase();
-  } else if (prices.length >= 2) {
-    if (prices[upIndex] >= 0.99) winningOutcome = 'UP';
-    if (prices[downIndex] >= 0.99) winningOutcome = 'DOWN';
+
+  try {
+    const response = await fetch(
+      GAMMA_API + '/events?slug=' + encodeURIComponent(slug)
+    );
+    const body = await response.text();
+    if (!response.ok) throw new Error('Gamma ' + response.status + ': ' + body);
+
+    const data = JSON.parse(body);
+    const event = Array.isArray(data)
+      ? data.find(item => item && item.slug === slug)
+      : null;
+    const markets = Array.isArray(event?.markets) ? event.markets : [];
+    const gammaMarket =
+      markets.find(item => item && item.slug === slug) || markets[0];
+
+    if (gammaMarket?.winner) {
+      winningOutcome = String(gammaMarket.winner).trim().toUpperCase();
+    } else {
+      let outcomePrices =
+        gammaMarket?.outcomePrices ?? gammaMarket?.outcome_prices;
+      if (typeof outcomePrices === 'string') {
+        outcomePrices = JSON.parse(outcomePrices);
+      }
+
+      let outcomes = gammaMarket?.outcomes;
+      if (typeof outcomes === 'string') {
+        outcomes = JSON.parse(outcomes);
+      }
+
+      if (Array.isArray(outcomePrices) && Array.isArray(outcomes)) {
+        const normalized = outcomes.map(value =>
+          String(value).trim().toUpperCase()
+        );
+        const upIndex = normalized.findIndex(value => value === 'UP');
+        const downIndex = normalized.findIndex(value => value === 'DOWN');
+
+        if (upIndex >= 0 && Number(outcomePrices[upIndex]) >= 0.99) {
+          winningOutcome = 'UP';
+        } else if (
+          downIndex >= 0 &&
+          Number(outcomePrices[downIndex]) >= 0.99
+        ) {
+          winningOutcome = 'DOWN';
+        }
+      }
+    }
+  } catch (error) {
+    console.error(
+      '[auto-trade] Gamma settlement metadata check failed ' +
+      slug +
+      ': ' +
+      error.message
+    );
   }
 
   return {
     slug,
-    upAssetId: String(tokenIds[upIndex]),
-    downAssetId: String(tokenIds[downIndex]),
-    minimumOrderSize: Number(
-      market.minimumOrderSize ??
-      market.minimum_order_size ??
-      market.orderMinSize ??
-      market.order_min_size ??
-      0
-    ),
+    upAssetId: String(upAssetId),
+    downAssetId: String(downAssetId),
+    minimumOrderSize,
     winningOutcome
   };
 }
-
 async function positionSnapshot(assetId) {
   const response = await fetch(
     DATA_API + '/positions?user=' + encodeURIComponent(requireEnv('POLYMARKET_DEPOSIT_WALLET'))
