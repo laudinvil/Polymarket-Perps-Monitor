@@ -154,32 +154,53 @@ async function holderStats(conditionId, slug) {
   throw new Error('Positions pagination incomplete for ' + slug);
 }
 
-async function activityStats(conditionId, slug) {
-  const params = new URLSearchParams({ condition: conditionId, limit: '1000' });
+async function activityStats(conditionId, upTokenId, downTokenId, periodStart, periodEnd) {
+  const params = new URLSearchParams({
+    condition: conditionId,
+    type: 'TRADE',
+    start: String(Math.floor(periodStart / 1000)),
+    end: String(Math.floor(periodEnd / 1000)),
+    limit: '1000',
+    sort_by: 'TIMESTAMP',
+    sort_direction: 'DESC'
+  });
+
   const response = await fetchTimeout(DATA_API + '/v2/activity?' + params.toString());
   const body = await response.text();
   if (!response.ok) throw new Error('Polymarket Data API activity ' + response.status + ': ' + body);
+
   const payload = JSON.parse(body);
   const rows = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : []);
   const stats = { buyUp: 0, buyDown: 0, sellUp: 0, sellDown: 0 };
+  const upToken = String(upTokenId);
+  const downToken = String(downTokenId);
+
   for (const row of rows) {
-    const side = String(row.side ?? row.type ?? '').trim().toUpperCase();
+    const side = String(row.side ?? '').trim().toUpperCase();
+    const asset = String(row.asset ?? row.token_id ?? row.tokenId ?? '').trim();
     const outcome = String(row.outcome ?? '').trim().toUpperCase();
     const amount = Number(row.usdcSize ?? row.usdc_size ?? 0);
+
+    if (side !== 'BUY' && side !== 'SELL') continue;
     if (!Number.isFinite(amount) || amount <= 0) continue;
-    if (side === 'BUY' && outcome === 'UP') stats.buyUp += amount;
-    else if (side === 'BUY' && outcome === 'DOWN') stats.buyDown += amount;
-    else if (side === 'SELL' && outcome === 'UP') stats.sellUp += amount;
-    else if (side === 'SELL' && outcome === 'DOWN') stats.sellDown += amount;
+
+    const isUp = asset === upToken || outcome === 'UP' || Number(row.outcomeIndex) === 0;
+    const isDown = asset === downToken || outcome === 'DOWN' || Number(row.outcomeIndex) === 1;
+
+    if (side === 'BUY' && isUp && !isDown) stats.buyUp += amount;
+    else if (side === 'BUY' && isDown && !isUp) stats.buyDown += amount;
+    else if (side === 'SELL' && isUp && !isDown) stats.sellUp += amount;
+    else if (side === 'SELL' && isDown && !isUp) stats.sellDown += amount;
   }
+
   return stats;
 }
 
-async function getReliableActivityStats(conditionId, slug) {
+async function getReliableActivityStats(conditionId, upTokenId, downTokenId, periodStart, periodEnd, slug) {
   let lastError;
   for (let attempt = 1; attempt <= ACTIVITY_RETRIES; attempt++) {
     try {
-      return await activityStats(conditionId, slug);
+      return await activityStats(conditionId, upTokenId, downTokenId, periodStart, periodEnd);
     } catch (error) {
       lastError = error;
       console.log('[positions-5m] activity retry ' + attempt + '/' + ACTIVITY_RETRIES + ': ' + error.message);
@@ -249,7 +270,7 @@ async function processPeriod(coin, boundary) {
 
   let activity = { buyUp: 0, buyDown: 0, sellUp: 0, sellDown: 0 };
   try {
-    activity = await getReliableActivityStats(activeMarket.conditionId, activeSlug);
+    activity = await getReliableActivityStats(activeMarket.conditionId, activeMarket.upTokenId, activeMarket.downTokenId, activeStart, boundary, activeSlug);
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY UP=' + activity.buyUp.toFixed(2) +
