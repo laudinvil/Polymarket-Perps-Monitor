@@ -175,17 +175,20 @@ async function getReliableHolderStats(conditionId, slug) {
 }
 
 async function getPersistedDirection(coin) {
-  if (!CONVEX_INGEST_TOKEN) return null;
+  if (!CONVEX_INGEST_TOKEN) return { available: false, direction: null };
   try {
     const response = await fetchTimeout(CONVEX_SITE_URL + '/holder-alert-state?symbol=' + encodeURIComponent(coin), {
       headers: { authorization: 'Bearer ' + CONVEX_INGEST_TOKEN }
     });
     if (!response.ok) throw new Error('Convex state ' + response.status);
     const row = await response.json();
-    return row?.lastDirection === 'UP' || row?.lastDirection === 'DOWN' ? row.lastDirection : null;
+    return {
+      available: true,
+      direction: row?.lastDirection === 'UP' || row?.lastDirection === 'DOWN' ? row.lastDirection : null
+    };
   } catch (error) {
     console.error('[positions-5m] Convex state read failed: ' + error.message);
-    return null;
+    return { available: false, direction: null };
   }
 }
 
@@ -257,8 +260,12 @@ async function processPeriod(coin, boundary) {
     return false;
   }
 
-  const persistedDirection = await getPersistedDirection(coin);
-  const effectiveLastDirection = persistedDirection || lastAlertDirection;
+  const persistedState = await getPersistedDirection(coin);
+  if (!persistedState.available) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: persistent alert state unavailable');
+    return false;
+  }
+  const effectiveLastDirection = persistedState.direction || lastAlertDirection;
   if (lastAlertBoundary === boundary) {
     console.log('[positions-5m] ' + activeSlug + ' skipped: alert already processed for this boundary');
     return false;
