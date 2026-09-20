@@ -19,7 +19,10 @@ export const latestStreakHits = query({ args:{symbol:v.optional(v.string()),time
 export const getHolderAlertState = query({ args: { symbol: v.string() }, handler: async (ctx, args) => {
   return await ctx.db.query("holderAlertState").withIndex("by_symbol", q => q.eq("symbol", args.symbol)).unique();
 } });
-export const setHolderAlertState = internalMutation({ args: { symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")), updatedAt: v.number() }, handler: async (ctx, args) => {
+export const setHolderAlertState = internalMutation({ args: {
+  symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")),
+  directionCount: v.number(), lastImbalance: v.number(), updatedAt: v.number()
+}, handler: async (ctx, args) => {
   const existing = await ctx.db.query("holderAlertState").withIndex("by_symbol", q => q.eq("symbol", args.symbol)).unique();
   if (existing) { await ctx.db.patch(existing._id, args); return existing._id; }
   return await ctx.db.insert("holderAlertState", args);
