@@ -1,5 +1,7 @@
 const { env } = require('node:process');
 
+const CONVEX_SITE_URL = env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site';
+const CONVEX_INGEST_TOKEN = env.CONVEX_INGEST_TOKEN || '';
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
@@ -171,6 +173,38 @@ async function getReliableHolderStats(conditionId, slug) {
   throw new Error('Holder data unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
+async function getPersistedDirection(coin) {
+  if (!CONVEX_INGEST_TOKEN) return null;
+  try {
+    const response = await fetchTimeout(CONVEX_SITE_URL + '/holder-alert-state?symbol=' + encodeURIComponent(coin), {
+      headers: { authorization: 'Bearer ' + CONVEX_INGEST_TOKEN }
+    });
+    if (!response.ok) throw new Error('Convex state ' + response.status);
+    const row = await response.json();
+    return row?.lastDirection === 'UP' || row?.lastDirection === 'DOWN' ? row.lastDirection : null;
+  } catch (error) {
+    console.error('[positions-5m] Convex state read failed: ' + error.message);
+    return null;
+  }
+}
+
+async function persistDirection(coin, direction) {
+  if (!CONVEX_INGEST_TOKEN) {
+    console.log('[positions-5m] Convex state disabled: CONVEX_INGEST_TOKEN missing');
+    return;
+  }
+  try {
+    const response = await fetchTimeout(CONVEX_SITE_URL + '/holder-alert-state', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + CONVEX_INGEST_TOKEN, 'content-type': 'application/json' },
+      body: JSON.stringify({ symbol: coin, lastDirection: direction, updatedAt: Date.now() })
+    });
+    if (!response.ok) throw new Error('Convex state ' + response.status);
+  } catch (error) {
+    console.error('[positions-5m] Convex state write failed: ' + error.message);
+  }
+}
+
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -222,11 +256,13 @@ async function processPeriod(coin, boundary) {
     return false;
   }
 
-  if (lastAlertDirection && direction === lastAlertDirection) {
+  const persistedDirection = await getPersistedDirection(coin);
+  const effectiveLastDirection = persistedDirection || lastAlertDirection;
+  if (effectiveLastDirection && direction === effectiveLastDirection) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' skipped: direction=' + direction +
-      ', waiting for ' + (lastAlertDirection === 'UP' ? 'DOWN' : 'UP') +
+      ', waiting for ' + (effectiveLastDirection === 'UP' ? 'DOWN' : 'UP') +
       ' majority'
     );
     return false;
@@ -250,6 +286,7 @@ async function processPeriod(coin, boundary) {
 
   await sendTelegram(message);
   lastAlertDirection = direction;
+  await persistDirection(coin, direction);
   console.log('[positions-5m] ' + activeSlug + ' alert sent: ' + direction + ' majority');
   return true;
 }
