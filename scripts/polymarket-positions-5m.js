@@ -6,7 +6,8 @@ const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
 
 const PERIOD = 300000;
-const ALERT_LEAD_MS = 30000;
+const ALERT_LEAD_MS = 20000;
+const MAX_HOLDER_IMBALANCE = 25;
 const COINS = ['BTC'];
 const POLYMARKET_GAP = 1000;
 const FETCH_TIMEOUT_MS = 5000;
@@ -15,8 +16,6 @@ const MARKET_RETRIES = 8;
 const MARKET_RETRY_MS = 15000;
 const POSITIONS_RETRIES = 4;
 const POSITIONS_RETRY_MS = 500;
-const ACTIVITY_RETRIES = 4;
-const ACTIVITY_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 let lastAlertDirection = null;
@@ -241,7 +240,7 @@ async function processPeriod(coin, boundary) {
   console.log(
     '[positions-5m] evaluating ' + coin +
     ' active=' + activeSlug +
-    ' at 4:30; boundary=' + new Date(boundary).toISOString()
+    ' at 4:40; boundary=' + new Date(boundary).toISOString()
   );
 
   const activeMarket = await findMarket(activeSlug);
@@ -273,6 +272,11 @@ async function processPeriod(coin, boundary) {
     ? Math.abs(stats.DOWN.holders - stats.UP.holders) / holderMax * 100
     : 0;
 
+  if (holderImbalance > MAX_HOLDER_IMBALANCE) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: holder imbalance=' + holderImbalance.toFixed(2) + '% > ' + MAX_HOLDER_IMBALANCE + '%');
+    return false;
+  }
+
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
@@ -299,7 +303,7 @@ async function main() {
   if (initialWait > 0) await sleep(initialWait);
 
   console.log('[positions-5m] 5m holder monitor started: ' + COINS.join(', '));
-  console.log('[positions-5m] first evaluation (4:30)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
+  console.log('[positions-5m] first evaluation (4:40)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
 
   while (Date.now() < stopAt) {
     const wait = boundary - ALERT_LEAD_MS - Date.now();
