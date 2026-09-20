@@ -53,6 +53,10 @@ export default defineSchema({
     symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")),
     directionCount: v.optional(v.number()), lastImbalance: v.optional(v.number()), updatedAt: v.number(),
   }).index("by_symbol", ["symbol"]),
+  holderSnapshots: defineTable({
+    symbol: v.string(), periodStart: v.number(), upHolders: v.number(), downHolders: v.number(),
+    totalHolders: v.number(), recordedAt: v.number(),
+  }).index("by_symbol_period", ["symbol", "periodStart"]).index("by_symbol_recorded", ["symbol", "recordedAt"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
     sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
