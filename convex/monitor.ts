@@ -49,3 +49,40 @@ export const latestSnapshots = query({ args:{timeframe:v.string(),symbol:v.optio
 export const latestStats = query({ args:{timeframe:v.string()}, returns:v.array(v.object({timeframe:v.string(),symbol:v.string(),boundaryTs:v.number(),imbalanceUsd:v.number(),longUsd:v.number(),shortUsd:v.number(),longEvents:v.number(),shortEvents:v.number(),events:v.number()})), handler:async(ctx,args)=>{const symbols=["BTC","ETH"];const rows=[];for(const symbol of symbols){const row=await ctx.db.query("snapshots").withIndex("by_timeframe_symbol_boundary",q=>q.eq("timeframe",args.timeframe).eq("symbol",symbol)).order("desc").take(1);if(row[0])rows.push({timeframe:row[0].timeframe,symbol:row[0].symbol,boundaryTs:row[0].boundaryTs,imbalanceUsd:row[0].imbalanceUsd,longUsd:row[0].longUsd,shortUsd:row[0].shortUsd,longEvents:row[0].longEvents,shortEvents:row[0].shortEvents,events:row[0].events});}return rows;} });
 export const latestAlerts = query({ args:{timeframe:v.optional(v.string()),symbol:v.optional(v.string()),limit:v.number()}, handler:async(ctx,args)=>{let rows=await ctx.db.query("alerts").withIndex("by_sent_at").order("desc").take(Math.min(args.limit*5,200));if(args.timeframe)rows=rows.filter(row=>row.timeframe===args.timeframe);if(args.symbol)rows=rows.filter(row=>row.symbol===args.symbol);return rows.slice(0,args.limit);} });
 export const latestMonitorRuns = query({ args:{limit:v.number()}, handler:async(ctx,args)=>await ctx.db.query("monitorRuns").withIndex("by_started_at").order("desc").take(Math.min(args.limit,50)) });
+
+
+export const upsertLiveTrade = internalMutation({
+  args: {
+    tradeId:v.string(), symbol:v.string(), marketStart:v.number(), marketEnd:v.number(), slug:v.string(),
+    outcome:v.string(), baseOrderUsd:v.number(), targetBetUsd:v.number(), dcaBuys:v.number(),
+    recoveryEnabled:v.boolean(), recoveryStep:v.number(), buysAttempted:v.number(), buysFilled:v.number(),
+    spentUsd:v.number(), shares:v.number(), avgPrice:v.optional(v.number()), status:v.string(),
+    result:v.optional(v.string()), payout:v.optional(v.number()), pnl:v.optional(v.number()),
+    startedAt:v.number(), settledAt:v.optional(v.number()), updatedAt:v.number(), error:v.optional(v.string())
+  },
+  handler: async (ctx,args) => {
+    const existing=await ctx.db.query("liveTrades").withIndex("by_trade",q=>q.eq("tradeId",args.tradeId)).unique();
+    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
+    return await ctx.db.insert("liveTrades",args);
+  }
+});
+export const setRecoveryState = internalMutation({
+  args:{symbol:v.string(),enabled:v.boolean(),initialBetUsd:v.number(),step:v.number(),maxSteps:v.number(),multiplier:v.number(),nextBetUsd:v.number(),updatedAt:v.number()},
+  handler:async(ctx,args)=>{
+    const existing=await ctx.db.query("recoveryStates").withIndex("by_symbol",q=>q.eq("symbol",args.symbol)).unique();
+    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
+    return await ctx.db.insert("recoveryStates",args);
+  }
+});
+export const getRecoveryState = query({
+  args:{symbol:v.string()},
+  handler:async(ctx,args)=>await ctx.db.query("recoveryStates").withIndex("by_symbol",q=>q.eq("symbol",args.symbol)).unique()
+});
+export const latestLiveTrades = query({
+  args:{symbol:v.optional(v.string()),limit:v.number()},
+  handler:async(ctx,args)=>{
+    const limit=Math.min(Math.max(args.limit,1),100);
+    const rows=await ctx.db.query("liveTrades").withIndex("by_status").order("desc").take(Math.min(limit*3,300));
+    return rows.filter(row=>!args.symbol||row.symbol===args.symbol).slice(0,limit);
+  }
+});
