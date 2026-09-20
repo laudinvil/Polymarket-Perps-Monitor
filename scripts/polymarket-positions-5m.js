@@ -89,8 +89,8 @@ async function holderStats(conditionId, slug) {
   const pageSize = 1000;
   let cursor = null;
   const stats = {
-    UP: { holders: 0, shares: 0, topShares: 0, topValue: 0 },
-    DOWN: { holders: 0, shares: 0, topShares: 0, topValue: 0 }
+    UP: { holders: 0, shares: 0, topShares: 0 },
+    DOWN: { holders: 0, shares: 0, topShares: 0 }
   };
   const holdersByOutcome = { UP: new Map(), DOWN: new Map() };
 
@@ -120,8 +120,6 @@ async function holderStats(conditionId, slug) {
       const shares = Number(position.current_size ?? 0);
       if (!Number.isFinite(shares) || shares <= 0) continue;
 
-      const currentValue = Number(position.current_value ?? position.currentValue ?? 0);
-      const value = Number.isFinite(currentValue) && currentValue >= 0 ? currentValue : 0;
 
       const wallet = String(
         position.proxyWallet ??
@@ -133,10 +131,9 @@ async function holderStats(conditionId, slug) {
       ).trim().toLowerCase();
 
       const holderKey = wallet || ('row:' + outcome + ':' + page + ':' + rowIndex);
-      const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0, value: 0 };
+      const holder = holdersByOutcome[outcome].get(holderKey) || { shares: 0 };
       holder.shares += shares;
-      holder.value += value;
-      holdersByOutcome[outcome].set(holderKey, holder);
+            holdersByOutcome[outcome].set(holderKey, holder);
     }
 
     if (!pagination.has_more || !pagination.next_cursor) {
@@ -150,8 +147,7 @@ async function holderStats(conditionId, slug) {
           // Top holder is defined by share count, not mark-to-market dollar value.
           if (holder.shares > stats[outcome].topShares) {
             stats[outcome].topShares = holder.shares;
-            stats[outcome].topValue = holder.value;
-          }
+                      }
         }
       }
       return stats;
@@ -249,11 +245,6 @@ async function processPeriod(coin, boundary) {
     'DOWN HOLDERS: ' + stats.DOWN.holders + (stats.DOWN.holders > stats.UP.holders ? ' 🔥' : ''),
     'HOLDERS IMBALANCE: ' + holderImbalance.toFixed(2) + '%',
     '',
-    'TOP UP HOLDER: ' + stats.UP.topShares.toFixed(2) + ' SHARES' +
-      (stats.UP.topShares > stats.DOWN.topShares ? ' 🔥' : ''),
-    'TOP DOWN HOLDER: ' + stats.DOWN.topShares.toFixed(2) + ' SHARES' +
-      (stats.DOWN.topShares > stats.UP.topShares ? ' 🔥' : ''),
-    'TOP HOLDER IMBALANCE: ' + topHolderImbalance.toFixed(2) + '%',
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
