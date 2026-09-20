@@ -100,6 +100,37 @@ async function gammaEvent(slug) {
   };
 }
 
+
+async function positionSnapshot(assetId) {
+  const response = await fetch(
+    DATA_API + '/positions?user=' + encodeURIComponent(requireEnv('POLYMARKET_DEPOSIT_WALLET'))
+  );
+  const body = await response.text();
+  if (!response.ok) throw new Error('Positions API ' + response.status + ': ' + body);
+  const rows = JSON.parse(body);
+  const position = Array.isArray(rows)
+    ? rows.find(item => String(item.asset ?? item.assetId ?? '') === String(assetId))
+    : null;
+  if (!position) return { shares: 0, avgPrice: 0 };
+  return {
+    shares: Number(position.size ?? 0),
+    avgPrice: Number(position.avgPrice ?? position.avg_price ?? 0)
+  };
+}
+
+async function waitForPositionIncrease(assetId, beforeShares, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = await positionSnapshot(assetId);
+  while (latest.shares <= beforeShares && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    latest = await positionSnapshot(assetId);
+  }
+  if (latest.shares <= beforeShares) {
+    throw new Error('Market BUY accepted but position increase was not confirmed');
+  }
+  return latest;
+}
+
 async function getClient() {
   const { createSecureClient } = await import('@polymarket/client');
   const { privateKey } = await import('@polymarket/client/viem');
@@ -302,20 +333,18 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
     trade.updatedAt = Date.now();
     await saveTrade(trade);
 
+    const before = await positionSnapshot(market.assetId);
     const order = await buyWithRetry(client, market, slotAmount, trade, slot);
+    const after = await waitForPositionIncrease(market.assetId, before.shares);
+    const filledShares = Math.max(0, after.shares - before.shares);
+    const beforeCost = before.shares * before.avgPrice;
+    const afterCost = after.shares * after.avgPrice;
+    const incrementalCost = Math.max(0, afterCost - beforeCost);
+
     trade.buysFilled++;
-    trade.spentUsd += slotAmount;
-
-    const makerAmount = Number(order?.makerAmount);
-    const takerAmount = Number(order?.takerAmount);
-    if (Number.isFinite(makerAmount) && makerAmount > 0) {
-      trade.shares += makerAmount;
-    }
-    if (Number.isFinite(takerAmount) && takerAmount > 0 && !Number.isFinite(makerAmount)) {
-      trade.shares += takerAmount;
-    }
-
-    trade.avgPrice = trade.shares > 0 ? trade.spentUsd / trade.shares : undefined;
+    trade.shares = after.shares;
+    trade.spentUsd += incrementalCost > 0 ? incrementalCost : slotAmount;
+    trade.avgPrice = after.avgPrice;
     trade.updatedAt = Date.now();
     await saveTrade(trade);
   }
@@ -377,8 +406,7 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
     '',
     recoveryText,
     '',
-    '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + slug
+    'MARKET: ' + slug
   ].join('\n');
 
   await sendTelegram(message);
