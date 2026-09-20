@@ -223,7 +223,6 @@ async function processPeriod(coin, boundary) {
   const currentTotal = stats.UP.holders + stats.DOWN.holders;
   const previousTotal = previousStats.UP.holders + previousStats.DOWN.holders;
 
-  const change = current => current > 0 ? current : 0;
   const arrow = (current, previous) => current > previous ? '↑' : current < previous ? '↓' : '→';
   const signed = (current, previous) => {
     const delta = current - previous;
