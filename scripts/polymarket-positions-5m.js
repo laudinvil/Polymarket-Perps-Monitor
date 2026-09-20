@@ -291,10 +291,10 @@ async function processPeriod(coin, boundary) {
     }
   }
 
-  // Imbalance growth is required only inside the current two-alert direction pair.
-  // When direction changes, the new pair starts with its own imbalance baseline.
-  if (effectiveLastDirection === direction && effectiveLastImbalance !== null && holderImbalance <= effectiveLastImbalance) {
-    console.log('[positions-5m] ' + activeSlug + ' skipped: imbalance=' + holderImbalance.toFixed(2) + '% is not greater than previous ' + direction + '=' + effectiveLastImbalance.toFixed(2) + '%');
+  // For each direction pair, the second alert must have a LOWER imbalance
+  // than the first. When direction changes, the new pair starts a new baseline.
+  if (effectiveLastDirection === direction && effectiveLastImbalance !== null && holderImbalance >= effectiveLastImbalance) {
+    console.log('[positions-5m] ' + activeSlug + ' skipped: imbalance=' + holderImbalance.toFixed(2) + '% is not lower than previous ' + direction + '=' + effectiveLastImbalance.toFixed(2) + '%');
     return false;
   }
 
