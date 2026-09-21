@@ -52,6 +52,14 @@ export default defineSchema({
   rollingAlertClaims: defineTable({
     symbol: v.string(), periodStart: v.number(), sentAt: v.number(),
   }).index("by_symbol_sent_at", ["symbol", "sentAt"]).index("by_symbol_period", ["symbol", "periodStart"]),
+  buySnapshots: defineTable({
+    symbol: v.string(), periodStart: v.number(), periodEnd: v.number(),
+    upBuys: v.number(), downBuys: v.number(), totalBuys: v.number(),
+    previousUpBuys: v.number(), previousDownBuys: v.number(), previousTotalBuys: v.number(),
+    totalDecreased: v.boolean(), upIsLarger: v.boolean(),
+    decision: v.boolean(), reason: v.string(), recordedAt: v.number(),
+  }).index("by_symbol_period", ["symbol", "periodStart"])
+    .index("by_symbol_recorded", ["symbol", "recordedAt"]),
   holderAlertState: defineTable({
     symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")),
     directionCount: v.optional(v.number()), lastImbalance: v.optional(v.number()), updatedAt: v.number(),
