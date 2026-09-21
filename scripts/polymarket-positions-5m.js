@@ -234,15 +234,6 @@ async function processPeriod(coin, boundary) {
     totalBuys > previousTotalBuys ? ' ↑' :
     totalBuys < previousTotalBuys ? ' ↓' : '';
 
-  if (!canSendAlert()) {
-    console.log(
-      '[positions-5m] ' + activeSlug +
-      ' BUY alert rejected: hourly alert limit reached (' +
-      ALERT_LIMIT + '/' + ALERT_LIMIT + ')'
-    );
-    return false;
-  }
-
   const claimResponse = await fetch((env.CONVEX_SITE_URL || '').replace(/\/$/, '') + '/claim-rolling-alert', {
     method: 'POST',
     headers: {
@@ -286,7 +277,26 @@ async function processPeriod(coin, boundary) {
     );
   }
 
-  await sendTelegram(message);
+  try {
+    await sendTelegram(message);
+  } catch (error) {
+    try {
+      await fetch((env.CONVEX_SITE_URL || '').replace(/\/$/, '') + '/release-rolling-alert', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + env.CONVEX_INGEST_TOKEN
+        },
+        body: JSON.stringify({
+          symbol: coin,
+          periodStart: activeStart
+        })
+      });
+    } catch (releaseError) {
+      console.error('[positions-5m] Failed to release rolling alert claim: ' + releaseError.message);
+    }
+    throw error;
+  }
   console.log(
     '[positions-5m] ' + activeSlug +
     ' BUY alert sent: UP=' + stats.UP +
