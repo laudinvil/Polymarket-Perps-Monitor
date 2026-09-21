@@ -246,7 +246,7 @@ async function processPeriod(coin, boundary) {
       periodStart: activeStart,
       sentAt: Date.now(),
       windowMs: 60 * 60 * 1000,
-      maxAlerts: 3
+      maxAlerts: 2
     })
   });
   const claimBody = await claimResponse.text();
@@ -255,7 +255,7 @@ async function processPeriod(coin, boundary) {
   }
   const claimData = JSON.parse(claimBody);
   if (claimData.claimed !== true) {
-    console.log('[positions-5m] ' + activeSlug + ' BUY alert rejected: rolling 3/60m limit reached');
+    console.log('[positions-5m] ' + activeSlug + ' BUY alert rejected: rolling 2/60m limit reached');
     return false;
   }
 
