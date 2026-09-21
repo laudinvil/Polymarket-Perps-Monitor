@@ -87,13 +87,14 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function buyStats(conditionId, slug, periodStart, periodEnd) {
+async function buyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId) {
   const stats = { UP: 0, DOWN: 0 };
   let cursor = null;
 
   for (let page = 0; page < 100; page++) {
     const params = new URLSearchParams({
       condition: conditionId,
+      side: 'BUY',
       limit: '1000'
     });
     if (cursor) params.set('cursor', cursor);
@@ -124,10 +125,11 @@ async function buyStats(conditionId, slug, periodStart, periodEnd) {
         return stats;
       }
 
-      if (String(trade.side || '').trim().toUpperCase() !== 'BUY') continue;
-
+      const tokenId = String(trade.token_id ?? trade.tokenId ?? '').trim();
       const outcome = String(trade.outcome || '').trim().toUpperCase();
-      if (outcome === 'UP') stats.UP++;
+      if (tokenId && tokenId === String(upTokenId)) stats.UP++;
+      else if (tokenId && tokenId === String(downTokenId)) stats.DOWN++;
+      else if (outcome === 'UP') stats.UP++;
       else if (outcome === 'DOWN') stats.DOWN++;
     }
 
@@ -144,11 +146,11 @@ async function buyStats(conditionId, slug, periodStart, periodEnd) {
   return stats;
 }
 
-async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd) {
+async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId) {
   let lastError;
   for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
     try {
-      const stats = await buyStats(conditionId, slug, periodStart, periodEnd);
+      const stats = await buyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId);
       if (!Number.isFinite(stats.UP) || !Number.isFinite(stats.DOWN)) {
         throw new Error('invalid BUY stats');
       }
@@ -247,8 +249,8 @@ async function processPeriod(coin, boundary) {
   ]);
 
   const [stats, previousStats] = await Promise.all([
-    getReliableBuyStats(activeMarket.conditionId, activeSlug, activeStart, boundary),
-    getReliableBuyStats(previousMarket.conditionId, previousSlug, previousStart, activeStart)
+    getReliableBuyStats(activeMarket.conditionId, activeSlug, activeStart, boundary, activeMarket.upTokenId, activeMarket.downTokenId),
+    getReliableBuyStats(previousMarket.conditionId, previousSlug, previousStart, activeStart, previousMarket.upTokenId, previousMarket.downTokenId)
   ]);
 
   const totalBuys = stats.UP + stats.DOWN;
