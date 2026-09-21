@@ -39,6 +39,16 @@ export const setHolderAlertState = internalMutation({ args: {
   if (existing) { await ctx.db.patch(existing._id, args); return existing._id; }
   return await ctx.db.insert("holderAlertState", args);
 } });
+export const releaseRollingAlert = internalMutation({
+  args: { symbol:v.string(), periodStart:v.number() },
+  returns: v.boolean(),
+  handler: async (ctx,args) => {
+    const existing = await ctx.db.query("rollingAlertClaims").withIndex("by_symbol_period", q => q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
+    if (!existing) return false;
+    await ctx.db.delete(existing._id);
+    return true;
+  }
+});
 export const claimRollingAlert = internalMutation({
   args: { symbol:v.string(), periodStart:v.number(), sentAt:v.number(), windowMs:v.number(), maxAlerts:v.number() },
   returns: v.boolean(),
