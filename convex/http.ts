@@ -13,6 +13,20 @@ const claimEsportsAlert=httpAction(async(ctx,request)=>{if(!authorized(request))
 const claimCrowdFlowAlert=httpAction(async(ctx,request)=>{if(!authorized(request))return new Response("Unauthorized",{status:401});let body:any;try{body=await request.json();}catch{return new Response("Invalid JSON",{status:400});}try{const claimed=await ctx.runMutation(internal.monitor.claimCrowdFlowAlert,{symbol:String(body.symbol||"BTC"),periodStart:Number(body.periodStart),alertType:String(body.alertType||"LOW_TRADES"),sentAt:Number(body.sentAt||Date.now())});return Response.json({claimed});}catch(error){console.error("Convex Crowd Flow claim failed",error);return new Response("Crowd Flow claim failed",{status:500});}});
 const claimCvd5mAlert=httpAction(async(ctx,request)=>{if(!authorized(request))return new Response("Unauthorized",{status:401});let body:any;try{body=await request.json();}catch{return new Response("Invalid JSON",{status:400});}try{const claimed=await ctx.runMutation(internal.monitor.claimCvd5mAlert,{symbol:String(body.symbol||"BTC"),periodStart:Number(body.periodStart),sentAt:Number(body.sentAt||Date.now())});return Response.json({claimed});}catch(error){console.error("Convex CVD claim failed",error);return new Response("CVD claim failed",{status:500});}});
 const latestCvd5mAlert=httpAction(async(ctx,request)=>{const symbol=String(new URL(request.url).searchParams.get("symbol")||"BTC");try{return Response.json(await ctx.runQuery(api.monitor.latestCvd5mAlert,{symbol}));}catch{return new Response("CVD alert query failed",{status:500});}});
+const claimRollingAlert=httpAction(async(ctx,request)=>{
+  if(!authorized(request))return new Response("Unauthorized",{status:401});
+  let body:any;try{body=await request.json();}catch{return new Response("Invalid JSON",{status:400});}
+  try{
+    const claimed=await ctx.runMutation(internal.monitor.claimRollingAlert,{
+      symbol:String(body.symbol||"BTC"),
+      periodStart:Number(body.periodStart),
+      sentAt:Number(body.sentAt||Date.now()),
+      windowMs:Number(body.windowMs||60*60*1000),
+      maxAlerts:Number(body.maxAlerts||5)
+    });
+    return Response.json({claimed});
+  }catch(error){console.error("Convex rolling alert claim failed",error);return new Response("Rolling alert claim failed",{status:500});}
+});
 const health=httpAction(async()=>Response.json({ok:true}));
 const runtimeStatus=httpAction(async(ctx)=>{try{return Response.json(await ctx.runQuery(api.runtime.status,{}));}catch{return new Response("Runtime status query failed",{status:500});}});
 const runtimeLogs=httpAction(async(ctx,request)=>{const url=new URL(request.url);const rawRunId=url.searchParams.get("runId");const rawLimit=Number(url.searchParams.get("limit")||100);const limit=Math.min(Math.max(Number.isFinite(rawLimit)?Math.floor(rawLimit):100,1),200);const runId=rawRunId===null||rawRunId===""?undefined:Number(rawRunId);if(runId!==undefined&&!Number.isFinite(runId))return new Response("Invalid runId",{status:400});try{return Response.json(await ctx.runQuery(api.runtime.logs,{runId,limit}));}catch{return new Response("Runtime logs query failed",{status:500});}});
@@ -47,6 +61,7 @@ http.route({path:"/claim-esports-alert",method:"POST",handler:claimEsportsAlert}
 http.route({path:"/claim-crowd-flow-alert",method:"POST",handler:claimCrowdFlowAlert});
 http.route({path:"/claim-cvd-5m-alert",method:"POST",handler:claimCvd5mAlert});
 http.route({path:"/cvd-5m/latest-alert",method:"GET",handler:latestCvd5mAlert});
+http.route({path:"/claim-rolling-alert",method:"POST",handler:claimRollingAlert});
 http.route({path:"/health",method:"GET",handler:health});
 http.route({path:"/runtime/status",method:"GET",handler:runtimeStatus});
 http.route({path:"/runtime/logs",method:"GET",handler:runtimeLogs});
