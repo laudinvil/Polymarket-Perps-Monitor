@@ -270,14 +270,6 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   try {
-    executeTrade(coin, nextSlug, boundary, boundary + PERIOD).catch(() => {});
-  } catch (error) {
-    console.error(
-      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
-    );
-  }
-
-  try {
     await sendTelegram(message);
   } catch (error) {
     try {
@@ -296,6 +288,16 @@ async function processPeriod(coin, boundary) {
       console.error('[positions-5m] Failed to release rolling alert claim: ' + releaseError.message);
     }
     throw error;
+  }
+
+  try {
+    executeTrade(coin, nextSlug, boundary, boundary + PERIOD).catch(error => {
+      console.error('[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message);
+    });
+  } catch (error) {
+    console.error(
+      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
+    );
   }
   console.log(
     '[positions-5m] ' + activeSlug +
