@@ -49,6 +49,38 @@ export const releaseRollingAlert = internalMutation({
     return true;
   }
 });
+export const saveBuySnapshot = internalMutation({
+  args: {
+    symbol:v.string(), periodStart:v.number(), periodEnd:v.number(),
+    upBuys:v.number(), downBuys:v.number(), totalBuys:v.number(),
+    previousUpBuys:v.number(), previousDownBuys:v.number(), previousTotalBuys:v.number(),
+    totalDecreased:v.boolean(), upIsLarger:v.boolean(),
+    decision:v.boolean(), reason:v.string(), recordedAt:v.number()
+  },
+  handler: async (ctx,args) => {
+    const existing = await ctx.db.query("buySnapshots").withIndex("by_symbol_period", q =>
+      q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)
+    ).unique();
+    if(existing){ await ctx.db.patch(existing._id,args); return existing._id; }
+    return await ctx.db.insert("buySnapshots",args);
+  }
+});
+export const latestBuySnapshots = query({
+  args:{symbol:v.optional(v.string()),limit:v.number()},
+  handler:async(ctx,args)=>{
+    const limit=Math.min(Math.max(args.limit,1),200);
+    if(args.symbol) return await ctx.db.query("buySnapshots").withIndex("by_symbol_recorded",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit);
+    return await ctx.db.query("buySnapshots").withIndex("by_symbol_recorded").order("desc").take(limit);
+  }
+});
+export const rollingAlertClaimsStatus = query({
+  args:{symbol:v.string(),windowMs:v.number()},
+  handler:async(ctx,args)=>{
+    const cutoff=Date.now()-args.windowMs;
+    return await ctx.db.query("rollingAlertClaims").withIndex("by_symbol_sent_at",q=>q.eq("symbol",args.symbol).gt("sentAt",cutoff)).order("desc").take(20);
+  }
+});
+
 export const claimRollingAlert = internalMutation({
   args: { symbol:v.string(), periodStart:v.number(), sentAt:v.number(), windowMs:v.number(), maxAlerts:v.number() },
   returns: v.boolean(),
