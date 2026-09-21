@@ -49,6 +49,9 @@ export default defineSchema({
   esportsAlerts: defineTable({
     fingerprint: v.string(), strategy: v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number(),
   }).index("by_fingerprint", ["fingerprint"]),
+  rollingAlertClaims: defineTable({
+    symbol: v.string(), periodStart: v.number(), sentAt: v.number(),
+  }).index("by_symbol_sent_at", ["symbol", "sentAt"]).index("by_symbol_period", ["symbol", "periodStart"]),
   holderAlertState: defineTable({
     symbol: v.string(), lastDirection: v.union(v.literal("UP"), v.literal("DOWN")),
     directionCount: v.optional(v.number()), lastImbalance: v.optional(v.number()), updatedAt: v.number(),
