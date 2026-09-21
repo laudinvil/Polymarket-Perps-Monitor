@@ -88,61 +88,51 @@ async function findMarket(slug) {
 }
 
 async function buyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId) {
+  const params = new URLSearchParams({
+    market: conditionId,
+    side: 'BUY',
+    taker_only: 'false',
+    limit: '10000'
+  });
+
+  const response = await fetchTimeout(DATA_API + '/trades?' + params.toString());
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
+  }
+
+  const payload = JSON.parse(body);
+  const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
   const stats = { UP: 0, DOWN: 0 };
-  let cursor = null;
 
-  for (let page = 0; page < 100; page++) {
-    const params = new URLSearchParams({
-      condition: conditionId,
-      side: 'BUY',
-      limit: '1000'
-    });
-    if (cursor) params.set('cursor', cursor);
+  for (const trade of rows) {
+    const timestamp = Number(trade.timestamp ?? trade.ts ?? 0);
+    if (!Number.isFinite(timestamp)) continue;
 
-    const response = await fetchTimeout(DATA_API + '/v2/trades?' + params.toString());
-    const body = await response.text();
-    if (!response.ok) {
-      throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
-    }
+    const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
+    if (timestampMs < periodStart || timestampMs >= periodEnd) continue;
 
-    const payload = JSON.parse(body);
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    const tokenId = String(
+      trade.asset ??
+      trade.token_id ??
+      trade.tokenId ??
+      ''
+    ).trim();
+    const outcome = String(trade.outcome || '').trim().toUpperCase();
 
-    for (const trade of rows) {
-      const timestamp = Number(trade.timestamp ?? 0);
-      if (!Number.isFinite(timestamp)) continue;
-
-      const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
-
-      if (timestampMs >= periodEnd) continue;
-      if (timestampMs < periodStart) {
-        console.log(
-          '[positions-5m] ' + slug +
-          ' BUY stats: UP=' + stats.UP +
-          ' DOWN=' + stats.DOWN +
-          ' pages=' + (page + 1)
-        );
-        return stats;
-      }
-
-      const tokenId = String(trade.token_id ?? trade.tokenId ?? '').trim();
-      const outcome = String(trade.outcome || '').trim().toUpperCase();
-      if (tokenId && tokenId === String(upTokenId)) stats.UP++;
-      else if (tokenId && tokenId === String(downTokenId)) stats.DOWN++;
-      else if (outcome === 'UP') stats.UP++;
-      else if (outcome === 'DOWN') stats.DOWN++;
-    }
-
-    const pagination = payload?.pagination || {};
-    if (!pagination.has_more || !pagination.next_cursor) break;
-    cursor = pagination.next_cursor;
+    if (tokenId && tokenId === String(upTokenId)) stats.UP++;
+    else if (tokenId && tokenId === String(downTokenId)) stats.DOWN++;
+    else if (outcome === 'UP') stats.UP++;
+    else if (outcome === 'DOWN') stats.DOWN++;
   }
 
   console.log(
     '[positions-5m] ' + slug +
     ' BUY stats: UP=' + stats.UP +
-    ' DOWN=' + stats.DOWN
+    ' DOWN=' + stats.DOWN +
+    ' rows=' + rows.length
   );
+
   return stats;
 }
 
