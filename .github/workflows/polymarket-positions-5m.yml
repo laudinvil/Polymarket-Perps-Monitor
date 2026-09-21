@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: polymarket-positions-5m
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:
