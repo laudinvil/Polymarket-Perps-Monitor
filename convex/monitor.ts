@@ -39,6 +39,19 @@ export const setHolderAlertState = internalMutation({ args: {
   if (existing) { await ctx.db.patch(existing._id, args); return existing._id; }
   return await ctx.db.insert("holderAlertState", args);
 } });
+export const claimRollingAlert = internalMutation({
+  args: { symbol:v.string(), periodStart:v.number(), sentAt:v.number(), windowMs:v.number(), maxAlerts:v.number() },
+  returns: v.boolean(),
+  handler: async (ctx,args) => {
+    const existing = await ctx.db.query("rollingAlertClaims").withIndex("by_symbol_period", q => q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
+    if (existing) return false;
+    const cutoff = args.sentAt - args.windowMs;
+    const recent = await ctx.db.query("rollingAlertClaims").withIndex("by_symbol_sent_at", q => q.eq("symbol",args.symbol).gt("sentAt",cutoff)).take(args.maxAlerts);
+    if (recent.length >= args.maxAlerts) return false;
+    await ctx.db.insert("rollingAlertClaims", { symbol:args.symbol, periodStart:args.periodStart, sentAt:args.sentAt });
+    return true;
+  }
+});
 export const claimEsportsAlert = internalMutation({ args: { fingerprint:v.string(), strategy:v.string(), team:v.string(), url:v.string(), matchId:v.string(), sentAt:v.number() }, returns: v.boolean(), handler: async (ctx, args) => { const existing = await ctx.db.query("esportsAlerts").withIndex("by_fingerprint", (q) => q.eq("fingerprint", args.fingerprint)).unique(); if (existing) return false; await ctx.db.insert("esportsAlerts", args); return true; }, });
 export const upsertPaperTrade = internalMutation({ args: { symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(), sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()), closedPrice:v.optional(v.number()), closeTs:v.optional(v.number()), closePnl:v.optional(v.number()), updatedAt:v.number() }, handler: async (ctx,args) => { const existing=await ctx.db.query("paperTrades").withIndex("by_market",q=>q.eq("symbol",args.symbol).eq("marketStart",args.marketStart)).unique(); if(existing){await ctx.db.patch(existing._id,args);return existing._id;} return await ctx.db.insert("paperTrades",args); }, });
 export const getOpenPaperTrade = query({ args:{}, handler:async(ctx)=>{const rows=await ctx.db.query("paperTrades").withIndex("by_settled_updated",q=>q.eq("settled",false)).order("desc").take(10);return rows[0]||null;} });
