@@ -218,11 +218,11 @@ async function processPeriod(coin, boundary) {
 
   const totalBuys = stats.UP + stats.DOWN;
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
-  const totalIncreased = totalBuys > previousTotalBuys;
+  const totalDecreased = totalBuys < previousTotalBuys;
   const downIsLarger = stats.DOWN > stats.UP;
   const enoughUpBuys = stats.UP >= MIN_UP_BUYS;
 
-  if (!enoughUpBuys || !totalIncreased || !downIsLarger) {
+  if (!enoughUpBuys || !totalDecreased || !downIsLarger) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY alert rejected: TOTAL=' + totalBuys +
