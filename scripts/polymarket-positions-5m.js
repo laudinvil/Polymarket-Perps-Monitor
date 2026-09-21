@@ -16,6 +16,10 @@ const MARKET_RETRY_MS = 15000;
 const TRADES_RETRIES = 4;
 const TRADES_RETRY_MS = 500;
 
+const ALERT_LIMIT = 5;
+const ALERT_WINDOW_MS = 60 * 60 * 1000;
+const recentAlertTimes = [];
+
 let lastPolymarketApi = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -158,6 +162,17 @@ async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd) {
   throw new Error('BUY data unavailable after retries for ' + slug + ': ' + lastError.message);
 }
 
+function canSendAlert(now = Date.now()) {
+  while (recentAlertTimes.length > 0 && now - recentAlertTimes[0] >= ALERT_WINDOW_MS) {
+    recentAlertTimes.shift();
+  }
+  return recentAlertTimes.length < ALERT_LIMIT;
+}
+
+function recordAlert(now = Date.now()) {
+  recentAlertTimes.push(now);
+}
+
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -234,6 +249,15 @@ async function processPeriod(coin, boundary) {
     totalBuys > previousTotalBuys ? ' ↑' :
     totalBuys < previousTotalBuys ? ' ↓' : '';
 
+  if (!canSendAlert()) {
+    console.log(
+      '[positions-5m] ' + activeSlug +
+      ' BUY alert rejected: hourly alert limit reached (' +
+      ALERT_LIMIT + '/' + ALERT_LIMIT + ')'
+    );
+    return false;
+  }
+
   const message = [
     '🔥 ' + coin + ' · 5M',
     '',
@@ -254,6 +278,7 @@ async function processPeriod(coin, boundary) {
   }
 
   await sendTelegram(message);
+  recordAlert();
   console.log(
     '[positions-5m] ' + activeSlug +
     ' BUY alert sent: UP=' + stats.UP +
