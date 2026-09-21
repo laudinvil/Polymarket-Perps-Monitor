@@ -4,6 +4,7 @@ const { executeTrade } = require('./polymarket-auto-trader');
 
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const DATA_API = 'https://data-api.polymarket.com';
+const CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
@@ -234,7 +235,7 @@ async function processPeriod(coin, boundary) {
     totalBuys > previousTotalBuys ? ' ↑' :
     totalBuys < previousTotalBuys ? ' ↓' : '';
 
-  const claimResponse = await fetch((env.CONVEX_SITE_URL || '').replace(/\\/$/, '') + '/claim-rolling-alert', {
+  const claimResponse = await fetch((env.CONVEX_SITE_URL || CONVEX_SITE_URL).replace(/\/$/, '') + '/claim-rolling-alert', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -281,7 +282,7 @@ async function processPeriod(coin, boundary) {
     await sendTelegram(message);
   } catch (error) {
     try {
-      await fetch((env.CONVEX_SITE_URL || '').replace(/\\/$/, '') + '/release-rolling-alert', {
+      await fetch((env.CONVEX_SITE_URL || CONVEX_SITE_URL).replace(/\/$/, '') + '/release-rolling-alert', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
