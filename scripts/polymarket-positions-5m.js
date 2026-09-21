@@ -9,12 +9,12 @@ const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
 const COINS = ['BTC'];
 const POLYMARKET_GAP = 1000;
-const FETCH_TIMEOUT_MS = 12000;
+const FETCH_TIMEOUT_MS = 5000;
 const RUN_MS = 358 * 60 * 1000;
-const MARKET_RETRIES = 3;
-const MARKET_RETRY_MS = 2000;
-const TRADES_RETRIES = 3;
-const TRADES_RETRY_MS = 750;
+const MARKET_RETRIES = 8;
+const MARKET_RETRY_MS = 15000;
+const TRADES_RETRIES = 4;
+const TRADES_RETRY_MS = 500;
 
 let lastPolymarketApi = 0;
 
@@ -87,64 +87,68 @@ async function findMarket(slug) {
   throw lastError;
 }
 
-async function buyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId) {
-  const params = new URLSearchParams({
-    market: conditionId,
-    side: 'BUY',
-    taker_only: 'false',
-    limit: '10000'
-  });
-
-  const response = await fetchTimeout(DATA_API + '/trades?' + params.toString());
-  const body = await response.text();
-  if (!response.ok) {
-    throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
-  }
-
-  const payload = JSON.parse(body);
-  const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+async function buyStats(conditionId, slug, periodStart, periodEnd) {
   const stats = { UP: 0, DOWN: 0 };
+  let cursor = null;
 
-  for (const trade of rows) {
-    const timestamp = Number(trade.timestamp ?? trade.ts ?? 0);
-    if (!Number.isFinite(timestamp)) continue;
+  for (let page = 0; page < 100; page++) {
+    const params = new URLSearchParams({
+      condition: conditionId,
+      limit: '1000'
+    });
+    if (cursor) params.set('cursor', cursor);
 
-    const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
-    if (timestampMs < periodStart || timestampMs >= periodEnd) continue;
+    const response = await fetchTimeout(DATA_API + '/v2/trades?' + params.toString());
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
+    }
 
-    const tokenId = String(
-      trade.asset ??
-      trade.token_id ??
-      trade.tokenId ??
-      ''
-    ).trim();
-    const outcome = String(trade.outcome || '').trim().toUpperCase();
+    const payload = JSON.parse(body);
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
 
-    if (tokenId && tokenId === String(upTokenId)) stats.UP++;
-    else if (tokenId && tokenId === String(downTokenId)) stats.DOWN++;
-    else if (outcome === 'UP') stats.UP++;
-    else if (outcome === 'DOWN') stats.DOWN++;
+    for (const trade of rows) {
+      const timestamp = Number(trade.timestamp ?? 0);
+      if (!Number.isFinite(timestamp)) continue;
+
+      const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
+
+      if (timestampMs >= periodEnd) continue;
+      if (timestampMs < periodStart) {
+        console.log(
+          '[positions-5m] ' + slug +
+          ' BUY stats: UP=' + stats.UP +
+          ' DOWN=' + stats.DOWN +
+          ' pages=' + (page + 1)
+        );
+        return stats;
+      }
+
+      if (String(trade.side || '').trim().toUpperCase() !== 'BUY') continue;
+
+      const outcome = String(trade.outcome || '').trim().toUpperCase();
+      if (outcome === 'UP') stats.UP++;
+      else if (outcome === 'DOWN') stats.DOWN++;
+    }
+
+    const pagination = payload?.pagination || {};
+    if (!pagination.has_more || !pagination.next_cursor) break;
+    cursor = pagination.next_cursor;
   }
 
   console.log(
     '[positions-5m] ' + slug +
     ' BUY stats: UP=' + stats.UP +
-    ' DOWN=' + stats.DOWN +
-    ' rows=' + rows.length
+    ' DOWN=' + stats.DOWN
   );
-
   return stats;
 }
 
-async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId) {
+async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd) {
   let lastError;
   for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
     try {
-      const stats = await buyStats(conditionId, slug, periodStart, periodEnd, upTokenId, downTokenId);
-      if (!Number.isFinite(stats.UP) || !Number.isFinite(stats.DOWN)) {
-        throw new Error('invalid BUY stats');
-      }
-      return stats;
+      return await buyStats(conditionId, slug, periodStart, periodEnd);
     } catch (error) {
       lastError = error;
       console.log('[positions-5m] BUY retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
@@ -152,43 +156,6 @@ async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd, up
     }
   }
   throw new Error('BUY data unavailable after retries for ' + slug + ': ' + lastError.message);
-}
-
-
-async function saveBuySnapshot(symbol, periodStart, periodEnd, stats, previousStats, decision, reason) {
-  const base = (env.CONVEX_SITE_URL || '').replace(/\/$/, '');
-  if (!base || !env.CONVEX_INGEST_TOKEN) return;
-
-  try {
-    const response = await fetch(base + '/buy-snapshot', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer ' + env.CONVEX_INGEST_TOKEN
-      },
-      body: JSON.stringify({
-        symbol,
-        periodStart,
-        periodEnd,
-        upBuys: stats.UP,
-        downBuys: stats.DOWN,
-        totalBuys: stats.UP + stats.DOWN,
-        previousUpBuys: previousStats.UP,
-        previousDownBuys: previousStats.DOWN,
-        previousTotalBuys: previousStats.UP + previousStats.DOWN,
-        totalDecreased: stats.UP + stats.DOWN < previousStats.UP + previousStats.DOWN,
-        upIsLarger: stats.UP > stats.DOWN,
-        decision,
-        reason,
-        recordedAt: Date.now()
-      })
-    });
-    if (!response.ok) {
-      console.error('[positions-5m] BUY snapshot save failed: ' + await response.text());
-    }
-  } catch (error) {
-    console.error('[positions-5m] BUY snapshot save error: ' + error.message);
-  }
 }
 
 async function sendTelegram(message) {
@@ -230,47 +197,35 @@ async function processPeriod(coin, boundary) {
     ' at 4:40; boundary=' + new Date(boundary).toISOString()
   );
 
+  const activeMarket = await findMarket(activeSlug);
+  const stats = await getReliableBuyStats(
+    activeMarket.conditionId,
+    activeSlug,
+    activeStart,
+    boundary
+  );
+
   const previousStart = activeStart - PERIOD;
   const previousSlug = marketSlug(coin, previousStart);
-
-  const [activeMarket, previousMarket] = await Promise.all([
-    findMarket(activeSlug),
-    findMarket(previousSlug)
-  ]);
-
-  const [stats, previousStats] = await Promise.all([
-    getReliableBuyStats(activeMarket.conditionId, activeSlug, activeStart, boundary, activeMarket.upTokenId, activeMarket.downTokenId),
-    getReliableBuyStats(previousMarket.conditionId, previousSlug, previousStart, activeStart, previousMarket.upTokenId, previousMarket.downTokenId)
-  ]);
+  const previousMarket = await findMarket(previousSlug);
+  const previousStats = await getReliableBuyStats(
+    previousMarket.conditionId,
+    previousSlug,
+    previousStart,
+    activeStart
+  );
 
   const totalBuys = stats.UP + stats.DOWN;
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
   const totalDecreased = totalBuys < previousTotalBuys;
   const upIsLarger = stats.UP > stats.DOWN;
   if (!totalDecreased || !upIsLarger) {
-    const reason = !totalDecreased && !upIsLarger
-      ? 'TOTAL_NOT_DECREASED_AND_UP_NOT_LARGER'
-      : !totalDecreased
-        ? 'TOTAL_NOT_DECREASED'
-        : 'UP_NOT_LARGER';
-
     console.log(
       '[positions-5m] ' + activeSlug +
-      ' BUY alert rejected: reason=' + reason +
-      ', TOTAL=' + totalBuys +
+      ' BUY alert rejected: TOTAL=' + totalBuys +
       ', PREVIOUS TOTAL=' + previousTotalBuys +
       ', UP=' + stats.UP +
       ', DOWN=' + stats.DOWN
-    );
-
-    await saveBuySnapshot(
-      coin,
-      activeStart,
-      boundary,
-      stats,
-      previousStats,
-      false,
-      reason
     );
     return false;
   }
@@ -279,7 +234,7 @@ async function processPeriod(coin, boundary) {
     totalBuys > previousTotalBuys ? ' ↑' :
     totalBuys < previousTotalBuys ? ' ↓' : '';
 
-  const claimResponse = await fetch((env.CONVEX_SITE_URL || '').replace(/\/$/, '') + '/claim-rolling-alert', {
+  const claimResponse = await fetch((env.CONVEX_SITE_URL || '').replace(/\\/$/, '') + '/claim-rolling-alert', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -295,13 +250,11 @@ async function processPeriod(coin, boundary) {
   });
   const claimBody = await claimResponse.text();
   if (!claimResponse.ok) {
-    await saveBuySnapshot(coin, activeStart, boundary, stats, previousStats, false, 'ROLLING_CLAIM_ERROR');
     throw new Error('Convex rolling alert claim failed: ' + claimBody);
   }
   const claimData = JSON.parse(claimBody);
   if (claimData.claimed !== true) {
     console.log('[positions-5m] ' + activeSlug + ' BUY alert rejected: rolling 5/60m limit reached');
-    await saveBuySnapshot(coin, activeStart, boundary, stats, previousStats, false, 'ROLLING_LIMIT');
     return false;
   }
 
@@ -317,10 +270,18 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   try {
+    executeTrade(coin, nextSlug, boundary, boundary + PERIOD).catch(() => {});
+  } catch (error) {
+    console.error(
+      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
+    );
+  }
+
+  try {
     await sendTelegram(message);
   } catch (error) {
     try {
-      await fetch((env.CONVEX_SITE_URL || '').replace(/\/$/, '') + '/release-rolling-alert', {
+      await fetch((env.CONVEX_SITE_URL || '').replace(/\\/$/, '') + '/release-rolling-alert', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -336,26 +297,6 @@ async function processPeriod(coin, boundary) {
     }
     throw error;
   }
-
-  try {
-    executeTrade(coin, nextSlug, boundary, boundary + PERIOD).catch(error => {
-      console.error('[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message);
-    });
-  } catch (error) {
-    console.error(
-      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
-    );
-  }
-  await saveBuySnapshot(
-    coin,
-    activeStart,
-    boundary,
-    stats,
-    previousStats,
-    true,
-    'ALERT_SENT'
-  );
-
   console.log(
     '[positions-5m] ' + activeSlug +
     ' BUY alert sent: UP=' + stats.UP +
