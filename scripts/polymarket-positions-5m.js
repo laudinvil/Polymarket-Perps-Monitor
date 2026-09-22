@@ -279,9 +279,13 @@ async function findMarket(slug) {
 
   let priceToBeat = Number(event?.eventMetadata?.priceToBeat);
   if (!Number.isFinite(priceToBeat) || priceToBeat <= 0) {
-    const anchor = referenceFeed.exact('twap60', start);
-    if (!anchor) throw new Error('Exact Chainlink TWAP opening price unavailable: ' + slug);
+    const anchor =
+      referenceFeed.exact('twap60', start) ||
+      referenceFeed.atOrBefore('twap60', start) ||
+      referenceFeed.latest('twap60');
+    if (!anchor) throw new Error('Chainlink TWAP unavailable for priceToBeat: ' + slug);
     priceToBeat = anchor.price;
+    console.log('[btc5m-strategy] priceToBeat fallback source=' + (anchor.timestamp === start ? 'exact' : 'latest-available') + ' price=' + priceToBeat);
   }
 
   return {
