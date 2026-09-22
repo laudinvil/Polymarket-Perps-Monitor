@@ -5,8 +5,8 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 2500;
-const RETRY_DELAYS_MS = [500, 1000];
+const REQUEST_TIMEOUT_MS = 1500;
+const RETRY_DELAYS_MS = [500];
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -109,7 +109,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 }
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl, 5000);
+  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl, REQUEST_TIMEOUT_MS);
   return extractEvents(json).filter(event => normalizeSymbol(event.symbol) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
