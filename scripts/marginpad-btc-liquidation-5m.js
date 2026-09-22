@@ -1,5 +1,5 @@
 const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
-const { findCurrentMarket } = require('../src/polymarket');
+const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOL = 'BTC';
@@ -33,7 +33,18 @@ async function sendFirstLiquidation(event, periodStart) {
   if (!(await claimPeriod(periodStart))) return false;
   const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
   const marketUrl = market?.url || ('https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000));
-  const text = ['🔥 BTC · LIQUIDATION', '', 'DIRECTION: ' + direction, '', '➡️ CURRENT · Polymarket 5M', marketUrl].join('\n');
+  const upMid = await findClobMidpoint(market, 'UP');
+  const downMid = await findClobMidpoint(market, 'DOWN');
+  let cheaper = null;
+  if (Number.isFinite(upMid) && Number.isFinite(downMid)) {
+    cheaper = upMid <= downMid ? { outcome: 'UP', price: upMid } : { outcome: 'DOWN', price: downMid };
+  } else if (Number.isFinite(upMid)) {
+    cheaper = { outcome: 'UP', price: upMid };
+  } else if (Number.isFinite(downMid)) {
+    cheaper = { outcome: 'DOWN', price: downMid };
+  }
+  const clobLine = cheaper ? 'CLOB PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2) : 'CLOB PRICE: n/a';
+  const text = ['🔥 BTC · LIQUIDATION', '', 'DIRECTION: ' + direction, clobLine, '', '➡️ CURRENT · Polymarket 5M', marketUrl].join('\n');
   await sendTelegramMessage(text);
   console.log('Alert sent: BTC ' + direction + ', period ' + new Date(periodStart).toISOString());
   return true;
