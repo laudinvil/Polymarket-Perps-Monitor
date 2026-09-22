@@ -19,7 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Convex
+        run: npm install --no-save convex@1.31.2
+
       - name: Deploy Convex
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: npx convex@1.31.2 deploy
+        run: npx convex deploy
