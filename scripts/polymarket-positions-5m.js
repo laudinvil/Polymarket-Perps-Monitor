@@ -348,9 +348,9 @@ function evaluateStrategy(market, books, perp, now) {
   const previous30 = referenceFeed.atOrBefore('twap60', now - 30000);
   const previous60 = referenceFeed.atOrBefore('twap60', now - 60000);
 
-  const ret10 = previous10 ? (twap.price / previous10.price - 1) * 10000 : null;
-  const ret30 = previous30 ? (twap.price / previous30.price - 1) * 10000 : null;
-  const ret60 = previous60 ? (twap.price / previous60.price - 1) * 10000 : null;
+  const ret10 = twap && previous10 ? (twap.price / previous10.price - 1) * 10000 : null;
+  const ret30 = twap && previous30 ? (twap.price / previous30.price - 1) * 10000 : null;
+  const ret60 = twap && previous60 ? (twap.price / previous60.price - 1) * 10000 : null;
 
   const distanceSignal = Number.isFinite(referencePrice) && Math.abs(distanceBps) >= DISTANCE_THRESHOLD_BPS ? sign(distanceBps) * 2 : 0;
   const momentum10 = momentumScore(ret10);
@@ -534,6 +534,7 @@ async function processPeriod(coin, boundary) {
     const now = Date.now();
     try {
       const books = await getBooks(market.upTokenId, market.downTokenId);
+      console.log('[btc5m-strategy] books ready UP=' + fmt(books.up.mid, 4) + ' DOWN=' + fmt(books.down.mid, 4));
       const perp = perpFeed.features(now);
       const decision = evaluateStrategy(market, books, perp, now);
 
