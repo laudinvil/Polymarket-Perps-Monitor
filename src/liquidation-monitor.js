@@ -5,7 +5,7 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 7000;
+const REQUEST_TIMEOUT_MS = 1200;
 const RETRY_DELAYS_MS = [500];
 const CONVEX_PROXY_URL = String(process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site').replace(/\/$/, '') + '/marginpad-btc-liquidations?limit=400';
 
