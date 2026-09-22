@@ -1,4 +1,4 @@
-const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { fetchLiveSymbolFallback, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -57,7 +57,9 @@ async function main() {
     const now = Date.now();
     const periodStart = bucketStart(now, '5m');
     try {
-      const events = await fetchFeed(['BTC']);
+      const events = await fetchLiveSymbolFallback('BTC');
+      const latest = [...(events || [])].sort((a, b) => (eventTime(b) || 0) - (eventTime(a) || 0))[0];
+      console.log('MarginPad LIVE BTC: events=' + (events?.length || 0) + (latest ? ' latest=' + JSON.stringify(latest) : ' latest=n/a'));
       const current = (events || []).map(event => ({ event, ts: eventTime(event), direction: directionOf(event) })).filter(row => row.ts && row.direction && bucketStart(row.ts, '5m') === periodStart).sort((a, b) => a.ts - b.ts);
       for (const row of current) {
         const key = eventKey(row.event);
