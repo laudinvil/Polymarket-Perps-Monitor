@@ -6,6 +6,7 @@ const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
 const RUN_MS = PERIOD_MS - 15 * 1000;
 const FEED_POLL_MS = 3000;
+const PROXY_VERSION = 'feed-fallback-v1';
 const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -23,7 +24,7 @@ async function fetchViaConvexProxy() {
     });
     const json = await response.json();
     if (!response.ok || json?.ok === false) throw new Error('Convex MarginPad proxy HTTP ' + response.status + ': ' + (json?.error || 'unknown'));
-    console.log('Convex MarginPad proxy: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' rawEvents=' + (json.rawEvents ?? 'n/a') + ' status=' + (json.marginpadStatus ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' preview=' + JSON.stringify(json.rawPreview ?? null));
+    console.log('Convex MarginPad proxy [' + PROXY_VERSION + ']: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' rawEvents=' + (json.rawEvents ?? 'n/a') + ' status=' + (json.marginpadStatus ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' preview=' + JSON.stringify(json.rawPreview ?? null));
     return Array.isArray(json.events) ? json.events : [];
   } finally {
     clearTimeout(timeout);
