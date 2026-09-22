@@ -71,14 +71,22 @@ async function saveLiquidationToConvex(event, direction) {
   };
 
   try {
-    const response = await fetch(siteUrl + '/ingest', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer ' + token
-      },
-      body: JSON.stringify(payload)
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    let response;
+    try {
+      response = await fetch(siteUrl + '/ingest', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!response.ok) throw new Error('HTTP ' + response.status);
     console.log('Convex liquidation recorded: eventId=' + eventId);
   } catch (error) {
@@ -180,13 +188,10 @@ async function main() {
         })))
       );
 
-      const directional = rows.filter(row => row.direction);
+        const directional = rows.filter(row => row.direction);
       console.log('MarginPad BTC DIRECTIONAL: ' + directional.length);
 
-      for (const row of rows) {
-        await saveLiquidationToConvex(row.event, row.direction);
-      }
-
+      // Telegram alerting must never wait for Convex.
       for (const row of directional) {
         const key = eventKey(row.event);
         if (seen.has(key)) continue;
@@ -204,6 +209,11 @@ async function main() {
         } catch (error) {
           console.error('BTC liquidation alert send failed: ' + error.message);
         }
+      }
+
+      // Convex logging is diagnostic only and must not block the monitor.
+      for (const row of rows) {
+        void saveLiquidationToConvex(row.event, row.direction);
       }
     } catch (error) {
       console.warn('MarginPad poll failed: ' + error.message);
