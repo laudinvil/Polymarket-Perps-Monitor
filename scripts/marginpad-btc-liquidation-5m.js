@@ -5,6 +5,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
 const RUN_MS = PERIOD_MS - 15 * 1000;
+const HISTORY_LOOKBACK_MS = 30 * 60 * 1000;
 const FEED_POLL_MS = POLL_MS || 4000;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -97,6 +98,7 @@ async function main() {
   const startedAt = Date.now();
   const seen = new Set();
   let alertedPeriod = null;
+  let lastSeenTs = 0;
 
   console.log('MarginPad BTC monitor: /feed via fetchFeed, poll=' + FEED_POLL_MS + 'ms');
 
@@ -112,13 +114,13 @@ async function main() {
         .filter(row =>
           row.ts &&
           row.ts <= now &&
-          bucketStart(row.ts) === periodStart
+          row.ts >= now - HISTORY_LOOKBACK_MS
         )
         .sort((a, b) => a.ts - b.ts);
 
       console.log(
         'MarginPad BTC POLL: returned=' + (events || []).length +
-        ' current_period=' + current.length +
+        ' recent_events=' + current.length +
         ' alerted=' + (alertedPeriod === periodStart) +
         ' newest_ts=' + (current.length ? new Date(current[current.length - 1].ts).toISOString() : 'n/a')
       );
@@ -143,6 +145,7 @@ async function main() {
         try {
           await sendFirstLiquidation(row.event, periodStart);
           alertedPeriod = periodStart;
+          lastSeenTs = row.ts;
           console.log('MarginPad BTC ALERT LOCKED until next 5M period');
         } catch (error) {
           console.error('BTC liquidation alert send failed: ' + error.message);
@@ -159,7 +162,7 @@ async function main() {
     await sleep(Math.min(FEED_POLL_MS, remaining));
   }
 
-  console.log('MarginPad BTC monitor finished');
+  console.log('MarginPad BTC monitor finished; lastSeenTs=' + (lastSeenTs ? new Date(lastSeenTs).toISOString() : 'n/a'));
 }
 
 main().catch(error => {
