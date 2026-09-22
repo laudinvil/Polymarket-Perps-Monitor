@@ -76,9 +76,15 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
       Array.isArray(json?.liquidations)?json.liquidations:
       Array.isArray(data?.events)?data.events:
       Array.isArray(data?.liquidations)?data.liquidations:
+      Array.isArray(data?.data?.events)?data.data.events:
+      Array.isArray(data?.data?.liquidations)?data.data.liquidations:
       Array.isArray(data)?data:[];
-    const events=raw.filter(event=>String(event?.symbol||"BTC").toUpperCase()==="BTC");
-    return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,feedEvents:0,liveError:null,feedError:null,ts:Date.now()});
+    const isBtc=event=>{
+      const symbol=String(event?.symbol||event?.market||event?.pair||"").toUpperCase().replace(/[-_/]/g,"");
+      return symbol==="" || symbol==="BTC" || symbol.startsWith("BTCUSDT") || symbol.startsWith("BTCUSDC") || symbol.startsWith("BTCUSD") || symbol.startsWith("XBT");
+    };
+    const events=raw.filter(isBtc);
+    return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,rawEvents:raw.length,feedEvents:0,liveError:null,feedError:null,ts:Date.now()});
   }catch(error){
     return Response.json({ok:false,events:[],liveEvents:0,feedEvents:0,liveError:String(error?.message||error),feedError:null,ts:Date.now()},{status:200});
   }finally{clearTimeout(timeout);}
