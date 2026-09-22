@@ -14,6 +14,7 @@ const MOMENTUM_THRESHOLD_BPS = 0.35;
 const FLOW_THRESHOLD = 0.07;
 const DEPTH_THRESHOLD = 0.08;
 const MICRO_THRESHOLD_BPS = 0.25;
+const POLY_MID_CHANGE_THRESHOLD_BPS = 2.0;
 const CONFIRMATION_INTERVAL_MS = 5000;
 const COINS = ['BTC'];
 const FETCH_TIMEOUT_MS = 7000;
@@ -336,6 +337,11 @@ function flowScore(flow) {
   return sign(flow.imbalance);
 }
 
+function polyMoveScore(moveBps, thresholdBps = POLY_MID_CHANGE_THRESHOLD_BPS) {
+  if (!Number.isFinite(moveBps) || Math.abs(moveBps) < thresholdBps) return 0;
+  return sign(moveBps);
+}
+
 function bookScore(up, down) {
   if (!up || !down || !Number.isFinite(up.mid) || !Number.isFinite(down.mid)) return 0;
   const total = up.mid + down.mid;
@@ -343,7 +349,7 @@ function bookScore(up, down) {
   return up.mid > down.mid ? 1 : up.mid < down.mid ? -1 : 0;
 }
 
-function evaluateStrategy(market, books, perp, now) {
+function evaluateStrategy(market, books, perp, now, previousBooks = null) {
   const twap = referenceFeed.latest('twap60');
 
   const referencePrice = twap?.price ?? null;
@@ -368,6 +374,16 @@ function evaluateStrategy(market, books, perp, now) {
   const depth20 = Number.isFinite(perp?.depth20) && Math.abs(perp.depth20) >= DEPTH_THRESHOLD ? sign(perp.depth20) : 0;
   const micro = Number.isFinite(perp?.microBps) && Math.abs(perp.microBps) >= MICRO_THRESHOLD_BPS ? sign(perp.microBps) : 0;
   const polyBook = bookScore(books.up, books.down);
+  const polyUpMoveBps = previousBooks && Number.isFinite(previousBooks.up?.mid) && Number.isFinite(books.up.mid)
+    ? (books.up.mid / previousBooks.up.mid - 1) * 10000
+    : null;
+  const polyDownMoveBps = previousBooks && Number.isFinite(previousBooks.down?.mid) && Number.isFinite(books.down.mid)
+    ? (books.down.mid / previousBooks.down.mid - 1) * 10000
+    : null;
+  const polyMoveBps = Number.isFinite(polyUpMoveBps) && Number.isFinite(polyDownMoveBps)
+    ? polyUpMoveBps - polyDownMoveBps
+    : null;
+  const polyMove = polyMoveScore(polyMoveBps);
 
   const score =
     distanceSignal +
@@ -394,6 +410,10 @@ function evaluateStrategy(market, books, perp, now) {
     depth5: perp?.depth5 ?? null,
     depth20: perp?.depth20 ?? null,
     microBps: perp?.microBps ?? null,
+    polyUpMoveBps,
+    polyDownMoveBps,
+    polyMoveBps,
+    polyMove,
     upMid: books.up.mid,
     downMid: books.down.mid,
     secondsRemaining: Math.max(0, Math.round((market.end - now) / 1000)),
@@ -404,7 +424,8 @@ function evaluateStrategy(market, books, perp, now) {
         momentumBps: MOMENTUM_THRESHOLD_BPS,
         flow: FLOW_THRESHOLD,
         depth: DEPTH_THRESHOLD,
-        microBps: MICRO_THRESHOLD_BPS
+        microBps: MICRO_THRESHOLD_BPS,
+        polyMoveBps: POLY_MID_CHANGE_THRESHOLD_BPS
       },
       raw: {
         distanceBps,
@@ -418,7 +439,10 @@ function evaluateStrategy(market, books, perp, now) {
         depth20: perp?.depth20 ?? null,
         microBps: perp?.microBps ?? null,
         polyUpMid: books.up.mid,
-        polyDownMid: books.down.mid
+        polyDownMid: books.down.mid,
+        polyUpMoveBps,
+        polyDownMoveBps,
+        polyMoveBps
       },
       contributions: {
         distance: distanceSignal,
@@ -527,6 +551,7 @@ async function processPeriod(coin, boundary) {
   let confirmedDirection = null;
   let lastScore = null;
   let alertSent = false;
+  let previousBooks = null;
   let signalDirection = null;
   let signalScore = null;
   let signalAt = null;
@@ -540,7 +565,8 @@ async function processPeriod(coin, boundary) {
       const books = await getBooks(market.upTokenId, market.downTokenId);
       console.log('[btc5m-strategy] books ready UP=' + fmt(books.up.mid, 4) + ' DOWN=' + fmt(books.down.mid, 4));
       const perp = perpFeed.features(now);
-      const decision = evaluateStrategy(market, books, perp, now);
+      const decision = evaluateStrategy(market, books, perp, now, previousBooks);
+      previousBooks = books;
 
       lastScore = decision.score;
       const d = decision.diagnostic;
@@ -636,6 +662,7 @@ async function sendStrategyAlert(coin, market, decision) {
     'DEPTH 5: ' + fmt(decision.depth5 * 100) + '%',
     'DEPTH 20: ' + fmt(decision.depth20 * 100) + '%',
     'MICROPRICE: ' + fmt(decision.microBps, 4) + ' bps',
+    'POLY MOVE: ' + fmt(decision.polyMoveBps, 2) + ' bps',
     '',
     'POLY UP MID: ' + fmt(decision.upMid, 4),
     'POLY DOWN MID: ' + fmt(decision.downMid, 4),
