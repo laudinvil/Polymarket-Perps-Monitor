@@ -78,6 +78,9 @@ export default defineSchema({
     settledAt:v.optional(v.number()), updatedAt:v.number(), error:v.optional(v.string()),
   }).index("by_trade",["tradeId"]).index("by_market",["symbol","marketStart"]).index("by_status",["status","updatedAt"]),
   liquidationAlerts: defineTable({ symbol:v.string(), periodStart:v.number(), sentAt:v.number() }).index("by_symbol_period",["symbol","periodStart"]),
+  liquidationEvents: defineTable({
+    eventId:v.string(), symbol:v.string(), ts:v.number(), exchange:v.optional(v.string()), side:v.optional(v.string()), direction:v.optional(v.string()), price:v.optional(v.number()), qty:v.optional(v.number()), notional:v.optional(v.number()), firstSeenAt:v.number(), lastSeenAt:v.number()
+  }).index("by_event_id",["eventId"]).index("by_symbol_ts",["symbol","ts"]).index("by_last_seen",["lastSeenAt"]),
   recoveryStates: defineTable({
     symbol:v.string(), enabled:v.boolean(), initialBetUsd:v.number(), step:v.number(),
     maxSteps:v.number(), multiplier:v.number(), nextBetUsd:v.number(), updatedAt:v.number(),
