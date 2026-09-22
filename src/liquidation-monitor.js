@@ -5,8 +5,8 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 8000;
-const RETRY_DELAYS_MS = [1500, 3000, 6000];
+const REQUEST_TIMEOUT_MS = 2500;
+const RETRY_DELAYS_MS = [500, 1000];
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
