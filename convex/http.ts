@@ -63,14 +63,20 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
   if(!authorized(request))return new Response("Unauthorized",{status:401});
   const url=new URL(request.url);
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||400),1),400);
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),4500);
-  try{
-    const response=await fetch("https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.0"},signal:controller.signal});
-    const body=await response.text();
-    if(!response.ok)return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:"HTTP "+response.status+" "+body.slice(0,500),feedError:null,marginpadStatus:response.status,rawPreview:body.slice(0,1000),ts:Date.now()},{status:200});
+  const fetchMarginPad=async(target,timeoutMs)=>{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+    try{
+      const response=await fetch(target,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.1"},signal:controller.signal});
+      const body=await response.text();
+      return {status:response.status,ok:response.ok,body};
+    }catch(error){
+      return {status:null,ok:false,body:"",error:String(error?.message||error)};
+    }finally{clearTimeout(timeout);}
+  };
+  const parseEvents=(body)=>{
     let json;
-    try{json=JSON.parse(body);}catch(error){return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:"Invalid JSON: "+body.slice(0,500),feedError:null,marginpadStatus:response.status,rawPreview:body.slice(0,1000),ts:Date.now()},{status:200});}
+    try{json=JSON.parse(body);}catch{return {raw:[],preview:body.slice(0,1000),parseError:"Invalid JSON"};}
     const data=json?.data;
     const raw=Array.isArray(json?.events)?json.events:
       Array.isArray(json?.liquidations)?json.liquidations:
@@ -79,15 +85,38 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
       Array.isArray(data?.data?.events)?data.data.events:
       Array.isArray(data?.data?.liquidations)?data.data.liquidations:
       Array.isArray(data)?data:[];
-    const isBtc=event=>{
-      const symbol=String(event?.symbol||event?.market||event?.pair||"").toUpperCase().replace(/[-_/]/g,"");
-      return symbol==="" || symbol==="BTC" || symbol.startsWith("BTC") || symbol.startsWith("XBT");
-    };
-    const events=raw.filter(isBtc);
-    return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,rawEvents:raw.length,feedEvents:0,liveError:null,feedError:null,marginpadStatus:response.status,rawPreview:raw.slice(0,2),ts:Date.now()});
-  }catch(error){
-    return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:String(error?.message||error),feedError:null,marginpadStatus:null,rawPreview:null,ts:Date.now()},{status:200});
-  }finally{clearTimeout(timeout);}
+    return {raw,preview:raw.slice(0,2),parseError:null};
+  };
+  const isBtc=event=>{
+    const symbol=String(event?.symbol||event?.market||event?.pair||"").toUpperCase().replace(/[-_/]/g,"");
+    return symbol===""||symbol==="BTC"||symbol.startsWith("BTC")||symbol.startsWith("XBT");
+  };
+  const liveUrl="https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit;
+  const feedUrl="https://marginpad.io/api/v1/feed";
+  const [live,feed]=await Promise.all([
+    fetchMarginPad(liveUrl,4500),
+    fetchMarginPad(feedUrl,3500)
+  ]);
+  const liveParsed=live.ok?parseEvents(live.body):{raw:[],preview:live.body.slice(0,1000),parseError:null};
+  const feedParsed=feed.ok?parseEvents(feed.body):{raw:[],preview:feed.body.slice(0,1000),parseError:null};
+  const liveEvents=liveParsed.raw.filter(isBtc);
+  const feedEvents=feedParsed.raw.filter(isBtc);
+  const events=liveEvents.length?liveEvents:feedEvents;
+  return Response.json({
+    ok:true,
+    source:liveEvents.length?"convex-marginpad-live-btc":"convex-marginpad-feed-btc-fallback",
+    events,
+    liveEvents:liveEvents.length,
+    feedEvents:feedEvents.length,
+    rawEvents:liveParsed.raw.length,
+    feedRawEvents:feedParsed.raw.length,
+    liveError:live.ok?(liveParsed.parseError||null):(live.status?("HTTP "+live.status+" "+live.body.slice(0,500)):live.error),
+    feedError:feed.ok?(feedParsed.parseError||null):(feed.status?("HTTP "+feed.status+" "+feed.body.slice(0,500)):feed.error),
+    marginpadStatus:live.status,
+    feedStatus:feed.status,
+    rawPreview:liveEvents.length?liveParsed.preview:feedParsed.preview,
+    ts:Date.now()
+  });
 });
 const health=httpAction(async()=>Response.json({ok:true}));
 const runtimeStatus=httpAction(async(ctx)=>{try{return Response.json(await ctx.runQuery(api.runtime.status,{}));}catch{return new Response("Runtime status query failed",{status:500});}});
