@@ -1,4 +1,4 @@
-const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
+const { fetchLiveFeed, normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -167,7 +167,7 @@ async function main() {
       void heartbeatConvexRuntime();
       let events;
       try {
-        events = await fetchFeed([SYMBOL]);
+        events = (await fetchLiveFeed()).filter(event => normalizeSymbol(event.symbol) === SYMBOL);
       } catch (error) {
         void logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
         throw error;
