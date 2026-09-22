@@ -1,201 +1,168 @@
-const { normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
+const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
-const RUN_MS = PERIOD_MS - 15 * 1000;
-const FEED_POLL_MS = 3000;
-const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
+const RUN_MS = PERIOD_MS + 15 * 1000;
+const FEED_POLL_MS = POLL_MS || 4000;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function fetchJsonWithRetry(url, timeoutMs, attempts = 3) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, {
-        headers: {
-          accept: 'application/json',
-          'cache-control': 'no-cache',
-          'user-agent': 'Polymarket-Perps-Monitor/2.0'
-        },
-        signal: controller.signal
-      });
-      const json = await response.json();
-      if (!response.ok || json?.ok === false) throw new Error('HTTP ' + response.status);
-      return json;
-    } catch (error) {
-      lastError = error;
-      if (attempt < attempts) await sleep(350 * attempt);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-  throw lastError || new Error('MarginPad request failed');
+function eventTime(event) {
+  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time);
 }
 
-async function fetchMarginPadDirect(url, timeoutMs) {
-  return fetchJsonWithRetry(url, timeoutMs, 3);
+function eventKey(event) {
+  return [
+    eventTime(event),
+    event?.exchange,
+    normalizeSymbol(event?.symbol),
+    event?.side,
+    event?.price,
+    event?.qty,
+    event?.notional
+  ].join('|');
 }
 
-function extractMarginPadEvents(json) {
-  const data=json?.data;
-  if(Array.isArray(json?.events)) return json.events;
-  if(Array.isArray(json?.liquidations)) return json.liquidations;
-  if(Array.isArray(data?.events)) return data.events;
-  if(Array.isArray(data?.liquidations)) return data.liquidations;
-  if(Array.isArray(data?.data?.events)) return data.data.events;
-  if(Array.isArray(data?.data?.liquidations)) return data.data.liquidations;
-  if(Array.isArray(data)) return data;
-  return [];
-}
+async function getClobPriceLine(periodStart) {
+  const fallback = {
+    line: 'CLOB PRICE: n/a',
+    url: 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000)
+  };
 
-async function fetchViaConvexProxy() {
-  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
-  const token=String(process.env.CONVEX_INGEST_TOKEN||'');
-  if(!token) throw new Error('CONVEX_INGEST_TOKEN missing');
-  return fetchJsonWithRetry(siteUrl+'/marginpad-btc-liquidations?limit=400',4000,3).then(json => {
-    console.log('Convex proxy: events='+(json.events||[]).length+' live='+(json.liveEvents??'n/a')+' feed='+(json.feedEvents??'n/a')+' liveError='+JSON.stringify(json.liveError)+' feedError='+JSON.stringify(json.feedError));
-    return Array.isArray(json.events)?json.events:[];
-  });
-}
+  try {
+    const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
+    const url = market?.url || fallback.url;
+    if (!market) return fallback;
 
-async function fetchMarginPadSources() {
-  const promises=[
-    ['convex',fetchViaConvexProxy()],
-    ['live-direct',fetchMarginPadDirect('https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400',2500)],
-    ['feed-direct',fetchMarginPadDirect('https://marginpad.io/api/v1/feed',2500)]
-  ];
-  const settled=await Promise.allSettled(promises.map(x=>x[1]));
-  const merged=new Map();
-  for(let i=0;i<settled.length;i++){
-    const name=promises[i][0], result=settled[i];
-    if(result.status!=='fulfilled'){console.warn('MarginPad source '+name+' failed after retries: '+(result.reason?.message||result.reason));continue;}
-    const events=name==='convex'?result.value:extractMarginPadEvents(result.value);
-    console.log('MarginPad source '+name+': events='+events.length);
-    for(const event of events){
-      const symbol=normalizeSymbol(event?.symbol??event?.market??event?.pair);
-      if(!symbol||symbol==='BTC') merged.set(eventKey(event),event);
-    }
-  }
-  return [...merged.values()];
-}
-
-function directionOf(event) {
-  const fields=[event?.side,event?.direction,event?.liquidation_side,event?.liquidationSide,event?.type,event?.action,event?.positionSide,event?.position_side,event?.orderSide,event?.order_side]
-    .map(value=>String(value??'').trim().toLowerCase()).filter(Boolean);
-  for(const side of fields){
-    if(/(^|[_ -])(long|buy|bid)([_ -]|$)/.test(side)||side.includes('long_liquidation')||side.includes('buy_liquidation')) return 'LONG';
-    if(/(^|[_ -])(short|sell|ask)([_ -]|$)/.test(side)||side.includes('short_liquidation')||side.includes('sell_liquidation')) return 'SHORT';
-  }
-  return null;
-}
-function eventTime(event){return normalizeTs(event?.ts??event?.timestamp??event?.time??event?.createdAt??event?.created_at);}
-function eventKey(event){return [eventTime(event),event?.exchange,normalizeSymbol(event?.symbol),event?.side,event?.price,event?.qty,event?.notional].join('|');}
-
-async function convexRuntimeRequest(type,data){
-  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
-  const token=String(process.env.CONVEX_INGEST_TOKEN||'');
-  if(!token)return;
-  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),1500);
-  try{await fetch(siteUrl+'/ingest',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({type,data}),signal:controller.signal});}
-  catch(error){console.warn('Convex runtime log failed: '+error.message);}
-  finally{clearTimeout(timeout);}
-}
-const RUNTIME_RUN_ID=Number(process.env.GITHUB_RUN_ID||Date.now());
-const RUNTIME_GITHUB_RUN_ID=String(process.env.GITHUB_RUN_ID||RUNTIME_RUN_ID);
-const RUNTIME_COMMIT_SHA=String(process.env.GITHUB_SHA||'unknown');
-async function startConvexRuntime(){await convexRuntimeRequest('runtime.start',{runId:RUNTIME_RUN_ID,githubRunId:RUNTIME_GITHUB_RUN_ID,commitSha:RUNTIME_COMMIT_SHA,startedAt:Date.now()});}
-async function logConvexRuntime(level,message){await convexRuntimeRequest('runtime.log',{runId:RUNTIME_RUN_ID,level,message,ts:Date.now()});}
-async function heartbeatConvexRuntime(){await convexRuntimeRequest('runtime.heartbeat',{runId:RUNTIME_RUN_ID,heartbeatAt:Date.now()});}
-
-async function saveLiquidationToConvex(event,direction){
-  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
-  const token=String(process.env.CONVEX_INGEST_TOKEN||''); if(!token)return;
-  const eventId=eventKey(event),now=Date.now();
-  const payload={type:'liquidation.event',data:{eventId,symbol:normalizeSymbol(event?.symbol),ts:eventTime(event),exchange:event?.exchange==null?undefined:String(event.exchange),side:event?.side==null?undefined:String(event.side),direction:direction||undefined,price:Number.isFinite(Number(event?.price))?Number(event.price):undefined,qty:Number.isFinite(Number(event?.qty))?Number(event.qty):undefined,notional:Number.isFinite(Number(event?.notional))?Number(event.notional):undefined,firstSeenAt:now,lastSeenAt:now}};
-  try{
-    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),1500);let response;
-    try{response=await fetch(siteUrl+'/ingest',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify(payload),signal:controller.signal});}
-    finally{clearTimeout(timeout);}
-    if(!response.ok)throw new Error('HTTP '+response.status);
-    console.log('Convex liquidation recorded: eventId='+eventId);
-  }catch(error){console.warn('Convex liquidation logging failed: '+error.message);}
-}
-
-async function getClobPriceLine(periodStart){
-  const fallback='CLOB PRICE: n/a';
-  const marketUrl='https://polymarket.com/event/btc-updown-5m-'+Math.floor(periodStart/1000);
-  try{
-    const result=await Promise.race([
-      (async()=>{
-        const market=await findCurrentMarket(SYMBOL,Date.now(),'5m');
-        const url=market?.url||marketUrl;
-        const [upMid,downMid]=await Promise.all([findClobMidpoint(market,'UP'),findClobMidpoint(market,'DOWN')]);
-        let cheaper=null;
-        if(Number.isFinite(upMid)&&Number.isFinite(downMid))cheaper=upMid<=downMid?{outcome:'UP',price:upMid}:{outcome:'DOWN',price:downMid};
-        else if(Number.isFinite(upMid))cheaper={outcome:'UP',price:upMid};
-        else if(Number.isFinite(downMid))cheaper={outcome:'DOWN',price:downMid};
-        return {line:cheaper?'CLOB PRICE: '+cheaper.outcome+' '+cheaper.price.toFixed(2):fallback,url};
-      })(),
-      new Promise(resolve=>setTimeout(()=>resolve(null),500))
+    const [upMid, downMid] = await Promise.all([
+      findClobMidpoint(market, 'UP'),
+      findClobMidpoint(market, 'DOWN')
     ]);
-    return result||{line:fallback,url:marketUrl};
-  }catch(error){
-    console.warn('Polymarket lookup failed, continuing liquidation alert: '+error.message);
-    return {line:fallback,url:marketUrl};
+
+    let cheaper = null;
+    if (Number.isFinite(upMid) && Number.isFinite(downMid)) {
+      cheaper = upMid <= downMid
+        ? { outcome: 'UP', price: upMid }
+        : { outcome: 'DOWN', price: downMid };
+    } else if (Number.isFinite(upMid)) {
+      cheaper = { outcome: 'UP', price: upMid };
+    } else if (Number.isFinite(downMid)) {
+      cheaper = { outcome: 'DOWN', price: downMid };
+    }
+
+    return {
+      line: cheaper
+        ? 'CLOB PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2)
+        : fallback.line,
+      url
+    };
+  } catch (error) {
+    console.warn('Polymarket CLOB lookup failed: ' + error.message);
+    return fallback;
   }
 }
 
-async function sendFirstLiquidation(event,periodStart){
-  const direction=directionOf(event);
-  const {line:clobLine,url:marketUrl}=await getClobPriceLine(periodStart);
-  const text=['🔥 BTC · LIQUIDATION','','DIRECTION: '+(direction||'UNKNOWN'),clobLine,'','➡️ CURRENT · Polymarket 5M',marketUrl].join('\n');
-  console.log('Sending Telegram liquidation alert: direction='+JSON.stringify(direction)+' text='+JSON.stringify(text));
-  const result=await Promise.race([sendTelegramMessage(text),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Telegram send timeout after 4000ms')),4000))]);
-  console.log('Telegram liquidation alert sent: message_id='+(result?.message_id??'unknown'));
-  return true;
+async function sendFirstLiquidation(event, periodStart) {
+  const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
+
+  const text = [
+    '🔥 BTC · LIQUIDATION',
+    '',
+    clobLine,
+    '',
+    '➡️ CURRENT · Polymarket 5M',
+    marketUrl
+  ].join('\n');
+
+  console.log(
+    'Sending Telegram liquidation alert: event=' +
+    JSON.stringify({
+      ts: eventTime(event),
+      exchange: event?.exchange,
+      side: event?.side,
+      price: event?.price,
+      qty: event?.qty,
+      notional: event?.notional
+    }) +
+    ' text=' + JSON.stringify(text)
+  );
+
+  await sendTelegramMessage(text);
+  console.log('Telegram liquidation alert sent');
 }
 
-async function main(){
-  const startedAt=Date.now();let alertPeriod=null;let alertSent=false;
-  void startConvexRuntime().catch(error=>console.warn('Convex runtime start failed: '+error.message));
-  void logConvexRuntime('info','MarginPad BTC monitor started; polling every 3000ms with 3x source retries').catch(error=>console.warn('Convex startup log failed: '+error.message));
-  while(Date.now()-startedAt<RUN_MS){
-    const now=Date.now(),currentPeriod=bucketStart(now);
-    if(alertPeriod!==currentPeriod){alertPeriod=currentPeriod;alertSent=false;console.log('MarginPad BTC PERIOD: '+new Date(currentPeriod).toISOString()+' alertSent=false');}
-    try{
-      const pollStartedAt=Date.now();
-      void heartbeatConvexRuntime().catch(error=>console.warn('Convex heartbeat failed: '+error.message));
-      let events;
-      try{events=await fetchMarginPadSources();}
-      catch(error){void logConvexRuntime('error','MarginPad poll error: '+error.message);throw error;}
-      void logConvexRuntime('info','MarginPad poll completed in '+(Date.now()-pollStartedAt)+'ms; returned='+(events||[]).length);
-      const rows=(events||[]).map(event=>({event,ts:eventTime(event),direction:directionOf(event)})).filter(row=>row.ts&&row.ts<=now).sort((a,b)=>b.ts-a.ts);
-      const currentRows=rows.filter(row=>bucketStart(row.ts)===currentPeriod);
-      console.log('MarginPad BTC POLL: returned='+(events||[]).length+' current_period='+currentRows.length+' alertSent='+alertSent+' newest_ts='+(rows[0]?.ts?new Date(rows[0].ts).toISOString():'n/a')+' newest_side='+JSON.stringify(rows[0]?.event?.side??null));
-      console.log('MarginPad BTC CURRENT PERIOD: '+JSON.stringify(currentRows.slice(0,10).map(row=>({ts:row.ts,side:row.event?.side,direction:row.direction,price:row.event?.price,qty:row.event?.qty,notional:row.event?.notional}))));
-      if(!currentRows.length)console.log('MarginPad BTC: no liquidation in current 5M period');
-      else if(alertSent)console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
-      else{
-        const row=currentRows[0];
-        console.log('MarginPad BTC NEW LIQUIDATION: ts='+new Date(row.ts).toISOString()+' side='+JSON.stringify(row.event?.side)+' period='+new Date(currentPeriod).toISOString());
-        try{await sendFirstLiquidation(row.event,currentPeriod);alertSent=true;console.log('MarginPad BTC ALERT LOCKED until next 5M period');}
-        catch(error){console.error('BTC liquidation alert send failed: '+error.message);}
+async function main() {
+  const startedAt = Date.now();
+  const seen = new Set();
+  let alertedPeriod = null;
+
+  console.log('MarginPad BTC monitor: /feed via fetchFeed, poll=' + FEED_POLL_MS + 'ms');
+
+  while (Date.now() - startedAt < RUN_MS) {
+    const now = Date.now();
+    const periodStart = bucketStart(now);
+
+    try {
+      const events = await fetchFeed([SYMBOL]);
+
+      const current = (events || [])
+        .map(event => ({ event, ts: eventTime(event) }))
+        .filter(row =>
+          row.ts &&
+          row.ts <= now &&
+          bucketStart(row.ts) === periodStart
+        )
+        .sort((a, b) => a.ts - b.ts);
+
+      console.log(
+        'MarginPad BTC POLL: returned=' + (events || []).length +
+        ' current_period=' + current.length +
+        ' alerted=' + (alertedPeriod === periodStart) +
+        ' newest_ts=' + (current.length ? new Date(current[current.length - 1].ts).toISOString() : 'n/a')
+      );
+
+      for (const row of current) {
+        const key = eventKey(row.event);
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        if (alertedPeriod === periodStart) {
+          console.log('MarginPad BTC: alert already sent for current 5M — ignore');
+          break;
+        }
+
+        console.log(
+          'MarginPad BTC NEW LIQUIDATION: ts=' +
+          new Date(row.ts).toISOString() +
+          ' side=' + JSON.stringify(row.event?.side) +
+          ' period=' + new Date(periodStart).toISOString()
+        );
+
+        try {
+          await sendFirstLiquidation(row.event, periodStart);
+          alertedPeriod = periodStart;
+          console.log('MarginPad BTC ALERT LOCKED until next 5M period');
+        } catch (error) {
+          console.error('BTC liquidation alert send failed: ' + error.message);
+        }
+
+        break;
       }
-      for(const row of currentRows)void saveLiquidationToConvex(row.event,row.direction);
-    }catch(error){console.warn('MarginPad poll failed: '+error.message);}
-    const remaining=RUN_MS-(Date.now()-startedAt);if(remaining<=0)break;await sleep(Math.min(FEED_POLL_MS,remaining));
+    } catch (error) {
+      console.warn('MarginPad poll failed: ' + error.message);
+    }
+
+    const remaining = RUN_MS - (Date.now() - startedAt);
+    if (remaining <= 0) break;
+    await sleep(Math.min(FEED_POLL_MS, remaining));
   }
-  void logConvexRuntime('info','MarginPad BTC monitor finished');
-  void convexRuntimeRequest('runtime.finish',{runId:RUNTIME_RUN_ID,finishedAt:Date.now(),status:'completed',exitCode:null});
-  setTimeout(()=>process.exit(0),250);
+
+  console.log('MarginPad BTC monitor finished');
 }
-main().catch(async error=>{
-  void logConvexRuntime('error','MarginPad BTC monitor fatal error: '+error.message);
-  void convexRuntimeRequest('runtime.finish',{runId:RUNTIME_RUN_ID,finishedAt:Date.now(),status:'failed',exitCode:1});
-  console.error(error);process.exitCode=1;
+
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
 });
