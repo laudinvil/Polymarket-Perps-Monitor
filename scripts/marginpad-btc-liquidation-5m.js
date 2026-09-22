@@ -63,7 +63,7 @@ async function sendLatestLiquidation(event, periodStart) {
     '',
     '➡️ NEXT · Polymarket 5M',
     marketUrl
-  ].join('\\n');
+  ].join('\n');
 
   console.log(
     'LATEST LIQUIDATION: ' +
