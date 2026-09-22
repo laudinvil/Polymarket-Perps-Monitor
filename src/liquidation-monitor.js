@@ -26,6 +26,9 @@ function normalizeTs(value) {
   const parsed = Date.parse(String(value));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
+function normalizeEventSymbol(event) {
+  return normalizeSymbol(event?.symbol ?? event?.market ?? event?.pair ?? event?.instrument ?? event?.asset ?? event?.data?.symbol ?? event?.data?.market);
+}
 function normalizeSymbol(symbol) {
   return String(symbol || '')
     .toUpperCase()
@@ -78,7 +81,7 @@ async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS)
 }
 async function fetchConvexProxy(fetchImpl = fetch) {
   const json = await fetchJson(CONVEX_PROXY_URL, fetchImpl, 2000);
-  const events = extractEvents(json).filter(event => normalizeSymbol(event?.symbol) === 'BTC');
+  const events = extractEvents(json).filter(event => normalizeEventSymbol(event) === 'BTC');
   console.log(
     'MarginPad CONVEX PROXY: source=' + JSON.stringify(json?.source) +
     ' feed=' + JSON.stringify(json?.feedEvents) +
@@ -108,7 +111,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl, REQUEST_TIMEOUT_MS);
-  return extractEvents(json).filter(event => normalizeSymbol(event.symbol) === normalized);
+  return extractEvents(json).filter(event => normalizeEventSymbol(event) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
   const merged = new Map();
@@ -126,7 +129,7 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
     console.warn(`MarginPad Convex proxy failed: ${error.message}`);
   }
   try {
-    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event?.symbol) === normalized);
+    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeEventSymbol(event) === normalized);
     console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
@@ -187,4 +190,4 @@ function selectWinner(rows, bucket) {
   if (winners.length !== 1) return null;
   return winners[0];
 }
-module.exports = { FEED_URL, fetchLiveFeed, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, RETRY_DELAYS_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
+module.exports = { FEED_URL, fetchLiveFeed, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, RETRY_DELAYS_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, normalizeEventSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
