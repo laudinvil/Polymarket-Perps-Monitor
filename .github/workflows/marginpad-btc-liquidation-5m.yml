@@ -2,8 +2,15 @@ name: MarginPad BTC Liquidation 5M
 
 on:
   push:
+    paths:
+      - ".github/workflows/marginpad-btc-liquidation-5m.yml"
+      - "scripts/marginpad-btc-liquidation-5m.js"
+      - "src/liquidation-monitor.js"
+      - "src/polymarket.js"
+      - "src/telegram.js"
+      - "package.json"
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,25 +22,28 @@ concurrency:
 
 jobs:
   monitor:
+    name: BTC liquidation monitor
     runs-on: ubuntu-latest
     timeout-minutes: 6
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Send TEST Telegram alert
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Telegram connectivity test
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -fsS --max-time 10 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=🔥 TEST · MarginPad BTC Liquidation Monitor
-
-CLOB PRICE: TEST
-
-➡️ CURRENT · Polymarket 5M
-https://polymarket.com/event/btc-updown-5m-test"
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_CHAT_ID"
+          curl -fsS --max-time 10 \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+            --data-urlencode "text=🔥 TEST · MarginPad BTC Liquidation Monitor"
 
       - name: Run BTC liquidation monitor
         env:
