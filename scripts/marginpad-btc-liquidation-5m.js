@@ -11,7 +11,12 @@ const FEED_POLL_MS = POLL_MS || 4000;
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function eventTime(event) {
-  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at);
+  const value = event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at ?? event?.data?.ts ?? event?.data?.timestamp;
+  return normalizeTs(value);
+}
+
+function eventSymbol(event) {
+  return normalizeSymbol(event?.symbol ?? event?.market ?? event?.pair ?? event?.instrument ?? event?.asset ?? event?.data?.symbol ?? event?.data?.market);
 }
 
 function eventKey(event) {
