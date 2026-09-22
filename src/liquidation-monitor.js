@@ -5,6 +5,7 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 12000;
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -35,13 +36,20 @@ async function fetchJson(url, fetchImpl = fetch) {
   let lastError = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      const response = await fetchImpl(url, {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetchImpl(url, {
         headers: {
           accept: 'application/json',
           'user-agent': 'Polymarket-Perps-Monitor/1.0',
           'cache-control': 'no-cache'
-        }
-      });
+        }, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
+      console.log(`MarginPad request ${url} -> HTTP ${response.status}`);
       if (response.ok) return response.json();
       if (![429, 502, 503, 504].includes(response.status)) {
         throw new Error(`MarginPad HTTP ${response.status}`);
@@ -53,7 +61,7 @@ async function fetchJson(url, fetchImpl = fetch) {
       lastError = new Error(`MarginPad HTTP ${response.status}`);
       if (attempt < 3) await new Promise(resolve => setTimeout(resolve, delay));
     } catch (error) {
-      lastError = error;
+      lastError = error?.name === 'AbortError' ? new Error(`MarginPad request timeout after ${REQUEST_TIMEOUT_MS}ms: ${url}`) : error;
       if (attempt < 3) await new Promise(resolve => setTimeout(resolve, Math.min(1000 * (2 ** attempt), 8000)));
     }
   }
@@ -160,4 +168,4 @@ function selectWinner(rows, bucket) {
   if (winners.length !== 1) return null;
   return winners[0];
 }
-module.exports = { FEED_URL, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, aggregateEvents, selectWinner, liquidationDirection, isLong };
+module.exports = { FEED_URL, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
