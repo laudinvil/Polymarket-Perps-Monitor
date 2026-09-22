@@ -1,0 +1,65 @@
+const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { findCurrentMarket } = require('../src/polymarket');
+const { sendTelegramMessage } = require('../src/telegram');
+
+const SYMBOL = 'BTC';
+const PERIOD_MS = 5 * 60 * 1000;
+const RUN_MS = PERIOD_MS + 15 * 1000;
+const FEED_POLL_MS = POLL_MS || 4000;
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site';
+const CONVEX_INGEST_TOKEN = process.env.CONVEX_INGEST_TOKEN || '';
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function directionOf(event) {
+  const side = String(event?.side || event?.direction || '').toLowerCase();
+  if (side.includes('long') || side === 'buy') return 'LONG';
+  if (side.includes('short') || side === 'sell') return 'SHORT';
+  return null;
+}
+function eventTime(event) { return normalizeTs(event?.ts); }
+function eventKey(event) { return [eventTime(event), event?.exchange, normalizeSymbol(event?.symbol), event?.side, event?.price, event?.qty, event?.notional].join('|'); }
+async function claimPeriod(periodStart) {
+  if (!CONVEX_INGEST_TOKEN) return true;
+  try {
+    const response = await fetch(CONVEX_SITE_URL + '/claim-liquidation-alert', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + CONVEX_INGEST_TOKEN }, body: JSON.stringify({ symbol: SYMBOL, periodStart, sentAt: Date.now() }) });
+    if (!response.ok) return true;
+    const data = await response.json();
+    return data.claimed === true;
+  } catch (error) { console.warn('Convex liquidation claim failed: ' + error.message); return true; }
+}
+async function sendFirstLiquidation(event, periodStart) {
+  const direction = directionOf(event);
+  if (!direction) return false;
+  if (!(await claimPeriod(periodStart))) return false;
+  const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
+  const marketUrl = market?.url || ('https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000));
+  const text = ['🔥 BTC · LIQUIDATION', '', 'DIRECTION: ' + direction, '', '➡️ CURRENT · Polymarket 5M', marketUrl].join('\n');
+  await sendTelegramMessage(text);
+  console.log('Alert sent: BTC ' + direction + ', period ' + new Date(periodStart).toISOString());
+  return true;
+}
+async function main() {
+  const startedAt = Date.now();
+  const seen = new Set();
+  let alertedPeriod = null;
+  while (Date.now() - startedAt < RUN_MS) {
+    const now = Date.now();
+    const periodStart = bucketStart(now, '5m');
+    try {
+      const events = await fetchFeed(['BTC']);
+      const current = (events || []).map(event => ({ event, ts: eventTime(event), direction: directionOf(event) })).filter(row => row.ts && row.direction && bucketStart(row.ts, '5m') === periodStart).sort((a, b) => a.ts - b.ts);
+      for (const row of current) {
+        const key = eventKey(row.event);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (alertedPeriod === periodStart) break;
+        if (await sendFirstLiquidation(row.event, periodStart)) alertedPeriod = periodStart;
+        break;
+      }
+    } catch (error) { console.warn('MarginPad poll failed: ' + error.message); }
+    const remaining = RUN_MS - (Date.now() - startedAt);
+    if (remaining <= 0) break;
+    await sleep(Math.min(FEED_POLL_MS, remaining));
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
