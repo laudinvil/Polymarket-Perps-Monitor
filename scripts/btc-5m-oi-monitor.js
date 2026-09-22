@@ -6,6 +6,7 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const TARGET_OFFSET = 285;
+const MIN_ALERT_CHANGE_PCT = 2.6;
 const MAX_ALERT_CHANGE_PCT = 25;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
@@ -152,8 +153,8 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
-  if (deltaPct !== null && Math.abs(deltaPct) > MAX_ALERT_CHANGE_PCT) {
-    console.log("OI change " + Math.abs(deltaPct).toFixed(2) + "% exceeds max alert threshold " + MAX_ALERT_CHANGE_PCT + "%. Alert skipped.");
+  if (deltaPct !== null && (Math.abs(deltaPct) < MIN_ALERT_CHANGE_PCT || Math.abs(deltaPct) > MAX_ALERT_CHANGE_PCT)) {
+    console.log("OI change " + Math.abs(deltaPct).toFixed(2) + "% is outside alert range " + MIN_ALERT_CHANGE_PCT + "%-" + MAX_ALERT_CHANGE_PCT + "%. Alert skipped.");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
