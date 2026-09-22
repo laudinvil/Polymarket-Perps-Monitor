@@ -27,8 +27,12 @@ function normalizeTs(value) {
 function normalizeSymbol(symbol) { return String(symbol || '').toUpperCase().replace(/USDT$|USD$/i, ''); }
 function eventKey(event) { return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|'); }
 function extractEvents(json) {
+  if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.events)) return json.events;
+  if (json && Array.isArray(json.liquidations)) return json.liquidations;
+  if (json && Array.isArray(json.results)) return json.results;
   if (json && json.data && Array.isArray(json.data.events)) return json.data.events;
+  if (json && json.data && Array.isArray(json.data.liquidations)) return json.data.liquidations;
   if (json && Array.isArray(json.data)) return json.data;
   return [];
 }
@@ -85,31 +89,44 @@ function mergeUniqueEvents(primary, secondary) {
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
+
+  // MarginPad /feed has repeatedly timed out on the GitHub runner. Treat the
+  // symbol-scoped live endpoint as a first-class source instead of a fallback.
+  // Query both sources concurrently so a broken /feed cannot delay liquidation
+  // detection or prevent the live endpoint from being used.
+  const [liveResult, feedResult] = await Promise.allSettled([
+    fetchLiveSymbolFallback(normalized, fetchImpl),
+    fetchLiveFeed(fetchImpl)
+  ]);
+
+  let liveEvents = [];
   let feedEvents = [];
-  try {
-    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
-    return feedEvents;
-  } catch (error) {
-    console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
+
+  if (liveResult.status === 'fulfilled') {
+    liveEvents = liveResult.value || [];
+    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
+    console.log(`MarginPad LIVE PRIMARY ${normalized}: events=${liveEvents.length}`);
+  } else {
+    console.warn(`MarginPad live primary ${normalized} failed: ${liveResult.reason?.message || liveResult.reason}`);
+    const cached = fallbackCache.eventsBySymbol.get(normalized);
+    liveEvents = cached?.events || [];
   }
 
-  // /feed is currently timing out on the GitHub runner. Do not wait for another
-  // full polling cycle before trying the live endpoint. The fallback is started
-  // only after /feed actually fails, and remains bounded by the same request timeout.
-  try {
-    const liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
-    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
-    console.log(`MarginPad live fallback ${normalized}: events=${liveEvents.length}`);
-    return mergeUniqueEvents(feedEvents, liveEvents);
-  } catch (error) {
-    console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
-    const cached = fallbackCache.eventsBySymbol.get(normalized);
-    const liveEvents = cached?.events || [];
-    if (!liveEvents.length && !feedEvents.length) {
-      console.warn(`MarginPad ${normalized}: both API sources unavailable and no cached events`);
-    }
-    return mergeUniqueEvents(feedEvents, liveEvents);
+  if (feedResult.status === 'fulfilled') {
+    feedEvents = (feedResult.value || []).filter(event => {
+      const eventSymbol = normalizeSymbol(event?.symbol);
+      return !eventSymbol || eventSymbol === normalized;
+    });
+    console.log(`MarginPad FEED SECONDARY ${normalized}: events=${feedEvents.length}`);
+  } else {
+    console.warn(`MarginPad feed secondary ${normalized} failed: ${feedResult.reason?.message || feedResult.reason}`);
   }
+
+  const merged = mergeUniqueEvents(feedEvents, liveEvents);
+  if (!merged.length) {
+    console.warn(`MarginPad ${normalized}: live + feed returned no events`);
+  }
+  return merged;
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
