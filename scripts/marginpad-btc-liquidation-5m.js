@@ -230,15 +230,26 @@ async function sendFirstLiquidation(event, periodStart) {
 
 async function main() {
   const startedAt = Date.now();
-  const seen = new Set();
-  // Convex runtime logging is best-effort; the monitor must not depend on it.\n  void startConvexRuntime().catch(error => console.warn('Convex runtime start failed: ' + error.message));
-  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 3000ms').catch(error => console.warn('Convex startup log failed: ' + error.message));
+  let alertPeriod = null;
+  let alertSent = false;
+
+  void startConvexRuntime().catch(error => console.warn('Convex runtime start failed: ' + error.message));
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling every 3000ms').catch(error => console.warn('Convex startup log failed: ' + error.message));
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
+    const currentPeriod = bucketStart(now);
+
+    if (alertPeriod !== currentPeriod) {
+      alertPeriod = currentPeriod;
+      alertSent = false;
+      console.log('MarginPad BTC PERIOD: ' + new Date(currentPeriod).toISOString() + ' alertSent=false');
+    }
+
     try {
       const pollStartedAt = Date.now();
       void heartbeatConvexRuntime().catch(error => console.warn('Convex heartbeat failed: ' + error.message));
+
       let events;
       try {
         events = await fetchMarginPadSources();
@@ -246,46 +257,56 @@ async function main() {
         void logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
         throw error;
       }
+
       void logConvexRuntime('info', 'MarginPad poll completed in ' + (Date.now() - pollStartedAt) + 'ms; returned=' + (events || []).length);
+
       const rows = (events || [])
         .map(event => ({ event, ts: eventTime(event), direction: directionOf(event) }))
         .filter(row => row.ts && row.ts <= now)
         .sort((a, b) => b.ts - a.ts);
 
-      const newest = rows[0] || null;
-      console.log('MarginPad BTC POLL: rows=' + rows.length +
-        ' newest_ts=' + (newest?.ts ? new Date(newest.ts).toISOString() : 'n/a') +
-        ' newest_age_ms=' + (newest?.ts ? Math.max(0, now - newest.ts) : 'n/a') +
-        ' newest_side=' + JSON.stringify(newest?.event?.side ?? null) +
-        ' newest_direction=' + JSON.stringify(newest?.direction ?? null));
-      console.log('MarginPad LIVE BTC: events=' + rows.length + ' sides=' + JSON.stringify(rows.slice(0, 10).map(row => ({
-        ts: row.ts, side: row.event?.side, direction: row.direction, price: row.event?.price, qty: row.event?.qty, notional: row.event?.notional
-      }))));
-      const directional = rows.filter(row => row.direction);
-      console.log('MarginPad BTC DIRECTIONAL: ' + directional.length + '/' + rows.length);
-      console.log('MarginPad BTC SIDES: ' + JSON.stringify([...new Set(rows.slice(0, 50).map(row => row.event?.side ?? row.event?.direction ?? row.event?.type ?? row.event?.action ?? null))]));
-      console.log('MarginPad BTC SUMMARY: returned=' + (events || []).length + ' usable=' + rows.length + ' directional=' + directional.length + ' newest_age_sec=' + (newest?.ts ? Math.max(0, now - newest.ts) / 1000 : 'n/a'));
-      if (rows.length === 0) {
-        console.log('MarginPad BTC EMPTY: live + feed returned no usable BTC events on this poll');
-        void logConvexRuntime('warn', 'MarginPad BTC poll returned 0 usable BTC events');
-      } else {
-        void logConvexRuntime('info', 'MarginPad BTC rows=' + rows.length + ' newest_ts=' + new Date(rows[0].ts).toISOString() + ' newest_side=' + JSON.stringify(rows[0].event?.side));
-        if (!directional.length) console.log('MarginPad BTC NO_DIRECTION: BTC events received but side/direction was not recognized');
-      }
+      const currentRows = rows.filter(row => bucketStart(row.ts) === currentPeriod);
+      const directional = currentRows.filter(row => row.direction);
 
-      for (const row of directional) {
-        const key = eventKey(row.event);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        console.log('MarginPad BTC NEW LIQUIDATION: ts=' + new Date(row.ts).toISOString() + ' side=' + JSON.stringify(row.event?.side) + ' direction=' + row.direction + ' period=' + new Date(bucketStart(row.ts)).toISOString());
+      console.log('MarginPad BTC POLL: returned=' + (events || []).length +
+        ' current_period=' + currentRows.length +
+        ' directional=' + directional.length +
+        ' alertSent=' + alertSent +
+        ' newest_ts=' + (rows[0]?.ts ? new Date(rows[0].ts).toISOString() : 'n/a') +
+        ' newest_side=' + JSON.stringify(rows[0]?.event?.side ?? null));
+
+      console.log('MarginPad BTC CURRENT PERIOD: ' + JSON.stringify(currentRows.slice(0, 10).map(row => ({
+        ts: row.ts,
+        side: row.event?.side,
+        direction: row.direction,
+        price: row.event?.price,
+        qty: row.event?.qty,
+        notional: row.event?.notional
+      }))));
+
+      if (!currentRows.length) {
+        console.log('MarginPad BTC: no liquidation in current 5M period');
+      } else if (!directional.length) {
+        console.log('MarginPad BTC: liquidation exists, but LONG/SHORT direction is not recognized');
+      } else if (alertSent) {
+        console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
+      } else {
+        const row = directional[0];
+        console.log('MarginPad BTC NEW LIQUIDATION: ts=' + new Date(row.ts).toISOString() +
+          ' side=' + JSON.stringify(row.event?.side) +
+          ' direction=' + row.direction +
+          ' period=' + new Date(currentPeriod).toISOString());
+
         try {
-          await sendFirstLiquidation(row.event, bucketStart(row.ts));
+          await sendFirstLiquidation(row.event, currentPeriod);
+          alertSent = true;
+          console.log('MarginPad BTC ALERT LOCKED until next 5M period');
         } catch (error) {
           console.error('BTC liquidation alert send failed: ' + error.message);
         }
       }
 
-      for (const row of rows) void saveLiquidationToConvex(row.event, row.direction);
+      for (const row of currentRows) void saveLiquidationToConvex(row.event, row.direction);
     } catch (error) {
       console.warn('MarginPad poll failed: ' + error.message);
     }
@@ -294,10 +315,10 @@ async function main() {
     if (remaining <= 0) break;
     await sleep(Math.min(FEED_POLL_MS, remaining));
   }
+
   void logConvexRuntime('info', 'MarginPad BTC monitor finished');
   void convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'completed', exitCode: null });
   setTimeout(() => process.exit(0), 250);
-
 }
 
 main().catch(async error => {
