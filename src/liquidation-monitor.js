@@ -89,27 +89,33 @@ function mergeUniqueEvents(primary, secondary) {
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  let feedSucceeded = false;
   let feedEvents = [];
+  let feedSucceeded = false;
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
     feedSucceeded = true;
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
   }
-  if (feedSucceeded) return feedEvents;
 
-  const now = Date.now();
-  const cached = fallbackCache.eventsBySymbol.get(normalized);
-  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return cached.events;
+  // Always query the symbol-specific live endpoint as well.
+  // /feed is edge-cached; /liquidations/live is the raw recent BTC stream.
+  // Merging both prevents a cached global feed from hiding a new liquidation.
+  let liveEvents = [];
   try {
-    const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
-    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
-    return fresh;
+    liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
+    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
   } catch (error) {
     console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
+    const cached = fallbackCache.eventsBySymbol.get(normalized);
+    liveEvents = cached?.events || [];
+  }
+
+  if (!feedSucceeded && !liveEvents.length) {
+    const cached = fallbackCache.eventsBySymbol.get(normalized);
     return cached?.events || [];
   }
+  return mergeUniqueEvents(feedEvents, liveEvents);
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
