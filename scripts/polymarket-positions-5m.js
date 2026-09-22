@@ -244,7 +244,7 @@ async function processPeriod(coin, boundary) {
       periodStart: activeStart,
       sentAt: Date.now(),
       windowMs: 60 * 60 * 1000,
-      maxAlerts: 2
+      maxAlerts: 3
     })
   });
   const claimBody = await claimResponse.text();
