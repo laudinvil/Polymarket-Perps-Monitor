@@ -160,13 +160,45 @@ async function main() {
       const events = await fetchFeed([SYMBOL]);
       const pollFinishedAt = Date.now();
 
-      const current = (events || [])
-        .map(event => ({ event, ts: eventTime(event) }))
-        .filter(row =>
-          row.ts &&
-          row.ts <= pollFinishedAt &&
-          row.ts >= periodStart
-        )
+      const diagnosed = (events || []).map(event => {
+        const ts = eventTime(event);
+        const eventPeriod = ts ? bucketStart(ts) : null;
+        const symbol = eventSymbol(event);
+
+        let accepted = true;
+        let reason = 'accepted';
+
+        if (!ts) {
+          accepted = false;
+          reason = 'missing_event_ts';
+        } else if (symbol !== SYMBOL) {
+          accepted = false;
+          reason = 'non_btc';
+        } else if (ts > pollFinishedAt) {
+          accepted = false;
+          reason = 'future_event';
+        } else if (ts < periodStart) {
+          accepted = false;
+          reason = 'prior_period';
+        }
+
+        console.log(
+          'LIQUIDATION DIAGNOSTIC: ' +
+          'EVENT ts=' + iso(ts) +
+          ' EVENT PERIOD=' + iso(eventPeriod) +
+          ' CURRENT PERIOD=' + iso(periodStart) +
+          ' ' + (accepted ? 'ACCEPTED' : 'REJECTED') +
+          ' REASON=' + reason +
+          ' symbol=' + JSON.stringify(symbol) +
+          ' side=' + JSON.stringify(event?.side) +
+          ' exchange=' + JSON.stringify(event?.exchange)
+        );
+
+        return { event, ts, accepted };
+      });
+
+      const current = diagnosed
+        .filter(row => row.accepted)
         .sort((a, b) => a.ts - b.ts);
 
       const newestTs = current.length ? current[current.length - 1].ts : 0;
