@@ -52,17 +52,17 @@ async function getCurrentMarket(start) {
 }
 
 async function getOpenInterest(conditionId) {
-  const url = DATA_API + "/v2/oi?condition_id=" + encodeURIComponent(conditionId);
+  const url = DATA_API + "/v2/oi?condition=" + encodeURIComponent(conditionId);
   const payload = unwrap(await getJson(url));
   const rows = Array.isArray(payload) ? payload : [payload];
   let total = 0;
   let found = false;
   for (const row of rows) {
-    const value = row && (row.openInterest != null ? row.openInterest : row.open_interest != null ? row.open_interest : row.oi);
+    const value = row && (row.value != null ? row.value : row.openInterest != null ? row.openInterest : row.open_interest != null ? row.open_interest : row.oi);
     const n = Number(value);
     if (Number.isFinite(n)) { total += n; found = true; }
   }
-  if (!found) throw new Error("Open interest value not found in Data API response");
+  if (!found) throw new Error("Open interest value not found in Data API response: " + JSON.stringify(payload));
   return total;
 }
 
