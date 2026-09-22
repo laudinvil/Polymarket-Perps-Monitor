@@ -5,7 +5,7 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 1500;
+const REQUEST_TIMEOUT_MS = 7000;
 const RETRY_DELAYS_MS = [500];
 const CONVEX_PROXY_URL = String(process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site').replace(/\/$/, '') + '/marginpad-btc-liquidations?limit=400';
 
@@ -121,34 +121,41 @@ function mergeUniqueEvents(primary, secondary) {
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  let feedEvents = [];
-  try {
-    feedEvents = await fetchConvexProxy(fetchImpl);
-    console.log(`MarginPad CONVEX ${normalized}: events=${feedEvents.length}`);
-    if (feedEvents.length) return feedEvents;
-  } catch (error) {
-    console.warn(`MarginPad Convex proxy failed: ${error.message}`);
-  }
-  try {
-    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeEventSymbol(event) === normalized);
-    console.log('MarginPad FEED RAW BTC:', JSON.stringify(feedEvents).slice(0, 12000));
-    console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
-  } catch (error) {
-    console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
-  }
   const now = Date.now();
   const cached = fallbackCache.eventsBySymbol.get(normalized);
-  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
-  try {
-    const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
-    console.log('MarginPad LIVE RAW BTC:', JSON.stringify(fresh).slice(0, 12000));
-    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
-    console.log(`MarginPad LIVE FALLBACK ${normalized}: events=${fresh.length}`);
-    return mergeUniqueEvents(feedEvents, fresh);
-  } catch (error) {
-    console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
-    return mergeUniqueEvents(feedEvents, cached?.events || []);
+
+  const [feedResult, liveResult] = await Promise.allSettled([
+    fetchLiveFeed(fetchImpl),
+    fetchLiveSymbolFallback(normalized, fetchImpl)
+  ]);
+
+  let feedEvents = [];
+  let liveEvents = [];
+
+  if (feedResult.status === 'fulfilled') {
+    feedEvents = feedResult.value.filter(event => normalizeEventSymbol(event) === normalized);
+    console.log('MarginPad FEED RAW BTC:', JSON.stringify(feedEvents).slice(0, 12000));
+    console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
+  } else {
+    console.warn(`MarginPad feed ${normalized} failed: ${feedResult.reason?.message || feedResult.reason}`);
   }
+
+  if (liveResult.status === 'fulfilled') {
+    liveEvents = liveResult.value;
+    console.log('MarginPad LIVE RAW BTC:', JSON.stringify(liveEvents).slice(0, 12000));
+    console.log(`MarginPad LIVE FALLBACK ${normalized}: events=${liveEvents.length}`);
+  } else {
+    console.warn(`MarginPad live fallback ${normalized} failed: ${liveResult.reason?.message || liveResult.reason}`);
+  }
+
+  const events = mergeUniqueEvents(feedEvents, liveEvents);
+  if (events.length) {
+    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: now, events });
+    return events;
+  }
+
+  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return cached.events;
+  return [];
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
