@@ -570,6 +570,7 @@ async function sendStrategyAlert(coin, market, nextSlug, decision) {
     '🔥 BTC · 5M',
     '',
     'PREDICTED: ' + decision.direction,
+    'OUTCOME PRICE: ' + fmt(decision.direction === 'UP' ? decision.upMid : decision.downMid, 4),
     'SCORE: ' + decision.score + '/12',
     'CONFIDENCE: ' + decision.confidence + '%',
     '',
