@@ -6,8 +6,6 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const TARGET_OFFSET = 285;
-const MIN_ALERT_CHANGE_PCT = 2.6;
-const MAX_ALERT_CHANGE_PCT = 25;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
 function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
@@ -150,16 +148,11 @@ async function monitorPeriod(start) {
     openInterest: currentOI,
     previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
     deltaPct: deltaPct,
+    previousDirection: direction,
     updatedAt: new Date().toISOString()
   };
 
-  if (deltaPct !== null && (Math.abs(deltaPct) < MIN_ALERT_CHANGE_PCT || Math.abs(deltaPct) > MAX_ALERT_CHANGE_PCT)) {
-    console.log("OI change " + Math.abs(deltaPct).toFixed(2) + "% is outside alert range " + MIN_ALERT_CHANGE_PCT + "%-" + MAX_ALERT_CHANGE_PCT + "%. Alert skipped.");
-    writeState(nextState);
-    gitCommitState(start);
-    console.log("State saved for period=" + start);
-    return;
-  }
+
 
   const nextUrl = POLY_URL + (start + PERIOD);
   const lines = [
@@ -173,6 +166,17 @@ async function monitorPeriod(start) {
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
+
+  const previousDirection = state.previousDirection;
+  const sameDirectionTwice = previousDirection && previousDirection === direction && direction !== "SAME →";
+
+  if (!sameDirectionTwice) {
+    console.log("OI alert skipped: direction is not repeated twice. Current=" + direction + " Previous=" + (previousDirection || "NONE"));
+    writeState(nextState);
+    gitCommitState(start);
+    console.log("State saved for period=" + start);
+    return;
+  }
 
   await sendTelegram(lines.join("\n"));
   console.log("Telegram sent for period=" + start);
