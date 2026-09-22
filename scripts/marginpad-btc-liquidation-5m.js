@@ -1,4 +1,4 @@
-const { fetchFeed, normalizeTs, normalizeSymbol, normalizeEventSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -9,6 +9,10 @@ const HISTORY_LOOKBACK_MS = 30 * 60 * 1000;
 const FEED_POLL_MS = POLL_MS || 4000;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function iso(ts) {
+  return Number.isFinite(ts) ? new Date(ts).toISOString() : 'n/a';
+}
 
 function eventTime(event) {
   const value = event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at ?? event?.data?.ts ?? event?.data?.timestamp;
@@ -37,10 +41,15 @@ async function getClobPriceLine(periodStart) {
     url: 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000)
   };
 
+  const lookupStartedAt = Date.now();
+
   try {
     const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
     const url = market?.url || fallback.url;
-    if (!market) return fallback;
+    if (!market) {
+      console.log('CLOB LOOKUP: market=n/a duration_ms=' + (Date.now() - lookupStartedAt));
+      return fallback;
+    }
 
     const [upMid, downMid] = await Promise.all([
       findClobMidpoint(market, 'UP'),
@@ -58,6 +67,13 @@ async function getClobPriceLine(periodStart) {
       cheaper = { outcome: 'DOWN', price: downMid };
     }
 
+    console.log(
+      'CLOB LOOKUP: up=' + (Number.isFinite(upMid) ? upMid.toFixed(4) : 'n/a') +
+      ' down=' + (Number.isFinite(downMid) ? downMid.toFixed(4) : 'n/a') +
+      ' cheaper=' + (cheaper ? cheaper.outcome + ' ' + cheaper.price.toFixed(4) : 'n/a') +
+      ' duration_ms=' + (Date.now() - lookupStartedAt)
+    );
+
     return {
       line: cheaper
         ? 'CLOB PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2)
@@ -71,7 +87,9 @@ async function getClobPriceLine(periodStart) {
 }
 
 async function sendFirstLiquidation(event, periodStart) {
-  const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
+  const detectionAt = Date.now();
+  const eventTs = eventTime(event);
+  const { line: clobLine, marketUrl } = await getClobPriceLine(periodStart);
 
   const text = [
     '🔥 BTC · LIQUIDATION',
@@ -83,10 +101,21 @@ async function sendFirstLiquidation(event, periodStart) {
   ].join('\n');
 
   console.log(
+    'LIQUIDATION TIMING: ' +
+    'event_ts=' + iso(eventTs) +
+    ' detected_at=' + iso(detectionAt) +
+    ' detection_delay_ms=' + (eventTs ? detectionAt - eventTs : 'n/a') +
+    ' period_start=' + iso(periodStart) +
+    ' period_elapsed_ms=' + (detectionAt - periodStart) +
+    ' period_remaining_ms=' + (periodStart + PERIOD_MS - detectionAt)
+  );
+
+  console.log(
     'Sending Telegram liquidation alert: event=' +
     JSON.stringify({
-      ts: eventTime(event),
+      ts: eventTs,
       exchange: event?.exchange,
+      symbol: eventSymbol(event),
       side: event?.side,
       price: event?.price,
       qty: event?.qty,
@@ -95,8 +124,15 @@ async function sendFirstLiquidation(event, periodStart) {
     ' text=' + JSON.stringify(text)
   );
 
+  const telegramStartedAt = Date.now();
   await sendTelegramMessage(text);
-  console.log('Telegram liquidation alert sent');
+  const telegramFinishedAt = Date.now();
+
+  console.log(
+    'TELEGRAM SENT: sent_at=' + iso(telegramFinishedAt) +
+    ' telegram_duration_ms=' + (telegramFinishedAt - telegramStartedAt) +
+    ' end_to_end_delay_ms=' + (telegramFinishedAt - eventTs)
+  );
 }
 
 async function main() {
@@ -105,29 +141,46 @@ async function main() {
   let alertedPeriod = null;
   let lastSeenTs = 0;
 
-  console.log('MarginPad BTC monitor: /feed via fetchFeed, poll=' + FEED_POLL_MS + 'ms');
+  console.log(
+    'MarginPad BTC monitor START: started_at=' + iso(startedAt) +
+    ' poll_ms=' + FEED_POLL_MS +
+    ' run_ms=' + RUN_MS +
+    ' expected_stop_at=' + iso(startedAt + RUN_MS)
+  );
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
     const periodStart = bucketStart(now);
+    const pollStartedAt = now;
 
     try {
       const events = await fetchFeed([SYMBOL]);
+      const pollFinishedAt = Date.now();
 
       const current = (events || [])
         .map(event => ({ event, ts: eventTime(event) }))
         .filter(row =>
           row.ts &&
-          row.ts <= now &&
-          row.ts >= now - HISTORY_LOOKBACK_MS
+          row.ts <= pollFinishedAt &&
+          row.ts >= pollFinishedAt - HISTORY_LOOKBACK_MS
         )
         .sort((a, b) => a.ts - b.ts);
 
+      const newestTs = current.length ? current[current.length - 1].ts : 0;
+
       console.log(
-        'MarginPad BTC POLL: returned=' + (events || []).length +
+        'MarginPad BTC POLL: ' +
+        'started_at=' + iso(pollStartedAt) +
+        ' finished_at=' + iso(pollFinishedAt) +
+        ' duration_ms=' + (pollFinishedAt - pollStartedAt) +
+        ' returned=' + (events || []).length +
         ' recent_events=' + current.length +
         ' alerted=' + (alertedPeriod === periodStart) +
-        ' newest_ts=' + (current.length ? new Date(current[current.length - 1].ts).toISOString() : 'n/a')
+        ' newest_ts=' + iso(newestTs) +
+        ' newest_age_ms=' + (newestTs ? pollFinishedAt - newestTs : 'n/a') +
+        ' period_start=' + iso(periodStart) +
+        ' period_elapsed_ms=' + (pollFinishedAt - periodStart) +
+        ' period_remaining_ms=' + (periodStart + PERIOD_MS - pollFinishedAt)
       );
 
       for (const row of current) {
@@ -141,17 +194,19 @@ async function main() {
         }
 
         console.log(
-          'MarginPad BTC NEW LIQUIDATION: ts=' +
-          new Date(row.ts).toISOString() +
+          'MarginPad BTC NEW LIQUIDATION: ' +
+          'event_ts=' + iso(row.ts) +
+          ' detected_at=' + iso(pollFinishedAt) +
+          ' detection_delay_ms=' + (pollFinishedAt - row.ts) +
           ' side=' + JSON.stringify(row.event?.side) +
-          ' period=' + new Date(periodStart).toISOString()
+          ' period=' + iso(periodStart)
         );
 
         try {
           await sendFirstLiquidation(row.event, periodStart);
           alertedPeriod = periodStart;
           lastSeenTs = row.ts;
-          console.log('MarginPad BTC ALERT LOCKED until next 5M period');
+          console.log('MarginPad BTC ALERT LOCKED until next 5M period: locked_at=' + iso(Date.now()));
         } catch (error) {
           console.error('BTC liquidation alert send failed: ' + error.message);
         }
@@ -159,7 +214,7 @@ async function main() {
         break;
       }
     } catch (error) {
-      console.warn('MarginPad poll failed: ' + error.message);
+      console.warn('MarginPad poll failed at=' + iso(Date.now()) + ': ' + error.message);
     }
 
     const remaining = RUN_MS - (Date.now() - startedAt);
@@ -167,7 +222,12 @@ async function main() {
     await sleep(Math.min(FEED_POLL_MS, remaining));
   }
 
-  console.log('MarginPad BTC monitor finished; lastSeenTs=' + (lastSeenTs ? new Date(lastSeenTs).toISOString() : 'n/a'));
+  const finishedAt = Date.now();
+  console.log(
+    'MarginPad BTC monitor FINISHED: finished_at=' + iso(finishedAt) +
+    ' runtime_ms=' + (finishedAt - startedAt) +
+    ' lastSeenTs=' + iso(lastSeenTs)
+  );
 }
 
 main().catch(error => {
