@@ -224,7 +224,7 @@ async function main() {
 
 main().catch(async error => {
   await logConvexRuntime('error', 'MarginPad BTC monitor fatal error: ' + error.message);
-  await convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'failed', exitCode: 1 });(error => {
+  await convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'failed', exitCode: 1 });
   console.error(error);
   process.exitCode = 1;
 });
