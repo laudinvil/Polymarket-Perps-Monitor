@@ -26,7 +26,12 @@ function normalizeTs(value) {
   const parsed = Date.parse(String(value));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
-function normalizeSymbol(symbol) { return String(symbol || '').toUpperCase().replace(/USDT$|USD$/i, ''); }
+function normalizeSymbol(symbol) {
+  return String(symbol || '')
+    .toUpperCase()
+    .replace(/[-_/]/g, '')
+    .replace(/USDC$|USDT$|USD$/i, '');
+}
 function eventKey(event) { return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|'); }
 function extractEvents(json) {
   if (Array.isArray(json)) return json;
@@ -40,11 +45,9 @@ function extractEvents(json) {
 }
 async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {
   let lastError = null;
-
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
       const response = await fetchImpl(url, {
         headers: {
@@ -54,40 +57,23 @@ async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS)
         },
         signal: controller.signal
       });
-
-      console.log(
-        `MarginPad request ${url} -> HTTP ${response.status} attempt=${attempt + 1}/${RETRY_DELAYS_MS.length + 1}`
-      );
-
+      console.log(`MarginPad request ${url} -> HTTP ${response.status} attempt=${attempt + 1}/${RETRY_DELAYS_MS.length + 1}`);
       if (response.ok) return await response.json();
-
       lastError = new Error(`MarginPad HTTP ${response.status}`);
-
-      // 503 is explicitly documented by MarginPad as transient. Retry with
-      // backoff instead of immediately abandoning the source.
-      if (response.status !== 503 || attempt === RETRY_DELAYS_MS.length) {
-        throw lastError;
-      }
+      if (response.status !== 503 || attempt === RETRY_DELAYS_MS.length) throw lastError;
     } catch (error) {
       lastError = error?.name === 'AbortError'
         ? new Error(`MarginPad request timeout after ${timeoutMs}ms: ${url}`)
         : error;
-
-      // Timeouts are also transient on the public feed. Retry them, but never
-      // retry a normal 4xx response.
-      const retryable = lastError.message.includes('timeout') ||
-        lastError.message.includes('HTTP 503');
-
+      const retryable = lastError.message.includes('timeout') || lastError.message.includes('HTTP 503');
       if (!retryable || attempt === RETRY_DELAYS_MS.length) throw lastError;
     } finally {
       clearTimeout(timeout);
     }
-
     const delay = RETRY_DELAYS_MS[attempt];
     console.warn(`MarginPad transient failure; retrying in ${delay}ms: ${url}`);
     await new Promise(resolve => setTimeout(resolve, delay));
   }
-
   throw lastError || new Error(`MarginPad request failed: ${url}`);
 }
 async function fetchConvexProxy(fetchImpl = fetch) {
@@ -132,13 +118,6 @@ function mergeUniqueEvents(primary, secondary) {
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   let feedEvents = [];
-
-  // Stable MarginPad architecture: poll global /feed first. Only hit the
-  // symbol-scoped endpoint as a 30s fallback. Do not hammer both endpoints
-  // on every poll; this was causing unnecessary 503s/timeouts.
-  // GitHub-hosted runners are currently timing out against MarginPad directly.
-  // Use the existing Convex server-side proxy first; it still talks to MarginPad
-  // and preserves /feed -> /live ordering, but avoids the runner egress problem.
   try {
     feedEvents = await fetchConvexProxy(fetchImpl);
     console.log(`MarginPad CONVEX ${normalized}: events=${feedEvents.length}`);
@@ -146,30 +125,18 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   } catch (error) {
     console.warn(`MarginPad Convex proxy failed: ${error.message}`);
   }
-
   try {
-    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => {
-      const raw = String(event?.symbol || '').toUpperCase().replace(/[-_/]/g, '');
-      const eventSymbol = normalizeSymbol(raw.replace(/USDC$|USDT$|USD$/, ''));
-      return eventSymbol === normalized;
-    });
+    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event?.symbol) === normalized);
     console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
   }
-
   const now = Date.now();
   const cached = fallbackCache.eventsBySymbol.get(normalized);
-  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) {
-    return mergeUniqueEvents(feedEvents, cached.events);
-  }
-
+  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
   try {
     const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
-    fallbackCache.eventsBySymbol.set(normalized, {
-      fetchedAt: Date.now(),
-      events: fresh
-    });
+    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
     console.log(`MarginPad LIVE FALLBACK ${normalized}: events=${fresh.length}`);
     return mergeUniqueEvents(feedEvents, fresh);
   } catch (error) {
