@@ -149,7 +149,8 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
 
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => {
-      const eventSymbol = normalizeSymbol(event?.symbol);
+      const raw = String(event?.symbol || '').toUpperCase().replace(/[-_/]/g, '');
+      const eventSymbol = normalizeSymbol(raw.replace(/USDC$|USDT$|USD$/, ''));
       return eventSymbol === normalized;
     });
     console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
