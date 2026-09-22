@@ -7,7 +7,7 @@ const CLOB_API = 'https://clob.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 0;
-const MIN_SIGNAL_SCORE = 6;
+const MIN_SIGNAL_SCORE = 4;
 const CONFIRMATIONS_REQUIRED = 2;
 const CONFIRMATION_INTERVAL_MS = 5000;
 const COINS = ['BTC'];
