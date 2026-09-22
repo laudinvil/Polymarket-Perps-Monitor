@@ -66,14 +66,39 @@ async function main() {
     try {
       const events = await fetchLiveSymbolFallback('BTC');
       const latest = [...(events || [])].sort((a, b) => (eventTime(b) || 0) - (eventTime(a) || 0))[0];
-      console.log('MarginPad LIVE BTC: events=' + (events?.length || 0) + (latest ? ' latest=' + JSON.stringify(latest) : ' latest=n/a'));
-      const current = (events || []).map(event => ({ event, ts: eventTime(event), direction: directionOf(event) })).filter(row => row.ts && row.direction && bucketStart(row.ts, '5m') === periodStart).sort((a, b) => b.ts - a.ts);
+      console.log('MarginPad LIVE BTC: events=' + (events?.length || 0));
+      console.log('MarginPad BTC CURRENT PERIOD: ' + new Date(periodStart).toISOString() + ' -> ' + new Date(periodStart + PERIOD_MS).toISOString());
+      if (latest) {
+        const latestTs = eventTime(latest);
+        console.log('MarginPad BTC LATEST: ts=' + (latestTs ? new Date(latestTs).toISOString() : 'invalid') +
+          ' side=' + JSON.stringify(latest?.side) +
+          ' direction=' + (directionOf(latest) || 'UNKNOWN') +
+          ' price=' + latest?.price +
+          ' qty=' + latest?.qty +
+          ' notional=' + latest?.notional +
+          ' inCurrentPeriod=' + (latestTs ? bucketStart(latestTs, '5m') === periodStart : false));
+      } else {
+        console.log('MarginPad BTC LATEST: n/a');
+      }
+
+      const current = (events || [])
+        .map(event => ({ event, ts: eventTime(event), direction: directionOf(event) }))
+        .filter(row => row.ts && bucketStart(row.ts, '5m') === periodStart)
+        .sort((a, b) => b.ts - a.ts);
+
+      const directional = current.filter(row => row.direction);
+      console.log('MarginPad BTC MATCH: currentPeriodEvents=' + current.length + ' directional=' + directional.length);
+
       if (current.length && alertedPeriod !== periodStart) {
-        const row = current[0];
-        const key = eventKey(row.event);
-        if (!seen.has(key)) {
-          seen.add(key);
-          if (await sendFirstLiquidation(row.event, periodStart)) alertedPeriod = periodStart;
+        const row = directional[0];
+        if (!row) {
+          console.warn('MarginPad BTC: current-period liquidation found, but side/direction is UNKNOWN; alert not sent.');
+        } else {
+          const key = eventKey(row.event);
+          if (!seen.has(key)) {
+            seen.add(key);
+            if (await sendFirstLiquidation(row.event, periodStart)) alertedPeriod = periodStart;
+          }
         }
       }
     } catch (error) { console.warn('MarginPad poll failed: ' + error.message); }
