@@ -31,28 +31,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Telegram connectivity test
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          test -n "$TELEGRAM_BOT_TOKEN"
-          test -n "$TELEGRAM_CHAT_ID"
-          curl -fsS --max-time 10 \
-            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
-            --data-urlencode "text=🔥 TEST · MarginPad BTC Liquidation Monitor"
 
       - name: Capture raw MarginPad response
         run: |
           set +e
           : > marginpad-raw.txt
-          for url in \\
-            "https://marginpad.io/api/v1/feed" \\
-            "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400"
+          for url in             "https://marginpad.io/api/v1/feed"             "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400"
           do
             echo "===== $url =====" >> marginpad-raw.txt
             curl -sS --max-time 8 -D - -H "accept: application/json" -H "cache-control: no-cache" "$url" >> marginpad-raw.txt 2>&1
