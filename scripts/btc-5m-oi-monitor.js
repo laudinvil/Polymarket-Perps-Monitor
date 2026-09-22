@@ -30,8 +30,6 @@ async function getJson(url) {
   throw lastError;
 }
 
-function unwrap(payload) { return payload && Array.isArray(payload.data) ? payload.data : payload; }
-
 function getConditionId(event) {
   const markets = Array.isArray(event && event.markets) ? event.markets : [];
   const market = markets.find(function(m) {
@@ -147,7 +145,6 @@ function gitCommitState(period) {
   try {
     execFileSync("git", ["config", "user.name", "github-actions[bot]"]);
     execFileSync("git", ["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
-
     execFileSync("git", ["add", STATE_FILE]);
     execFileSync("git", ["commit", "-m", "Update BTC 5M OI state " + period], { stdio: "pipe" });
 
@@ -197,8 +194,8 @@ async function monitorPeriod(start) {
   const nextUrl = POLY_URL + (start + PERIOD);
 
   const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
-  const oppositeOutcome = outcome === "UP" ? "DOWN" : outcome === "DOWN" ? "UP" : outcome;
-  const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "LARGEST BET 🔥";
+  const previousOutcome = state.lastOutcome === "UP" || state.lastOutcome === "DOWN" ? state.lastOutcome : null;
+  const streak = previousOutcome === outcome ? Number(state.streak || 1) + 1 : 1;
 
   const nextState = {
     periodStart: start,
@@ -208,21 +205,34 @@ async function monitorPeriod(start) {
     largestBetSide: largestBet.side,
     largestBetPrice: Number.isFinite(largestBet.price) ? largestBet.price : null,
     largestBetTimestamp: largestBet.timestamp,
+    lastOutcome: outcome,
+    streak: streak,
     updatedAt: new Date().toISOString()
   };
+
+  if (streak < 2) {
+    console.log("Streak=" + streak + " outcome=" + outcome + "; no alert");
+    writeState(nextState);
+    gitCommitState(start);
+    console.log("State saved for period=" + start);
+    return;
+  }
+
+  const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "LARGEST BET 🔥";
 
   const lines = [
     "🔥 BTC · 5M · " + tradeSignal,
     "",
     "LARGEST BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
-    "OUTCOME: " + oppositeOutcome,
+    "OUTCOME: " + outcome,
+    "STREAK: " + streak,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start);
+  console.log("Telegram sent for period=" + start + " streak=" + streak);
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
