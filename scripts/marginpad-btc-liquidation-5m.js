@@ -48,6 +48,7 @@ async function getClobPriceLine(periodStart) {
     const url = market?.url || fallback.url;
     if (!market) {
       console.log('CLOB LOOKUP: market=n/a duration_ms=' + (Date.now() - lookupStartedAt));
+      console.log('POLYMARKET URL: ' + url);
       return fallback;
     }
 
@@ -73,6 +74,7 @@ async function getClobPriceLine(periodStart) {
       ' cheaper=' + (cheaper ? cheaper.outcome + ' ' + cheaper.price.toFixed(4) : 'n/a') +
       ' duration_ms=' + (Date.now() - lookupStartedAt)
     );
+    console.log('POLYMARKET URL: ' + url);
 
     return {
       line: cheaper
@@ -82,6 +84,7 @@ async function getClobPriceLine(periodStart) {
     };
   } catch (error) {
     console.warn('Polymarket CLOB lookup failed: ' + error.message);
+    console.log('POLYMARKET URL: ' + fallback.url);
     return fallback;
   }
 }
@@ -89,7 +92,7 @@ async function getClobPriceLine(periodStart) {
 async function sendFirstLiquidation(event, periodStart) {
   const detectionAt = Date.now();
   const eventTs = eventTime(event);
-  const { line: clobLine, marketUrl } = await getClobPriceLine(periodStart);
+  const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
 
   const text = [
     '🔥 BTC · LIQUIDATION',
