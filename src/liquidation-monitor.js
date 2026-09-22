@@ -5,7 +5,7 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 1200;
+const REQUEST_TIMEOUT_MS = 2500;
 const RETRY_DELAYS_MS = [500];
 const CONVEX_PROXY_URL = String(process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site').replace(/\/$/, '') + '/marginpad-btc-liquidations?limit=400';
 
@@ -35,7 +35,26 @@ function normalizeSymbol(symbol) {
     .replace(/[-_/]/g, '')
     .replace(/USDC$|USDT$|USD$/i, '');
 }
-function eventKey(event) { return [event.ts, event.exchange, event.symbol, event.side, event.price, event.qty, event.notional].join('|'); }
+function eventTimestamp(event) {
+  return normalizeTs(
+    event?.ts ??
+    event?.timestamp ??
+    event?.time ??
+    event?.createdAt ??
+    event?.created_at ??
+    event?.data?.ts ??
+    event?.data?.timestamp
+  );
+}
+function normalizeEvent(event) {
+  if (!event || typeof event !== 'object') return event;
+  const ts = eventTimestamp(event);
+  return ts ? { ...event, ts } : event;
+}
+function eventKey(event) {
+  const normalized = normalizeEvent(event);
+  return [normalized.ts, normalized.exchange, normalized.symbol, normalized.side, normalized.price, normalized.qty, normalized.notional].join('|');
+}
 function extractEvents(json) {
   if (Array.isArray(json)) return json;
   if (json && Array.isArray(json.events)) return json.events;
@@ -96,7 +115,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
   if (liveFeedPromise) return liveFeedPromise;
   if (now - liveFeedCache.fetchedAt < POLL_MS) return [...liveFeedCache.events.values()];
   liveFeedPromise = (async () => {
-    const events = extractEvents(await fetchJson(FEED_URL, fetchImpl));
+    const events = extractEvents(await fetchJson(FEED_URL, fetchImpl)).map(normalizeEvent);
     const merged = new Map(liveFeedCache.events);
     for (const event of events) merged.set(eventKey(event), event);
     const cutoff = Date.now() - FEED_RETENTION_MS;
@@ -112,7 +131,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl, REQUEST_TIMEOUT_MS);
-  return extractEvents(json).filter(event => normalizeEventSymbol(event) === normalized);
+  return extractEvents(json).map(normalizeEvent).filter(event => normalizeEventSymbol(event) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
   const merged = new Map();
