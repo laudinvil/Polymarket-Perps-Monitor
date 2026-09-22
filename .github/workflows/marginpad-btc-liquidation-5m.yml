@@ -43,7 +43,9 @@ jobs:
         run: |
           set +e
           : > marginpad-raw.txt
-          for url in             "https://marginpad.io/api/v1/feed"             "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400"
+          for url in \
+            "https://marginpad.io/api/v1/feed" \
+            "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400"
           do
             echo "===== $url =====" >> marginpad-raw.txt
             curl -sS --max-time 8 -D - -H "accept: application/json" -H "cache-control: no-cache" "$url" >> marginpad-raw.txt 2>&1
