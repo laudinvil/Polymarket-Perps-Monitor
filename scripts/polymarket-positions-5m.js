@@ -341,9 +341,9 @@ function bookScore(up, down) {
 
 function evaluateStrategy(market, books, perp, now) {
   const twap = referenceFeed.latest('twap60');
-  if (!twap) return null;
 
-  const distanceBps = (twap.price / market.priceToBeat - 1) * 10000;
+  const referencePrice = twap?.price ?? null;
+  const distanceBps = Number.isFinite(referencePrice) ? (referencePrice / market.priceToBeat - 1) * 10000 : 0;
   const previous10 = referenceFeed.atOrBefore('twap60', now - 10000);
   const previous30 = referenceFeed.atOrBefore('twap60', now - 30000);
   const previous60 = referenceFeed.atOrBefore('twap60', now - 60000);
@@ -352,7 +352,7 @@ function evaluateStrategy(market, books, perp, now) {
   const ret30 = previous30 ? (twap.price / previous30.price - 1) * 10000 : null;
   const ret60 = previous60 ? (twap.price / previous60.price - 1) * 10000 : null;
 
-  const distanceSignal = Math.abs(distanceBps) >= DISTANCE_THRESHOLD_BPS ? sign(distanceBps) * 2 : 0;
+  const distanceSignal = Number.isFinite(referencePrice) && Math.abs(distanceBps) >= DISTANCE_THRESHOLD_BPS ? sign(distanceBps) * 2 : 0;
   const momentum10 = momentumScore(ret10);
   const momentum30 = momentumScore(ret30);
   const momentum60 = momentumScore(ret60);
@@ -372,7 +372,8 @@ function evaluateStrategy(market, books, perp, now) {
     depth5 + depth20 + micro +
     polyBook;
 
-  const direction = score >= MIN_SIGNAL_SCORE ? 'UP' : score <= -MIN_SIGNAL_SCORE ? 'DOWN' : 'WAIT';
+  const fallbackDirection = polyBook > 0 ? 'UP' : polyBook < 0 ? 'DOWN' : (Number.isFinite(referencePrice) && referencePrice >= market.priceToBeat ? 'UP' : 'DOWN');
+  const direction = score >= MIN_SIGNAL_SCORE ? 'UP' : score <= -MIN_SIGNAL_SCORE ? 'DOWN' : fallbackDirection;
   const confidence = Math.round(Math.abs(score) / 12 * 100);
 
   return {
@@ -535,12 +536,6 @@ async function processPeriod(coin, boundary) {
       const books = await getBooks(market.upTokenId, market.downTokenId);
       const perp = perpFeed.features(now);
       const decision = evaluateStrategy(market, books, perp, now);
-      if (!decision) {
-        const twap = referenceFeed.latest('twap60');
-        console.log('[btc5m-diagnostic] snapshot skipped: TWAP=' + (twap ? 'OK' : 'MISSING') + ' depth=' + (perp ? 'OK' : 'MISSING'));
-        await sleep(CONFIRMATION_INTERVAL_MS);
-        continue;
-      }
 
       lastScore = decision.score;
       const d = decision.diagnostic;
