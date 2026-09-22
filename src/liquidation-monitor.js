@@ -81,6 +81,7 @@ async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS)
 }
 async function fetchConvexProxy(fetchImpl = fetch) {
   const json = await fetchJson(CONVEX_PROXY_URL, fetchImpl, 2000);
+  console.log('MarginPad CONVEX RAW:', JSON.stringify(json).slice(0, 12000));
   const events = extractEvents(json).filter(event => normalizeEventSymbol(event) === 'BTC');
   console.log(
     'MarginPad CONVEX PROXY: source=' + JSON.stringify(json?.source) +
@@ -130,6 +131,7 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   }
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeEventSymbol(event) === normalized);
+    console.log('MarginPad FEED RAW BTC:', JSON.stringify(feedEvents).slice(0, 12000));
     console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
@@ -139,6 +141,7 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
   try {
     const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
+    console.log('MarginPad LIVE RAW BTC:', JSON.stringify(fresh).slice(0, 12000));
     fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
     console.log(`MarginPad LIVE FALLBACK ${normalized}: events=${fresh.length}`);
     return mergeUniqueEvents(feedEvents, fresh);
