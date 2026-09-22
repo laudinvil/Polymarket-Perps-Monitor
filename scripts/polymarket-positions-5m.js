@@ -6,7 +6,10 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 const CLOB_API = 'https://clob.polymarket.com';
 
 const PERIOD = 300000;
-const ALERT_LEAD_MS = 20000;
+const ALERT_LEAD_MS = 0;
+const MIN_SIGNAL_SCORE = 6;
+const CONFIRMATIONS_REQUIRED = 2;
+const CONFIRMATION_INTERVAL_MS = 5000;
 const COINS = ['BTC'];
 const FETCH_TIMEOUT_MS = 7000;
 const RUN_MS = 358 * 60 * 1000;
@@ -364,7 +367,7 @@ function evaluateStrategy(market, books, perp, now) {
     depth5 + depth20 + micro +
     polyBook;
 
-  const direction = score >= 6 ? 'UP' : score <= -6 ? 'DOWN' : 'WAIT';
+  const direction = score >= MIN_SIGNAL_SCORE ? 'UP' : score <= -MIN_SIGNAL_SCORE ? 'DOWN' : 'WAIT';
   const confidence = Math.round(Math.abs(score) / 12 * 100);
 
   return {
@@ -422,34 +425,55 @@ async function processPeriod(coin, boundary) {
   const activeStart = boundary - PERIOD;
   const activeSlug = marketSlug(coin, activeStart);
   const nextSlug = marketSlug(coin, boundary);
-  const now = Date.now();
-
-  console.log('[btc5m-strategy] evaluating ' + activeSlug + ' at 4:40');
-
   const market = await findMarket(activeSlug);
-  const books = await getBooks(market.upTokenId, market.downTokenId);
-  const perp = perpFeed.features(now);
-  const decision = evaluateStrategy(market, books, perp, now);
 
-  if (!decision) {
-    console.log('[btc5m-strategy] WAIT: Chainlink TWAP unavailable');
-    return false;
+  console.log('[btc5m-strategy] monitoring ' + activeSlug + ' from period start');
+
+  let confirmations = 0;
+  let confirmedDirection = null;
+  let lastScore = null;
+
+  while (Date.now() < market.end - 500 && market.end > Date.now()) {
+    const now = Date.now();
+    try {
+      const books = await getBooks(market.upTokenId, market.downTokenId);
+      const perp = perpFeed.features(now);
+      const decision = evaluateStrategy(market, books, perp, now);
+      if (!decision) {
+        await sleep(CONFIRMATION_INTERVAL_MS);
+        continue;
+      }
+
+      lastScore = decision.score;
+      console.log('[btc5m-strategy] ' + activeSlug + ' score=' + decision.score + ' direction=' + decision.direction + ' seconds=' + decision.secondsRemaining);
+
+      if (decision.direction !== 'WAIT') {
+        if (decision.direction === confirmedDirection) confirmations++;
+        else {
+          confirmedDirection = decision.direction;
+          confirmations = 1;
+        }
+
+        if (confirmations >= CONFIRMATIONS_REQUIRED) {
+          return await sendStrategyAlert(coin, market, nextSlug, decision);
+        }
+      } else {
+        confirmations = 0;
+        confirmedDirection = null;
+      }
+    } catch (error) {
+      console.error('[btc5m-strategy] snapshot failed: ' + error.message);
+    }
+
+    await sleep(CONFIRMATION_INTERVAL_MS);
   }
 
-  console.log(
-    '[btc5m-strategy] ' + activeSlug +
-    ' score=' + decision.score +
-    ' direction=' + decision.direction +
-    ' distance=' + fmt(decision.distanceBps) + 'bps' +
-    ' ret10=' + fmt(decision.ret10) +
-    ' ret30=' + fmt(decision.ret30) +
-    ' ret60=' + fmt(decision.ret60)
-  );
+  console.log('[btc5m-strategy] no confirmed signal for ' + activeSlug + ' lastScore=' + lastScore);
+  return false;
+}
 
-  if (decision.direction === 'WAIT') {
-    console.log('[btc5m-strategy] no alert: confluence below threshold');
-    return false;
-  }
+async function sendStrategyAlert(coin, market, nextSlug, decision) {
+  const now = Date.now();
 
   const message = [
     '🔥 BTC · 5M',
@@ -482,7 +506,7 @@ async function processPeriod(coin, boundary) {
   ].join('\n');
 
   if (String(env.POLYMARKET_AUTO_TRADE_ENABLED || 'false').toLowerCase() === 'true') {
-    executeTrade(coin, nextSlug, boundary, boundary + PERIOD, decision.direction.toLowerCase()).catch(error => {
+    executeTrade(coin, nextSlug, market.end, market.end + PERIOD, decision.direction.toLowerCase()).catch(error => {
       console.error('[btc5m-strategy] AUTO TRADE FAILED: ' + error.message);
     });
   }
@@ -498,15 +522,15 @@ async function main() {
 
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
-  const initialWait = boundary - ALERT_LEAD_MS - Date.now();
+  const initialWait = boundary - PERIOD - Date.now() + 1000;
   if (initialWait > 0) await sleep(initialWait);
 
   console.log('[btc5m-strategy] BTC 5M confluence strategy started');
   console.log('[btc5m-strategy] prediction = Chainlink TWAP + Binance perp flow/depth + Polymarket book');
-  console.log('[btc5m-strategy] no BUY-count rule; no rolling alert limit');
+  console.log('[btc5m-strategy] monitoring starts near period open; alert after 2 consecutive confirmations');
 
   while (Date.now() < stopAt) {
-    const wait = boundary - ALERT_LEAD_MS - Date.now();
+    const wait = boundary - PERIOD - Date.now() + 1000;
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
 
