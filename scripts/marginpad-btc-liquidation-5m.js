@@ -59,7 +59,7 @@ async function getClobPriceLine(periodStart) {
 
     let cheaper = null;
     if (Number.isFinite(upMid) && Number.isFinite(downMid)) {
-      cheaper = upMid >= downMid
+      cheaper = upMid <= downMid
         ? { outcome: 'UP', price: upMid }
         : { outcome: 'DOWN', price: downMid };
     } else if (Number.isFinite(upMid)) {
