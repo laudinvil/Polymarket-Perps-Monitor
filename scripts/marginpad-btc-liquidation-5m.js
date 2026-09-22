@@ -32,17 +32,22 @@ async function fetchViaConvexProxy() {
 }
 
 function directionOf(event) {
-  const side = String(
-    event?.side ||
-    event?.direction ||
-    event?.liquidation_side ||
-    event?.liquidationSide ||
-    event?.type ||
-    event?.action ||
-    ''
-  ).trim().toLowerCase();
-  if (side.includes('long') || side === 'buy' || side === 'bid' || side === 'buy_liquidation' || side === 'long_liquidation') return 'LONG';
-  if (side.includes('short') || side === 'sell' || side === 'ask' || side === 'sell_liquidation' || side === 'short_liquidation') return 'SHORT';
+  const fields = [
+    event?.side,
+    event?.direction,
+    event?.liquidation_side,
+    event?.liquidationSide,
+    event?.type,
+    event?.action,
+    event?.positionSide,
+    event?.position_side,
+    event?.orderSide,
+    event?.order_side
+  ].map(value => String(value ?? '').trim().toLowerCase()).filter(Boolean);
+  for (const side of fields) {
+    if (/(^|[_ -])(long|buy|bid)([_ -]|$)/.test(side) || side.includes('long_liquidation') || side.includes('buy_liquidation')) return 'LONG';
+    if (/(^|[_ -])(short|sell|ask)([_ -]|$)/.test(side) || side.includes('short_liquidation') || side.includes('sell_liquidation')) return 'SHORT';
+  }
   return null;
 }
 function eventTime(event) {
