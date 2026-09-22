@@ -390,7 +390,7 @@ function evaluateStrategy(market, books, perp, now, previousBooks = null) {
     momentum10 + momentum30 + momentum60 +
     perp10 + perp30 + perp60 +
     depth5 + depth20 + micro +
-    polyBook;
+    polyBook + polyMove;
 
   const fallbackDirection = polyBook > 0 ? 'UP' : polyBook < 0 ? 'DOWN' : (Number.isFinite(referencePrice) && referencePrice >= market.priceToBeat ? 'UP' : 'DOWN');
   const direction = score >= MIN_SIGNAL_SCORE ? 'UP' : score <= -MIN_SIGNAL_SCORE ? 'DOWN' : fallbackDirection;
