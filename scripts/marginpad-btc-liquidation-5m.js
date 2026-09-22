@@ -1,4 +1,4 @@
-const { fetchFeed, fetchConvexProxy, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -6,7 +6,6 @@ const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
 const RUN_MS = PERIOD_MS - 15 * 1000;
 const HISTORY_LOOKBACK_MS = 30 * 60 * 1000;
-const DUPLICATE_LOOKBACK_MS = 15 * 60 * 1000;
 const FEED_POLL_MS = POLL_MS || 4000;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -34,38 +33,6 @@ function eventKey(event) {
     event?.qty,
     event?.notional
   ].join('|');
-}
-
-function duplicateFingerprint(event) {
-  const exchange = String(event?.exchange || '').trim().toUpperCase();
-  const side = String(event?.side || event?.direction || '').trim().toLowerCase();
-  const symbol = eventSymbol(event);
-  const qty = event?.qty;
-  const notional = event?.notional;
-
-  if (!exchange || !side || symbol !== SYMBOL || qty === undefined || qty === null || notional === undefined || notional === null) {
-    return null;
-  }
-
-  return [exchange, symbol, side, String(qty), String(notional)].join('|');
-}
-
-function isDuplicateLiquidation(event, historicalEvents) {
-  const fingerprint = duplicateFingerprint(event);
-  const eventTs = eventTime(event);
-  if (!fingerprint || !eventTs) return null;
-
-  for (const historical of historicalEvents || []) {
-    const historicalTs = eventTime(historical);
-    if (!historicalTs || historicalTs === eventTs) continue;
-    if (Math.abs(eventTs - historicalTs) > DUPLICATE_LOOKBACK_MS) continue;
-    if (duplicateFingerprint(historical) !== fingerprint) continue;
-    if (String(historical?.price ?? '') === String(event?.price ?? '')) continue;
-
-    return { historical, ageMs: Math.abs(eventTs - historicalTs) };
-  }
-
-  return null;
 }
 
 async function getClobPriceLine(periodStart) {
@@ -176,14 +143,6 @@ async function main() {
   const seen = new Set();
   let alertedPeriod = null;
   let lastSeenTs = 0;
-  let historicalEvents = [];
-
-  try {
-    historicalEvents = await fetchConvexProxy();
-    console.log('MarginPad DUPLICATE HISTORY: loaded=' + historicalEvents.length);
-  } catch (error) {
-    console.warn('MarginPad duplicate history unavailable: ' + error.message);
-  }
 
   console.log(
     'MarginPad BTC monitor START: started_at=' + iso(startedAt) +
@@ -208,7 +167,6 @@ async function main() {
 
         let accepted = true;
         let reason = 'accepted';
-        let duplicate = null;
 
         if (!ts) {
           accepted = false;
@@ -222,12 +180,6 @@ async function main() {
         } else if (ts < periodStart) {
           accepted = false;
           reason = 'prior_period';
-        } else {
-          duplicate = isDuplicateLiquidation(event, historicalEvents);
-          if (duplicate) {
-            accepted = false;
-            reason = 'duplicate_liquidation';
-          }
         }
 
         console.log(
@@ -239,8 +191,7 @@ async function main() {
           ' REASON=' + reason +
           ' symbol=' + JSON.stringify(symbol) +
           ' side=' + JSON.stringify(event?.side) +
-          ' exchange=' + JSON.stringify(event?.exchange) +
-          (duplicate ? ' duplicate_of=' + iso(eventTime(duplicate.historical)) + ' duplicate_age_ms=' + duplicate.ageMs : '')
+          ' exchange=' + JSON.stringify(event?.exchange)
         );
 
         return { event, ts, accepted };
