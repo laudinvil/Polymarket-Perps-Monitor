@@ -1,4 +1,4 @@
-const { fetchLiveSymbolFallback, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -64,7 +64,9 @@ async function main() {
     const now = Date.now();
     const periodStart = bucketStart(now, '5m');
     try {
-      const events = await fetchLiveSymbolFallback('BTC');
+      // Prefer the merged BTC feed: if the raw /liquidations/live endpoint is unavailable,
+      // fetchFeed() keeps the cached/global /feed data instead of producing zero alerts.
+      const events = await fetchFeed(['BTC']);
       const latest = [...(events || [])].sort((a, b) => (eventTime(b) || 0) - (eventTime(a) || 0))[0];
       console.log('MarginPad LIVE BTC: events=' + (events?.length || 0));
       console.log('MarginPad BTC CURRENT PERIOD: ' + new Date(periodStart).toISOString() + ' -> ' + new Date(periodStart + PERIOD_MS).toISOString());
@@ -89,7 +91,7 @@ async function main() {
       const directional = eligible.filter(row => row.direction);
       console.log('MarginPad BTC ELIGIBLE: events=' + eligible.length + ' directional=' + directional.length);
 
-      if (directional.length && alertedPeriod !== periodStart) {
+      if (directional.length) {
         const row = directional[0];
         const eventPeriod = bucketStart(row.ts, '5m');
         console.log('MarginPad BTC CANDIDATE: ts=' + new Date(row.ts).toISOString() +
@@ -103,7 +105,7 @@ async function main() {
 
         if (!seen.has(key)) {
           seen.add(key);
-          if (await sendFirstLiquidation(row.event, targetPeriod)) alertedPeriod = periodStart;
+          if (targetPeriod !== alertedPeriod && await sendFirstLiquidation(row.event, targetPeriod)) alertedPeriod = targetPeriod;
         }
       }
     } catch (error) { console.warn('MarginPad poll failed: ' + error.message); }
