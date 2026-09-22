@@ -10,16 +10,37 @@ const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function fetchMarginPadDirect(url, timeoutMs) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {headers:{accept:'application/json','cache-control':'no-cache','user-agent':'Polymarket-Perps-Monitor/2.0'},signal:controller.signal});
-    const json = await response.json();
-    if (!response.ok || json?.ok === false) throw new Error('MarginPad HTTP ' + response.status);
-    return json;
-  } finally { clearTimeout(timeout); }
+async function fetchJsonWithRetry(url, timeoutMs, attempts = 3) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: 'application/json',
+          'cache-control': 'no-cache',
+          'user-agent': 'Polymarket-Perps-Monitor/2.0'
+        },
+        signal: controller.signal
+      });
+      const json = await response.json();
+      if (!response.ok || json?.ok === false) throw new Error('HTTP ' + response.status);
+      return json;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(350 * attempt);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError || new Error('MarginPad request failed');
 }
+
+async function fetchMarginPadDirect(url, timeoutMs) {
+  return fetchJsonWithRetry(url, timeoutMs, 3);
+}
+
 function extractMarginPadEvents(json) {
   const data=json?.data;
   if(Array.isArray(json?.events)) return json.events;
@@ -31,20 +52,17 @@ function extractMarginPadEvents(json) {
   if(Array.isArray(data)) return data;
   return [];
 }
+
 async function fetchViaConvexProxy() {
   const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
   const token=String(process.env.CONVEX_INGEST_TOKEN||'');
   if(!token) throw new Error('CONVEX_INGEST_TOKEN missing');
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),4000);
-  try{
-    const response=await fetch(siteUrl+'/marginpad-btc-liquidations?limit=400',{headers:{accept:'application/json',authorization:'Bearer '+token,'cache-control':'no-cache'},signal:controller.signal});
-    const json=await response.json();
-    if(!response.ok||json?.ok===false) throw new Error('Convex MarginPad proxy HTTP '+response.status+': '+(json?.error||'unknown'));
+  return fetchJsonWithRetry(siteUrl+'/marginpad-btc-liquidations?limit=400',4000,3).then(json => {
     console.log('Convex proxy: events='+(json.events||[]).length+' live='+(json.liveEvents??'n/a')+' feed='+(json.feedEvents??'n/a')+' liveError='+JSON.stringify(json.liveError)+' feedError='+JSON.stringify(json.feedError));
     return Array.isArray(json.events)?json.events:[];
-  }finally{clearTimeout(timeout);}
+  });
 }
+
 async function fetchMarginPadSources() {
   const promises=[
     ['convex',fetchViaConvexProxy()],
@@ -55,7 +73,7 @@ async function fetchMarginPadSources() {
   const merged=new Map();
   for(let i=0;i<settled.length;i++){
     const name=promises[i][0], result=settled[i];
-    if(result.status!=='fulfilled'){console.warn('MarginPad source '+name+' failed: '+(result.reason?.message||result.reason));continue;}
+    if(result.status!=='fulfilled'){console.warn('MarginPad source '+name+' failed after retries: '+(result.reason?.message||result.reason));continue;}
     const events=name==='convex'?result.value:extractMarginPadEvents(result.value);
     console.log('MarginPad source '+name+': events='+events.length);
     for(const event of events){
@@ -65,81 +83,50 @@ async function fetchMarginPadSources() {
   }
   return [...merged.values()];
 }
+
 function directionOf(event) {
-  const fields = [
-    event?.side,event?.direction,event?.liquidation_side,event?.liquidationSide,event?.type,event?.action,
-    event?.positionSide,event?.position_side,event?.orderSide,event?.order_side
-  ].map(value => String(value ?? '').trim().toLowerCase()).filter(Boolean);
-  for (const side of fields) {
-    if (/(^|[_ -])(long|buy|bid)([_ -]|$)/.test(side) || side.includes('long_liquidation') || side.includes('buy_liquidation')) return 'LONG';
-    if (/(^|[_ -])(short|sell|ask)([_ -]|$)/.test(side) || side.includes('short_liquidation') || side.includes('sell_liquidation')) return 'SHORT';
+  const fields=[event?.side,event?.direction,event?.liquidation_side,event?.liquidationSide,event?.type,event?.action,event?.positionSide,event?.position_side,event?.orderSide,event?.order_side]
+    .map(value=>String(value??'').trim().toLowerCase()).filter(Boolean);
+  for(const side of fields){
+    if(/(^|[_ -])(long|buy|bid)([_ -]|$)/.test(side)||side.includes('long_liquidation')||side.includes('buy_liquidation')) return 'LONG';
+    if(/(^|[_ -])(short|sell|ask)([_ -]|$)/.test(side)||side.includes('short_liquidation')||side.includes('sell_liquidation')) return 'SHORT';
   }
   return null;
 }
-function eventTime(event) {
-  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at);
-}
-function eventKey(event) {
-  return [eventTime(event), event?.exchange, normalizeSymbol(event?.symbol), event?.side, event?.price, event?.qty, event?.notional].join('|');
-}
+function eventTime(event){return normalizeTs(event?.ts??event?.timestamp??event?.time??event?.createdAt??event?.created_at);}
+function eventKey(event){return [eventTime(event),event?.exchange,normalizeSymbol(event?.symbol),event?.side,event?.price,event?.qty,event?.notional].join('|');}
 
-async function convexRuntimeRequest(type, data) {
-  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
-  const token = String(process.env.CONVEX_INGEST_TOKEN || '');
-  if (!token) return;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1500);
-  try {
-    await fetch(siteUrl + '/ingest', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
-      body: JSON.stringify({ type, data }),
-      signal: controller.signal
-    });
-  } catch (error) {
-    console.warn('Convex runtime log failed: ' + error.message);
-  } finally { clearTimeout(timeout); }
+async function convexRuntimeRequest(type,data){
+  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
+  const token=String(process.env.CONVEX_INGEST_TOKEN||'');
+  if(!token)return;
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),1500);
+  try{await fetch(siteUrl+'/ingest',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({type,data}),signal:controller.signal});}
+  catch(error){console.warn('Convex runtime log failed: '+error.message);}
+  finally{clearTimeout(timeout);}
 }
-const RUNTIME_RUN_ID = Number(process.env.GITHUB_RUN_ID || Date.now());
-const RUNTIME_GITHUB_RUN_ID = String(process.env.GITHUB_RUN_ID || RUNTIME_RUN_ID);
-const RUNTIME_COMMIT_SHA = String(process.env.GITHUB_SHA || 'unknown');
+const RUNTIME_RUN_ID=Number(process.env.GITHUB_RUN_ID||Date.now());
+const RUNTIME_GITHUB_RUN_ID=String(process.env.GITHUB_RUN_ID||RUNTIME_RUN_ID);
+const RUNTIME_COMMIT_SHA=String(process.env.GITHUB_SHA||'unknown');
+async function startConvexRuntime(){await convexRuntimeRequest('runtime.start',{runId:RUNTIME_RUN_ID,githubRunId:RUNTIME_GITHUB_RUN_ID,commitSha:RUNTIME_COMMIT_SHA,startedAt:Date.now()});}
+async function logConvexRuntime(level,message){await convexRuntimeRequest('runtime.log',{runId:RUNTIME_RUN_ID,level,message,ts:Date.now()});}
+async function heartbeatConvexRuntime(){await convexRuntimeRequest('runtime.heartbeat',{runId:RUNTIME_RUN_ID,heartbeatAt:Date.now()});}
 
-async function startConvexRuntime() {
-  await convexRuntimeRequest('runtime.start', {runId:RUNTIME_RUN_ID,githubRunId:RUNTIME_GITHUB_RUN_ID,commitSha:RUNTIME_COMMIT_SHA,startedAt:Date.now()});
-}
-async function logConvexRuntime(level, message) {
-  await convexRuntimeRequest('runtime.log', {runId:RUNTIME_RUN_ID,level,message,ts:Date.now()});
-}
-async function heartbeatConvexRuntime() {
-  await convexRuntimeRequest('runtime.heartbeat', {runId:RUNTIME_RUN_ID,heartbeatAt:Date.now()});
-}
-async function saveLiquidationToConvex(event, direction) {
-  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
-  const token = String(process.env.CONVEX_INGEST_TOKEN || '');
-  if (!token) return;
-  const eventId = eventKey(event);
-  const now = Date.now();
-  const payload = {type:'liquidation.event',data:{
-    eventId,symbol:normalizeSymbol(event?.symbol),ts:eventTime(event),
-    exchange:event?.exchange == null ? undefined : String(event.exchange),
-    side:event?.side == null ? undefined : String(event.side),
-    direction:direction || undefined,
-    price:Number.isFinite(Number(event?.price)) ? Number(event.price) : undefined,
-    qty:Number.isFinite(Number(event?.qty)) ? Number(event.qty) : undefined,
-    notional:Number.isFinite(Number(event?.notional)) ? Number(event.notional) : undefined,
-    firstSeenAt:now,lastSeenAt:now
-  }};
+async function saveLiquidationToConvex(event,direction){
+  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
+  const token=String(process.env.CONVEX_INGEST_TOKEN||''); if(!token)return;
+  const eventId=eventKey(event),now=Date.now();
+  const payload={type:'liquidation.event',data:{eventId,symbol:normalizeSymbol(event?.symbol),ts:eventTime(event),exchange:event?.exchange==null?undefined:String(event.exchange),side:event?.side==null?undefined:String(event.side),direction:direction||undefined,price:Number.isFinite(Number(event?.price))?Number(event.price):undefined,qty:Number.isFinite(Number(event?.qty))?Number(event.qty):undefined,notional:Number.isFinite(Number(event?.notional))?Number(event.notional):undefined,firstSeenAt:now,lastSeenAt:now}};
   try{
-    const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),1500);
-    let response;
-    try{ response=await fetch(siteUrl+'/ingest',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify(payload),signal:controller.signal}); }
+    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),1500);let response;
+    try{response=await fetch(siteUrl+'/ingest',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify(payload),signal:controller.signal});}
     finally{clearTimeout(timeout);}
-    if(!response.ok) throw new Error('HTTP '+response.status);
+    if(!response.ok)throw new Error('HTTP '+response.status);
     console.log('Convex liquidation recorded: eventId='+eventId);
   }catch(error){console.warn('Convex liquidation logging failed: '+error.message);}
 }
 
-async function getClobPriceLine(periodStart) {
+async function getClobPriceLine(periodStart){
   const fallback='CLOB PRICE: n/a';
   const marketUrl='https://polymarket.com/event/btc-updown-5m-'+Math.floor(periodStart/1000);
   try{
@@ -149,9 +136,9 @@ async function getClobPriceLine(periodStart) {
         const url=market?.url||marketUrl;
         const [upMid,downMid]=await Promise.all([findClobMidpoint(market,'UP'),findClobMidpoint(market,'DOWN')]);
         let cheaper=null;
-        if(Number.isFinite(upMid)&&Number.isFinite(downMid)) cheaper=upMid<=downMid?{outcome:'UP',price:upMid}:{outcome:'DOWN',price:downMid};
-        else if(Number.isFinite(upMid)) cheaper={outcome:'UP',price:upMid};
-        else if(Number.isFinite(downMid)) cheaper={outcome:'DOWN',price:downMid};
+        if(Number.isFinite(upMid)&&Number.isFinite(downMid))cheaper=upMid<=downMid?{outcome:'UP',price:upMid}:{outcome:'DOWN',price:downMid};
+        else if(Number.isFinite(upMid))cheaper={outcome:'UP',price:upMid};
+        else if(Number.isFinite(downMid))cheaper={outcome:'DOWN',price:downMid};
         return {line:cheaper?'CLOB PRICE: '+cheaper.outcome+' '+cheaper.price.toFixed(2):fallback,url};
       })(),
       new Promise(resolve=>setTimeout(()=>resolve(null),500))
@@ -163,70 +150,45 @@ async function getClobPriceLine(periodStart) {
   }
 }
 
-async function sendFirstLiquidation(event, periodStart) {
+async function sendFirstLiquidation(event,periodStart){
   const direction=directionOf(event);
-  const {line:clobLine, url:marketUrl}=await getClobPriceLine(periodStart);
-  const lines=['🔥 BTC · LIQUIDATION',''];
-  if(direction) lines.push('DIRECTION: '+direction);
-  else lines.push('DIRECTION: UNKNOWN');
-  lines.push(clobLine,'','➡️ CURRENT · Polymarket 5M',marketUrl);
-  const text=lines.join('\n');
+  const {line:clobLine,url:marketUrl}=await getClobPriceLine(periodStart);
+  const text=['🔥 BTC · LIQUIDATION','','DIRECTION: '+(direction||'UNKNOWN'),clobLine,'','➡️ CURRENT · Polymarket 5M',marketUrl].join('\n');
   console.log('Sending Telegram liquidation alert: direction='+JSON.stringify(direction)+' text='+JSON.stringify(text));
-  const result=await Promise.race([
-    sendTelegramMessage(text),
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error('Telegram send timeout after 4000ms')),4000))
-  ]);
+  const result=await Promise.race([sendTelegramMessage(text),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Telegram send timeout after 4000ms')),4000))]);
   console.log('Telegram liquidation alert sent: message_id='+(result?.message_id??'unknown'));
   return true;
 }
 
-async function main() {
-  const startedAt=Date.now();
-  let alertPeriod=null;
-  let alertSent=false;
-
+async function main(){
+  const startedAt=Date.now();let alertPeriod=null;let alertSent=false;
   void startConvexRuntime().catch(error=>console.warn('Convex runtime start failed: '+error.message));
-  void logConvexRuntime('info','MarginPad BTC monitor started; polling every 3000ms').catch(error=>console.warn('Convex startup log failed: '+error.message));
-
+  void logConvexRuntime('info','MarginPad BTC monitor started; polling every 3000ms with 3x source retries').catch(error=>console.warn('Convex startup log failed: '+error.message));
   while(Date.now()-startedAt<RUN_MS){
-    const now=Date.now();
-    const currentPeriod=bucketStart(now);
-    if(alertPeriod!==currentPeriod){
-      alertPeriod=currentPeriod;
-      alertSent=false;
-      console.log('MarginPad BTC PERIOD: '+new Date(currentPeriod).toISOString()+' alertSent=false');
-    }
+    const now=Date.now(),currentPeriod=bucketStart(now);
+    if(alertPeriod!==currentPeriod){alertPeriod=currentPeriod;alertSent=false;console.log('MarginPad BTC PERIOD: '+new Date(currentPeriod).toISOString()+' alertSent=false');}
     try{
       const pollStartedAt=Date.now();
       void heartbeatConvexRuntime().catch(error=>console.warn('Convex heartbeat failed: '+error.message));
       let events;
-      try{
-        events=await fetchMarginPadSources();
-      }catch(error){
-        void logConvexRuntime('error','MarginPad poll error: '+error.message);
-        throw error;
-      }
+      try{events=await fetchMarginPadSources();}
+      catch(error){void logConvexRuntime('error','MarginPad poll error: '+error.message);throw error;}
       void logConvexRuntime('info','MarginPad poll completed in '+(Date.now()-pollStartedAt)+'ms; returned='+(events||[]).length);
       const rows=(events||[]).map(event=>({event,ts:eventTime(event),direction:directionOf(event)})).filter(row=>row.ts&&row.ts<=now).sort((a,b)=>b.ts-a.ts);
       const currentRows=rows.filter(row=>bucketStart(row.ts)===currentPeriod);
       console.log('MarginPad BTC POLL: returned='+(events||[]).length+' current_period='+currentRows.length+' alertSent='+alertSent+' newest_ts='+(rows[0]?.ts?new Date(rows[0].ts).toISOString():'n/a')+' newest_side='+JSON.stringify(rows[0]?.event?.side??null));
-      console.log('MarginPad BTC CURRENT PERIOD: '+JSON.stringify(currentRows.slice(0,10).map(row=>({ts:row.ts,side:row.event?.side,direction:row.direction,price:row.event?.price,qty:row.event?.qty,notional:row.event?.notional}))));
-      if(!currentRows.length) console.log('MarginPad BTC: no liquidation in current 5M period');
-      else if(alertSent) console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
+      console.log('MarginPad BTC CURRENT PERIOD: '+JSON.stringify(currentRows.slice(0,10).map(row=>({ts:row.ts,side:row.event?.side,direction:row.direction,price:row.event?.price,qty:row.event?.qty,notional:row.event?.notional})));
+      if(!currentRows.length)console.log('MarginPad BTC: no liquidation in current 5M period');
+      else if(alertSent)console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
       else{
         const row=currentRows[0];
         console.log('MarginPad BTC NEW LIQUIDATION: ts='+new Date(row.ts).toISOString()+' side='+JSON.stringify(row.event?.side)+' period='+new Date(currentPeriod).toISOString());
-        try{
-          await sendFirstLiquidation(row.event,currentPeriod);
-          alertSent=true;
-          console.log('MarginPad BTC ALERT LOCKED until next 5M period');
-        }catch(error){ console.error('BTC liquidation alert send failed: '+error.message); }
+        try{await sendFirstLiquidation(row.event,currentPeriod);alertSent=true;console.log('MarginPad BTC ALERT LOCKED until next 5M period');}
+        catch(error){console.error('BTC liquidation alert send failed: '+error.message);}
       }
-      for(const row of currentRows) void saveLiquidationToConvex(row.event,row.direction);
-    }catch(error){ console.warn('MarginPad poll failed: '+error.message); }
-    const remaining=RUN_MS-(Date.now()-startedAt);
-    if(remaining<=0) break;
-    await sleep(Math.min(FEED_POLL_MS,remaining));
+      for(const row of currentRows)void saveLiquidationToConvex(row.event,row.direction);
+    }catch(error){console.warn('MarginPad poll failed: '+error.message);}
+    const remaining=RUN_MS-(Date.now()-startedAt);if(remaining<=0)break;await sleep(Math.min(FEED_POLL_MS,remaining));
   }
   void logConvexRuntime('info','MarginPad BTC monitor finished');
   void convexRuntimeRequest('runtime.finish',{runId:RUNTIME_RUN_ID,finishedAt:Date.now(),status:'completed',exitCode:null});
@@ -235,6 +197,5 @@ async function main() {
 main().catch(async error=>{
   void logConvexRuntime('error','MarginPad BTC monitor fatal error: '+error.message);
   void convexRuntimeRequest('runtime.finish',{runId:RUNTIME_RUN_ID,finishedAt:Date.now(),status:'failed',exitCode:1});
-  console.error(error);
-  process.exitCode=1;
+  console.error(error);process.exitCode=1;
 });
