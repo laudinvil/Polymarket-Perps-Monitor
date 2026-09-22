@@ -175,7 +175,7 @@ async function monitorPeriod(start) {
     "",
     "OPEN INTEREST: " + formatUsd(currentOI),
     previousOI > 0
-      ? "CHANGE: " + (direction === "SAME →" ? "0.00%" : (direction === "MORE ↑" ? "+" : "-") + Math.abs(deltaPct).toFixed(2) + "%")
+      ? "CHANGE: " + (direction === "SAME →" ? "0.00%" : Math.abs(deltaPct).toFixed(2) + "%")
       : "CHANGE: FIRST SNAPSHOT",
     "",
     "➡️ NEXT · Polymarket 5M",
