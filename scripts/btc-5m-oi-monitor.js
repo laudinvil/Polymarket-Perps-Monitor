@@ -168,10 +168,15 @@ async function monitorPeriod(start) {
   ];
 
   const previousDirection = state.previousDirection;
-  const sameDirectionTwice = previousDirection && previousDirection === direction && direction !== "SAME →";
+  const directionCount = Number(state.directionCount) || 0;
+  const consecutiveCount = direction !== "SAME →"
+    ? (previousDirection === direction ? directionCount + 1 : 1)
+    : 0;
 
-  if (!sameDirectionTwice) {
-    console.log("OI alert skipped: direction is not repeated twice. Current=" + direction + " Previous=" + (previousDirection || "NONE"));
+  nextState.directionCount = consecutiveCount;
+
+  if (consecutiveCount < 2) {
+    console.log("OI alert skipped: consecutive " + direction + " count=" + consecutiveCount + " (need 2+)");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
