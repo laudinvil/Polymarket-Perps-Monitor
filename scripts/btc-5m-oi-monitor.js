@@ -13,9 +13,22 @@ function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
 function sleep(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); }
 
 async function getJson(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "btc-5m-oi-monitor/1.0", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) });
-  if (!res.ok) throw new Error("HTTP " + res.status + " from " + url);
-  return res.json();
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "btc-5m-oi-monitor/1.0", "Accept": "application/json" },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status + " from " + url);
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+      console.error("API attempt " + attempt + "/3 failed: " + err.message);
+      if (attempt < 3) await sleep(2000);
+    }
+  }
+  throw lastError;
 }
 
 function unwrap(payload) { return payload && Array.isArray(payload.data) ? payload.data : payload; }
