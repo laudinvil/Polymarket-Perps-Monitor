@@ -1,7 +1,5 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
-// Global mode: MarginPad /feed already contains the newest liquidations across all tracked symbols.
-// Keep this as a marker for callers; fetchFeed() treats ALL as a request for the global feed.
 const DEFAULT_SYMBOLS = ['ALL'];
 const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
@@ -69,11 +67,8 @@ function mergeUniqueEvents(primary, secondary) {
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   let feedEvents = [];
-  try {
-    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
-  } catch (error) {
-    console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
-  }
+  try { feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized); }
+  catch (error) { console.warn(`MarginPad feed ${normalized} failed: ${error.message}`); }
   const now = Date.now();
   const cached = fallbackCache.eventsBySymbol.get(normalized);
   if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
@@ -88,17 +83,17 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
-  // ALL mode is intentionally global: do not loop over a hard-coded coin list and
-  // do not consume one live-fallback request per symbol. The /feed endpoint already
-  // returns the newest liquidations across all tracked symbols.
   if (requested.includes('ALL') || requested.length === 0) return fetchLiveFeed(fetchImpl);
   const results = await Promise.all(symbols.map(async symbol => [normalizeSymbol(symbol), await fetchSymbolFeed(symbol, fetchImpl)]));
   return results.flatMap(([, events]) => events);
 }
-function isLong(event) {
+function liquidationDirection(event) {
   const side = String(event?.side || event?.direction || '').toLowerCase();
-  return side.includes('long') || side === 'buy';
+  if (side.includes('long') || side === 'buy') return 'LONG';
+  if (side.includes('short') || side === 'sell') return 'SHORT';
+  return null;
 }
+function isLong(event) { return liquidationDirection(event) === 'LONG'; }
 function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
   const global = requested.includes('ALL') || requested.length === 0;
@@ -108,39 +103,25 @@ function aggregateEvents(events, symbols = DEFAULT_SYMBOLS, now = Date.now()) {
   for (const event of events || []) {
     const ts = normalizeTs(event.ts);
     const symbol = normalizeSymbol(event.symbol);
-    if (!ts || (!global && !allowed.has(symbol)) || !isLong(event)) continue;
+    const direction = liquidationDirection(event);
+    if (!ts || (!global && !allowed.has(symbol)) || !direction) continue;
     const bucket = bucketStart(ts);
     if (bucket >= current) continue;
     const key = `${bucket}:${symbol}`;
-    if (!rows.has(key)) rows.set(key, { bucket, symbol, longEvents: 0 });
-    rows.get(key).longEvents += 1;
+    if (!rows.has(key)) rows.set(key, { bucket, symbol, longEvents: 0, shortEvents: 0, events: 0 });
+    const row = rows.get(key);
+    row.events += 1;
+    if (direction === 'LONG') row.longEvents += 1;
+    else row.shortEvents += 1;
   }
-  return [...rows.values()].sort((a, b) => b.bucket - a.bucket || b.longEvents - a.longEvents || a.symbol.localeCompare(b.symbol));
+  return [...rows.values()].sort((a, b) => b.bucket - a.bucket || b.events - a.events || a.symbol.localeCompare(b.symbol));
 }
 function selectWinner(rows, bucket) {
   const candidates = rows.filter(row => row.bucket === bucket);
   if (!candidates.length) return null;
-  const max = Math.max(...candidates.map(row => row.longEvents));
-  const winners = candidates.filter(row => row.longEvents === max);
+  const max = Math.max(...candidates.map(row => row.events));
+  const winners = candidates.filter(row => row.events === max);
   if (winners.length !== 1) return null;
   return winners[0];
 }
-module.exports = {
-  FEED_URL,
-  LIVE_URL,
-  DEFAULT_SYMBOLS,
-  POLL_MS,
-  FALLBACK_REFRESH_MS,
-  WINDOW_MS,
-  FEED_RETENTION_MS,
-  bucketStart,
-  normalizeTs,
-  normalizeSymbol,
-  eventKey,
-  extractEvents,
-  fetchFeed,
-  fetchSymbolFeed,
-  aggregateEvents,
-  selectWinner,
-  isLong
-};
+module.exports = { FEED_URL, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, aggregateEvents, selectWinner, liquidationDirection, isLong };
