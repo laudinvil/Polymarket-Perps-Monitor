@@ -85,7 +85,7 @@ async function getClobPriceLine(periodStart) {
           url
         };
       })(),
-      new Promise(resolve => setTimeout(() => resolve(null), 2500))
+      new Promise(resolve => setTimeout(() => resolve(null), 500))
     ]);
     return result || { line: fallback, url: marketUrl };
   } catch (error) {
@@ -118,11 +118,19 @@ async function main() {
         .filter(row => row.ts && row.ts <= now)
         .sort((a, b) => b.ts - a.ts);
 
+      const newest = rows[0] || null;
+      console.log('MarginPad BTC POLL: rows=' + rows.length +
+        ' newest_ts=' + (newest?.ts ? new Date(newest.ts).toISOString() : 'n/a') +
+        ' newest_age_ms=' + (newest?.ts ? Math.max(0, now - newest.ts) : 'n/a') +
+        ' newest_side=' + JSON.stringify(newest?.event?.side ?? null) +
+        ' newest_direction=' + JSON.stringify(newest?.direction ?? null));
       console.log('MarginPad LIVE BTC: events=' + rows.length + ' sides=' + JSON.stringify(rows.slice(0, 10).map(row => ({
         ts: row.ts, side: row.event?.side, direction: row.direction, price: row.event?.price, qty: row.event?.qty, notional: row.event?.notional
       }))));
       const directional = rows.filter(row => row.direction);
-      console.log('MarginPad BTC DIRECTIONAL: ' + directional.length);
+      console.log('MarginPad BTC DIRECTIONAL: ' + directional.length + '/' + rows.length);
+      if (rows.length === 0) console.log('MarginPad BTC EMPTY: /feed returned no BTC events on this poll');
+      else if (!directional.length) console.log('MarginPad BTC NO_DIRECTION: BTC events received but side/direction was not recognized');
 
       for (const row of directional) {
         const key = eventKey(row.event);
