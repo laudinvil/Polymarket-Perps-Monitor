@@ -197,6 +197,7 @@ async function monitorPeriod(start) {
   const nextUrl = POLY_URL + (start + PERIOD);
 
   const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
+  const oppositeOutcome = outcome === "UP" ? "DOWN" : outcome === "DOWN" ? "UP" : outcome;
   const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "LARGEST BET 🔥";
 
   const nextState = {
@@ -214,7 +215,7 @@ async function monitorPeriod(start) {
     "🔥 BTC · 5M · " + tradeSignal,
     "",
     "LARGEST BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
-    "OUTCOME: " + outcome,
+    "OUTCOME: " + oppositeOutcome,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
