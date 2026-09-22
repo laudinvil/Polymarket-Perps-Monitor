@@ -50,19 +50,34 @@ async function getCurrentMarket(start) {
   return { slug: slug, conditionId: getConditionId(event) };
 }
 
-async function getOpenInterest(conditionId) {
-  const url = DATA_API + "/v2/oi?condition=" + encodeURIComponent(conditionId);
+async function getLargestBet(conditionId, start, end) {
+  const url = DATA_API + "/trades?market=" + encodeURIComponent(conditionId) + "&limit=1000";
   const payload = unwrap(await getJson(url));
   const rows = Array.isArray(payload) ? payload : [payload];
-  let total = 0;
-  let found = false;
+
+  let largest = null;
   for (const row of rows) {
-    const value = row && (row.value != null ? row.value : row.openInterest != null ? row.openInterest : row.open_interest != null ? row.open_interest : row.oi);
-    const n = Number(value);
-    if (Number.isFinite(n)) { total += n; found = true; }
+    if (!row) continue;
+    const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
+    const size = Number(row.size != null ? row.size : row.shares);
+    const side = String(row.side || "").toUpperCase();
+    if (!Number.isFinite(ts) || !Number.isFinite(size)) continue;
+    const seconds = ts > 1e12 ? ts / 1000 : ts;
+    if (seconds < start || seconds >= end) continue;
+    if (side && side !== "BUY") continue;
+    if (!largest || size > largest.size) {
+      largest = {
+        size: size,
+        outcome: String(row.outcome || row.title || "").toUpperCase(),
+        side: side || "BUY",
+        price: Number(row.price),
+        timestamp: seconds
+      };
+    }
   }
-  if (!found) throw new Error("Open interest value not found in Data API response: " + JSON.stringify(payload));
-  return total;
+
+  if (!largest) throw new Error("No BUY trades found for BTC 5M period " + start);
+  return largest;
 }
 
 function readState() {
@@ -147,59 +162,38 @@ async function monitorPeriod(start) {
   }
 
   const market = await getCurrentMarket(start);
-  const currentOI = await getOpenInterest(market.conditionId);
-  const previousOI = Number(state.openInterest);
+  const largestBet = await getLargestBet(market.conditionId, start, snapshotTime + 1);
+  const nextUrl = POLY_URL + (start + PERIOD);
 
-  let direction = "FIRST SNAPSHOT";
-  let deltaPct = null;
-  if (Number.isFinite(previousOI) && previousOI > 0) {
-    const delta = currentOI - previousOI;
-    deltaPct = delta / previousOI * 100;
-    direction = delta > 0 ? "MORE ↑" : delta < 0 ? "LESS ↓" : "SAME →";
-  }
+  const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
+  const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "LARGEST BET 🔥";
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    openInterest: currentOI,
-    previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
-    deltaPct: deltaPct,
-    previousDirection: direction,
-    lastAlertDirection: state.lastAlertDirection || null,
-    lastAlertPeriodStart: Number.isFinite(Number(state.lastAlertPeriodStart)) ? Number(state.lastAlertPeriodStart) : null,
+    largestBetShares: largestBet.size,
+    largestBetOutcome: outcome,
+    largestBetSide: largestBet.side,
+    largestBetPrice: Number.isFinite(largestBet.price) ? largestBet.price : null,
+    largestBetTimestamp: largestBet.timestamp,
     updatedAt: new Date().toISOString()
   };
 
-  const nextUrl = POLY_URL + (start + PERIOD);
-  const tradeSignal = direction === "LESS ↓" ? "BUY UP 🔥" : direction === "MORE ↑" ? "BUY DOWN 🔥" : null;
   const lines = [
-    "🔥 BTC · 5M" + (tradeSignal ? " · " + tradeSignal : ""),
+    "🔥 BTC · 5M · " + tradeSignal,
     "",
-    "OPEN INTEREST: " + formatUsd(currentOI),
-    previousOI > 0
-      ? "CHANGE: " + (direction === "SAME →" ? "0.00%" : Math.abs(deltaPct).toFixed(2) + "%")
-      : "CHANGE: FIRST SNAPSHOT",
+    "LARGEST BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
+    "OUTCOME: " + outcome,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
-  const previousDirection = state.previousDirection;
-  const lastAlertDirection = state.lastAlertDirection || null;
-  const lastAlertPeriodStart = Number(state.lastAlertPeriodStart);
-  const sameDirectionAsPrevious = previousDirection && previousDirection === direction && direction !== "SAME →";
-  const sameDirectionAsLastAlert = lastAlertDirection && lastAlertDirection === direction;
-  const alertAlreadySentForPreviousPeriod = Number.isFinite(lastAlertPeriodStart) && lastAlertPeriodStart === start - PERIOD;
-  const shouldAlert = sameDirectionAsPrevious && !(sameDirectionAsLastAlert && alertAlreadySentForPreviousPeriod);
-
-  if (!shouldAlert) {
-    console.log("OI alert skipped: Current=" + direction +
-      " Previous=" + (previousDirection || "NONE") +
-      " LastAlert=" + (lastAlertDirection || "NONE") +
-      " LastAlertPeriod=" + (Number.isFinite(lastAlertPeriodStart) ? lastAlertPeriodStart : "NONE"));
-    writeState(nextState);
-    gitCommitState(start);
-    console.log("State saved for period=" + start);
+  await sendTelegram(lines.join("\n"));
+  console.log("Telegram sent for period=" + start);
+  writeState(nextState);
+  gitCommitState(start);
+  console.log("State saved for period=" + start);
     return;
   }
 
