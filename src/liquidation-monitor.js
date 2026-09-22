@@ -1,11 +1,11 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 const DEFAULT_SYMBOLS = ['ALL'];
-const POLL_MS = 1000;
+const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 5000;
+const REQUEST_TIMEOUT_MS = 8000;
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -89,44 +89,39 @@ function mergeUniqueEvents(primary, secondary) {
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-
-  // MarginPad /feed has repeatedly timed out on the GitHub runner. Treat the
-  // symbol-scoped live endpoint as a first-class source instead of a fallback.
-  // Query both sources concurrently so a broken /feed cannot delay liquidation
-  // detection or prevent the live endpoint from being used.
-  const [liveResult, feedResult] = await Promise.allSettled([
-    fetchLiveSymbolFallback(normalized, fetchImpl),
-    fetchLiveFeed(fetchImpl)
-  ]);
-
-  let liveEvents = [];
   let feedEvents = [];
 
-  if (liveResult.status === 'fulfilled') {
-    liveEvents = liveResult.value || [];
-    fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
-    console.log(`MarginPad LIVE PRIMARY ${normalized}: events=${liveEvents.length}`);
-  } else {
-    console.warn(`MarginPad live primary ${normalized} failed: ${liveResult.reason?.message || liveResult.reason}`);
-    const cached = fallbackCache.eventsBySymbol.get(normalized);
-    liveEvents = cached?.events || [];
-  }
-
-  if (feedResult.status === 'fulfilled') {
-    feedEvents = (feedResult.value || []).filter(event => {
+  // Stable MarginPad architecture: poll global /feed first. Only hit the
+  // symbol-scoped endpoint as a 30s fallback. Do not hammer both endpoints
+  // on every poll; this was causing unnecessary 503s/timeouts.
+  try {
+    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => {
       const eventSymbol = normalizeSymbol(event?.symbol);
-      return !eventSymbol || eventSymbol === normalized;
+      return eventSymbol === normalized;
     });
-    console.log(`MarginPad FEED SECONDARY ${normalized}: events=${feedEvents.length}`);
-  } else {
-    console.warn(`MarginPad feed secondary ${normalized} failed: ${feedResult.reason?.message || feedResult.reason}`);
+    console.log(`MarginPad FEED ${normalized}: events=${feedEvents.length}`);
+  } catch (error) {
+    console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
   }
 
-  const merged = mergeUniqueEvents(feedEvents, liveEvents);
-  if (!merged.length) {
-    console.warn(`MarginPad ${normalized}: live + feed returned no events`);
+  const now = Date.now();
+  const cached = fallbackCache.eventsBySymbol.get(normalized);
+  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) {
+    return mergeUniqueEvents(feedEvents, cached.events);
   }
-  return merged;
+
+  try {
+    const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
+    fallbackCache.eventsBySymbol.set(normalized, {
+      fetchedAt: Date.now(),
+      events: fresh
+    });
+    console.log(`MarginPad LIVE FALLBACK ${normalized}: events=${fresh.length}`);
+    return mergeUniqueEvents(feedEvents, fresh);
+  } catch (error) {
+    console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
+    return mergeUniqueEvents(feedEvents, cached?.events || []);
+  }
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
