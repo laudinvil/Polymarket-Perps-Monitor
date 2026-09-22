@@ -191,14 +191,14 @@ async function sendFirstLiquidation(event, periodStart) {
 async function main() {
   const startedAt = Date.now();
   const seen = new Set();
-  void startConvexRuntime();
-  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 3000ms');
+  // Convex runtime logging is best-effort; the monitor must not depend on it.\n  void startConvexRuntime().catch(error => console.warn('Convex runtime start failed: ' + error.message));
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 3000ms').catch(error => console.warn('Convex startup log failed: ' + error.message));
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
     try {
       const pollStartedAt = Date.now();
-      void heartbeatConvexRuntime();
+      void heartbeatConvexRuntime().catch(error => console.warn('Convex heartbeat failed: ' + error.message));
       let events;
       try {
         events = await fetchViaConvexProxy();
@@ -223,6 +223,8 @@ async function main() {
       }))));
       const directional = rows.filter(row => row.direction);
       console.log('MarginPad BTC DIRECTIONAL: ' + directional.length + '/' + rows.length);
+      console.log('MarginPad BTC SIDES: ' + JSON.stringify([...new Set(rows.slice(0, 50).map(row => row.event?.side ?? row.event?.direction ?? row.event?.type ?? row.event?.action ?? null))]));
+      console.log('MarginPad BTC SUMMARY: returned=' + (events || []).length + ' usable=' + rows.length + ' directional=' + directional.length + ' newest_age_sec=' + (newest?.ts ? Math.max(0, now - newest.ts) / 1000 : 'n/a'));
       if (rows.length === 0) {
         console.log('MarginPad BTC EMPTY: live + feed returned no usable BTC events on this poll');
         void logConvexRuntime('warn', 'MarginPad BTC poll returned 0 usable BTC events');
