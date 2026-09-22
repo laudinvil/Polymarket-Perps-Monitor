@@ -11,26 +11,61 @@ const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function fetchViaConvexProxy() {
-  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
-  const token = String(process.env.CONVEX_INGEST_TOKEN || '');
-  if (!token) throw new Error('CONVEX_INGEST_TOKEN missing');
+async function fetchMarginPadDirect(url, timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(siteUrl + '/marginpad-btc-liquidations?limit=400', {
-      headers: { accept: 'application/json', authorization: 'Bearer ' + token, 'cache-control': 'no-cache' },
-      signal: controller.signal
-    });
+    const response = await fetch(url, {headers:{accept:'application/json','cache-control':'no-cache','user-agent':'Polymarket-Perps-Monitor/2.0'},signal:controller.signal});
     const json = await response.json();
-    if (!response.ok || json?.ok === false) throw new Error('Convex MarginPad proxy HTTP ' + response.status + ': ' + (json?.error || 'unknown'));
-    console.log('Convex MarginPad proxy [' + PROXY_VERSION + ']: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' rawEvents=' + (json.rawEvents ?? 'n/a') + ' status=' + (json.marginpadStatus ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' preview=' + JSON.stringify(json.rawPreview ?? null));
-    return Array.isArray(json.events) ? json.events : [];
-  } finally {
-    clearTimeout(timeout);
-  }
+    if (!response.ok || json?.ok === false) throw new Error('MarginPad HTTP ' + response.status);
+    return json;
+  } finally { clearTimeout(timeout); }
 }
-
+function extractMarginPadEvents(json) {
+  const data=json?.data;
+  if(Array.isArray(json?.events)) return json.events;
+  if(Array.isArray(json?.liquidations)) return json.liquidations;
+  if(Array.isArray(data?.events)) return data.events;
+  if(Array.isArray(data?.liquidations)) return data.liquidations;
+  if(Array.isArray(data?.data?.events)) return data.data.events;
+  if(Array.isArray(data?.data?.liquidations)) return data.data.liquidations;
+  if(Array.isArray(data)) return data;
+  return [];
+}
+async function fetchViaConvexProxy() {
+  const siteUrl=String(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL).replace(/\/$/,'');
+  const token=String(process.env.CONVEX_INGEST_TOKEN||'');
+  if(!token) throw new Error('CONVEX_INGEST_TOKEN missing');
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),4000);
+  try{
+    const response=await fetch(siteUrl+'/marginpad-btc-liquidations?limit=400',{headers:{accept:'application/json',authorization:'Bearer '+token,'cache-control':'no-cache'},signal:controller.signal});
+    const json=await response.json();
+    if(!response.ok||json?.ok===false) throw new Error('Convex MarginPad proxy HTTP '+response.status+': '+(json?.error||'unknown'));
+    console.log('Convex proxy: events='+(json.events||[]).length+' live='+(json.liveEvents??'n/a')+' feed='+(json.feedEvents??'n/a')+' liveError='+JSON.stringify(json.liveError)+' feedError='+JSON.stringify(json.feedError));
+    return Array.isArray(json.events)?json.events:[];
+  }finally{clearTimeout(timeout);}
+}
+async function fetchMarginPadSources() {
+  const promises=[
+    ['convex',fetchViaConvexProxy()],
+    ['live-direct',fetchMarginPadDirect('https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400',2500)],
+    ['feed-direct',fetchMarginPadDirect('https://marginpad.io/api/v1/feed',2500)]
+  ];
+  const settled=await Promise.allSettled(promises.map(x=>x[1]));
+  const merged=new Map();
+  for(let i=0;i<settled.length;i++){
+    const name=promises[i][0], result=settled[i];
+    if(result.status!=='fulfilled'){console.warn('MarginPad source '+name+' failed: '+(result.reason?.message||result.reason));continue;}
+    const events=name==='convex'?result.value:extractMarginPadEvents(result.value);
+    console.log('MarginPad source '+name+': events='+events.length);
+    for(const event of events){
+      const symbol=normalizeSymbol(event?.symbol??event?.market??event?.pair);
+      if(!symbol||symbol==='BTC') merged.set(eventKey(event),event);
+    }
+  }
+  return [...merged.values()];
+}
 function directionOf(event) {
   const fields = [
     event?.side,
@@ -206,7 +241,7 @@ async function main() {
       void heartbeatConvexRuntime().catch(error => console.warn('Convex heartbeat failed: ' + error.message));
       let events;
       try {
-        events = await fetchViaConvexProxy();
+        events = await fetchMarginPadSources();
       } catch (error) {
         void logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
         throw error;
