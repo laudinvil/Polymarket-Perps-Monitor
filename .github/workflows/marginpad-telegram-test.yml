@@ -1,0 +1,30 @@
+name: MarginPad Telegram Test
+
+on:
+  push:
+    paths:
+      - ".github/workflows/marginpad-telegram-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send TEST Telegram alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          test -n "${TELEGRAM_BOT_TOKEN}" || { echo "TELEGRAM_BOT_TOKEN is missing"; exit 1; }
+          test -n "${TELEGRAM_CHAT_ID}" || { echo "TELEGRAM_CHAT_ID is missing"; exit 1; }
+          curl -fsS --max-time 10 -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=🔥 TEST · MarginPad BTC Liquidation Monitor
+
+CLOB PRICE: TEST
+
+➡️ CURRENT · Polymarket 5M
+https://polymarket.com/event/btc-updown-5m-test"
