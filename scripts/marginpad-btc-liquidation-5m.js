@@ -188,7 +188,7 @@ async function main() {
   const startedAt = Date.now();
   const seen = new Set();
   void startConvexRuntime();
-  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 1000ms');
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 3000ms');
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
