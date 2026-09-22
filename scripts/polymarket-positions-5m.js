@@ -394,6 +394,53 @@ function fmt(value, digits = 2) {
   return Number.isFinite(value) ? value.toFixed(digits) : 'n/a';
 }
 
+async function saveStrategyStability(data) {
+  const site = env.CONVEX_SITE_URL;
+  const token = env.CONVEX_INGEST_TOKEN;
+  if (!site || !token) {
+    console.log('[btc5m-strategy] stability not saved: Convex env missing');
+    return;
+  }
+  try {
+    const response = await fetch(site.replace(/\\/$/, '') + '/ingest', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'strategyStability', data })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    console.log('[btc5m-strategy] stability saved: stable=' + data.stable + ' flips=' + data.flips + ' winner=' + (data.winner || 'n/a'));
+  } catch (error) {
+    console.error('[btc5m-strategy] stability save failed: ' + error.message);
+  }
+}
+
+async function resolveWinner(slug) {
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const event = await getJson(GAMMA_API + '/events/slug/' + encodeURIComponent(slug));
+      const markets = Array.isArray(event?.markets) ? event.markets : [];
+      const market = markets.find(item => item?.slug === slug) || markets[0];
+      const winner = String(market?.winner || '').trim().toUpperCase();
+      if (winner === 'UP' || winner === 'DOWN') return winner;
+      let outcomes = market?.outcomes;
+      let prices = market?.outcomePrices ?? market?.outcome_prices;
+      if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
+      if (typeof prices === 'string') prices = JSON.parse(prices);
+      if (Array.isArray(outcomes) && Array.isArray(prices)) {
+        const normalized = outcomes.map(value => String(value).trim().toUpperCase());
+        const up = normalized.indexOf('UP');
+        const down = normalized.indexOf('DOWN');
+        if (up >= 0 && Number(prices[up]) >= 0.99) return 'UP';
+        if (down >= 0 && Number(prices[down]) >= 0.99) return 'DOWN';
+      }
+    } catch (error) {
+      console.error('[btc5m-strategy] winner check failed: ' + error.message);
+    }
+    if (attempt < 6) await sleep(5000);
+  }
+  return null;
+}
+
 async function sendTelegram(message) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -433,6 +480,12 @@ async function processPeriod(coin, boundary) {
   let confirmedDirection = null;
   let lastScore = null;
   let alertSent = false;
+  let signalDirection = null;
+  let signalScore = null;
+  let signalAt = null;
+  let stabilitySamples = [];
+  let lastObservedDirection = null;
+  let flips = 0;
 
   while (Date.now() < market.end - 500 && market.end > Date.now()) {
     const now = Date.now();
@@ -448,6 +501,14 @@ async function processPeriod(coin, boundary) {
       lastScore = decision.score;
       console.log('[btc5m-strategy] ' + activeSlug + ' score=' + decision.score + ' direction=' + decision.direction + ' seconds=' + decision.secondsRemaining);
 
+      if (alertSent) {
+        stabilitySamples.push({ ts: now, direction: decision.direction, score: decision.score, secondsRemaining: decision.secondsRemaining });
+        if (decision.direction !== 'WAIT') {
+          if (lastObservedDirection && decision.direction !== lastObservedDirection) flips++;
+          lastObservedDirection = decision.direction;
+        }
+      }
+
       if (decision.direction !== 'WAIT') {
         if (decision.direction === confirmedDirection) confirmations++;
         else {
@@ -457,9 +518,15 @@ async function processPeriod(coin, boundary) {
 
         if (confirmations >= CONFIRMATIONS_REQUIRED && !alertSent) {
           alertSent = true;
-          return await sendStrategyAlert(coin, market, nextSlug, decision);
+          signalDirection = decision.direction;
+          signalScore = decision.score;
+          signalAt = now;
+          stabilitySamples.push({ ts: now, direction: decision.direction, score: decision.score, secondsRemaining: decision.secondsRemaining });
+          lastObservedDirection = decision.direction;
+          flips = 0;
+          await sendStrategyAlert(coin, market, nextSlug, decision);
         }
-      } else {
+      } else if (!alertSent) {
         confirmations = 0;
         confirmedDirection = null;
       }
@@ -468,6 +535,28 @@ async function processPeriod(coin, boundary) {
     }
 
     await sleep(CONFIRMATION_INTERVAL_MS);
+  }
+
+  if (alertSent) {
+    const winner = await resolveWinner(activeSlug);
+    const finalDirection = [...stabilitySamples].reverse().find(sample => sample.direction !== 'WAIT')?.direction || 'WAIT';
+    await saveStrategyStability({
+      symbol: coin,
+      periodStart: market.start,
+      periodEnd: market.end,
+      signalDirection,
+      signalScore,
+      signalAt,
+      samples: stabilitySamples,
+      stable: flips === 0,
+      flips,
+      finalDirection,
+      winner: winner || undefined,
+      correct: winner ? winner === signalDirection : undefined,
+      recordedAt: Date.now()
+    });
+    console.log('[btc5m-strategy] signal stability: direction=' + signalDirection + ' stable=' + (flips === 0) + ' flips=' + flips + ' winner=' + (winner || 'n/a'));
+    return true;
   }
 
   console.log('[btc5m-strategy] no confirmed signal for ' + activeSlug + ' lastScore=' + lastScore);
