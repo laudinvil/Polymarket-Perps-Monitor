@@ -5,7 +5,8 @@ const POLL_MS = 4000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 1500;
+const FAST_RETRY_DELAY_MS = 250;
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -33,48 +34,42 @@ function extractEvents(json) {
   return [];
 }
 async function fetchJson(url, fetchImpl = fetch) {
-  let lastError = null;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      let response;
-      try {
-        response = await fetchImpl(url, {
-          headers: {
-            accept: 'application/json',
-            'user-agent': 'Polymarket-Perps-Monitor/1.0',
-            'cache-control': 'no-cache'
-          },
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
-      console.log(`MarginPad request ${url} -> HTTP ${response.status}`);
-      if (response.ok) return response.json();
-      if (![429, 502, 503, 504].includes(response.status)) {
-        throw new Error(`MarginPad HTTP ${response.status}`);
-      }
-      const retryAfter = Number(response.headers?.get?.('retry-after'));
-      const delay = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.min(retryAfter * 1000, 10000)
-        : Math.min(1000 * (2 ** attempt), 8000);
-      lastError = new Error(`MarginPad HTTP ${response.status}`);
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, delay));
-    } catch (error) {
-      lastError = error?.name === 'AbortError' ? new Error(`MarginPad request timeout after ${REQUEST_TIMEOUT_MS}ms: ${url}`) : error;
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, Math.min(1000 * (2 ** attempt), 8000)));
-    }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(url, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'Polymarket-Perps-Monitor/1.0',
+        'cache-control': 'no-cache'
+      },
+      signal: controller.signal
+    });
+    console.log(`MarginPad request ${url} -> HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`MarginPad HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    throw error?.name === 'AbortError'
+      ? new Error(`MarginPad request timeout after ${REQUEST_TIMEOUT_MS}ms: ${url}`)
+      : error;
+  } finally {
+    clearTimeout(timeout);
   }
-  throw lastError || new Error('MarginPad request failed');
+}
+async function fetchFast(url, fetchImpl = fetch) {
+  try {
+    return await fetchJson(url, fetchImpl);
+  } catch (firstError) {
+    await new Promise(resolve => setTimeout(resolve, FAST_RETRY_DELAY_MS));
+    return fetchJson(url, fetchImpl);
+  }
 }
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
   if (liveFeedPromise) return liveFeedPromise;
   if (now - liveFeedCache.fetchedAt < 3000) return [...liveFeedCache.events.values()];
   liveFeedPromise = (async () => {
-    const events = extractEvents(await fetchJson(FEED_URL, fetchImpl));
+    const events = extractEvents(await fetchFast(FEED_URL, fetchImpl));
     const merged = new Map(liveFeedCache.events);
     for (const event of events) merged.set(eventKey(event), event);
     const cutoff = Date.now() - FEED_RETENTION_MS;
@@ -89,7 +84,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 }
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
+  const json = await fetchFast(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
   return extractEvents(json).filter(event => normalizeSymbol(event.symbol) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
