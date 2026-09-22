@@ -15,6 +15,7 @@ const FLOW_THRESHOLD = 0.07;
 const DEPTH_THRESHOLD = 0.08;
 const MICRO_THRESHOLD_BPS = 0.25;
 const POLY_MID_CHANGE_THRESHOLD_BPS = 2.0;
+const POLY_EQUAL_MID = 0.5;
 const CONFIRMATION_INTERVAL_MS = 5000;
 const COINS = ['BTC'];
 const FETCH_TIMEOUT_MS = 7000;
@@ -373,7 +374,8 @@ function evaluateStrategy(market, books, perp, now, previousBooks = null) {
   const depth5 = Number.isFinite(perp?.depth5) && Math.abs(perp.depth5) >= DEPTH_THRESHOLD ? sign(perp.depth5) : 0;
   const depth20 = Number.isFinite(perp?.depth20) && Math.abs(perp.depth20) >= DEPTH_THRESHOLD ? sign(perp.depth20) : 0;
   const micro = Number.isFinite(perp?.microBps) && Math.abs(perp.microBps) >= MICRO_THRESHOLD_BPS ? sign(perp.microBps) : 0;
-  const polyBook = bookScore(books.up, books.down);
+  const polyMidIsEqual = Math.abs(books.up.mid - POLY_EQUAL_MID) < 0.000001 && Math.abs(books.down.mid - POLY_EQUAL_MID) < 0.000001;
+  const polyBook = polyMidIsEqual ? 0 : bookScore(books.up, books.down);
   const polyUpMoveBps = previousBooks && Number.isFinite(previousBooks.up?.mid) && Number.isFinite(books.up.mid)
     ? (books.up.mid / previousBooks.up.mid - 1) * 10000
     : null;
@@ -414,6 +416,7 @@ function evaluateStrategy(market, books, perp, now, previousBooks = null) {
     polyDownMoveBps,
     polyMoveBps,
     polyMove,
+    polyMidIsEqual,
     upMid: books.up.mid,
     downMid: books.down.mid,
     secondsRemaining: Math.max(0, Math.round((market.end - now) / 1000)),
@@ -590,7 +593,7 @@ async function processPeriod(coin, boundary) {
           confirmations = 1;
         }
 
-        if (confirmations >= CONFIRMATIONS_REQUIRED && !alertSent) {
+        if (confirmations >= CONFIRMATIONS_REQUIRED && !alertSent && previousBooks) {
           alertSent = true;
           signalDirection = decision.direction;
           signalScore = decision.score;
