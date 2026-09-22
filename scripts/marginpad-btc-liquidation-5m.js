@@ -23,7 +23,7 @@ async function fetchViaConvexProxy() {
     });
     const json = await response.json();
     if (!response.ok || json?.ok === false) throw new Error('Convex MarginPad proxy HTTP ' + response.status + ': ' + (json?.error || 'unknown'));
-    console.log('Convex MarginPad proxy: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' feedEvents=' + (json.feedEvents ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' feedError=' + JSON.stringify(json.feedError));
+    console.log('Convex MarginPad proxy: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' rawEvents=' + (json.rawEvents ?? 'n/a') + ' status=' + (json.marginpadStatus ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' preview=' + JSON.stringify(json.rawPreview ?? null));
     return Array.isArray(json.events) ? json.events : [];
   } finally {
     clearTimeout(timeout);
