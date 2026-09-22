@@ -5,7 +5,7 @@ const { sendTelegramMessage } = require('../src/telegram');
 const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
 const RUN_MS = PERIOD_MS + 15 * 1000;
-const FEED_POLL_MS = POLL_MS || 4000;
+const FEED_POLL_MS = 1000;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site';
 const CONVEX_INGEST_TOKEN = process.env.CONVEX_INGEST_TOKEN || '';
 
