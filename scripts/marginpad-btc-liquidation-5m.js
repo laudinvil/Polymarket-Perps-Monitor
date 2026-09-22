@@ -6,6 +6,7 @@ const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
 const RUN_MS = PERIOD_MS + 15 * 1000;
 const FEED_POLL_MS = 1000;
+const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
@@ -43,13 +44,15 @@ function eventKey(event) {
 }
 
 async function saveLiquidationToConvex(event, direction) {
-  const siteUrl = String(process.env.CONVEX_SITE_URL || '').replace(/\\/$/, '');
+  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
   const token = String(process.env.CONVEX_INGEST_TOKEN || '');
-  if (!siteUrl || !token) {
-    console.warn('Convex liquidation logging skipped: CONVEX_SITE_URL or CONVEX_INGEST_TOKEN missing');
+  if (!token) {
+    console.warn('Convex liquidation logging skipped: CONVEX_INGEST_TOKEN missing');
     return;
   }
+
   const eventId = eventKey(event);
+  const now = Date.now();
   const payload = {
     type: 'liquidation.event',
     data: {
@@ -62,14 +65,18 @@ async function saveLiquidationToConvex(event, direction) {
       price: Number.isFinite(Number(event?.price)) ? Number(event.price) : undefined,
       qty: Number.isFinite(Number(event?.qty)) ? Number(event.qty) : undefined,
       notional: Number.isFinite(Number(event?.notional)) ? Number(event.notional) : undefined,
-      firstSeenAt: Date.now(),
-      lastSeenAt: Date.now()
+      firstSeenAt: now,
+      lastSeenAt: now
     }
   };
+
   try {
     const response = await fetch(siteUrl + '/ingest', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + token
+      },
       body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -125,8 +132,6 @@ async function sendFirstLiquidation(event, periodStart) {
   const direction = directionOf(event);
   if (!direction) return false;
 
-  // The liquidation alert must not depend on Polymarket API availability.
-  // Fetch CLOB price with a short timeout, then send Telegram regardless.
   const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
 
   const text = [
@@ -178,15 +183,10 @@ async function main() {
       const directional = rows.filter(row => row.direction);
       console.log('MarginPad BTC DIRECTIONAL: ' + directional.length);
 
-      // Persist every BTC event returned by MarginPad so Convex becomes the source of truth
-      // for what the API actually exposed during each polling cycle.
       for (const row of rows) {
         await saveLiquidationToConvex(row.event, row.direction);
       }
 
-      // Alert on every newly observed liquidation event.
-      // Do not require the event to belong to the current 5m bucket:
-      // MarginPad can expose a just-finished event after the bucket boundary.
       for (const row of directional) {
         const key = eventKey(row.event);
         if (seen.has(key)) continue;
