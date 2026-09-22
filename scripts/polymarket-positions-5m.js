@@ -7,8 +7,8 @@ const CLOB_API = 'https://clob.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 0;
-const MIN_SIGNAL_SCORE = 2;
-const CONFIRMATIONS_REQUIRED = 2;
+const MIN_SIGNAL_SCORE = 1;
+const CONFIRMATIONS_REQUIRED = 1;
 const DISTANCE_THRESHOLD_BPS = 0.5;
 const MOMENTUM_THRESHOLD_BPS = 0.20;
 const FLOW_THRESHOLD = 0.04;
@@ -667,7 +667,7 @@ async function main() {
 
   console.log('[btc5m-strategy] BTC 5M confluence strategy started');
   console.log('[btc5m-strategy] prediction = Chainlink TWAP + Binance perp flow/depth + Polymarket book');
-  console.log('[btc5m-strategy] monitoring starts near period open; alert after 2 consecutive confirmations');
+  console.log('[btc5m-strategy] monitoring starts near period open; alert on first non-WAIT signal');
 
   while (Date.now() < stopAt) {
     const wait = boundary - PERIOD - Date.now() + 1000;
