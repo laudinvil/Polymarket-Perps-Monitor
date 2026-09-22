@@ -45,7 +45,9 @@ async function fetchJson(url, fetchImpl = fetch) {
           accept: 'application/json',
           'user-agent': 'Polymarket-Perps-Monitor/1.0',
           'cache-control': 'no-cache'
-        }, { signal: controller.signal });
+        },
+          signal: controller.signal
+        });
       } finally {
         clearTimeout(timeout);
       }
