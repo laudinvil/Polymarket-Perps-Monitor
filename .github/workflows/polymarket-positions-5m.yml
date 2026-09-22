@@ -42,7 +42,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
+          CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site' }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
           POLYMARKET_AUTO_TRADE_ENABLED: ${{ vars.POLYMARKET_AUTO_TRADE_ENABLED || 'false' }}
           POLYMARKET_ORDER_AMOUNT_USD: ${{ vars.POLYMARKET_ORDER_AMOUNT_USD || '1' }}
