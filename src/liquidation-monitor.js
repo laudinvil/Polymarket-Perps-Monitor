@@ -6,6 +6,7 @@ const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
+const RETRY_DELAYS_MS = [1500, 3000, 6000];
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -37,27 +38,56 @@ function extractEvents(json) {
   return [];
 }
 async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(url, {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'Polymarket-Perps-Monitor/1.0',
-        'cache-control': 'no-cache'
-      },
-      signal: controller.signal
-    });
-    console.log(`MarginPad request ${url} -> HTTP ${response.status}`);
-    if (!response.ok) throw new Error(`MarginPad HTTP ${response.status}`);
-    return await response.json();
-  } catch (error) {
-    throw error?.name === 'AbortError'
-      ? new Error(`MarginPad request timeout after ${timeoutMs}ms: ${url}`)
-      : error;
-  } finally {
-    clearTimeout(timeout);
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetchImpl(url, {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'Polymarket-Perps-Monitor/1.0',
+          'cache-control': 'no-cache'
+        },
+        signal: controller.signal
+      });
+
+      console.log(
+        `MarginPad request ${url} -> HTTP ${response.status} attempt=${attempt + 1}/${RETRY_DELAYS_MS.length + 1}`
+      );
+
+      if (response.ok) return await response.json();
+
+      lastError = new Error(`MarginPad HTTP ${response.status}`);
+
+      // 503 is explicitly documented by MarginPad as transient. Retry with
+      // backoff instead of immediately abandoning the source.
+      if (response.status !== 503 || attempt === RETRY_DELAYS_MS.length) {
+        throw lastError;
+      }
+    } catch (error) {
+      lastError = error?.name === 'AbortError'
+        ? new Error(`MarginPad request timeout after ${timeoutMs}ms: ${url}`)
+        : error;
+
+      // Timeouts are also transient on the public feed. Retry them, but never
+      // retry a normal 4xx response.
+      const retryable = lastError.message.includes('timeout') ||
+        lastError.message.includes('HTTP 503');
+
+      if (!retryable || attempt === RETRY_DELAYS_MS.length) throw lastError;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const delay = RETRY_DELAYS_MS[attempt];
+    console.warn(`MarginPad transient failure; retrying in ${delay}ms: ${url}`);
+    await new Promise(resolve => setTimeout(resolve, delay));
   }
+
+  throw lastError || new Error(`MarginPad request failed: ${url}`);
 }
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
@@ -166,4 +196,4 @@ function selectWinner(rows, bucket) {
   if (winners.length !== 1) return null;
   return winners[0];
 }
-module.exports = { FEED_URL, fetchLiveFeed, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
+module.exports = { FEED_URL, fetchLiveFeed, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, RETRY_DELAYS_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
