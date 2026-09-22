@@ -165,6 +165,8 @@ async function monitorPeriod(start) {
     previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
     deltaPct: deltaPct,
     previousDirection: direction,
+    lastAlertDirection: state.lastAlertDirection || null,
+    lastAlertPeriodStart: Number.isFinite(Number(state.lastAlertPeriodStart)) ? Number(state.lastAlertPeriodStart) : null,
     updatedAt: new Date().toISOString()
   };
 
@@ -183,16 +185,26 @@ async function monitorPeriod(start) {
   ];
 
   const previousDirection = state.previousDirection;
-  const sameDirectionTwice = previousDirection && previousDirection === direction && direction !== "SAME →";
+  const lastAlertDirection = state.lastAlertDirection || null;
+  const lastAlertPeriodStart = Number(state.lastAlertPeriodStart);
+  const sameDirectionAsPrevious = previousDirection && previousDirection === direction && direction !== "SAME →";
+  const sameDirectionAsLastAlert = lastAlertDirection && lastAlertDirection === direction;
+  const alertAlreadySentForPreviousPeriod = Number.isFinite(lastAlertPeriodStart) && lastAlertPeriodStart === start - PERIOD;
+  const shouldAlert = sameDirectionAsPrevious && !(sameDirectionAsLastAlert && alertAlreadySentForPreviousPeriod);
 
-  if (!sameDirectionTwice) {
-    console.log("OI alert skipped: direction is not repeated twice. Current=" + direction + " Previous=" + (previousDirection || "NONE"));
+  if (!shouldAlert) {
+    console.log("OI alert skipped: Current=" + direction +
+      " Previous=" + (previousDirection || "NONE") +
+      " LastAlert=" + (lastAlertDirection || "NONE") +
+      " LastAlertPeriod=" + (Number.isFinite(lastAlertPeriodStart) ? lastAlertPeriodStart : "NONE"));
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
     return;
   }
 
+  nextState.lastAlertDirection = direction;
+  nextState.lastAlertPeriodStart = start;
   await sendTelegram(lines.join("\n"));
   console.log("Telegram sent for period=" + start);
   writeState(nextState);
