@@ -347,7 +347,7 @@ async function settleTrade(trade) {
 }
 
 async function runTrade(symbol, slug, marketStart, marketEnd, strategySide = null) {
-  const tradeSide = strategySide ? String(strategySide).trim().toLowerCase() : tradeSide;
+  const tradeSide = strategySide ? String(strategySide).trim().toLowerCase() : TRADE_SIDE;
   if (!['up', 'down', 'both'].includes(tradeSide)) throw new Error('Invalid strategy trade side: ' + strategySide);
   const existingRecovery = await recoveryState(symbol);
   const recovery = initialRecovery(symbol, existingRecovery);
