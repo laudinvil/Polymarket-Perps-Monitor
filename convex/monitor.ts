@@ -39,6 +39,22 @@ export const setHolderAlertState = internalMutation({ args: {
   if (existing) { await ctx.db.patch(existing._id, args); return existing._id; }
   return await ctx.db.insert("holderAlertState", args);
 } });
+export const saveLiquidationEvent = internalMutation({
+  args:{ eventId:v.string(), symbol:v.string(), ts:v.number(), exchange:v.optional(v.string()), side:v.optional(v.string()), direction:v.optional(v.string()), price:v.optional(v.number()), qty:v.optional(v.number()), notional:v.optional(v.number()), firstSeenAt:v.number(), lastSeenAt:v.number() },
+  handler:async(ctx,args)=>{
+    const existing=await ctx.db.query("liquidationEvents").withIndex("by_event_id",q=>q.eq("eventId",args.eventId)).unique();
+    if(existing){await ctx.db.patch(existing._id,{lastSeenAt:args.lastSeenAt, direction:args.direction, price:args.price, qty:args.qty, notional:args.notional});return existing._id;}
+    return await ctx.db.insert("liquidationEvents",args);
+  }
+});
+export const latestLiquidationEvents = query({
+  args:{symbol:v.optional(v.string()),limit:v.number()},
+  handler:async(ctx,args)=>{
+    const limit=Math.min(Math.max(args.limit,1),500);
+    if(args.symbol)return await ctx.db.query("liquidationEvents").withIndex("by_symbol_ts",q=>q.eq("symbol",args.symbol!)).order("desc").take(limit);
+    return await ctx.db.query("liquidationEvents").withIndex("by_last_seen").order("desc").take(limit);
+  }
+});
 export const claimLiquidationAlert = internalMutation({
   args:{symbol:v.string(),periodStart:v.number(),sentAt:v.number()}, returns:v.boolean(),
   handler:async(ctx,args)=>{
