@@ -22,7 +22,7 @@ function eventKey(event) {
 }
 
 async function convexRuntimeRequest(type, data) {
-  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\\/$/, '');
+  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
   const token = String(process.env.CONVEX_INGEST_TOKEN || '');
   if (!token) return;
   const controller = new AbortController();
@@ -157,22 +157,22 @@ async function sendFirstLiquidation(event, periodStart) {
 async function main() {
   const startedAt = Date.now();
   const seen = new Set();
-  await startConvexRuntime();
-  await logConvexRuntime('info', 'MarginPad BTC monitor started; polling /feed every 1000ms');
+  void startConvexRuntime();
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling /feed every 1000ms');
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
     try {
       const pollStartedAt = Date.now();
-      await heartbeatConvexRuntime();
+      void heartbeatConvexRuntime();
       let events;
       try {
         events = await fetchFeed([SYMBOL]);
       } catch (error) {
-        await logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
+        void logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
         throw error;
       }
-      await logConvexRuntime('info', 'MarginPad poll completed in ' + (Date.now() - pollStartedAt) + 'ms; returned=' + (events || []).length);
+      void logConvexRuntime('info', 'MarginPad poll completed in ' + (Date.now() - pollStartedAt) + 'ms; returned=' + (events || []).length);
       const rows = (events || [])
         .map(event => ({ event, ts: eventTime(event), direction: directionOf(event) }))
         .filter(row => row.ts && row.ts <= now)
@@ -194,8 +194,8 @@ async function main() {
         void logConvexRuntime('warn', 'MarginPad BTC poll returned 0 usable BTC events');
       } else {
         void logConvexRuntime('info', 'MarginPad BTC rows=' + rows.length + ' newest_ts=' + new Date(rows[0].ts).toISOString() + ' newest_side=' + JSON.stringify(rows[0].event?.side));
+        if (!directional.length) console.log('MarginPad BTC NO_DIRECTION: BTC events received but side/direction was not recognized');
       }
-      else if (!directional.length) console.log('MarginPad BTC NO_DIRECTION: BTC events received but side/direction was not recognized');
 
       for (const row of directional) {
         const key = eventKey(row.event);
@@ -218,13 +218,13 @@ async function main() {
     if (remaining <= 0) break;
     await sleep(Math.min(FEED_POLL_MS, remaining));
   }
-  await logConvexRuntime('info', 'MarginPad BTC monitor finished');
-  await convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'completed', exitCode: null });
+  void logConvexRuntime('info', 'MarginPad BTC monitor finished');
+  void convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'completed', exitCode: null });
 }
 
 main().catch(async error => {
-  await logConvexRuntime('error', 'MarginPad BTC monitor fatal error: ' + error.message);
-  await convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'failed', exitCode: 1 });
+  void logConvexRuntime('error', 'MarginPad BTC monitor fatal error: ' + error.message);
+  void convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'failed', exitCode: 1 });
   console.error(error);
   process.exitCode = 1;
 });
