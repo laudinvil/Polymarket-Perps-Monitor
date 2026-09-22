@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/marginpad-btc-liquidation-5m.js'
+      - 'src/liquidation-monitor.js'
+      - 'src/polymarket.js'
+      - 'src/telegram.js'
+      - '.github/workflows/marginpad-btc-liquidation-5m.yml'
 
 permissions:
   contents: read
