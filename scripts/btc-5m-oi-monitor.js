@@ -103,7 +103,7 @@ async function main() {
   const now = Math.floor(Date.now() / 1000);
   const start = periodStart(now);
   const offset = now - start;
-  if (offset < WINDOW_START) { console.log("Outside 4:45 window. Offset=" + offset); return; }
+  if (offset >= TARGET_OFFSET) { console.log("After 4:45; skipping current period. Offset=" + offset); return; }
   if (offset < TARGET_OFFSET) { await sleep((TARGET_OFFSET - offset) * 1000); }
   const snapshotTime = Math.floor(Date.now() / 1000);
   if (periodStart(snapshotTime) !== start) { console.log("Period rolled over; skipping."); return; }
