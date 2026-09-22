@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: marginpad-btc-liquidation-5m-v2
+  group: marginpad-btc-liquidation-5m-diagnostics-20260922
   cancel-in-progress: false
 
 jobs:
