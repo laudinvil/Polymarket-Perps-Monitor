@@ -7,8 +7,13 @@ const CLOB_API = 'https://clob.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 0;
-const MIN_SIGNAL_SCORE = 4;
+const MIN_SIGNAL_SCORE = 2;
 const CONFIRMATIONS_REQUIRED = 2;
+const DISTANCE_THRESHOLD_BPS = 0.5;
+const MOMENTUM_THRESHOLD_BPS = 0.20;
+const FLOW_THRESHOLD = 0.04;
+const DEPTH_THRESHOLD = 0.05;
+const MICRO_THRESHOLD_BPS = 0.15;
 const CONFIRMATION_INTERVAL_MS = 5000;
 const COINS = ['BTC'];
 const FETCH_TIMEOUT_MS = 7000;
@@ -317,13 +322,13 @@ async function getBooks(upTokenId, downTokenId) {
   return { up: topBook(up), down: topBook(down) };
 }
 
-function momentumScore(value, deadbandBps = 0.35) {
+function momentumScore(value, deadbandBps = MOMENTUM_THRESHOLD_BPS) {
   if (!Number.isFinite(value) || Math.abs(value) < deadbandBps) return 0;
   return sign(value);
 }
 
 function flowScore(flow) {
-  if (!flow || !Number.isFinite(flow.imbalance) || Math.abs(flow.imbalance) < 0.08) return 0;
+  if (!flow || !Number.isFinite(flow.imbalance) || Math.abs(flow.imbalance) < FLOW_THRESHOLD) return 0;
   return sign(flow.imbalance);
 }
 
@@ -347,7 +352,7 @@ function evaluateStrategy(market, books, perp, now) {
   const ret30 = previous30 ? (twap.price / previous30.price - 1) * 10000 : null;
   const ret60 = previous60 ? (twap.price / previous60.price - 1) * 10000 : null;
 
-  const distanceSignal = Math.abs(distanceBps) >= 1 ? sign(distanceBps) * 2 : 0;
+  const distanceSignal = Math.abs(distanceBps) >= DISTANCE_THRESHOLD_BPS ? sign(distanceBps) * 2 : 0;
   const momentum10 = momentumScore(ret10);
   const momentum30 = momentumScore(ret30);
   const momentum60 = momentumScore(ret60);
@@ -355,9 +360,9 @@ function evaluateStrategy(market, books, perp, now) {
   const perp10 = flowScore(perp?.flow10);
   const perp30 = flowScore(perp?.flow30);
   const perp60 = flowScore(perp?.flow60);
-  const depth5 = Number.isFinite(perp?.depth5) && Math.abs(perp.depth5) >= 0.10 ? sign(perp.depth5) : 0;
-  const depth20 = Number.isFinite(perp?.depth20) && Math.abs(perp.depth20) >= 0.10 ? sign(perp.depth20) : 0;
-  const micro = Number.isFinite(perp?.microBps) && Math.abs(perp.microBps) >= 0.25 ? sign(perp.microBps) : 0;
+  const depth5 = Number.isFinite(perp?.depth5) && Math.abs(perp.depth5) >= DEPTH_THRESHOLD ? sign(perp.depth5) : 0;
+  const depth20 = Number.isFinite(perp?.depth20) && Math.abs(perp.depth20) >= DEPTH_THRESHOLD ? sign(perp.depth20) : 0;
+  const micro = Number.isFinite(perp?.microBps) && Math.abs(perp.microBps) >= MICRO_THRESHOLD_BPS ? sign(perp.microBps) : 0;
   const polyBook = bookScore(books.up, books.down);
 
   const score =
@@ -386,7 +391,44 @@ function evaluateStrategy(market, books, perp, now) {
     microBps: perp?.microBps ?? null,
     upMid: books.up.mid,
     downMid: books.down.mid,
-    secondsRemaining: Math.max(0, Math.round((market.end - now) / 1000))
+    secondsRemaining: Math.max(0, Math.round((market.end - now) / 1000)),
+    diagnostic: {
+      thresholds: {
+        score: MIN_SIGNAL_SCORE,
+        distanceBps: DISTANCE_THRESHOLD_BPS,
+        momentumBps: MOMENTUM_THRESHOLD_BPS,
+        flow: FLOW_THRESHOLD,
+        depth: DEPTH_THRESHOLD,
+        microBps: MICRO_THRESHOLD_BPS
+      },
+      raw: {
+        distanceBps,
+        ret10,
+        ret30,
+        ret60,
+        flow10: perp?.flow10?.imbalance ?? null,
+        flow30: perp?.flow30?.imbalance ?? null,
+        flow60: perp?.flow60?.imbalance ?? null,
+        depth5: perp?.depth5 ?? null,
+        depth20: perp?.depth20 ?? null,
+        microBps: perp?.microBps ?? null,
+        polyUpMid: books.up.mid,
+        polyDownMid: books.down.mid
+      },
+      contributions: {
+        distance: distanceSignal,
+        momentum10,
+        momentum30,
+        momentum60,
+        flow10: perp10,
+        flow30: perp30,
+        flow60: perp60,
+        depth5,
+        depth20,
+        micro,
+        polyBook
+      }
+    }
   };
 }
 
@@ -494,12 +536,18 @@ async function processPeriod(coin, boundary) {
       const perp = perpFeed.features(now);
       const decision = evaluateStrategy(market, books, perp, now);
       if (!decision) {
+        const twap = referenceFeed.latest('twap60');
+        console.log('[btc5m-diagnostic] snapshot skipped: TWAP=' + (twap ? 'OK' : 'MISSING') + ' depth=' + (perp ? 'OK' : 'MISSING'));
         await sleep(CONFIRMATION_INTERVAL_MS);
         continue;
       }
 
       lastScore = decision.score;
+      const d = decision.diagnostic;
       console.log('[btc5m-strategy] ' + activeSlug + ' score=' + decision.score + ' direction=' + decision.direction + ' seconds=' + decision.secondsRemaining);
+      console.log('[btc5m-diagnostic] thresholds score>=' + d.thresholds.score + ' distance>=' + d.thresholds.distanceBps + 'bps momentum>=' + d.thresholds.momentumBps + 'bps flow>=' + (d.thresholds.flow * 100).toFixed(1) + '% depth>=' + (d.thresholds.depth * 100).toFixed(1) + '% micro>=' + d.thresholds.microBps + 'bps');
+      console.log('[btc5m-diagnostic] raw distance=' + fmt(d.raw.distanceBps) + ' ret10=' + fmt(d.raw.ret10) + ' ret30=' + fmt(d.raw.ret30) + ' ret60=' + fmt(d.raw.ret60) + ' flow10=' + fmt(d.raw.flow10 * 100) + '% flow30=' + fmt(d.raw.flow30 * 100) + '% flow60=' + fmt(d.raw.flow60 * 100) + '% depth5=' + fmt(d.raw.depth5 * 100) + '% depth20=' + fmt(d.raw.depth20 * 100) + '% micro=' + fmt(d.raw.microBps) + 'bps polyUP=' + fmt(d.raw.polyUpMid, 4) + ' polyDOWN=' + fmt(d.raw.polyDownMid, 4));
+      console.log('[btc5m-diagnostic] points distance=' + d.contributions.distance + ' mom10=' + d.contributions.momentum10 + ' mom30=' + d.contributions.momentum30 + ' mom60=' + d.contributions.momentum60 + ' flow10=' + d.contributions.flow10 + ' flow30=' + d.contributions.flow30 + ' flow60=' + d.contributions.flow60 + ' depth5=' + d.contributions.depth5 + ' depth20=' + d.contributions.depth20 + ' micro=' + d.contributions.micro + ' poly=' + d.contributions.polyBook + ' total=' + decision.score + ' confirmation=' + confirmations + '/' + CONFIRMATIONS_REQUIRED);
 
       if (alertSent) {
         stabilitySamples.push({ ts: now, direction: decision.direction, score: decision.score, secondsRemaining: decision.secondsRemaining });
