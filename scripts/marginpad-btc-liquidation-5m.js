@@ -165,7 +165,7 @@ async function main() {
         .filter(row =>
           row.ts &&
           row.ts <= pollFinishedAt &&
-          row.ts >= pollFinishedAt - HISTORY_LOOKBACK_MS
+          row.ts >= periodStart
         )
         .sort((a, b) => a.ts - b.ts);
 
@@ -177,7 +177,7 @@ async function main() {
         ' finished_at=' + iso(pollFinishedAt) +
         ' duration_ms=' + (pollFinishedAt - pollStartedAt) +
         ' returned=' + (events || []).length +
-        ' recent_events=' + current.length +
+        ' current_period_events=' + current.length +
         ' alerted=' + (alertedPeriod === periodStart) +
         ' newest_ts=' + iso(newestTs) +
         ' newest_age_ms=' + (newestTs ? pollFinishedAt - newestTs : 'n/a') +
