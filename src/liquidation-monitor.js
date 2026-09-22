@@ -100,8 +100,7 @@ async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS)
 }
 async function fetchConvexProxy(fetchImpl = fetch) {
   const json = await fetchJson(CONVEX_PROXY_URL, fetchImpl, 2000);
-  console.log('MarginPad CONVEX RAW:', JSON.stringify(json).slice(0, 12000));
-  const events = extractEvents(json).filter(event => normalizeEventSymbol(event) === 'BTC');
+  const events = extractEvents(json).filter(event => normalizeEventSymbol(event) === 'BTC').map(normalizeEvent);
   console.log(
     'MarginPad CONVEX PROXY: source=' + JSON.stringify(json?.source) +
     ' feed=' + JSON.stringify(json?.feedEvents) +
@@ -219,4 +218,4 @@ function selectWinner(rows, bucket) {
   if (winners.length !== 1) return null;
   return winners[0];
 }
-module.exports = { FEED_URL, fetchLiveFeed, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, RETRY_DELAYS_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, normalizeEventSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
+module.exports = { FEED_URL, fetchLiveFeed, fetchConvexProxy, LIVE_URL, DEFAULT_SYMBOLS, POLL_MS, REQUEST_TIMEOUT_MS, RETRY_DELAYS_MS, FALLBACK_REFRESH_MS, WINDOW_MS, FEED_RETENTION_MS, bucketStart, normalizeTs, normalizeSymbol, normalizeEventSymbol, eventKey, extractEvents, fetchFeed, fetchSymbolFeed, fetchLiveSymbolFallback, aggregateEvents, selectWinner, liquidationDirection, isLong };
