@@ -266,11 +266,9 @@ async function main() {
         .sort((a, b) => b.ts - a.ts);
 
       const currentRows = rows.filter(row => bucketStart(row.ts) === currentPeriod);
-      const directional = currentRows.filter(row => row.direction);
 
       console.log('MarginPad BTC POLL: returned=' + (events || []).length +
         ' current_period=' + currentRows.length +
-        ' directional=' + directional.length +
         ' alertSent=' + alertSent +
         ' newest_ts=' + (rows[0]?.ts ? new Date(rows[0].ts).toISOString() : 'n/a') +
         ' newest_side=' + JSON.stringify(rows[0]?.event?.side ?? null));
@@ -286,15 +284,12 @@ async function main() {
 
       if (!currentRows.length) {
         console.log('MarginPad BTC: no liquidation in current 5M period');
-      } else if (!directional.length) {
-        console.log('MarginPad BTC: liquidation exists, but LONG/SHORT direction is not recognized');
       } else if (alertSent) {
         console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
       } else {
-        const row = directional[0];
+        const row = currentRows[0];
         console.log('MarginPad BTC NEW LIQUIDATION: ts=' + new Date(row.ts).toISOString() +
           ' side=' + JSON.stringify(row.event?.side) +
-          ' direction=' + row.direction +
           ' period=' + new Date(currentPeriod).toISOString());
 
         try {
