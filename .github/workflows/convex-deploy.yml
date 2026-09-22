@@ -1,0 +1,25 @@
+name: Deploy Convex
+
+on:
+  push:
+    paths:
+      - 'convex/**'
+      - 'package.json'
+      - '.github/workflows/convex-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex@1.31.2 deploy
