@@ -169,13 +169,14 @@ async function monitorPeriod(start) {
   };
 
   const nextUrl = POLY_URL + (start + PERIOD);
+  const tradeSignal = direction === "LESS ↓" ? "BUY UP" : direction === "MORE ↑" ? "BUY DOWN" : null;
   const lines = [
-    "🔥 BTC · 5M",
+    "🔥 BTC · 5M" + (tradeSignal ? " · " + tradeSignal : ""),
     "",
     "OPEN INTEREST: " + formatUsd(currentOI),
     previousOI > 0
-      ? "VS PREVIOUS 4:45: " + formatUsd(previousOI) + " · " + direction + " " + Math.abs(deltaPct).toFixed(2) + "%"
-      : "VS PREVIOUS 4:45: FIRST SNAPSHOT",
+      ? "CHANGE: " + (direction === "SAME →" ? "0.00%" : (direction === "MORE ↑" ? "+" : "-") + Math.abs(deltaPct).toFixed(2) + "%")
+      : "CHANGE: FIRST SNAPSHOT",
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
