@@ -51,30 +51,70 @@ async function getCurrentMarket(start) {
 }
 
 async function getLargestBet(conditionId, start, end) {
-  const url = DATA_API + "/trades?market=" + encodeURIComponent(conditionId) + "&limit=1000";
-  const payload = unwrap(await getJson(url));
-  const rows = Array.isArray(payload) ? payload : [payload];
-
+  let cursor = null;
   let largest = null;
-  for (const row of rows) {
-    if (!row) continue;
-    const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
-    const size = Number(row.size != null ? row.size : row.shares);
-    const side = String(row.side || "").toUpperCase();
-    if (!Number.isFinite(ts) || !Number.isFinite(size)) continue;
-    const seconds = ts > 1e12 ? ts / 1000 : ts;
-    if (seconds < start || seconds >= end) continue;
-    if (side && side !== "BUY") continue;
-    if (!largest || size > largest.size) {
-      largest = {
-        size: size,
-        outcome: String(row.outcome || row.title || "").toUpperCase(),
-        side: side || "BUY",
-        price: Number(row.price),
-        timestamp: seconds
-      };
+  let pages = 0;
+  let totalRows = 0;
+
+  while (true) {
+    const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
+    const url = DATA_API + "/v2/trades?condition=" + encodeURIComponent(conditionId) + "&limit=1000" + cursorParam;
+    const response = await getJson(url);
+    const rows = Array.isArray(response && response.data) ? response.data : [];
+    const pagination = response && response.pagination ? response.pagination : {};
+
+    pages++;
+    totalRows += rows.length;
+
+    let reachedOlderTrades = false;
+
+    for (const row of rows) {
+      if (!row) continue;
+
+      const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
+      const size = Number(row.size != null ? row.size : row.shares);
+      const side = String(row.side || "").toUpperCase();
+
+      if (!Number.isFinite(ts) || !Number.isFinite(size)) continue;
+
+      const seconds = ts > 1e12 ? ts / 1000 : ts;
+
+      if (seconds < start) {
+        reachedOlderTrades = true;
+        continue;
+      }
+
+      if (seconds >= end) continue;
+      if (side && side !== "BUY") continue;
+
+      if (!largest || size > largest.size) {
+        largest = {
+          size: size,
+          outcome: String(row.outcome || row.title || row.outcome_label || "").toUpperCase(),
+          side: side || "BUY",
+          price: Number(row.price),
+          timestamp: seconds
+        };
+      }
     }
+
+    console.log(
+      "Trades page=" + pages +
+      " rows=" + rows.length +
+      " totalRows=" + totalRows +
+      " hasMore=" + Boolean(pagination.has_more) +
+      " largest=" + (largest ? largest.size : "none")
+    );
+
+    if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
+    cursor = pagination.next_cursor;
   }
+
+  console.log(
+    "Largest BUY scan complete: pages=" + pages +
+    " rows=" + totalRows +
+    " result=" + (largest ? largest.size + " shares" : "none")
+  );
 
   if (!largest) throw new Error("No BUY trades found for BTC 5M period " + start);
   return largest;
@@ -88,15 +128,6 @@ function readState() {
 function writeState(state) {
   fs.mkdirSync("state", { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
-}
-
-function formatUsd(value) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value);
 }
 
 async function sendTelegram(text) {
