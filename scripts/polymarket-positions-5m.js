@@ -432,6 +432,7 @@ async function processPeriod(coin, boundary) {
   let confirmations = 0;
   let confirmedDirection = null;
   let lastScore = null;
+  let alertSent = false;
 
   while (Date.now() < market.end - 500 && market.end > Date.now()) {
     const now = Date.now();
@@ -454,7 +455,8 @@ async function processPeriod(coin, boundary) {
           confirmations = 1;
         }
 
-        if (confirmations >= CONFIRMATIONS_REQUIRED) {
+        if (confirmations >= CONFIRMATIONS_REQUIRED && !alertSent) {
+          alertSent = true;
           return await sendStrategyAlert(coin, market, nextSlug, decision);
         }
       } else {
