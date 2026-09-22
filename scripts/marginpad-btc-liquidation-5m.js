@@ -4,13 +4,13 @@ const { sendTelegramMessage } = require('../src/telegram');
 
 const SYMBOL = 'BTC';
 const PERIOD_MS = 5 * 60 * 1000;
-const RUN_MS = PERIOD_MS + 15 * 1000;
+const RUN_MS = PERIOD_MS - 15 * 1000;
 const FEED_POLL_MS = POLL_MS || 4000;
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function eventTime(event) {
-  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time);
+  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at);
 }
 
 function eventKey(event) {
