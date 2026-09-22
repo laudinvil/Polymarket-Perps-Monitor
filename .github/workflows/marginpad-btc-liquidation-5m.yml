@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: marginpad-btc-liquidation-5m-diagnostics-20260922
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
