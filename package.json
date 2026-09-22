@@ -1,6 +1,7 @@
 {
   "name": "polymarket-perps-monitor",
   "private": true,
+  "description": "Polymarket monitoring tools",
   "version": "1.0.0",
   "scripts": {
     "monitor": "node scripts/imbalance-all-timeframes.js",
