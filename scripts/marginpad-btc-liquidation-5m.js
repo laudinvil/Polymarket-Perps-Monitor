@@ -1,4 +1,4 @@
-const { fetchSymbolFeed, normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
+const { normalizeTs, normalizeSymbol, bucketStart } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
@@ -9,6 +9,26 @@ const FEED_POLL_MS = 1000;
 const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function fetchViaConvexProxy() {
+  const siteUrl = String(process.env.CONVEX_SITE_URL || DEFAULT_CONVEX_SITE_URL).replace(/\/$/, '');
+  const token = String(process.env.CONVEX_INGEST_TOKEN || '');
+  if (!token) throw new Error('CONVEX_INGEST_TOKEN missing');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(siteUrl + '/marginpad-btc-liquidations?limit=400', {
+      headers: { accept: 'application/json', authorization: 'Bearer ' + token, 'cache-control': 'no-cache' },
+      signal: controller.signal
+    });
+    const json = await response.json();
+    if (!response.ok || json?.ok === false) throw new Error('Convex MarginPad proxy HTTP ' + response.status + ': ' + (json?.error || 'unknown'));
+    console.log('Convex MarginPad proxy: events=' + (json.events || []).length + ' liveEvents=' + (json.liveEvents ?? 'n/a') + ' feedEvents=' + (json.feedEvents ?? 'n/a') + ' liveError=' + JSON.stringify(json.liveError) + ' feedError=' + JSON.stringify(json.feedError));
+    return Array.isArray(json.events) ? json.events : [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function directionOf(event) {
   const side = String(
@@ -168,7 +188,7 @@ async function main() {
   const startedAt = Date.now();
   const seen = new Set();
   void startConvexRuntime();
-  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling live endpoint + feed concurrently every 1000ms');
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling Convex MarginPad proxy every 1000ms');
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
@@ -177,7 +197,7 @@ async function main() {
       void heartbeatConvexRuntime();
       let events;
       try {
-        events = await fetchSymbolFeed(SYMBOL);
+        events = await fetchViaConvexProxy();
       } catch (error) {
         void logConvexRuntime('error', 'MarginPad poll error: ' + error.message);
         throw error;
