@@ -402,7 +402,7 @@ async function saveStrategyStability(data) {
     return;
   }
   try {
-    const response = await fetch(site.replace(/\\/$/, '') + '/ingest', {
+    const response = await fetch(site.replace(/\/$/, '') + '/ingest', {
       method: 'POST',
       headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'strategyStability', data })
