@@ -2,26 +2,25 @@ const { env } = require('node:process');
 
 const { executeTrade } = require('./polymarket-auto-trader');
 
-const POLYMARKET_API = 'https://gamma-api.polymarket.com';
-const DATA_API = 'https://data-api.polymarket.com';
-const CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site';
+const GAMMA_API = 'https://gamma-api.polymarket.com';
+const CLOB_API = 'https://clob.polymarket.com';
 
 const PERIOD = 300000;
 const ALERT_LEAD_MS = 20000;
 const COINS = ['BTC'];
-const POLYMARKET_GAP = 1000;
-const FETCH_TIMEOUT_MS = 5000;
+const FETCH_TIMEOUT_MS = 7000;
 const RUN_MS = 358 * 60 * 1000;
-const MARKET_RETRIES = 8;
-const MARKET_RETRY_MS = 15000;
-const TRADES_RETRIES = 4;
-const TRADES_RETRY_MS = 500;
 
-let lastPolymarketApi = 0;
+const BINANCE_DEPTH_URL = 'wss://fstream.binance.com/public/stream?streams=btcusdt@depth20@100ms';
+const BINANCE_TRADE_URL = 'wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade';
+const RTDS_URL = 'wss://ws-live-data.polymarket.com';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const boundaryNow = () => Math.floor(Date.now() / PERIOD) * PERIOD;
 const marketSlug = (coin, start) => coin.toLowerCase() + '-updown-5m-' + Math.floor(start / 1000);
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const sign = value => value > 0 ? 1 : value < 0 ? -1 : 0;
 
 async function fetchTimeout(url, options = {}) {
   const controller = new AbortController();
@@ -33,130 +32,363 @@ async function fetchTimeout(url, options = {}) {
   }
 }
 
-async function polymarket(path) {
-  const wait = POLYMARKET_GAP - (Date.now() - lastPolymarketApi);
-  if (wait > 0) await sleep(wait);
-  lastPolymarketApi = Date.now();
-
-  const response = await fetchTimeout(POLYMARKET_API + path);
+async function getJson(url, options = {}) {
+  const response = await fetchTimeout(url, {
+    ...options,
+    headers: { accept: 'application/json', ...(options.headers || {}) }
+  });
   const body = await response.text();
-  if (!response.ok) throw new Error('Polymarket ' + response.status + ': ' + body);
+  if (!response.ok) throw new Error(new URL(url).hostname + ' ' + response.status + ': ' + body);
   return JSON.parse(body);
 }
 
+class ReferenceFeed {
+  constructor() {
+    this.ticks = [];
+    this.ws = null;
+    this.timer = null;
+    this.lastMessage = 0;
+    this.stopped = true;
+  }
+
+  start() {
+    this.stopped = false;
+    this.connect();
+  }
+
+  stop() {
+    this.stopped = true;
+    clearInterval(this.timer);
+    this.ws?.close();
+  }
+
+  connect() {
+    if (this.stopped) return;
+    const ws = this.ws = new WebSocket(RTDS_URL);
+
+    ws.onopen = () => {
+      this.lastMessage = Date.now();
+      ws.send(JSON.stringify({
+        action: 'subscribe',
+        subscriptions: [
+          { topic: 'crypto_prices_chainlink', type: '*', filters: JSON.stringify({ symbol: 'btc/usd' }) },
+          { topic: 'crypto_prices_twap_sixty', type: 'update', filters: JSON.stringify({ symbol: 'btc/usd' }) }
+        ]
+      }));
+      clearInterval(this.timer);
+      this.timer = setInterval(() => {
+        if (Date.now() - this.lastMessage > 20000) {
+          ws.close();
+          return;
+        }
+        if (ws.readyState === WebSocket.OPEN) ws.send('PING');
+      }, 5000);
+    };
+
+    ws.onmessage = event => {
+      this.lastMessage = Date.now();
+      try {
+        const msg = JSON.parse(String(event.data));
+        const topic = msg?.topic;
+        if (topic !== 'crypto_prices_chainlink' && topic !== 'crypto_prices_twap_sixty') return;
+        if (msg?.payload?.symbol !== 'btc/usd') return;
+
+        const raw = Array.isArray(msg.payload.data) ? msg.payload.data : [msg.payload.data ?? msg.payload];
+        for (const item of raw) {
+          const timestamp = Number(item?.timestamp);
+          const price = Number(item?.value);
+          if (!Number.isFinite(timestamp) || !Number.isFinite(price)) continue;
+          if (timestamp > Date.now() + 2000 || timestamp < Date.now() - 1800000) continue;
+          this.ticks.push({
+            source: topic === 'crypto_prices_twap_sixty' ? 'twap60' : 'spot',
+            timestamp,
+            price
+          });
+        }
+        this.ticks.sort((a, b) => a.timestamp - b.timestamp);
+        this.ticks = this.ticks.slice(-10000);
+      } catch {}
+    };
+
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      clearInterval(this.timer);
+      if (!this.stopped) setTimeout(() => this.connect(), 1500);
+    };
+  }
+
+  latest(source) {
+    return [...this.ticks].reverse().find(t => t.source === source) || null;
+  }
+
+  exact(source, timestamp) {
+    return this.ticks.find(t => t.source === source && t.timestamp === timestamp) || null;
+  }
+
+  atOrBefore(source, timestamp) {
+    for (let i = this.ticks.length - 1; i >= 0; i--) {
+      const tick = this.ticks[i];
+      if (tick.source === source && tick.timestamp <= timestamp) return tick;
+    }
+    return null;
+  }
+}
+
+class PerpFeed {
+  constructor() {
+    this.depth = null;
+    this.trades = [];
+    this.tradeCoverageStart = null;
+    this.sockets = [];
+    this.stopped = true;
+  }
+
+  start() {
+    this.stopped = false;
+    this.connectDepth();
+    this.connectTrades();
+  }
+
+  stop() {
+    this.stopped = true;
+    for (const ws of this.sockets) ws.close();
+  }
+
+  connectDepth() {
+    if (this.stopped) return;
+    const ws = new WebSocket(BINANCE_DEPTH_URL);
+    this.sockets.push(ws);
+
+    ws.onmessage = event => {
+      try {
+        const msg = JSON.parse(String(event.data))?.data;
+        if (msg?.e !== 'depthUpdate' || msg?.s !== 'BTCUSDT') return;
+        const bids = Array.isArray(msg.b) ? msg.b.map(x => [Number(x[0]), Number(x[1])]).filter(x => x[0] > 0 && x[1] >= 0).sort((a, b) => b[0] - a[0]) : [];
+        const asks = Array.isArray(msg.a) ? msg.a.map(x => [Number(x[0]), Number(x[1])]).filter(x => x[0] > 0 && x[1] >= 0).sort((a, b) => a[0] - b[0]) : [];
+        if (!bids.length || !asks.length || bids[0][0] >= asks[0][0]) return;
+        this.depth = { at: Number(msg.E), bids, asks };
+      } catch {}
+    };
+
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      this.sockets = this.sockets.filter(item => item !== ws);
+      if (!this.stopped) setTimeout(() => this.connectDepth(), 1000);
+    };
+  }
+
+  connectTrades() {
+    if (this.stopped) return;
+    const ws = new WebSocket(BINANCE_TRADE_URL);
+    this.sockets.push(ws);
+
+    ws.onmessage = event => {
+      try {
+        const msg = JSON.parse(String(event.data))?.data;
+        if (msg?.e !== 'aggTrade' || msg?.s !== 'BTCUSDT') return;
+        const at = Number(msg.T);
+        const qty = Number(msg.q);
+        if (!Number.isFinite(at) || !Number.isFinite(qty) || qty <= 0) return;
+        this.tradeCoverageStart ??= at;
+        this.trades.push({ at, qty, buy: !Boolean(msg.m) });
+        this.trades = this.trades.filter(t => t.at >= Date.now() - 60000);
+      } catch {}
+    };
+
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      this.tradeCoverageStart = null;
+      this.sockets = this.sockets.filter(item => item !== ws);
+      if (!this.stopped) setTimeout(() => this.connectTrades(), 1000);
+    };
+  }
+
+  features(now) {
+    const d = this.depth;
+    if (!d || now - d.at > 15000 || d.at > now + 2000) return null;
+
+    const sum = (levels, count) => levels.slice(0, count).reduce((s, [, qty]) => s + qty, 0);
+    const imbalance = (a, b) => a + b > 0 ? (a - b) / (a + b) : null;
+
+    const bid = d.bids[0][0];
+    const ask = d.asks[0][0];
+    const bidQty = d.bids[0][1];
+    const askQty = d.asks[0][1];
+    const mid = (bid + ask) / 2;
+    const micro = (bid * askQty + ask * bidQty) / (bidQty + askQty);
+
+    const flow = seconds => {
+      if (this.tradeCoverageStart === null || this.tradeCoverageStart > now - seconds * 1000) return null;
+      const rows = this.trades.filter(t => t.at >= now - seconds * 1000 && t.at <= now);
+      const buy = rows.filter(t => t.buy).reduce((s, t) => s + t.qty, 0);
+      const sell = rows.filter(t => !t.buy).reduce((s, t) => s + t.qty, 0);
+      return { buy, sell, imbalance: imbalance(buy, sell) };
+    };
+
+    return {
+      at: d.at,
+      mid,
+      spreadBps: (ask - bid) / mid * 10000,
+      microBps: (micro / mid - 1) * 10000,
+      depth5: imbalance(sum(d.bids, 5), sum(d.asks, 5)),
+      depth20: imbalance(sum(d.bids, 20), sum(d.asks, 20)),
+      flow10: flow(10),
+      flow30: flow(30),
+      flow60: flow(60)
+    };
+  }
+}
+
+const referenceFeed = new ReferenceFeed();
+const perpFeed = new PerpFeed();
+
 async function findMarket(slug) {
-  let lastError;
-  for (let attempt = 1; attempt <= MARKET_RETRIES; attempt++) {
-    try {
-      const data = await polymarket('/events?slug=' + encodeURIComponent(slug));
-      const event = Array.isArray(data) ? data.find(item => item && item.slug === slug) : null;
-      const markets = Array.isArray(event?.markets) ? event.markets : [];
-      const market = markets.find(item => item && item.slug === slug) || markets[0];
-      if (!market) throw new Error('Event ' + slug + ' has no market');
+  const data = await getJson(GAMMA_API + '/events/slug/' + encodeURIComponent(slug));
+  const event = data && typeof data === 'object' ? data : null;
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+  const market = markets.find(item => item?.slug === slug) || markets[0];
+  if (!market) throw new Error('Exact BTC 5m market not found: ' + slug);
 
-      const conditionId = market.conditionId ?? market.condition_id;
-      if (!conditionId) throw new Error('Market ' + slug + ' has no conditionId');
+  let outcomes = market.outcomes;
+  let tokenIds = market.clobTokenIds ?? market.clob_token_ids;
+  if (typeof outcomes === 'string') outcomes = JSON.parse(outcomes);
+  if (typeof tokenIds === 'string') tokenIds = JSON.parse(tokenIds);
 
-      let tokenIds = market.clobTokenIds ?? market.clob_token_ids ?? market.tokens;
-      let outcomes = market.outcomes;
-      if (typeof tokenIds === 'string') {
-        try { tokenIds = JSON.parse(tokenIds); } catch { tokenIds = null; }
-      }
-      if (typeof outcomes === 'string') {
-        try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
-      }
-      if (!Array.isArray(tokenIds) || tokenIds.length < 2) {
-        throw new Error('Market ' + slug + ' has no two CLOB token ids');
-      }
-      if (!Array.isArray(outcomes) || outcomes.length < 2) outcomes = ['UP', 'DOWN'];
-
-      const normalized = outcomes.map(value => String(value).trim().toUpperCase());
-      const upIndex = normalized.findIndex(value => value === 'UP');
-      const downIndex = normalized.findIndex(value => value === 'DOWN');
-
-      return {
-        conditionId,
-        upTokenId: String(tokenIds[upIndex >= 0 ? upIndex : 0]),
-        downTokenId: String(tokenIds[downIndex >= 0 ? downIndex : 1])
-      };
-    } catch (error) {
-      lastError = error;
-      console.log('[positions-5m] market retry ' + attempt + '/' + MARKET_RETRIES + ': ' + error.message);
-      if (attempt < MARKET_RETRIES) await sleep(MARKET_RETRY_MS);
-    }
+  if (!Array.isArray(outcomes) || !Array.isArray(tokenIds)) {
+    throw new Error('Market outcomes/token ids unavailable: ' + slug);
   }
-  throw lastError;
+
+  const normalized = outcomes.map(value => String(value).trim().toUpperCase());
+  const upIndex = normalized.indexOf('UP');
+  const downIndex = normalized.indexOf('DOWN');
+  if (upIndex < 0 || downIndex < 0) throw new Error('UP/DOWN outcomes not found: ' + slug);
+
+  const start = Number(slug.split('-').at(-1)) * 1000;
+  const end = Date.parse(market.endDate);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end - start !== PERIOD) {
+    throw new Error('Market is not an exact 5-minute window: ' + slug);
+  }
+
+  let priceToBeat = Number(event?.eventMetadata?.priceToBeat);
+  if (!Number.isFinite(priceToBeat) || priceToBeat <= 0) {
+    const anchor = referenceFeed.exact('twap60', start);
+    if (!anchor) throw new Error('Exact Chainlink TWAP opening price unavailable: ' + slug);
+    priceToBeat = anchor.price;
+  }
+
+  return {
+    slug,
+    start,
+    end,
+    conditionId: market.conditionId ?? market.condition_id,
+    upTokenId: String(tokenIds[upIndex]),
+    downTokenId: String(tokenIds[downIndex]),
+    priceToBeat
+  };
 }
 
-async function buyStats(conditionId, slug, periodStart, periodEnd) {
-  const stats = { UP: 0, DOWN: 0 };
-  let cursor = null;
-
-  for (let page = 0; page < 100; page++) {
-    const params = new URLSearchParams({
-      condition: conditionId,
-      limit: '1000'
-    });
-    if (cursor) params.set('cursor', cursor);
-
-    const response = await fetchTimeout(DATA_API + '/v2/trades?' + params.toString());
-    const body = await response.text();
-    if (!response.ok) {
-      throw new Error('Polymarket Data API trades ' + response.status + ': ' + body);
-    }
-
-    const payload = JSON.parse(body);
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
-
-    for (const trade of rows) {
-      const timestamp = Number(trade.timestamp ?? 0);
-      if (!Number.isFinite(timestamp)) continue;
-
-      const timestampMs = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
-
-      if (timestampMs >= periodEnd) continue;
-      if (timestampMs < periodStart) {
-        console.log(
-          '[positions-5m] ' + slug +
-          ' BUY stats: UP=' + stats.UP +
-          ' DOWN=' + stats.DOWN +
-          ' pages=' + (page + 1)
-        );
-        return stats;
-      }
-
-      if (String(trade.side || '').trim().toUpperCase() !== 'BUY') continue;
-
-      const outcome = String(trade.outcome || '').trim().toUpperCase();
-      if (outcome === 'UP') stats.UP++;
-      else if (outcome === 'DOWN') stats.DOWN++;
-    }
-
-    const pagination = payload?.pagination || {};
-    if (!pagination.has_more || !pagination.next_cursor) break;
-    cursor = pagination.next_cursor;
-  }
-
-  console.log(
-    '[positions-5m] ' + slug +
-    ' BUY stats: UP=' + stats.UP +
-    ' DOWN=' + stats.DOWN
-  );
-  return stats;
+function topBook(book, n = 5) {
+  const bids = Array.isArray(book?.bids) ? book.bids : [];
+  const asks = Array.isArray(book?.asks) ? book.asks : [];
+  const bidSize = bids.slice(0, n).reduce((s, x) => s + Number(x.size || 0), 0);
+  const askSize = asks.slice(0, n).reduce((s, x) => s + Number(x.size || 0), 0);
+  const bestBid = bids.length ? Number(bids[0].price) : null;
+  const bestAsk = asks.length ? Number(asks[0].price) : null;
+  const mid = Number.isFinite(bestBid) && Number.isFinite(bestAsk) ? (bestBid + bestAsk) / 2 : null;
+  return { bidSize, askSize, bestBid, bestAsk, mid };
 }
 
-async function getReliableBuyStats(conditionId, slug, periodStart, periodEnd) {
-  let lastError;
-  for (let attempt = 1; attempt <= TRADES_RETRIES; attempt++) {
-    try {
-      return await buyStats(conditionId, slug, periodStart, periodEnd);
-    } catch (error) {
-      lastError = error;
-      console.log('[positions-5m] BUY retry ' + attempt + '/' + TRADES_RETRIES + ': ' + error.message);
-      if (attempt < TRADES_RETRIES) await sleep(TRADES_RETRY_MS);
-    }
-  }
-  throw new Error('BUY data unavailable after retries for ' + slug + ': ' + lastError.message);
+async function getBooks(upTokenId, downTokenId) {
+  const rows = await getJson(CLOB_API + '/books', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify([{ token_id: upTokenId }, { token_id: downTokenId }])
+  });
+
+  if (!Array.isArray(rows)) throw new Error('CLOB books response is not an array');
+
+  const up = rows.find(row => String(row.asset_id) === String(upTokenId));
+  const down = rows.find(row => String(row.asset_id) === String(downTokenId));
+  if (!up || !down) throw new Error('UP/DOWN order books missing');
+
+  return { up: topBook(up), down: topBook(down) };
+}
+
+function momentumScore(value, deadbandBps = 0.35) {
+  if (!Number.isFinite(value) || Math.abs(value) < deadbandBps) return 0;
+  return sign(value);
+}
+
+function flowScore(flow) {
+  if (!flow || !Number.isFinite(flow.imbalance) || Math.abs(flow.imbalance) < 0.08) return 0;
+  return sign(flow.imbalance);
+}
+
+function bookScore(up, down) {
+  if (!up || !down || !Number.isFinite(up.mid) || !Number.isFinite(down.mid)) return 0;
+  const total = up.mid + down.mid;
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return up.mid > down.mid ? 1 : up.mid < down.mid ? -1 : 0;
+}
+
+function evaluateStrategy(market, books, perp, now) {
+  const twap = referenceFeed.latest('twap60');
+  if (!twap) return null;
+
+  const distanceBps = (twap.price / market.priceToBeat - 1) * 10000;
+  const previous10 = referenceFeed.atOrBefore('twap60', now - 10000);
+  const previous30 = referenceFeed.atOrBefore('twap60', now - 30000);
+  const previous60 = referenceFeed.atOrBefore('twap60', now - 60000);
+
+  const ret10 = previous10 ? (twap.price / previous10.price - 1) * 10000 : null;
+  const ret30 = previous30 ? (twap.price / previous30.price - 1) * 10000 : null;
+  const ret60 = previous60 ? (twap.price / previous60.price - 1) * 10000 : null;
+
+  const distanceSignal = Math.abs(distanceBps) >= 1 ? sign(distanceBps) * 2 : 0;
+  const momentum10 = momentumScore(ret10);
+  const momentum30 = momentumScore(ret30);
+  const momentum60 = momentumScore(ret60);
+
+  const perp10 = flowScore(perp?.flow10);
+  const perp30 = flowScore(perp?.flow30);
+  const perp60 = flowScore(perp?.flow60);
+  const depth5 = Number.isFinite(perp?.depth5) && Math.abs(perp.depth5) >= 0.10 ? sign(perp.depth5) : 0;
+  const depth20 = Number.isFinite(perp?.depth20) && Math.abs(perp.depth20) >= 0.10 ? sign(perp.depth20) : 0;
+  const micro = Number.isFinite(perp?.microBps) && Math.abs(perp.microBps) >= 0.25 ? sign(perp.microBps) : 0;
+  const polyBook = bookScore(books.up, books.down);
+
+  const score =
+    distanceSignal +
+    momentum10 + momentum30 + momentum60 +
+    perp10 + perp30 + perp60 +
+    depth5 + depth20 + micro +
+    polyBook;
+
+  const direction = score >= 6 ? 'UP' : score <= -6 ? 'DOWN' : 'WAIT';
+  const confidence = Math.round(Math.abs(score) / 12 * 100);
+
+  return {
+    direction,
+    score,
+    confidence,
+    distanceBps,
+    ret10,
+    ret30,
+    ret60,
+    perp10: perp?.flow10?.imbalance ?? null,
+    perp30: perp?.flow30?.imbalance ?? null,
+    perp60: perp?.flow60?.imbalance ?? null,
+    depth5: perp?.depth5 ?? null,
+    depth20: perp?.depth20 ?? null,
+    microBps: perp?.microBps ?? null,
+    upMid: books.up.mid,
+    downMid: books.down.mid,
+    secondsRemaining: Math.max(0, Math.round((market.end - now) / 1000))
+  };
+}
+
+function fmt(value, digits = 2) {
+  return Number.isFinite(value) ? value.toFixed(digits) : 'n/a';
 }
 
 async function sendTelegram(message) {
@@ -174,14 +406,13 @@ async function sendTelegram(message) {
           })
         }
       );
-
       const body = await response.text();
       const data = JSON.parse(body);
       if (response.ok && data.ok === true && data.result?.message_id) return;
       throw new Error('Telegram delivery not confirmed: ' + body);
     } catch (error) {
-      console.log('[positions-5m] Telegram attempt ' + attempt + ': ' + error.message);
-      if (attempt < 3) await sleep(2000 * attempt);
+      console.log('[btc5m-strategy] Telegram attempt ' + attempt + ': ' + error.message);
+      if (attempt < 3) await sleep(1500 * attempt);
     }
   }
   throw new Error('Telegram delivery failed');
@@ -191,159 +422,115 @@ async function processPeriod(coin, boundary) {
   const activeStart = boundary - PERIOD;
   const activeSlug = marketSlug(coin, activeStart);
   const nextSlug = marketSlug(coin, boundary);
+  const now = Date.now();
 
-  console.log(
-    '[positions-5m] evaluating ' + coin +
-    ' active=' + activeSlug +
-    ' at 4:40; boundary=' + new Date(boundary).toISOString()
-  );
+  console.log('[btc5m-strategy] evaluating ' + activeSlug + ' at 4:40');
 
-  const activeMarket = await findMarket(activeSlug);
-  const stats = await getReliableBuyStats(
-    activeMarket.conditionId,
-    activeSlug,
-    activeStart,
-    boundary
-  );
+  const market = await findMarket(activeSlug);
+  const books = await getBooks(market.upTokenId, market.downTokenId);
+  const perp = perpFeed.features(now);
+  const decision = evaluateStrategy(market, books, perp, now);
 
-  const previousStart = activeStart - PERIOD;
-  const previousSlug = marketSlug(coin, previousStart);
-  const previousMarket = await findMarket(previousSlug);
-  const previousStats = await getReliableBuyStats(
-    previousMarket.conditionId,
-    previousSlug,
-    previousStart,
-    activeStart
-  );
-
-  const totalBuys = stats.UP + stats.DOWN;
-  const previousTotalBuys = previousStats.UP + previousStats.DOWN;
-  const downIsLarger = stats.DOWN > stats.UP;
-  if (!downIsLarger) {
-    console.log(
-      '[positions-5m] ' + activeSlug +
-      ' BUY alert rejected: TOTAL=' + totalBuys +
-      ', PREVIOUS TOTAL=' + previousTotalBuys +
-      ', UP=' + stats.UP +
-      ', DOWN=' + stats.DOWN
-    );
+  if (!decision) {
+    console.log('[btc5m-strategy] WAIT: Chainlink TWAP unavailable');
     return false;
   }
 
-  const totalDirection = totalBuys > previousTotalBuys ? ' ↑' : '';
+  console.log(
+    '[btc5m-strategy] ' + activeSlug +
+    ' score=' + decision.score +
+    ' direction=' + decision.direction +
+    ' distance=' + fmt(decision.distanceBps) + 'bps' +
+    ' ret10=' + fmt(decision.ret10) +
+    ' ret30=' + fmt(decision.ret30) +
+    ' ret60=' + fmt(decision.ret60)
+  );
 
-  const claimResponse = await fetch((env.CONVEX_SITE_URL || CONVEX_SITE_URL).replace(/\/$/, '') + '/claim-rolling-alert', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + env.CONVEX_INGEST_TOKEN
-    },
-    body: JSON.stringify({
-      symbol: coin,
-      periodStart: activeStart,
-      sentAt: Date.now(),
-      windowMs: 60 * 60 * 1000,
-      maxAlerts: 2
-    })
-  });
-  const claimBody = await claimResponse.text();
-  if (!claimResponse.ok) {
-    throw new Error('Convex rolling alert claim failed: ' + claimBody);
-  }
-  const claimData = JSON.parse(claimBody);
-  if (claimData.claimed !== true) {
-    console.log('[positions-5m] ' + activeSlug + ' BUY alert rejected: rolling 2/60m limit reached');
+  if (decision.direction === 'WAIT') {
+    console.log('[btc5m-strategy] no alert: confluence below threshold');
     return false;
   }
 
   const message = [
-    '🔥 ' + coin + ' · 5M',
+    '🔥 BTC · 5M',
     '',
-    'TOTAL BUYS: ' + totalBuys + totalDirection,
-    'UP BUYS: ' + stats.UP,
-    'DOWN BUYS: ' + stats.DOWN,
+    'PREDICTED: ' + decision.direction,
+    'SCORE: ' + decision.score + '/12',
+    'CONFIDENCE: ' + decision.confidence + '%',
+    '',
+    'PRICE TO BEAT: ' + fmt(market.priceToBeat, 2),
+    'CHAINLINK TWAP: ' + fmt(referenceFeed.latest('twap60')?.price, 2),
+    'DISTANCE: ' + fmt(decision.distanceBps) + ' bps',
+    '',
+    'BTC 10S: ' + fmt(decision.ret10) + ' bps',
+    'BTC 30S: ' + fmt(decision.ret30) + ' bps',
+    'BTC 60S: ' + fmt(decision.ret60) + ' bps',
+    '',
+    'PERP FLOW 10S: ' + fmt(decision.perp10 * 100) + '%',
+    'PERP FLOW 30S: ' + fmt(decision.perp30 * 100) + '%',
+    'PERP FLOW 60S: ' + fmt(decision.perp60 * 100) + '%',
+    'DEPTH 5: ' + fmt(decision.depth5 * 100) + '%',
+    'DEPTH 20: ' + fmt(decision.depth20 * 100) + '%',
+    'MICROPRICE: ' + fmt(decision.microBps) + ' bps',
+    '',
+    'POLY UP MID: ' + fmt(decision.upMid, 4),
+    'POLY DOWN MID: ' + fmt(decision.downMid, 4),
+    'SECONDS LEFT: ' + decision.secondsRemaining,
     '',
     '➡️ NEXT · Polymarket 5M',
     'https://polymarket.com/event/' + nextSlug
   ].join('\n');
 
-  try {
-    executeTrade(coin, nextSlug, boundary, boundary + PERIOD).catch(() => {});
-  } catch (error) {
-    console.error(
-      '[positions-5m] AUTO TRADE FAILED ' + activeSlug + ': ' + error.message
-    );
+  if (String(env.POLYMARKET_AUTO_TRADE_ENABLED || 'false').toLowerCase() === 'true') {
+    executeTrade(coin, nextSlug, boundary, boundary + PERIOD, decision.direction.toLowerCase()).catch(error => {
+      console.error('[btc5m-strategy] AUTO TRADE FAILED: ' + error.message);
+    });
   }
 
-  try {
-    await sendTelegram(message);
-  } catch (error) {
-    try {
-      await fetch((env.CONVEX_SITE_URL || CONVEX_SITE_URL).replace(/\/$/, '') + '/release-rolling-alert', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer ' + env.CONVEX_INGEST_TOKEN
-        },
-        body: JSON.stringify({
-          symbol: coin,
-          periodStart: activeStart
-        })
-      });
-    } catch (releaseError) {
-      console.error('[positions-5m] Failed to release rolling alert claim: ' + releaseError.message);
-    }
-    throw error;
-  }
-  console.log(
-    '[positions-5m] ' + activeSlug +
-    ' BUY alert sent: UP=' + stats.UP +
-    ', DOWN=' + stats.DOWN +
-    ', TOTAL=' + totalBuys +
-    ', PREVIOUS TOTAL=' + previousTotalBuys
-  );
+  await sendTelegram(message);
+  console.log('[btc5m-strategy] alert sent: ' + activeSlug + ' -> ' + decision.direction);
   return true;
 }
 
 async function main() {
+  referenceFeed.start();
+  perpFeed.start();
+
   const stopAt = Date.now() + RUN_MS;
   let boundary = boundaryNow() + PERIOD;
-
   const initialWait = boundary - ALERT_LEAD_MS - Date.now();
   if (initialWait > 0) await sleep(initialWait);
 
-  console.log('[positions-5m] 5m BUY monitor started: ' + COINS.join(', '));
-  console.log('[positions-5m] first evaluation (4:40)=' + new Date(boundary - ALERT_LEAD_MS).toISOString());
+  console.log('[btc5m-strategy] BTC 5M confluence strategy started');
+  console.log('[btc5m-strategy] prediction = Chainlink TWAP + Binance perp flow/depth + Polymarket book');
+  console.log('[btc5m-strategy] no BUY-count rule; no rolling alert limit');
 
   while (Date.now() < stopAt) {
     const wait = boundary - ALERT_LEAD_MS - Date.now();
     if (wait > 0) await sleep(wait);
     if (Date.now() >= stopAt) break;
 
-    const results = await Promise.allSettled(
-      COINS.map(coin => processPeriod(coin, boundary))
-    );
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const coin = COINS[i];
-
-      if (result.status === 'fulfilled') {
-        if (result.value) console.log('[positions-5m] ' + coin + ' BUY snapshot sent');
-      } else {
-        console.error(
-          '[positions-5m] ' + coin +
-          ' PERIOD FAILED ' + new Date(boundary).toISOString() +
-          ': ' + result.reason.message
-        );
-      }
+    try {
+      const results = await Promise.allSettled(
+        COINS.map(coin => processPeriod(coin, boundary))
+      );
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error('[btc5m-strategy] ' + COINS[index] + ' PERIOD FAILED: ' + result.reason.message);
+        }
+      });
+    } catch (error) {
+      console.error('[btc5m-strategy] PERIOD ERROR: ' + error.message);
     }
 
     boundary += PERIOD;
   }
+
+  referenceFeed.stop();
+  perpFeed.stop();
 }
 
 main().catch(error => {
-  console.error('[positions-5m] FAILED', error);
+  console.error('[btc5m-strategy] FAILED', error);
   process.exit(1);
 });
