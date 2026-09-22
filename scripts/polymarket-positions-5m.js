@@ -394,7 +394,7 @@ function evaluateStrategy(market, books, perp, now, previousBooks = null) {
 
   const fallbackDirection = polyBook > 0 ? 'UP' : polyBook < 0 ? 'DOWN' : (Number.isFinite(referencePrice) && referencePrice >= market.priceToBeat ? 'UP' : 'DOWN');
   const direction = score >= MIN_SIGNAL_SCORE ? 'UP' : score <= -MIN_SIGNAL_SCORE ? 'DOWN' : fallbackDirection;
-  const confidence = Math.round(Math.abs(score) / 12 * 100);
+  const confidence = Math.round(Math.abs(score) / 13 * 100);
 
   return {
     direction,
@@ -644,8 +644,8 @@ async function sendStrategyAlert(coin, market, decision) {
     '🔥 BTC · 5M',
     '',
     'PREDICTED: ' + decision.direction,
-    'OUTCOME PRICE: ' + fmt(decision.direction === 'UP' ? decision.upMid : decision.downMid, 4),
-    'SCORE: ' + decision.score + '/12',
+    'OUTCOME PRICE: ' + fmt(decision.direction === 'UP' ? decision.upMid : decision.downMid, 6),
+    'SCORE: ' + decision.score + '/13',
     'CONFIDENCE: ' + decision.confidence + '%',
     '',
     'PRICE TO BEAT: ' + fmt(market.priceToBeat, 2),
@@ -664,8 +664,8 @@ async function sendStrategyAlert(coin, market, decision) {
     'MICROPRICE: ' + fmt(decision.microBps, 4) + ' bps',
     'POLY MOVE: ' + fmt(decision.polyMoveBps, 2) + ' bps',
     '',
-    'POLY UP MID: ' + fmt(decision.upMid, 4),
-    'POLY DOWN MID: ' + fmt(decision.downMid, 4),
+    'POLY UP MID: ' + fmt(decision.upMid, 6),
+    'POLY DOWN MID: ' + fmt(decision.downMid, 6),
     'SECONDS LEFT: ' + decision.secondsRemaining,
     '',
     '➡️ CURRENT · Polymarket 5M',
