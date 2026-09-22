@@ -59,6 +59,42 @@ const claimRollingAlert=httpAction(async(ctx,request)=>{
     return Response.json({claimed});
   }catch(error){console.error("Convex rolling alert claim failed",error);return new Response("Rolling alert claim failed",{status:500});}
 });
+const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
+  if(!authorized(request))return new Response("Unauthorized",{status:401});
+  const url=new URL(request.url);
+  const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||400),1),400);
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const [live,feed]=await Promise.allSettled([
+      fetch("https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.0"},signal:controller.signal}),
+      fetch("https://marginpad.io/api/v1/feed",{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.0"},signal:controller.signal})
+    ]);
+    const parse=async(result)=>{
+      if(result.status!=="fulfilled")return {events:[],error:String(result.reason?.message||result.reason)};
+      if(!result.value.ok)return {events:[],error:"HTTP "+result.value.status};
+      const json=await result.value.json();
+      const data=json?.data;
+      const events=Array.isArray(json?.events)?json.events:
+        Array.isArray(json?.liquidations)?json.liquidations:
+        Array.isArray(data?.events)?data.events:
+        Array.isArray(data?.liquidations)?data.liquidations:
+        Array.isArray(data)?data:[];
+      return {events};
+    };
+    const liveResult=await parse(live);
+    const feedResult=await parse(feed);
+    const byKey=new Map();
+    for(const event of [...liveResult.events,...feedResult.events]){
+      if(String(event?.symbol||"").toUpperCase()!=="BTC")continue;
+      const key=[event?.ts??event?.timestamp??event?.time,event?.exchange,event?.side,event?.price,event?.qty,event?.notional].join("|");
+      byKey.set(key,event);
+    }
+    return Response.json({ok:true,source:"convex-marginpad-proxy",events:[...byKey.values()],liveEvents:liveResult.events.length,feedEvents:feedResult.events.length,liveError:liveResult.error||null,feedError:feedResult.error||null,ts:Date.now()});
+  }catch(error){
+    return Response.json({ok:false,error:String(error?.message||error),ts:Date.now()},{status:502});
+  }finally{clearTimeout(timeout);}
+});
 const health=httpAction(async()=>Response.json({ok:true}));
 const runtimeStatus=httpAction(async(ctx)=>{try{return Response.json(await ctx.runQuery(api.runtime.status,{}));}catch{return new Response("Runtime status query failed",{status:500});}});
 const runtimeLogs=httpAction(async(ctx,request)=>{const url=new URL(request.url);const rawRunId=url.searchParams.get("runId");const rawLimit=Number(url.searchParams.get("limit")||100);const limit=Math.min(Math.max(Number.isFinite(rawLimit)?Math.floor(rawLimit):100,1),200);const runId=rawRunId===null||rawRunId===""?undefined:Number(rawRunId);if(runId!==undefined&&!Number.isFinite(runId))return new Response("Invalid runId",{status:400});try{return Response.json(await ctx.runQuery(api.runtime.logs,{runId,limit}));}catch{return new Response("Runtime logs query failed",{status:500});}});
@@ -100,6 +136,7 @@ http.route({path:"/buy-snapshot",method:"POST",handler:buySnapshot});
 http.route({path:"/buy-snapshots",method:"GET",handler:buySnapshots});
 http.route({path:"/rolling-alert-status",method:"GET",handler:rollingAlertStatus});
 http.route({path:"/health",method:"GET",handler:health});
+http.route({path:"/marginpad-btc-liquidations",method:"GET",handler:marginpadBtcLiquidations});
 const liquidationEvents=httpAction(async(ctx,request)=>{const url=new URL(request.url);const symbol=String(url.searchParams.get("symbol")||"BTC");const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||100),1),500);try{return Response.json(await ctx.runQuery(api.monitor.latestLiquidationEvents,{symbol,limit}));}catch{return new Response("Liquidation events query failed",{status:500});}});
 http.route({path:"/liquidation-events",method:"GET",handler:liquidationEvents});
 http.route({path:"/runtime/status",method:"GET",handler:runtimeStatus});
