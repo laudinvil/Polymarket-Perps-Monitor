@@ -44,6 +44,7 @@ const releaseRollingAlert=httpAction(async(ctx,request)=>{
     return Response.json({released});
   }catch(error){console.error("Convex rolling alert release failed",error);return new Response("Rolling alert release failed",{status:500});}
 });
+const claimLiquidationAlert=httpAction(async(ctx,request)=>{if(!authorized(request))return new Response("Unauthorized",{status:401});let body:any;try{body=await request.json();}catch{return new Response("Invalid JSON",{status:400});}try{const claimed=await ctx.runMutation(internal.monitor.claimLiquidationAlert,{symbol:String(body.symbol||"BTC"),periodStart:Number(body.periodStart),sentAt:Number(body.sentAt||Date.now())});return Response.json({claimed});}catch(error){console.error("Convex liquidation claim failed",error);return new Response("Liquidation claim failed",{status:500});}});
 const claimRollingAlert=httpAction(async(ctx,request)=>{
   if(!authorized(request))return new Response("Unauthorized",{status:401});
   let body:any;try{body=await request.json();}catch{return new Response("Invalid JSON",{status:400});}
@@ -92,6 +93,7 @@ http.route({path:"/claim-esports-alert",method:"POST",handler:claimEsportsAlert}
 http.route({path:"/claim-crowd-flow-alert",method:"POST",handler:claimCrowdFlowAlert});
 http.route({path:"/claim-cvd-5m-alert",method:"POST",handler:claimCvd5mAlert});
 http.route({path:"/cvd-5m/latest-alert",method:"GET",handler:latestCvd5mAlert});
+http.route({path:"/claim-liquidation-alert",method:"POST",handler:claimLiquidationAlert});
 http.route({path:"/claim-rolling-alert",method:"POST",handler:claimRollingAlert});
 http.route({path:"/release-rolling-alert",method:"POST",handler:releaseRollingAlert});
 http.route({path:"/buy-snapshot",method:"POST",handler:buySnapshot});
