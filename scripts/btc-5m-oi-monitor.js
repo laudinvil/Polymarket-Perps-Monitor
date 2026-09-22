@@ -101,9 +101,25 @@ function gitCommitState(period) {
   try {
     execFileSync("git", ["config", "user.name", "github-actions[bot]"]);
     execFileSync("git", ["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
+
     execFileSync("git", ["add", STATE_FILE]);
     execFileSync("git", ["commit", "-m", "Update BTC 5M OI state " + period], { stdio: "pipe" });
-    execFileSync("git", ["push"], { stdio: "pipe" });
+
+    try {
+      execFileSync("git", ["push"], { stdio: "pipe" });
+    } catch (pushErr) {
+      const pushMessage = String(pushErr && (pushErr.stderr || pushErr.message) || pushErr);
+      if (pushMessage.indexOf("fetch first") < 0 && pushMessage.indexOf("non-fast-forward") < 0) throw pushErr;
+
+      console.log("State push raced with another main commit; rebasing state commit");
+      const stateBackup = fs.readFileSync(STATE_FILE, "utf8");
+      execFileSync("git", ["fetch", "origin", "main"], { stdio: "pipe" });
+      execFileSync("git", ["reset", "--hard", "origin/main"], { stdio: "pipe" });
+      fs.writeFileSync(STATE_FILE, stateBackup);
+      execFileSync("git", ["add", STATE_FILE]);
+      execFileSync("git", ["commit", "-m", "Update BTC 5M OI state " + period], { stdio: "pipe" });
+      execFileSync("git", ["push", "origin", "HEAD:main"], { stdio: "pipe" });
+    }
   } catch (err) {
     const message = String(err && (err.stderr || err.message) || err);
     if (message.indexOf("nothing to commit") < 0) throw err;
