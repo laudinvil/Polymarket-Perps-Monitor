@@ -86,25 +86,20 @@ function mergeUniqueEvents(primary, secondary) {
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   let feedEvents = [];
-  let feedSucceeded = false;
-
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
-    feedSucceeded = true;
+    return feedEvents;
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
-    feedEvents = [...liveFeedCache.events.values()].filter(event => normalizeSymbol(event.symbol) === normalized);
   }
 
-  // Do NOT hit the fallback endpoint after every successful empty feed.
-  // The monitor should immediately wait for the next feed poll.
-  if (feedSucceeded) {
-    return feedEvents;
-  }
-
+  // /feed is currently timing out on the GitHub runner. Do not wait for another
+  // full polling cycle before trying the live endpoint. The fallback is started
+  // only after /feed actually fails, and remains bounded by the same request timeout.
   try {
     const liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
     fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
+    console.log(`MarginPad live fallback ${normalized}: events=${liveEvents.length}`);
     return mergeUniqueEvents(feedEvents, liveEvents);
   } catch (error) {
     console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
