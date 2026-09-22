@@ -34,3 +34,35 @@ jobs:
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           CONVEX_INGEST_TOKEN: ${{ secrets.CONVEX_INGEST_TOKEN }}
         run: node scripts/marginpad-btc-liquidation-5m.js
+
+  convex-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Poll Convex runtime diagnostics
+        env:
+          CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -u
+          SITE_URL="${CONVEX_SITE_URL:-https://brainy-canary-207.eu-west-1.convex.site}"
+          SITE_URL="${SITE_URL%/}"
+          echo "=== Convex → GitHub diagnostic bridge ==="
+          echo "runId=${GITHUB_RUN_ID}"
+          echo "site=${SITE_URL}"
+          for i in $(seq 1 35); do
+            echo
+            echo "===== Convex snapshot ${i}/35 $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
+            STATUS="$(curl -sS --max-time 8 "${SITE_URL}/runtime/status" || true)"
+            echo "--- runtime/status ---"
+            echo "${STATUS}"
+            LOGS="$(curl -sS --max-time 8 "${SITE_URL}/runtime/logs?runId=${GITHUB_RUN_ID}&limit=10" || true)"
+            echo "--- runtime/logs ---"
+            if command -v jq >/dev/null 2>&1; then
+              echo "${LOGS}" | jq 'if type=="array" then .[-10:] else . end'
+            else
+              echo "${LOGS}"
+            fi
+            sleep 10
+          done
+
