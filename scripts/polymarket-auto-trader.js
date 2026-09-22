@@ -346,7 +346,9 @@ async function settleTrade(trade) {
   throw new Error('Settlement timeout: ' + trade.slug);
 }
 
-async function runTrade(symbol, slug, marketStart, marketEnd) {
+async function runTrade(symbol, slug, marketStart, marketEnd, strategySide = null) {
+  const tradeSide = strategySide ? String(strategySide).trim().toLowerCase() : tradeSide;
+  if (!['up', 'down', 'both'].includes(tradeSide)) throw new Error('Invalid strategy trade side: ' + strategySide);
   const existingRecovery = await recoveryState(symbol);
   const recovery = initialRecovery(symbol, existingRecovery);
   const targetBetUsd = recovery.enabled ? recovery.nextBetUsd : ORDER_AMOUNT_USD;
@@ -362,7 +364,7 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
     marketStart,
     marketEnd,
     slug,
-    outcome: TRADE_SIDE.toUpperCase(),
+    outcome: tradeSide.toUpperCase(),
     baseOrderUsd: ORDER_AMOUNT_USD,
     targetBetUsd,
     dcaBuys: DCA_BUYS_PER_PERIOD,
@@ -382,7 +384,7 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
 
   if (!AUTO_TRADE_ENABLED) {
     console.log(
-      '[auto-trade] DISABLED: would BUY ' + TRADE_SIDE.toUpperCase() +
+      '[auto-trade] DISABLED: would BUY ' + tradeSide.toUpperCase() +
       ' ' + slug +
       ' total=$' + targetBetUsd +
       ' DCA=' + DCA_BUYS_PER_PERIOD
@@ -395,9 +397,9 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
 
   const client = await getClient();
   const slotAmount = targetBetUsd / DCA_BUYS_PER_PERIOD;
-  const orderAmounts = TRADE_SIDE === 'both'
+  const orderAmounts = tradeSide === 'both'
     ? { UP: slotAmount / 2, DOWN: slotAmount / 2 }
-    : { [TRADE_SIDE.toUpperCase()]: slotAmount };
+    : { [tradeSide.toUpperCase()]: slotAmount };
 
   for (const [side, amount] of Object.entries(orderAmounts)) {
     if (amount < market.minimumOrderSize) {
@@ -460,7 +462,7 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
   const winningOutcome = await settleTrade(trade);
   const winningShares = position[winningOutcome].shares;
   const payout = winningShares;
-  const result = winningOutcome === TRADE_SIDE.toUpperCase() || TRADE_SIDE === 'both'
+  const result = winningOutcome === tradeSide.toUpperCase() || tradeSide === 'both'
     ? 'WIN'
     : 'LOSS';
   const pnl = payout - trade.spentUsd;
@@ -507,7 +509,7 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
   const message = [
     '🔥 BTC · 5M',
     '',
-    'BET: ' + TRADE_SIDE.toUpperCase(),
+    'BET: ' + tradeSide.toUpperCase(),
     'DCA BUYS: ' + trade.buysFilled,
     'TOTAL BET: $' + trade.spentUsd.toFixed(2),
     'AVG PRICE: ' + (trade.avgPrice || 0).toFixed(4),
@@ -525,11 +527,11 @@ async function runTrade(symbol, slug, marketStart, marketEnd) {
   await sendTelegram(message);
 }
 
-function executeTrade(symbol, slug, marketStart, marketEnd) {
+function executeTrade(symbol, slug, marketStart, marketEnd, strategySide = null) {
   if (!AUTO_TRADE_ENABLED) {
     console.log(
       '[auto-trade] DISABLED: signal received for ' + slug +
-      '; side=' + TRADE_SIDE +
+      '; side=' + (strategySide || TRADE_SIDE) +
       ' amount=$' + ORDER_AMOUNT_USD +
       ' DCA=' + DCA_BUYS_PER_PERIOD +
       ' recovery=' + RECOVERY_MODE
