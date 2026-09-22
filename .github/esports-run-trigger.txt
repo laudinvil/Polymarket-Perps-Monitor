@@ -1,1 +1,0 @@
-Trigger file for the Esports UPSET+REVERSAL monitor. Updating this file intentionally starts the workflow.
