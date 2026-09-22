@@ -35,113 +35,54 @@ function eventKey(event) {
   ].join('|');
 }
 
-async function getClobPriceLine(periodStart) {
-  const fallback = {
-    line: 'PRICE: n/a',
-    url: 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000)
-  };
-
-  const lookupStartedAt = Date.now();
-
+async function getNextMarketUrl() {
+  const fallbackEpoch = bucketStart(Date.now()) + PERIOD_MS;
   try {
-    const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
-    const url = market?.url || fallback.url;
-    if (!market) {
-      console.log('CLOB LOOKUP: market=n/a duration_ms=' + (Date.now() - lookupStartedAt));
-      console.log('POLYMARKET URL: ' + url);
-      return fallback;
-    }
-
-    const [upMid, downMid] = await Promise.all([
-      findClobMidpoint(market, 'UP'),
-      findClobMidpoint(market, 'DOWN')
-    ]);
-
-    let cheaper = null;
-    if (Number.isFinite(upMid) && Number.isFinite(downMid)) {
-      cheaper = upMid <= downMid
-        ? { outcome: 'UP', price: upMid }
-        : { outcome: 'DOWN', price: downMid };
-    } else if (Number.isFinite(upMid)) {
-      cheaper = { outcome: 'UP', price: upMid };
-    } else if (Number.isFinite(downMid)) {
-      cheaper = { outcome: 'DOWN', price: downMid };
-    }
-
-    console.log(
-      'CLOB LOOKUP: up=' + (Number.isFinite(upMid) ? upMid.toFixed(4) : 'n/a') +
-      ' down=' + (Number.isFinite(downMid) ? downMid.toFixed(4) : 'n/a') +
-      ' cheaper=' + (cheaper ? cheaper.outcome + ' ' + cheaper.price.toFixed(4) : 'n/a') +
-      ' duration_ms=' + (Date.now() - lookupStartedAt)
-    );
-    console.log('POLYMARKET URL: ' + url);
-
-    return {
-      line: cheaper
-        ? 'PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2)
-        : fallback.line,
-      url
-    };
+    const market = await findNextMarket(SYMBOL, Date.now(), '5m');
+    return market?.url || 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(fallbackEpoch / 1000);
   } catch (error) {
-    console.warn('Polymarket CLOB lookup failed: ' + error.message);
-    console.log('POLYMARKET URL: ' + fallback.url);
-    return fallback;
+    console.warn('Polymarket next market lookup failed: ' + error.message);
+    return 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(fallbackEpoch / 1000);
   }
 }
 
-async function sendFirstLiquidation(event, periodStart) {
+async function sendLatestLiquidation(event, periodStart) {
   const detectionAt = Date.now();
   const eventTs = eventTime(event);
-  const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
+  const direction = String(event?.side || event?.direction || '').toLowerCase().includes('long') || String(event?.side || event?.direction || '').toLowerCase() === 'buy'
+    ? 'LONG'
+    : String(event?.side || event?.direction || '').toLowerCase().includes('short') || String(event?.side || event?.direction || '').toLowerCase() === 'sell'
+      ? 'SHORT'
+      : 'UNKNOWN';
+  const marketUrl = await getNextMarketUrl();
 
   const text = [
     '🔥 BTC · 5M',
     '',
-    clobLine,
+    'LAST LIQUIDATION: ' + direction,
     '',
-    '➡️ Polymarket 5M',
+    '➡️ NEXT · Polymarket 5M',
     marketUrl
-  ].join('\n');
+  ].join('\\n');
 
   console.log(
-    'LIQUIDATION TIMING: ' +
+    'LATEST LIQUIDATION: ' +
     'event_ts=' + iso(eventTs) +
     ' detected_at=' + iso(detectionAt) +
     ' detection_delay_ms=' + (eventTs ? detectionAt - eventTs : 'n/a') +
-    ' period_start=' + iso(periodStart) +
-    ' period_elapsed_ms=' + (detectionAt - periodStart) +
-    ' period_remaining_ms=' + (periodStart + PERIOD_MS - detectionAt)
+    ' direction=' + direction +
+    ' period_start=' + iso(periodStart)
   );
 
-  console.log(
-    'Sending Telegram liquidation alert: event=' +
-    JSON.stringify({
-      ts: eventTs,
-      exchange: event?.exchange,
-      symbol: eventSymbol(event),
-      side: event?.side,
-      price: event?.price,
-      qty: event?.qty,
-      notional: event?.notional
-    }) +
-    ' text=' + JSON.stringify(text)
-  );
-
-  const telegramStartedAt = Date.now();
+  console.log('Sending Telegram latest liquidation alert: text=' + JSON.stringify(text));
   await sendTelegramMessage(text);
-  const telegramFinishedAt = Date.now();
-
-  console.log(
-    'TELEGRAM SENT: sent_at=' + iso(telegramFinishedAt) +
-    ' telegram_duration_ms=' + (telegramFinishedAt - telegramStartedAt) +
-    ' end_to_end_delay_ms=' + (telegramFinishedAt - eventTs)
-  );
+  console.log('TELEGRAM SENT: sent_at=' + iso(Date.now()));
 }
 
 async function main() {
   const startedAt = Date.now();
-  const seen = new Set();
-  let alertedPeriod = null;
+  let currentPeriodStart = bucketStart(startedAt);
+  let latestLiquidation = null;
   let lastSeenTs = 0;
 
   console.log(
@@ -154,54 +95,39 @@ async function main() {
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
     const periodStart = bucketStart(now);
+
+    if (periodStart !== currentPeriodStart) {
+      currentPeriodStart = periodStart;
+      latestLiquidation = null;
+    }
+
     const pollStartedAt = now;
 
     try {
       const events = await fetchFeed([SYMBOL]);
       const pollFinishedAt = Date.now();
 
-      const diagnosed = (events || []).map(event => {
-        const ts = eventTime(event);
-        const eventPeriod = ts ? bucketStart(ts) : null;
-        const symbol = eventSymbol(event);
-
-        let accepted = true;
-        let reason = 'accepted';
-
-        if (!ts) {
-          accepted = false;
-          reason = 'missing_event_ts';
-        } else if (symbol !== SYMBOL) {
-          accepted = false;
-          reason = 'non_btc';
-        } else if (ts > pollFinishedAt) {
-          accepted = false;
-          reason = 'future_event';
-        } else if (ts < periodStart) {
-          accepted = false;
-          reason = 'prior_period';
-        }
-
-        console.log(
-          'LIQUIDATION DIAGNOSTIC: ' +
-          'EVENT ts=' + iso(ts) +
-          ' EVENT PERIOD=' + iso(eventPeriod) +
-          ' CURRENT PERIOD=' + iso(periodStart) +
-          ' ' + (accepted ? 'ACCEPTED' : 'REJECTED') +
-          ' REASON=' + reason +
-          ' symbol=' + JSON.stringify(symbol) +
-          ' side=' + JSON.stringify(event?.side) +
-          ' exchange=' + JSON.stringify(event?.exchange)
-        );
-
-        return { event, ts, accepted };
-      });
-
-      const current = diagnosed
-        .filter(row => row.accepted)
+      const current = (events || [])
+        .map(event => {
+          const ts = eventTime(event);
+          const symbol = eventSymbol(event);
+          return { event, ts, symbol };
+        })
+        .filter(row => row.ts && row.symbol === SYMBOL && row.ts <= pollFinishedAt && bucketStart(row.ts) === periodStart)
         .sort((a, b) => a.ts - b.ts);
 
-      const newestTs = current.length ? current[current.length - 1].ts : 0;
+      const newest = current.length ? current[current.length - 1] : null;
+
+      if (newest && (!latestLiquidation || newest.ts > latestLiquidation.ts)) {
+        latestLiquidation = newest;
+        lastSeenTs = newest.ts;
+        console.log(
+          'MarginPad BTC LATEST UPDATE: event_ts=' + iso(newest.ts) +
+          ' side=' + JSON.stringify(newest.event?.side) +
+          ' exchange=' + JSON.stringify(newest.event?.exchange) +
+          ' period=' + iso(periodStart)
+        );
+      }
 
       console.log(
         'MarginPad BTC POLL: ' +
@@ -210,44 +136,11 @@ async function main() {
         ' duration_ms=' + (pollFinishedAt - pollStartedAt) +
         ' returned=' + (events || []).length +
         ' current_period_events=' + current.length +
-        ' alerted=' + (alertedPeriod === periodStart) +
-        ' newest_ts=' + iso(newestTs) +
-        ' newest_age_ms=' + (newestTs ? pollFinishedAt - newestTs : 'n/a') +
+        ' latest_ts=' + iso(latestLiquidation?.ts) +
         ' period_start=' + iso(periodStart) +
         ' period_elapsed_ms=' + (pollFinishedAt - periodStart) +
         ' period_remaining_ms=' + (periodStart + PERIOD_MS - pollFinishedAt)
       );
-
-      for (const row of current) {
-        const key = eventKey(row.event);
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        if (alertedPeriod === periodStart) {
-          console.log('MarginPad BTC: alert already sent for current 5M — ignore');
-          break;
-        }
-
-        console.log(
-          'MarginPad BTC NEW LIQUIDATION: ' +
-          'event_ts=' + iso(row.ts) +
-          ' detected_at=' + iso(pollFinishedAt) +
-          ' detection_delay_ms=' + (pollFinishedAt - row.ts) +
-          ' side=' + JSON.stringify(row.event?.side) +
-          ' period=' + iso(periodStart)
-        );
-
-        try {
-          await sendFirstLiquidation(row.event, periodStart);
-          alertedPeriod = periodStart;
-          lastSeenTs = row.ts;
-          console.log('MarginPad BTC ALERT LOCKED until next 5M period: locked_at=' + iso(Date.now()));
-        } catch (error) {
-          console.error('BTC liquidation alert send failed: ' + error.message);
-        }
-
-        break;
-      }
     } catch (error) {
       console.warn('MarginPad poll failed at=' + iso(Date.now()) + ': ' + error.message);
     }
@@ -255,6 +148,16 @@ async function main() {
     const remaining = RUN_MS - (Date.now() - startedAt);
     if (remaining <= 0) break;
     await sleep(Math.min(FEED_POLL_MS, remaining));
+  }
+
+  if (latestLiquidation) {
+    try {
+      await sendLatestLiquidation(latestLiquidation.event, currentPeriodStart);
+    } catch (error) {
+      console.error('BTC latest liquidation alert send failed: ' + error.message);
+    }
+  } else {
+    console.log('MarginPad BTC: no liquidation found in current 5M period — no alert');
   }
 
   const finishedAt = Date.now();
