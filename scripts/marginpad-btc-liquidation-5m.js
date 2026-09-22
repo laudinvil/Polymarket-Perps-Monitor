@@ -177,7 +177,7 @@ async function main(){
       const rows=(events||[]).map(event=>({event,ts:eventTime(event),direction:directionOf(event)})).filter(row=>row.ts&&row.ts<=now).sort((a,b)=>b.ts-a.ts);
       const currentRows=rows.filter(row=>bucketStart(row.ts)===currentPeriod);
       console.log('MarginPad BTC POLL: returned='+(events||[]).length+' current_period='+currentRows.length+' alertSent='+alertSent+' newest_ts='+(rows[0]?.ts?new Date(rows[0].ts).toISOString():'n/a')+' newest_side='+JSON.stringify(rows[0]?.event?.side??null));
-      console.log('MarginPad BTC CURRENT PERIOD: '+JSON.stringify(currentRows.slice(0,10).map(row=>({ts:row.ts,side:row.event?.side,direction:row.direction,price:row.event?.price,qty:row.event?.qty,notional:row.event?.notional})));
+      console.log('MarginPad BTC CURRENT PERIOD: '+JSON.stringify(currentRows.slice(0,10).map(row=>({ts:row.ts,side:row.event?.side,direction:row.direction,price:row.event?.price,qty:row.event?.qty,notional:row.event?.notional}))));
       if(!currentRows.length)console.log('MarginPad BTC: no liquidation in current 5M period');
       else if(alertSent)console.log('MarginPad BTC: liquidation exists, alert already sent for current 5M period — ignore');
       else{
