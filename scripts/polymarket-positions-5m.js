@@ -218,9 +218,9 @@ async function processPeriod(coin, boundary) {
 
   const totalBuys = stats.UP + stats.DOWN;
   const previousTotalBuys = previousStats.UP + previousStats.DOWN;
-  const totalDecreased = totalBuys < previousTotalBuys;
+  const totalIncreased = totalBuys > previousTotalBuys;
   const upIsLarger = stats.UP > stats.DOWN;
-  if (!totalDecreased || !upIsLarger) {
+  if (!totalIncreased || !upIsLarger) {
     console.log(
       '[positions-5m] ' + activeSlug +
       ' BUY alert rejected: TOTAL=' + totalBuys +
@@ -231,9 +231,7 @@ async function processPeriod(coin, boundary) {
     return false;
   }
 
-  const totalDirection =
-    totalBuys > previousTotalBuys ? ' ↑' :
-    totalBuys < previousTotalBuys ? ' ↓' : '';
+  const totalDirection = totalBuys > previousTotalBuys ? ' ↑' : '';
 
   const claimResponse = await fetch((env.CONVEX_SITE_URL || CONVEX_SITE_URL).replace(/\/$/, '') + '/claim-rolling-alert', {
     method: 'POST',
