@@ -152,8 +152,6 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
-
-
   const nextUrl = POLY_URL + (start + PERIOD);
   const lines = [
     "🔥 BTC · 5M",
@@ -168,15 +166,10 @@ async function monitorPeriod(start) {
   ];
 
   const previousDirection = state.previousDirection;
-  const directionCount = Number(state.directionCount) || 0;
-  const consecutiveCount = direction !== "SAME →"
-    ? (previousDirection === direction ? directionCount + 1 : 1)
-    : 0;
+  const sameDirectionTwice = previousDirection && previousDirection === direction && direction !== "SAME →";
 
-  nextState.directionCount = consecutiveCount;
-
-  if (consecutiveCount < 2) {
-    console.log("OI alert skipped: consecutive " + direction + " count=" + consecutiveCount + " (need 2+)");
+  if (!sameDirectionTwice) {
+    console.log("OI alert skipped: direction is not repeated twice. Current=" + direction + " Previous=" + (previousDirection || "NONE"));
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
