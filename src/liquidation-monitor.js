@@ -32,9 +32,32 @@ function extractEvents(json) {
   return [];
 }
 async function fetchJson(url, fetchImpl = fetch) {
-  const response = await fetchImpl(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`MarginPad HTTP ${response.status}`);
-  return response.json();
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'Polymarket-Perps-Monitor/1.0',
+          'cache-control': 'no-cache'
+        }
+      });
+      if (response.ok) return response.json();
+      if (![429, 502, 503, 504].includes(response.status)) {
+        throw new Error(`MarginPad HTTP ${response.status}`);
+      }
+      const retryAfter = Number(response.headers?.get?.('retry-after'));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 10000)
+        : Math.min(1000 * (2 ** attempt), 8000);
+      lastError = new Error(`MarginPad HTTP ${response.status}`);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, delay));
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, Math.min(1000 * (2 ** attempt), 8000)));
+    }
+  }
+  throw lastError || new Error('MarginPad request failed');
 }
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
@@ -66,19 +89,26 @@ function mergeUniqueEvents(primary, secondary) {
 }
 async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
+  let feedSucceeded = false;
   let feedEvents = [];
-  try { feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized); }
-  catch (error) { console.warn(`MarginPad feed ${normalized} failed: ${error.message}`); }
+  try {
+    feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
+    feedSucceeded = true;
+  } catch (error) {
+    console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
+  }
+  if (feedSucceeded) return feedEvents;
+
   const now = Date.now();
   const cached = fallbackCache.eventsBySymbol.get(normalized);
-  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return mergeUniqueEvents(feedEvents, cached.events);
+  if (cached && now - cached.fetchedAt < FALLBACK_REFRESH_MS) return cached.events;
   try {
     const fresh = await fetchLiveSymbolFallback(normalized, fetchImpl);
     fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: fresh });
-    return mergeUniqueEvents(feedEvents, fresh);
+    return fresh;
   } catch (error) {
     console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
-    return mergeUniqueEvents(feedEvents, cached?.events || []);
+    return cached?.events || [];
   }
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
