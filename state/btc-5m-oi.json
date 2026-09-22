@@ -1,9 +1,9 @@
 {
-  "periodStart": 1790107500,
+  "periodStart": 1790107800,
   "snapshotOffset": 285,
-  "openInterest": 28001.655503,
-  "previousOpenInterest": 28134.567325,
-  "deltaPct": -0.4724146650796173,
-  "previousDirection": "LESS ↓",
-  "updatedAt": "2026-09-22T20:09:46.255Z"
+  "openInterest": 32791.663473,
+  "previousOpenInterest": 28001.655503,
+  "deltaPct": 17.10615991789062,
+  "previousDirection": "MORE ↑",
+  "updatedAt": "2026-09-22T20:14:45.688Z"
 }
