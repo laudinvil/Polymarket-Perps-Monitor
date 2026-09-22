@@ -5,7 +5,7 @@ const POLL_MS = 1000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 1500;
+const REQUEST_TIMEOUT_MS = 5000;
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -36,9 +36,9 @@ function extractEvents(json) {
   if (json && Array.isArray(json.data)) return json.data;
   return [];
 }
-async function fetchJson(url, fetchImpl = fetch) {
+async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(url, {
       headers: {
@@ -53,7 +53,7 @@ async function fetchJson(url, fetchImpl = fetch) {
     return await response.json();
   } catch (error) {
     throw error?.name === 'AbortError'
-      ? new Error(`MarginPad request timeout after ${REQUEST_TIMEOUT_MS}ms: ${url}`)
+      ? new Error(`MarginPad request timeout after ${timeoutMs}ms: ${url}`)
       : error;
   } finally {
     clearTimeout(timeout);
@@ -79,7 +79,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 }
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
+  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl, 5000);
   return extractEvents(json).filter(event => normalizeSymbol(event.symbol) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
