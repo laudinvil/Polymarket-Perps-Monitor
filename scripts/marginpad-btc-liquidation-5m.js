@@ -179,7 +179,10 @@ async function sendFirstLiquidation(event, periodStart) {
   const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
   const text = ['🔥 BTC · LIQUIDATION', '', 'DIRECTION: ' + direction, clobLine, '', '➡️ CURRENT · Polymarket 5M', marketUrl].join('\n');
   console.log('Sending Telegram liquidation alert: direction=' + direction + ' text=' + JSON.stringify(text));
-  const result = await sendTelegramMessage(text);
+  const result = await Promise.race([
+    sendTelegramMessage(text),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Telegram send timeout after 4000ms')), 4000))
+  ]);
   console.log('Telegram liquidation alert sent: message_id=' + (result?.message_id ?? 'unknown'));
   return true;
 }
@@ -250,6 +253,8 @@ async function main() {
   }
   void logConvexRuntime('info', 'MarginPad BTC monitor finished');
   void convexRuntimeRequest('runtime.finish', { runId: RUNTIME_RUN_ID, finishedAt: Date.now(), status: 'completed', exitCode: null });
+  setTimeout(() => process.exit(0), 250);
+
 }
 
 main().catch(async error => {
