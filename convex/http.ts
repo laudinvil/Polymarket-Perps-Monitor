@@ -68,9 +68,9 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
   try{
     const response=await fetch("https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.0"},signal:controller.signal});
     const body=await response.text();
-    if(!response.ok)return Response.json({ok:false,events:[],liveEvents:0,feedEvents:0,liveError:"HTTP "+response.status+" "+body.slice(0,300),feedError:null,ts:Date.now()},{status:200});
+    if(!response.ok)return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:"HTTP "+response.status+" "+body.slice(0,500),feedError:null,marginpadStatus:response.status,rawPreview:body.slice(0,1000),ts:Date.now()},{status:200});
     let json;
-    try{json=JSON.parse(body);}catch(error){return Response.json({ok:false,events:[],liveEvents:0,feedEvents:0,liveError:"Invalid JSON: "+body.slice(0,300),feedError:null,ts:Date.now()},{status:200});}
+    try{json=JSON.parse(body);}catch(error){return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:"Invalid JSON: "+body.slice(0,500),feedError:null,marginpadStatus:response.status,rawPreview:body.slice(0,1000),ts:Date.now()},{status:200});}
     const data=json?.data;
     const raw=Array.isArray(json?.events)?json.events:
       Array.isArray(json?.liquidations)?json.liquidations:
@@ -84,9 +84,9 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
       return symbol==="" || symbol==="BTC" || symbol.startsWith("BTC") || symbol.startsWith("XBT");
     };
     const events=raw.filter(isBtc);
-    return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,rawEvents:raw.length,feedEvents:0,liveError:null,feedError:null,ts:Date.now()});
+    return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,rawEvents:raw.length,feedEvents:0,liveError:null,feedError:null,marginpadStatus:response.status,rawPreview:raw.slice(0,2),ts:Date.now()});
   }catch(error){
-    return Response.json({ok:false,events:[],liveEvents:0,feedEvents:0,liveError:String(error?.message||error),feedError:null,ts:Date.now()},{status:200});
+    return Response.json({ok:true,events:[],liveEvents:0,rawEvents:0,feedEvents:0,liveError:String(error?.message||error),feedError:null,marginpadStatus:null,rawPreview:null,ts:Date.now()},{status:200});
   }finally{clearTimeout(timeout);}
 });
 const health=httpAction(async()=>Response.json({ok:true}));
