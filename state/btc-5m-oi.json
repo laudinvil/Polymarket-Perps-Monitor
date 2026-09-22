@@ -1,11 +1,10 @@
 {
-  "periodStart": 1790112900,
+  "periodStart": 1790113800,
   "snapshotOffset": 285,
-  "openInterest": 19332.554963,
-  "previousOpenInterest": 26839.921402,
-  "deltaPct": -27.970895765889175,
-  "previousDirection": "LESS ↓",
-  "lastAlertDirection": "LESS ↓",
-  "lastAlertPeriodStart": 1790112900,
-  "updatedAt": "2026-09-22T21:39:45.343Z"
+  "largestBetShares": 30,
+  "largestBetOutcome": "UP",
+  "largestBetSide": "BUY",
+  "largestBetPrice": 0.54,
+  "largestBetTimestamp": 1790113802,
+  "updatedAt": "2026-09-22T21:54:46.723Z"
 }
