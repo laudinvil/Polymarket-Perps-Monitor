@@ -121,6 +121,28 @@ export const upsertLiveTrade = internalMutation({
     return await ctx.db.insert("liveTrades",args);
   }
 });
+export const saveStrategyStability = internalMutation({
+  args: {
+    symbol:v.string(), periodStart:v.number(), periodEnd:v.number(),
+    signalDirection:v.string(), signalScore:v.number(), signalAt:v.number(),
+    samples:v.array(v.object({ts:v.number(),direction:v.string(),score:v.number(),secondsRemaining:v.number()})),
+    stable:v.boolean(), flips:v.number(), finalDirection:v.string(),
+    winner:v.optional(v.string()), correct:v.optional(v.boolean()), recordedAt:v.number()
+  },
+  handler: async (ctx,args) => {
+    const existing=await ctx.db.query("strategyStability").withIndex("by_symbol_period",q=>q.eq("symbol",args.symbol).eq("periodStart",args.periodStart)).unique();
+    if(existing){await ctx.db.patch(existing._id,args);return existing._id;}
+    return await ctx.db.insert("strategyStability",args);
+  }
+});
+export const latestStrategyStability = query({
+  args:{symbol:v.optional(v.string()),limit:v.number()},
+  handler:async(ctx,args)=>{
+    const limit=Math.min(Math.max(args.limit,1),100);
+    const rows=await ctx.db.query("strategyStability").withIndex("by_recorded_at").order("desc").take(Math.min(limit*2,200));
+    return rows.filter(row=>!args.symbol||row.symbol===args.symbol).slice(0,limit);
+  }
+});
 export const setRecoveryState = internalMutation({
   args:{symbol:v.string(),enabled:v.boolean(),initialBetUsd:v.number(),step:v.number(),maxSteps:v.number(),multiplier:v.number(),nextBetUsd:v.number(),updatedAt:v.number()},
   handler:async(ctx,args)=>{
