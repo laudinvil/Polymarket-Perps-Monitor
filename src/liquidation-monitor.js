@@ -41,11 +41,11 @@ async function fetchJson(url, fetchImpl = fetch) {
       let response;
       try {
         response = await fetchImpl(url, {
-        headers: {
-          accept: 'application/json',
-          'user-agent': 'Polymarket-Perps-Monitor/1.0',
-          'cache-control': 'no-cache'
-        },
+          headers: {
+            accept: 'application/json',
+            'user-agent': 'Polymarket-Perps-Monitor/1.0',
+            'cache-control': 'no-cache'
+          },
           signal: controller.signal
         });
       } finally {
@@ -106,11 +106,9 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
     feedSucceeded = true;
   } catch (error) {
     console.warn(`MarginPad feed ${normalized} failed: ${error.message}`);
+    feedEvents = [...liveFeedCache.events.values()].filter(event => normalizeSymbol(event.symbol) === normalized);
   }
 
-  // Always query the symbol-specific live endpoint as well.
-  // /feed is edge-cached; /liquidations/live is the raw recent BTC stream.
-  // Merging both prevents a cached global feed from hiding a new liquidation.
   let liveEvents = [];
   try {
     liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
@@ -121,9 +119,8 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
     liveEvents = cached?.events || [];
   }
 
-  if (!feedSucceeded && !liveEvents.length) {
-    const cached = fallbackCache.eventsBySymbol.get(normalized);
-    return cached?.events || [];
+  if (!feedSucceeded && !liveEvents.length && !feedEvents.length) {
+    console.warn(`MarginPad ${normalized}: both API sources unavailable and no cached events`);
   }
   return mergeUniqueEvents(feedEvents, liveEvents);
 }
