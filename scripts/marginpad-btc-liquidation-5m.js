@@ -11,12 +11,22 @@ const DEFAULT_CONVEX_SITE_URL = 'https://brainy-canary-207.eu-west-1.convex.site
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function directionOf(event) {
-  const side = String(event?.side || event?.direction || '').trim().toLowerCase();
+  const side = String(
+    event?.side ||
+    event?.direction ||
+    event?.liquidation_side ||
+    event?.liquidationSide ||
+    event?.type ||
+    event?.action ||
+    ''
+  ).trim().toLowerCase();
   if (side.includes('long') || side === 'buy' || side === 'bid' || side === 'buy_liquidation' || side === 'long_liquidation') return 'LONG';
   if (side.includes('short') || side === 'sell' || side === 'ask' || side === 'sell_liquidation' || side === 'short_liquidation') return 'SHORT';
   return null;
 }
-function eventTime(event) { return normalizeTs(event?.ts); }
+function eventTime(event) {
+  return normalizeTs(event?.ts ?? event?.timestamp ?? event?.time ?? event?.createdAt ?? event?.created_at);
+}
 function eventKey(event) {
   return [eventTime(event), event?.exchange, normalizeSymbol(event?.symbol), event?.side, event?.price, event?.qty, event?.notional].join('|');
 }
@@ -158,7 +168,7 @@ async function main() {
   const startedAt = Date.now();
   const seen = new Set();
   void startConvexRuntime();
-  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling /feed every 1000ms');
+  void logConvexRuntime('info', 'MarginPad BTC monitor started; polling live endpoint + feed concurrently every 1000ms');
 
   while (Date.now() - startedAt < RUN_MS) {
     const now = Date.now();
@@ -190,7 +200,7 @@ async function main() {
       const directional = rows.filter(row => row.direction);
       console.log('MarginPad BTC DIRECTIONAL: ' + directional.length + '/' + rows.length);
       if (rows.length === 0) {
-        console.log('MarginPad BTC EMPTY: /feed returned no BTC events on this poll');
+        console.log('MarginPad BTC EMPTY: live + feed returned no usable BTC events on this poll');
         void logConvexRuntime('warn', 'MarginPad BTC poll returned 0 usable BTC events');
       } else {
         void logConvexRuntime('info', 'MarginPad BTC rows=' + rows.length + ' newest_ts=' + new Date(rows[0].ts).toISOString() + ' newest_side=' + JSON.stringify(rows[0].event?.side));
