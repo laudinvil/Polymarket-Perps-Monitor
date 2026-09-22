@@ -171,7 +171,7 @@ async function monitorPeriod(start) {
   };
 
   const nextUrl = POLY_URL + (start + PERIOD);
-  const tradeSignal = direction === "LESS ↓" ? "BUY UP" : direction === "MORE ↑" ? "BUY DOWN" : null;
+  const tradeSignal = direction === "LESS ↓" ? "BUY UP 🔥" : direction === "MORE ↑" ? "BUY DOWN 🔥" : null;
   const lines = [
     "🔥 BTC · 5M" + (tradeSignal ? " · " + tradeSignal : ""),
     "",
