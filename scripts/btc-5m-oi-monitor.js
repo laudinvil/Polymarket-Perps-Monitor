@@ -6,7 +6,6 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const TARGET_OFFSET = 285;
-const WINDOW_START = 240;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
 function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
@@ -66,11 +65,23 @@ async function getOpenInterest(conditionId) {
   return total;
 }
 
-function readState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch (_) { return {}; } }
-function writeState(state) { fs.mkdirSync("state", { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n"); }
+function readState() {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); }
+  catch (_) { return {}; }
+}
+
+function writeState(state) {
+  fs.mkdirSync("state", { recursive: true });
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+}
 
 function formatUsd(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 async function sendTelegram(text) {
@@ -99,19 +110,30 @@ function gitCommitState(period) {
   }
 }
 
-async function main() {
+async function monitorPeriod(start) {
+  const targetTime = start + TARGET_OFFSET;
   const now = Math.floor(Date.now() / 1000);
-  const start = periodStart(now);
-  const offset = now - start;
-  if (offset >= TARGET_OFFSET) { console.log("After 4:45; skipping current period. Offset=" + offset); return; }
-  if (offset < TARGET_OFFSET) { await sleep((TARGET_OFFSET - offset) * 1000); }
+  if (now < targetTime) {
+    console.log("Waiting for 4:45. Period=" + start + " wait=" + (targetTime - now) + "s");
+    await sleep((targetTime - now) * 1000);
+  }
+
   const snapshotTime = Math.floor(Date.now() / 1000);
-  if (periodStart(snapshotTime) !== start) { console.log("Period rolled over; skipping."); return; }
+  if (periodStart(snapshotTime) !== start) {
+    console.log("Period rolled over before snapshot. Period=" + start);
+    return;
+  }
+
   const state = readState();
-  if (Number(state.periodStart) === start) { console.log("Duplicate period; skipping."); return; }
+  if (Number(state.periodStart) === start) {
+    console.log("Duplicate period; skipping. Period=" + start);
+    return;
+  }
+
   const market = await getCurrentMarket(start);
   const currentOI = await getOpenInterest(market.conditionId);
   const previousOI = Number(state.openInterest);
+
   let direction = "FIRST SNAPSHOT";
   let deltaPct = null;
   if (Number.isFinite(previousOI) && previousOI > 0) {
@@ -119,21 +141,57 @@ async function main() {
     deltaPct = delta / previousOI * 100;
     direction = delta > 0 ? "MORE ↑" : delta < 0 ? "LESS ↓" : "SAME →";
   }
+
   const nextUrl = POLY_URL + (start + PERIOD);
   const lines = [
     "🔥 BTC · 5M",
     "",
     "OPEN INTEREST: " + formatUsd(currentOI),
-    previousOI > 0 ? "VS PREVIOUS 4:45: " + formatUsd(previousOI) + " · " + direction + " " + Math.abs(deltaPct).toFixed(2) + "%" : "VS PREVIOUS 4:45: FIRST SNAPSHOT",
+    previousOI > 0
+      ? "VS PREVIOUS 4:45: " + formatUsd(previousOI) + " · " + direction + " " + Math.abs(deltaPct).toFixed(2) + "%"
+      : "VS PREVIOUS 4:45: FIRST SNAPSHOT",
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
-  const nextState = { periodStart: start, snapshotOffset: 285, openInterest: currentOI, previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null, deltaPct: deltaPct, updatedAt: new Date().toISOString() };
+
+  const nextState = {
+    periodStart: start,
+    snapshotOffset: TARGET_OFFSET,
+    openInterest: currentOI,
+    previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
+    deltaPct: deltaPct,
+    updatedAt: new Date().toISOString()
+  };
+
   await sendTelegram(lines.join("\n"));
+  console.log("Telegram sent for period=" + start);
   writeState(nextState);
   gitCommitState(start);
-  console.log(JSON.stringify(nextState, null, 2));
+  console.log("State saved for period=" + start);
 }
 
-main().catch(function(err) { console.error(err); process.exit(1); });
+async function main() {
+  console.log("BTC 5M OI monitor started in continuous mode");
+  while (true) {
+    const current = periodStart(Math.floor(Date.now() / 1000));
+    try {
+      await monitorPeriod(current);
+    } catch (err) {
+      console.error("Period monitor error: " + err.stack);
+      console.log("Keeping monitor alive; retrying in 15s");
+      await sleep(15000);
+      continue;
+    }
+
+    const next = current + PERIOD;
+    const wait = Math.max(1000, (next + TARGET_OFFSET - Math.floor(Date.now() / 1000)) * 1000);
+    console.log("Next period=" + next + " sleep=" + Math.round(wait / 1000) + "s");
+    await sleep(wait);
+  }
+}
+
+main().catch(function(err) {
+  console.error(err);
+  process.exit(1);
+});
