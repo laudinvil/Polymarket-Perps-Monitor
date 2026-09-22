@@ -1,7 +1,7 @@
 const FEED_URL = 'https://marginpad.io/api/v1/feed';
 const LIVE_URL = 'https://marginpad.io/api/v1/liquidations/live';
 const DEFAULT_SYMBOLS = ['ALL'];
-const POLL_MS = 4000;
+const POLL_MS = 1000;
 const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
@@ -58,7 +58,7 @@ async function fetchJson(url, fetchImpl = fetch) {
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
   if (liveFeedPromise) return liveFeedPromise;
-  if (now - liveFeedCache.fetchedAt < 3000) return [...liveFeedCache.events.values()];
+  if (now - liveFeedCache.fetchedAt < POLL_MS) return [...liveFeedCache.events.values()];
   liveFeedPromise = (async () => {
     const events = extractEvents(await fetchJson(FEED_URL, fetchImpl));
     const merged = new Map(liveFeedCache.events);
