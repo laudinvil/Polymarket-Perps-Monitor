@@ -7,6 +7,7 @@ const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 1500;
 const RETRY_DELAYS_MS = [500];
+const CONVEX_PROXY_URL = String(process.env.CONVEX_SITE_URL || 'https://brainy-canary-207.eu-west-1.convex.site').replace(/\/$/, '') + '/marginpad-btc-liquidations?limit=400';
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -89,6 +90,17 @@ async function fetchJson(url, fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS)
 
   throw lastError || new Error(`MarginPad request failed: ${url}`);
 }
+async function fetchConvexProxy(fetchImpl = fetch) {
+  const json = await fetchJson(CONVEX_PROXY_URL, fetchImpl, 2000);
+  const events = extractEvents(json).filter(event => normalizeSymbol(event?.symbol) === 'BTC');
+  console.log(
+    'MarginPad CONVEX PROXY: source=' + JSON.stringify(json?.source) +
+    ' feed=' + JSON.stringify(json?.feedEvents) +
+    ' live=' + JSON.stringify(json?.liveEvents) +
+    ' events=' + events.length
+  );
+  return events;
+}
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
   if (liveFeedPromise) return liveFeedPromise;
@@ -124,6 +136,17 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   // Stable MarginPad architecture: poll global /feed first. Only hit the
   // symbol-scoped endpoint as a 30s fallback. Do not hammer both endpoints
   // on every poll; this was causing unnecessary 503s/timeouts.
+  // GitHub-hosted runners are currently timing out against MarginPad directly.
+  // Use the existing Convex server-side proxy first; it still talks to MarginPad
+  // and preserves /feed -> /live ordering, but avoids the runner egress problem.
+  try {
+    feedEvents = await fetchConvexProxy(fetchImpl);
+    console.log(`MarginPad CONVEX ${normalized}: events=${feedEvents.length}`);
+    if (feedEvents.length) return feedEvents;
+  } catch (error) {
+    console.warn(`MarginPad Convex proxy failed: ${error.message}`);
+  }
+
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => {
       const eventSymbol = normalizeSymbol(event?.symbol);
