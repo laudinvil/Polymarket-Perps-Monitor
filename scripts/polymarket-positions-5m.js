@@ -572,7 +572,7 @@ async function processPeriod(coin, boundary) {
           stabilitySamples.push({ ts: now, direction: decision.direction, score: decision.score, secondsRemaining: decision.secondsRemaining });
           lastObservedDirection = decision.direction;
           flips = 0;
-          await sendStrategyAlert(coin, market, nextSlug, decision);
+          await sendStrategyAlert(coin, market, decision);
         }
       } else if (!alertSent) {
         confirmations = 0;
@@ -611,7 +611,7 @@ async function processPeriod(coin, boundary) {
   return false;
 }
 
-async function sendStrategyAlert(coin, market, nextSlug, decision) {
+async function sendStrategyAlert(coin, market, decision) {
   const now = Date.now();
 
   const message = [
@@ -641,8 +641,8 @@ async function sendStrategyAlert(coin, market, nextSlug, decision) {
     'POLY DOWN MID: ' + fmt(decision.downMid, 4),
     'SECONDS LEFT: ' + decision.secondsRemaining,
     '',
-    '➡️ NEXT · Polymarket 5M',
-    'https://polymarket.com/event/' + nextSlug
+    '➡️ CURRENT · Polymarket 5M',
+    'https://polymarket.com/event/' + market.slug
   ].join('\n');
 
   if (String(env.POLYMARKET_AUTO_TRADE_ENABLED || 'false').toLowerCase() === 'true') {
