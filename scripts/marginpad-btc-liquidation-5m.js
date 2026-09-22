@@ -30,11 +30,18 @@ async function claimPeriod(periodStart) {
 async function sendFirstLiquidation(event, periodStart) {
   const direction = directionOf(event);
   if (!direction) return false;
-  if (!(await claimPeriod(periodStart))) return false;
-  const market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
-  const marketUrl = market?.url || ('https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000));
-  const upMid = await findClobMidpoint(market, 'UP');
-  const downMid = await findClobMidpoint(market, 'DOWN');
+  let market = null;
+  let marketUrl = 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000);
+  let upMid = null;
+  let downMid = null;
+  try {
+    market = await findCurrentMarket(SYMBOL, Date.now(), '5m');
+    marketUrl = market?.url || marketUrl;
+    upMid = await findClobMidpoint(market, 'UP');
+    downMid = await findClobMidpoint(market, 'DOWN');
+  } catch (error) {
+    console.warn('Polymarket lookup failed, sending liquidation alert without CLOB price: ' + error.message);
+  }
   let cheaper = null;
   if (Number.isFinite(upMid) && Number.isFinite(downMid)) {
     cheaper = upMid <= downMid ? { outcome: 'UP', price: upMid } : { outcome: 'DOWN', price: downMid };
