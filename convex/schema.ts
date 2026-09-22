@@ -81,6 +81,13 @@ export default defineSchema({
     symbol:v.string(), enabled:v.boolean(), initialBetUsd:v.number(), step:v.number(),
     maxSteps:v.number(), multiplier:v.number(), nextBetUsd:v.number(), updatedAt:v.number(),
   }).index("by_symbol",["symbol"]),
+  strategyStability: defineTable({
+    symbol:v.string(), periodStart:v.number(), periodEnd:v.number(),
+    signalDirection:v.string(), signalScore:v.number(), signalAt:v.number(),
+    samples:v.array(v.object({ts:v.number(),direction:v.string(),score:v.number(),secondsRemaining:v.number()})),
+    stable:v.boolean(), flips:v.number(), finalDirection:v.string(),
+    winner:v.optional(v.string()), correct:v.optional(v.boolean()), recordedAt:v.number(),
+  }).index("by_symbol_period",["symbol","periodStart"]).index("by_recorded_at",["recordedAt"]),
   paperTrades: defineTable({
     symbol:v.string(), marketStart:v.number(), outcome:v.string(), entryPrice:v.number(), shares:v.number(), alertTs:v.number(),
     sourceMessageId:v.optional(v.number()), resultMessageId:v.optional(v.number()), settled:v.boolean(), result:v.optional(v.string()), winner:v.optional(v.string()), pnl:v.optional(v.number()),
