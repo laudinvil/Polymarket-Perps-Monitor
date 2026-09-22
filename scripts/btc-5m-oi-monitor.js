@@ -194,16 +194,6 @@ async function monitorPeriod(start) {
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
-    return;
-  }
-
-  nextState.lastAlertDirection = direction;
-  nextState.lastAlertPeriodStart = start;
-  await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start);
-  writeState(nextState);
-  gitCommitState(start);
-  console.log("State saved for period=" + start);
 }
 
 async function main() {
