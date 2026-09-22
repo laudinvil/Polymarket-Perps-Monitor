@@ -37,7 +37,7 @@ function eventKey(event) {
 
 async function getClobPriceLine(periodStart) {
   const fallback = {
-    line: 'CLOB PRICE: n/a',
+    line: 'PRICE: n/a',
     url: 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000)
   };
 
@@ -78,7 +78,7 @@ async function getClobPriceLine(periodStart) {
 
     return {
       line: cheaper
-        ? 'CLOB PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2)
+        ? 'PRICE: ' + cheaper.outcome + ' ' + cheaper.price.toFixed(2)
         : fallback.line,
       url
     };
@@ -95,11 +95,11 @@ async function sendFirstLiquidation(event, periodStart) {
   const { line: clobLine, url: marketUrl } = await getClobPriceLine(periodStart);
 
   const text = [
-    '🔥 BTC · LIQUIDATION',
+    '🔥 BTC · 5M',
     '',
     clobLine,
     '',
-    '➡️ CURRENT · Polymarket 5M',
+    '➡️ Polymarket 5M',
     marketUrl
   ].join('\n');
 
