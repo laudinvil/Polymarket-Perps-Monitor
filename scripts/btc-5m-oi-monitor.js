@@ -6,6 +6,7 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const TARGET_OFFSET = 285;
+const MAX_ALERT_CHANGE_PCT = 25;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
 function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
@@ -142,6 +143,23 @@ async function monitorPeriod(start) {
     direction = delta > 0 ? "MORE ↑" : delta < 0 ? "LESS ↓" : "SAME →";
   }
 
+  const nextState = {
+    periodStart: start,
+    snapshotOffset: TARGET_OFFSET,
+    openInterest: currentOI,
+    previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
+    deltaPct: deltaPct,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (deltaPct !== null && Math.abs(deltaPct) > MAX_ALERT_CHANGE_PCT) {
+    console.log("OI change " + Math.abs(deltaPct).toFixed(2) + "% exceeds max alert threshold " + MAX_ALERT_CHANGE_PCT + "%. Alert skipped.");
+    writeState(nextState);
+    gitCommitState(start);
+    console.log("State saved for period=" + start);
+    return;
+  }
+
   const nextUrl = POLY_URL + (start + PERIOD);
   const lines = [
     "🔥 BTC · 5M",
@@ -154,15 +172,6 @@ async function monitorPeriod(start) {
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
-
-  const nextState = {
-    periodStart: start,
-    snapshotOffset: TARGET_OFFSET,
-    openInterest: currentOI,
-    previousOpenInterest: Number.isFinite(previousOI) ? previousOI : null,
-    deltaPct: deltaPct,
-    updatedAt: new Date().toISOString()
-  };
 
   await sendTelegram(lines.join("\n"));
   console.log("Telegram sent for period=" + start);
