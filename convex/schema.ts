@@ -77,6 +77,7 @@ export default defineSchema({
     payout:v.optional(v.number()), pnl:v.optional(v.number()), startedAt:v.number(),
     settledAt:v.optional(v.number()), updatedAt:v.number(), error:v.optional(v.string()),
   }).index("by_trade",["tradeId"]).index("by_market",["symbol","marketStart"]).index("by_status",["status","updatedAt"]),
+  liquidationAlerts: defineTable({ symbol:v.string(), periodStart:v.number(), sentAt:v.number() }).index("by_symbol_period",["symbol","periodStart"]),
   recoveryStates: defineTable({
     symbol:v.string(), enabled:v.boolean(), initialBetUsd:v.number(), step:v.number(),
     maxSteps:v.number(), multiplier:v.number(), nextBetUsd:v.number(), updatedAt:v.number(),
