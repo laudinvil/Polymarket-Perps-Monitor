@@ -81,7 +81,7 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
       Array.isArray(data)?data:[];
     const isBtc=event=>{
       const symbol=String(event?.symbol||event?.market||event?.pair||"").toUpperCase().replace(/[-_/]/g,"");
-      return symbol==="" || symbol==="BTC" || symbol.startsWith("BTCUSDT") || symbol.startsWith("BTCUSDC") || symbol.startsWith("BTCUSD") || symbol.startsWith("XBT");
+      return symbol==="" || symbol==="BTC" || symbol.startsWith("BTC") || symbol.startsWith("XBT");
     };
     const events=raw.filter(isBtc);
     return Response.json({ok:true,source:"convex-marginpad-live-btc",events,liveEvents:events.length,rawEvents:raw.length,feedEvents:0,liveError:null,feedError:null,ts:Date.now()});
