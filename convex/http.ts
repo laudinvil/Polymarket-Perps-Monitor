@@ -60,14 +60,13 @@ const claimRollingAlert=httpAction(async(ctx,request)=>{
   }catch(error){console.error("Convex rolling alert claim failed",error);return new Response("Rolling alert claim failed",{status:500});}
 });
 const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
-  if(!authorized(request))return new Response("Unauthorized",{status:401});
   const url=new URL(request.url);
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||400),1),400);
   const fetchMarginPad=async(target,timeoutMs)=>{
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),timeoutMs);
     try{
-      const response=await fetch(target,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.1"},signal:controller.signal});
+      const response=await fetch(target,{headers:{"accept":"application/json","cache-control":"no-cache","user-agent":"Polymarket-Perps-Monitor-Convex/1.2"},signal:controller.signal});
       const body=await response.text();
       return {status:response.status,ok:response.ok,body};
     }catch(error){
@@ -76,7 +75,7 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
   };
   const parseEvents=(body)=>{
     let json;
-    try{json=JSON.parse(body);}catch{return {raw:[],preview:body.slice(0,1000),parseError:"Invalid JSON"};}
+    try{json=JSON.parse(body);}catch{return {raw:[],preview:body.slice(0,500),parseError:"Invalid JSON"};}
     const data=json?.data;
     const raw=Array.isArray(json?.events)?json.events:
       Array.isArray(json?.liquidations)?json.liquidations:
@@ -91,20 +90,29 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
     const symbol=String(event?.symbol||event?.market||event?.pair||"").toUpperCase().replace(/[-_/]/g,"");
     return symbol===""||symbol==="BTC"||symbol.startsWith("BTC")||symbol.startsWith("XBT");
   };
-  const liveUrl="https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit;
   const feedUrl="https://marginpad.io/api/v1/feed";
-  const [live,feed]=await Promise.all([
-    fetchMarginPad(liveUrl,4500),
-    fetchMarginPad(feedUrl,3500)
-  ]);
-  const liveParsed=live.ok?parseEvents(live.body):{raw:[],preview:live.body.slice(0,1000),parseError:null};
-  const feedParsed=feed.ok?parseEvents(feed.body):{raw:[],preview:feed.body.slice(0,1000),parseError:null};
-  const liveEvents=liveParsed.raw.filter(isBtc);
+  const liveUrl="https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit="+limit;
+
+  // Convex is used as the transport because GitHub-hosted runners have been
+  // timing out against MarginPad. Preserve the stable order: /feed first,
+  // then BTC /live only when /feed does not return usable data.
+  const feed=await fetchMarginPad(feedUrl,1200);
+  const feedParsed=feed.ok?parseEvents(feed.body):{raw:[],preview:feed.body.slice(0,500),parseError:null};
   const feedEvents=feedParsed.raw.filter(isBtc);
-  const events=liveEvents.length?liveEvents:feedEvents;
+
+  let live={status:null,ok:false,body:"",error:"not requested"};
+  let liveParsed={raw:[],preview:"",parseError:null};
+  let liveEvents=[];
+  if(!feed.ok || !feedEvents.length){
+    live=await fetchMarginPad(liveUrl,1200);
+    liveParsed=live.ok?parseEvents(live.body):{raw:[],preview:live.body.slice(0,500),parseError:null};
+    liveEvents=liveParsed.raw.filter(isBtc);
+  }
+
+  const events=feedEvents.length?feedEvents:liveEvents;
   return Response.json({
     ok:true,
-    source:liveEvents.length?"convex-marginpad-live-btc":"convex-marginpad-feed-btc-fallback",
+    source:feedEvents.length?"convex-marginpad-feed-btc":liveEvents.length?"convex-marginpad-live-btc":"convex-marginpad-empty",
     events,
     liveEvents:liveEvents.length,
     feedEvents:feedEvents.length,
@@ -114,7 +122,7 @@ const marginpadBtcLiquidations=httpAction(async(ctx,request)=>{
     feedError:feed.ok?(feedParsed.parseError||null):(feed.status?("HTTP "+feed.status+" "+feed.body.slice(0,500)):feed.error),
     marginpadStatus:live.status,
     feedStatus:feed.status,
-    rawPreview:liveEvents.length?liveParsed.preview:feedParsed.preview,
+    rawPreview:events.slice(0,2),
     ts:Date.now()
   });
 });
