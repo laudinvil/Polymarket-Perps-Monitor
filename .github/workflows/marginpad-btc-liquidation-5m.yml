@@ -1,6 +1,7 @@
 name: MarginPad BTC Liquidation 5M
 
 on:
+  push:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
