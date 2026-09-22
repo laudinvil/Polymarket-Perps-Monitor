@@ -81,24 +81,29 @@ async function main() {
         console.log('MarginPad BTC LATEST: n/a');
       }
 
-      const current = (events || [])
+      const eligible = (events || [])
         .map(event => ({ event, ts: eventTime(event), direction: directionOf(event) }))
-        .filter(row => row.ts && bucketStart(row.ts, '5m') === periodStart)
+        .filter(row => row.ts && row.ts <= now)
         .sort((a, b) => b.ts - a.ts);
 
-      const directional = current.filter(row => row.direction);
-      console.log('MarginPad BTC MATCH: currentPeriodEvents=' + current.length + ' directional=' + directional.length);
+      const directional = eligible.filter(row => row.direction);
+      console.log('MarginPad BTC ELIGIBLE: events=' + eligible.length + ' directional=' + directional.length);
 
-      if (current.length && alertedPeriod !== periodStart) {
+      if (directional.length && alertedPeriod !== periodStart) {
         const row = directional[0];
-        if (!row) {
-          console.warn('MarginPad BTC: current-period liquidation found, but side/direction is UNKNOWN; alert not sent.');
-        } else {
-          const key = eventKey(row.event);
-          if (!seen.has(key)) {
-            seen.add(key);
-            if (await sendFirstLiquidation(row.event, periodStart)) alertedPeriod = periodStart;
-          }
+        const eventPeriod = bucketStart(row.ts, '5m');
+        console.log('MarginPad BTC CANDIDATE: ts=' + new Date(row.ts).toISOString() +
+          ' direction=' + row.direction +
+          ' eventPeriod=' + new Date(eventPeriod).toISOString());
+
+        // If the latest liquidation belongs to an older period, use its own period
+        // so a delayed GitHub start cannot silently discard the liquidation.
+        const targetPeriod = eventPeriod;
+        const key = eventKey(row.event);
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          if (await sendFirstLiquidation(row.event, targetPeriod)) alertedPeriod = periodStart;
         }
       }
     } catch (error) { console.warn('MarginPad poll failed: ' + error.message); }
