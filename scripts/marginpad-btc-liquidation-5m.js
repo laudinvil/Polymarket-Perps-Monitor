@@ -42,6 +42,43 @@ function eventKey(event) {
   ].join('|');
 }
 
+async function saveLiquidationToConvex(event, direction) {
+  const siteUrl = String(process.env.CONVEX_SITE_URL || '').replace(/\\/$/, '');
+  const token = String(process.env.CONVEX_INGEST_TOKEN || '');
+  if (!siteUrl || !token) {
+    console.warn('Convex liquidation logging skipped: CONVEX_SITE_URL or CONVEX_INGEST_TOKEN missing');
+    return;
+  }
+  const eventId = eventKey(event);
+  const payload = {
+    type: 'liquidation.event',
+    data: {
+      eventId,
+      symbol: normalizeSymbol(event?.symbol),
+      ts: eventTime(event),
+      exchange: event?.exchange == null ? undefined : String(event.exchange),
+      side: event?.side == null ? undefined : String(event.side),
+      direction: direction || undefined,
+      price: Number.isFinite(Number(event?.price)) ? Number(event.price) : undefined,
+      qty: Number.isFinite(Number(event?.qty)) ? Number(event.qty) : undefined,
+      notional: Number.isFinite(Number(event?.notional)) ? Number(event.notional) : undefined,
+      firstSeenAt: Date.now(),
+      lastSeenAt: Date.now()
+    }
+  };
+  try {
+    const response = await fetch(siteUrl + '/ingest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    console.log('Convex liquidation recorded: eventId=' + eventId);
+  } catch (error) {
+    console.warn('Convex liquidation logging failed: ' + error.message);
+  }
+}
+
 async function getClobPriceLine(periodStart) {
   const fallback = 'CLOB PRICE: n/a';
   const marketUrl = 'https://polymarket.com/event/btc-updown-5m-' + Math.floor(periodStart / 1000);
@@ -140,6 +177,12 @@ async function main() {
 
       const directional = rows.filter(row => row.direction);
       console.log('MarginPad BTC DIRECTIONAL: ' + directional.length);
+
+      // Persist every BTC event returned by MarginPad so Convex becomes the source of truth
+      // for what the API actually exposed during each polling cycle.
+      for (const row of rows) {
+        await saveLiquidationToConvex(row.event, row.direction);
+      }
 
       // Alert on every newly observed liquidation event.
       // Do not require the event to belong to the current 5m bucket:
