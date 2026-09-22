@@ -6,7 +6,6 @@ const FALLBACK_REFRESH_MS = 30000;
 const WINDOW_MS = 5 * 60 * 1000;
 const FEED_RETENTION_MS = 26 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 1500;
-const FAST_RETRY_DELAY_MS = 250;
 
 let fallbackCache = { eventsBySymbol: new Map() };
 let liveFeedCache = { fetchedAt: 0, events: new Map() };
@@ -56,20 +55,12 @@ async function fetchJson(url, fetchImpl = fetch) {
     clearTimeout(timeout);
   }
 }
-async function fetchFast(url, fetchImpl = fetch) {
-  try {
-    return await fetchJson(url, fetchImpl);
-  } catch (firstError) {
-    await new Promise(resolve => setTimeout(resolve, FAST_RETRY_DELAY_MS));
-    return fetchJson(url, fetchImpl);
-  }
-}
 async function fetchLiveFeed(fetchImpl = fetch) {
   const now = Date.now();
   if (liveFeedPromise) return liveFeedPromise;
   if (now - liveFeedCache.fetchedAt < 3000) return [...liveFeedCache.events.values()];
   liveFeedPromise = (async () => {
-    const events = extractEvents(await fetchFast(FEED_URL, fetchImpl));
+    const events = extractEvents(await fetchJson(FEED_URL, fetchImpl));
     const merged = new Map(liveFeedCache.events);
     for (const event of events) merged.set(eventKey(event), event);
     const cutoff = Date.now() - FEED_RETENTION_MS;
@@ -84,7 +75,7 @@ async function fetchLiveFeed(fetchImpl = fetch) {
 }
 async function fetchLiveSymbolFallback(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
-  const json = await fetchFast(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
+  const json = await fetchJson(`${LIVE_URL}?symbol=${encodeURIComponent(normalized)}&limit=400`, fetchImpl);
   return extractEvents(json).filter(event => normalizeSymbol(event.symbol) === normalized);
 }
 function mergeUniqueEvents(primary, secondary) {
@@ -96,6 +87,7 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
   const normalized = normalizeSymbol(symbol);
   let feedEvents = [];
   let feedSucceeded = false;
+
   try {
     feedEvents = (await fetchLiveFeed(fetchImpl)).filter(event => normalizeSymbol(event.symbol) === normalized);
     feedSucceeded = true;
@@ -104,20 +96,25 @@ async function fetchSymbolFeed(symbol, fetchImpl = fetch) {
     feedEvents = [...liveFeedCache.events.values()].filter(event => normalizeSymbol(event.symbol) === normalized);
   }
 
-  let liveEvents = [];
+  // Do NOT hit the fallback endpoint after every successful empty feed.
+  // The monitor should immediately wait for the next feed poll.
+  if (feedSucceeded) {
+    return feedEvents;
+  }
+
   try {
-    liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
+    const liveEvents = await fetchLiveSymbolFallback(normalized, fetchImpl);
     fallbackCache.eventsBySymbol.set(normalized, { fetchedAt: Date.now(), events: liveEvents });
+    return mergeUniqueEvents(feedEvents, liveEvents);
   } catch (error) {
     console.warn(`MarginPad live fallback ${normalized} failed: ${error.message}`);
     const cached = fallbackCache.eventsBySymbol.get(normalized);
-    liveEvents = cached?.events || [];
+    const liveEvents = cached?.events || [];
+    if (!liveEvents.length && !feedEvents.length) {
+      console.warn(`MarginPad ${normalized}: both API sources unavailable and no cached events`);
+    }
+    return mergeUniqueEvents(feedEvents, liveEvents);
   }
-
-  if (!feedSucceeded && !liveEvents.length && !feedEvents.length) {
-    console.warn(`MarginPad ${normalized}: both API sources unavailable and no cached events`);
-  }
-  return mergeUniqueEvents(feedEvents, liveEvents);
 }
 async function fetchFeed(symbols = DEFAULT_SYMBOLS, fetchImpl = fetch) {
   const requested = Array.isArray(symbols) ? symbols.map(normalizeSymbol) : [];
