@@ -1,4 +1,4 @@
-const { fetchFeed, normalizeTs, normalizeSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
+const { fetchFeed, normalizeTs, normalizeSymbol, normalizeEventSymbol, bucketStart, POLL_MS } = require('../src/liquidation-monitor');
 const { findCurrentMarket, findClobMidpoint } = require('../src/polymarket');
 const { sendTelegramMessage } = require('../src/telegram');
 
