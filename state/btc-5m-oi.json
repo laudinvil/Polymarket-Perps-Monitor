@@ -6,10 +6,7 @@
   "largestBetSide": "BUY",
   "largestBetPrice": 0.5196175427,
   "largestBetTimestamp": 1790157742,
-  "alertTimes": [
-    1790157276621,
-    1790157576916,
-    1790157877235
-  ],
-  "updatedAt": "2026-09-23T10:04:37.235Z"
+  "updatedAt": "2026-09-23T10:07:58.607Z",
+  "lastOutcome": "DOWN",
+  "streak": 1
 }
