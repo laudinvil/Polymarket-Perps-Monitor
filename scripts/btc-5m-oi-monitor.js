@@ -83,7 +83,7 @@ async function getNextClobPrice(start, outcome) {
 }
 
 async function getTradeSide(row) {
-  const outcome = String(row.outcome || row.side || row.token || "").toUpperCase();
+  const outcome = String(row.outcome || "").trim().toUpperCase();
   if (outcome === "UP" || outcome === "YES") return "UP";
   if (outcome === "DOWN" || outcome === "NO") return "DOWN";
   return null;
@@ -111,7 +111,7 @@ async function getPeriodVolume(conditionId, start, end) {
     for (const row of rows) {
       if (!row) continue;
 
-      const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
+      const ts = Number(row.timestamp != null ? row.timestamp : row.ts != null ? row.ts : row.match_time);
       if (!Number.isFinite(ts)) continue;
 
       const seconds = ts > 1e12 ? ts / 1000 : ts;
