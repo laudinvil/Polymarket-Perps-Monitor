@@ -1,12 +1,12 @@
 {
-  "periodStart": 1790169300,
+  "periodStart": 1790169600,
   "snapshotOffset": 270,
-  "upVolume": 0,
-  "upTurnover": 0,
-  "downTurnover": 0,
-  "moneyImbalance": 0,
-  "upImbalance": 0,
+  "upVolume": 20779.072978000007,
+  "upTurnover": 18091.38019097795,
+  "downTurnover": 3108.9825000380365,
+  "moneyImbalance": 14982.397690939913,
+  "upImbalance": 70.67047818615366,
   "previousUpVolume": 0,
-  "previousPeriodUpVolume": 0,
-  "updatedAt": "2026-09-23T13:19:32.818Z"
+  "previousPeriodUpVolume": 18719.873568999996,
+  "updatedAt": "2026-09-23T13:24:31.864Z"
 }
