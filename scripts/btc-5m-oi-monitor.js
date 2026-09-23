@@ -265,8 +265,8 @@ async function monitorPeriod(start) {
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "СРЕДНЯЯ ЦЕНА UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
-    "СРЕДНЯЯ ЦЕНА DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
+    "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
+    "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
     "",
     "ИЗМЕНЕНИЕ ОЖИДАНИЙ РЫНКА: " + expectationText,
     "",
