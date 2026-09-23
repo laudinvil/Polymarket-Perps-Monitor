@@ -222,7 +222,7 @@ async function monitorPeriod(start) {
 
   const previousNewTraders = Number(state.newTraders);
   const changePercent = Number.isFinite(previousNewTraders) && previousNewTraders > 0
-    ? ((newTraders - previousNewTraders) / previousNewTraders) * 100
+    ? Math.min(100, ((newTraders - previousNewTraders) / previousNewTraders) * 100)
     : null;
 
   const comparison = Number.isFinite(previousNewTraders)
