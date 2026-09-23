@@ -232,6 +232,16 @@ async function monitorPeriod(start) {
     ? (activity.avgUpPrice - activity.avgDownPrice) * 100
     : null;
 
+  const previousAvgUpPrice = Number(state.avgUpPrice);
+  const previousAvgDownPrice = Number(state.avgDownPrice);
+
+  const upChange = Number.isFinite(previousAvgUpPrice) && Number.isFinite(activity.avgUpPrice)
+    ? (activity.avgUpPrice - previousAvgUpPrice) * 100
+    : null;
+  const downChange = Number.isFinite(previousAvgDownPrice) && Number.isFinite(activity.avgDownPrice)
+    ? (activity.avgDownPrice - previousAvgDownPrice) * 100
+    : null;
+
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
@@ -242,6 +252,12 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
+  const formatChange = function(change) {
+    if (!Number.isFinite(change)) return "n/a";
+    const arrow = change >= 0 ? "↑" : "↓";
+    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2) + " pp";
+  };
+
   const expectationText = expectationChange === null
     ? "n/a"
     : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2) + " pp";
@@ -249,8 +265,8 @@ async function monitorPeriod(start) {
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "СРЕДНЯЯ ЦЕНА UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a"),
-    "СРЕДНЯЯ ЦЕНА DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
+    "СРЕДНЯЯ ЦЕНА UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
+    "СРЕДНЯЯ ЦЕНА DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
     "",
     "ИЗМЕНЕНИЕ ОЖИДАНИЙ РЫНКА: " + expectationText,
     "",
