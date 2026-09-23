@@ -212,18 +212,19 @@ async function monitorPeriod(start) {
 
   const market = await getCurrentMarket(start);
   const traders = await getPeriodTraders(market.conditionId, start, snapshotTime + 1);
+  const previousMarket = await getCurrentMarket(start - PERIOD);
+  const previousPeriodTraders = await getPeriodTraders(previousMarket.conditionId, start - PERIOD, start);
   const nextUrl = POLY_URL + (start + PERIOD);
   const upPrice = await getNextClobPrice(start, "UP");
   const downPrice = await getNextClobPrice(start, "DOWN");
   const priceOutcome = upPrice <= downPrice ? "UP" : "DOWN";
   const price = Math.min(upPrice, downPrice);
 
-  const previousNewTraders = Number(state.newTraders);
-  const previousTraderList = Array.isArray(state.traderList) ? state.traderList : [];
-  const newTraders = Number.isFinite(previousNewTraders)
-    ? [...traders].filter(function(trader) { return previousTraderList.indexOf(trader) < 0; }).length
-    : traders.size;
+  const newTraders = [...traders].filter(function(trader) {
+    return !previousPeriodTraders.has(trader);
+  }).length;
 
+  const previousNewTraders = Number(state.newTraders);
   const changePercent = Number.isFinite(previousNewTraders) && previousNewTraders > 0
     ? ((newTraders - previousNewTraders) / previousNewTraders) * 100
     : null;
@@ -241,14 +242,6 @@ async function monitorPeriod(start) {
     previousNewTraders: Number.isFinite(previousNewTraders) ? previousNewTraders : null,
     updatedAt: new Date().toISOString()
   };
-
-  if (!Number.isFinite(previousNewTraders)) {
-    console.log("First trader period=" + start + "; no comparison alert");
-    writeState(nextState);
-    gitCommitState(start);
-    console.log("State saved for period=" + start);
-    return;
-  }
 
   const changeText = comparison === "MORE"
     ? "⬆️"
