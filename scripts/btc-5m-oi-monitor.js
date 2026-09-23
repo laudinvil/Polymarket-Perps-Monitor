@@ -210,8 +210,8 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
-  if (streak !== 2) {
-    console.log("Streak=" + streak + " outcome=" + outcome + "; no alert");
+  if (streak !== 2 || largestBet.size < 700) {
+    console.log("Streak=" + streak + " outcome=" + outcome + " shares=" + largestBet.size + "; no alert");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
