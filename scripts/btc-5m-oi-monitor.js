@@ -210,7 +210,7 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
-  if (streak < 2) {
+  if (streak !== 2) {
     console.log("Streak=" + streak + " outcome=" + outcome + "; no alert");
     writeState(nextState);
     gitCommitState(start);
