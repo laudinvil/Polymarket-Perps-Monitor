@@ -255,12 +255,12 @@ async function monitorPeriod(start) {
   const formatChange = function(change) {
     if (!Number.isFinite(change)) return "n/a";
     const arrow = change >= 0 ? "↑" : "↓";
-    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2) + " pp";
+    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2);
   };
 
   const expectationText = expectationChange === null
     ? "n/a"
-    : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2) + " pp";
+    : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2);
 
   const lines = [
     "🔥 BTC · 5M",
