@@ -1,6 +1,7 @@
 {
-  "periodStart": 1790159100,
-  "snapshotOffset": 275,
-  "liquidity": null,
-  "updatedAt": "2026-09-23T10:30:34.524Z"
+  "periodStart": 1790159400,
+  "snapshotOffset": 270,
+  "liquidity": 34523.36317203737,
+  "previousLiquidity": 0,
+  "updatedAt": "2026-09-23T10:34:31.802Z"
 }
