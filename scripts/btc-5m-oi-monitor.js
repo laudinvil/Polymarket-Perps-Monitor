@@ -285,7 +285,7 @@ async function monitorPeriod(start) {
       "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
       "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
       "",
-      "ИЗМЕНЕНИЕ: " + expectationText,
+      "ИЗМЕНЕНИЕ: " + expectationText + (expectationChange !== null ? (expectationChange >= 0 ? " BUY UP ↑" : " BUY DOWN ↓") : ""),
       "",
       "➡️ NEXT · Polymarket 5M",
       nextUrl
