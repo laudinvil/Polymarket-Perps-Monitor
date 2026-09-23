@@ -83,19 +83,17 @@ async function getNextClobPrice(start, outcome) {
 }
 
 function getTradeSide(row) {
-  const outcome = String(row.outcome || "").trim().toUpperCase();
-  if (outcome === "UP" || outcome === "YES") return "UP";
-  if (outcome === "DOWN" || outcome === "NO") return "DOWN";
+  const side = String(row.side || "").trim().toUpperCase();
+  if (side === "BUY" || side === "SELL") return side;
   return null;
 }
 
-async function getPeriodVolume(conditionId, start, end) {
+async function getPeriodActivity(conditionId, start, end) {
   let cursor = null;
   let pages = 0;
   let totalRows = 0;
-  let upVolume = 0;
-  let upTurnover = 0;
-  let downTurnover = 0;
+  let buyTurnover = 0;
+  let sellTurnover = 0;
 
   while (true) {
     const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
@@ -115,12 +113,10 @@ async function getPeriodVolume(conditionId, start, end) {
       if (!Number.isFinite(ts)) continue;
 
       const seconds = ts > 1e12 ? ts / 1000 : ts;
-
       if (seconds < start) {
         reachedOlderTrades = true;
         continue;
       }
-
       if (seconds >= end) continue;
 
       const side = getTradeSide(row);
@@ -129,48 +125,29 @@ async function getPeriodVolume(conditionId, start, end) {
       if (!side || !Number.isFinite(size) || !Number.isFinite(price)) continue;
 
       const turnover = size * price;
-      if (side === "UP") {
-        upVolume += size;
-        upTurnover += turnover;
-      }
-      if (side === "DOWN") downTurnover += turnover;
+      if (side === "BUY") buyTurnover += turnover;
+      if (side === "SELL") sellTurnover += turnover;
     }
 
     console.log(
-      "Volume page=" + pages +
+      "Activity page=" + pages +
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " upVolume=" + upVolume.toFixed(2) +
-      " upTurnover=" + upTurnover.toFixed(2) +
-      " downTurnover=" + downTurnover.toFixed(2)
+      " buy=" + buyTurnover.toFixed(2) +
+      " sell=" + sellTurnover.toFixed(2)
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
     cursor = pagination.next_cursor;
   }
 
-  const moneyImbalance = upTurnover - downTurnover;
-  const totalTurnover = upTurnover + downTurnover;
-  const upImbalance = totalTurnover > 0 ? (moneyImbalance / totalTurnover) * 100 : 0;
+  const totalTurnover = buyTurnover + sellTurnover;
+  const imbalance = totalTurnover > 0
+    ? ((buyTurnover - sellTurnover) / totalTurnover) * 100
+    : 0;
 
-  console.log(
-    "Period volume complete: pages=" + pages +
-    " rows=" + totalRows +
-    " upVolume=" + upVolume.toFixed(2) +
-    " upTurnover=" + upTurnover.toFixed(2) +
-    " downTurnover=" + downTurnover.toFixed(2) +
-    " moneyImbalance=" + moneyImbalance.toFixed(2) +
-    " upImbalance=" + upImbalance.toFixed(2) + "%"
-  );
-
-  return {
-    upVolume: upVolume,
-    upTurnover: upTurnover,
-    downTurnover: downTurnover,
-    moneyImbalance: moneyImbalance,
-    upImbalance: upImbalance
-  };
+  return { buyTurnover, sellTurnover, imbalance, totalTurnover };
 }
 
 function readState() {
@@ -245,46 +222,41 @@ async function monitorPeriod(start) {
   }
 
   const market = await getCurrentMarket(start);
-  const volume = await getPeriodVolume(market.conditionId, start, snapshotTime + 1);
-  const previousMarket = await getCurrentMarket(start - PERIOD);
-  const previousVolume = await getPeriodVolume(previousMarket.conditionId, start - PERIOD, start);
+  const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const previousUpVolume = Number(state.upVolume);
-  const upVolumeChange = Number.isFinite(previousUpVolume) && previousUpVolume > 0
-    ? ((volume.upVolume - previousUpVolume) / previousUpVolume) * 100
+  const previousImbalance = Number(state.imbalance);
+  const changePercent = Number.isFinite(previousImbalance)
+    ? activity.imbalance - previousImbalance
     : null;
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    upVolume: volume.upVolume,
-    upTurnover: volume.upTurnover,
-    downTurnover: volume.downTurnover,
-    moneyImbalance: volume.moneyImbalance,
-    upImbalance: volume.upImbalance,
-    previousUpVolume: Number.isFinite(previousUpVolume) ? previousUpVolume : null,
-    previousPeriodUpVolume: previousVolume.upVolume,
+    buyTurnover: activity.buyTurnover,
+    sellTurnover: activity.sellTurnover,
+    imbalance: activity.imbalance,
+    previousImbalance: Number.isFinite(previousImbalance) ? previousImbalance : null,
     updatedAt: new Date().toISOString()
   };
 
-  const changeText = upVolumeChange === null
+  const changeText = changePercent === null
     ? ""
-    : " " + (upVolumeChange >= 0 ? "+" : "") + upVolumeChange.toFixed(2) + "%";
+    : " " + (changePercent >= 0 ? "+" : "") + changePercent.toFixed(2) + " pp";
 
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "UP VOLUME: " + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
-    "UP TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upTurnover),
-    "MONEY IMBALANCE UP: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.moneyImbalance) + " (" + volume.upImbalance.toFixed(2) + "%)" + changeText,
+    "BUY TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(activity.buyTurnover),
+    "SELL TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(activity.sellTurnover),
+    "BUY/SELL IMBALANCE: " + (activity.imbalance >= 0 ? "BUY +" : "SELL ") + Math.abs(activity.imbalance).toFixed(2) + "%" + changeText,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " UP volume=" + volume.upVolume.toFixed(2) + " UP turnover=" + volume.upTurnover.toFixed(2));
+  console.log("Telegram sent for period=" + start + " buy=" + activity.buyTurnover.toFixed(2) + " sell=" + activity.sellTurnover.toFixed(2));
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
