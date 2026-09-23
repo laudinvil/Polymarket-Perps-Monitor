@@ -264,7 +264,7 @@ async function monitorPeriod(start) {
 
   const MIN_SIDE_CHANGE = 5.2;
   const MIN_TOTAL_CHANGE = 5.6;
-  const MAX_TOTAL_CHANGE = 62;
+  const MAX_TOTAL_CHANGE = 59;
   const shouldAlert =
     Number.isFinite(upChange) &&
     Number.isFinite(downChange) &&
