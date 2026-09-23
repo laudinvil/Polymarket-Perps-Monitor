@@ -6,7 +6,7 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
-const TARGET_OFFSET = 280;
+const TARGET_OFFSET = 275;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
 function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
@@ -207,7 +207,7 @@ async function monitorPeriod(start) {
   const targetTime = start + TARGET_OFFSET;
   const now = Math.floor(Date.now() / 1000);
   if (now < targetTime) {
-    console.log("Waiting for 4:40. Period=" + start + " wait=" + (targetTime - now) + "s");
+    console.log("Waiting for 4:35. Period=" + start + " wait=" + (targetTime - now) + "s");
     await sleep((targetTime - now) * 1000);
   }
 
