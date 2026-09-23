@@ -271,8 +271,8 @@ async function monitorPeriod(start) {
     Math.abs(upChange) >= MIN_SIDE_CHANGE &&
     Math.abs(downChange) >= MIN_SIDE_CHANGE &&
     Number.isFinite(expectationChange) &&
-    Math.abs(expectationChange) >= MIN_TOTAL_CHANGE &&
-    Math.abs(expectationChange) <= MAX_TOTAL_CHANGE;
+    expectationChange <= -MIN_TOTAL_CHANGE &&
+    expectationChange >= -MAX_TOTAL_CHANGE;
 
   if (!shouldAlert) {
     console.log(
