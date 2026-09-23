@@ -82,9 +82,9 @@ async function getNextClobPrice(start, outcome) {
   return price;
 }
 
-async function getLargestBet(conditionId, start, end) {
+async function getPeriodLiquidity(conditionId, start, end) {
   let cursor = null;
-  let largest = null;
+  let liquidity = 0;
   let pages = 0;
   let totalRows = 0;
 
@@ -97,7 +97,6 @@ async function getLargestBet(conditionId, start, end) {
 
     pages++;
     totalRows += rows.length;
-
     let reachedOlderTrades = false;
 
     for (const row of rows) {
@@ -105,9 +104,9 @@ async function getLargestBet(conditionId, start, end) {
 
       const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
       const size = Number(row.size != null ? row.size : row.shares);
-      const side = String(row.side || "").toUpperCase();
+      const price = Number(row.price);
 
-      if (!Number.isFinite(ts) || !Number.isFinite(size)) continue;
+      if (!Number.isFinite(ts) || !Number.isFinite(size) || !Number.isFinite(price)) continue;
 
       const seconds = ts > 1e12 ? ts / 1000 : ts;
 
@@ -117,25 +116,16 @@ async function getLargestBet(conditionId, start, end) {
       }
 
       if (seconds >= end) continue;
-      if (side && side !== "BUY") continue;
 
-      if (!largest || size > largest.size) {
-        largest = {
-          size: size,
-          outcome: String(row.outcome || row.title || row.outcome_label || "").toUpperCase(),
-          side: side || "BUY",
-          price: Number(row.price),
-          timestamp: seconds
-        };
-      }
+      liquidity += size * price;
     }
 
     console.log(
-      "Trades page=" + pages +
+      "Liquidity page=" + pages +
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " largest=" + (largest ? largest.size : "none")
+      " liquidity=" + liquidity.toFixed(2)
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
@@ -143,13 +133,12 @@ async function getLargestBet(conditionId, start, end) {
   }
 
   console.log(
-    "Largest BUY scan complete: pages=" + pages +
+    "Period liquidity complete: pages=" + pages +
     " rows=" + totalRows +
-    " result=" + (largest ? largest.size + " shares" : "none")
+    " result=" + liquidity.toFixed(2)
   );
 
-  if (!largest) throw new Error("No BUY trades found for BTC 5M period " + start);
-  return largest;
+  return liquidity;
 }
 
 function readState() {
@@ -224,47 +213,36 @@ async function monitorPeriod(start) {
   }
 
   const market = await getCurrentMarket(start);
-  const largestBet = await getLargestBet(market.conditionId, start, snapshotTime + 1);
+  const liquidity = await getPeriodLiquidity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
-  const previousOutcome = state.lastOutcome === "UP" || state.lastOutcome === "DOWN"
-    ? state.lastOutcome
-    : (state.largestBetOutcome === "UP" || state.largestBetOutcome === "DOWN" ? state.largestBetOutcome : null);
-  const previousStreak = Number.isFinite(Number(state.streak)) ? Number(state.streak) : 1;
-  const streak = previousOutcome === outcome ? previousStreak + 1 : 1;
+  const previousLiquidity = Number(state.previousLiquidity);
+  const comparison = Number.isFinite(previousLiquidity)
+    ? (liquidity > previousLiquidity ? "MORE" : liquidity < previousLiquidity ? "LESS" : "SAME")
+    : null;
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    largestBetShares: largestBet.size,
-    largestBetOutcome: outcome,
-    largestBetSide: largestBet.side,
-    largestBetPrice: Number.isFinite(largestBet.price) ? largestBet.price : null,
-    largestBetTimestamp: largestBet.timestamp,
-    lastOutcome: outcome,
-    streak: streak,
+    liquidity: liquidity,
+    previousLiquidity: Number.isFinite(previousLiquidity) ? previousLiquidity : null,
     updatedAt: new Date().toISOString()
   };
 
-  if (streak < 3) {
-    console.log("Streak=" + streak + " outcome=" + outcome + "; no alert");
+  if (!Number.isFinite(previousLiquidity)) {
+    console.log("First liquidity period=" + start + "; no comparison alert");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
     return;
   }
 
-  const nextClobPrice = await getNextClobPrice(start, outcome);
-  const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "BET 🔥";
-
   const lines = [
-    "🔥 BTC · 5M · " + tradeSignal,
+    "🔥 BTC · 5M",
     "",
-    "BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
-    "OUTCOME: " + outcome,
-    "STREAK: " + streak,
-    "PRICE: " + nextClobPrice.toFixed(2),
+    "LIQUIDITY: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(liquidity),
+    "PREVIOUS: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(previousLiquidity),
+    "CHANGE: " + comparison,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
