@@ -215,6 +215,10 @@ async function monitorPeriod(start) {
   const market = await getCurrentMarket(start);
   const liquidity = await getPeriodLiquidity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
+  const upPrice = await getNextClobPrice(start, "UP");
+  const downPrice = await getNextClobPrice(start, "DOWN");
+  const priceOutcome = upPrice <= downPrice ? "UP" : "DOWN";
+  const price = Math.min(upPrice, downPrice);
 
   const previousLiquidity = Number(state.liquidity);
   const comparison = Number.isFinite(previousLiquidity)
@@ -243,6 +247,7 @@ async function monitorPeriod(start) {
     "LIQUIDITY: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(liquidity),
     "PREVIOUS: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(previousLiquidity),
     "CHANGE: " + comparison,
+    "PRICE: " + priceOutcome + " " + price.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
