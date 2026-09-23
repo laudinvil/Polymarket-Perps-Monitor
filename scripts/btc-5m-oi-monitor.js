@@ -289,7 +289,7 @@ async function monitorPeriod(start) {
     Number.isFinite(downChange) &&
     Number.isFinite(expectationChange) &&
     alertDirection !== null &&
-    Math.abs(expectationChange) >= 70;
+    Math.abs(expectationChange) >= 66;
 
   const nextState = {
     periodStart: start,
