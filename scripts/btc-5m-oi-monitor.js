@@ -264,7 +264,7 @@ async function monitorPeriod(start) {
     "BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
     "OUTCOME: " + outcome,
     "STREAK: " + streak,
-    "CLOB PRICE: " + nextClobPrice.toFixed(2),
+    "PRICE: " + nextClobPrice.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
