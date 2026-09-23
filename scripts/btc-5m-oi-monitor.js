@@ -290,6 +290,7 @@ async function monitorPeriod(start) {
     Number.isFinite(downChange) &&
     Number.isFinite(expectationChange) &&
     alertDirection !== null &&
+    Math.abs(expectationChange) >= 10.5 &&
     alertDirection !== lastAlertDirection &&
     ((upChange > 0 && downChange < 0) || (upChange < 0 && downChange > 0));
 
