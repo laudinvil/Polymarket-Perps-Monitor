@@ -1,0 +1,7 @@
+{
+  "name": "polymarket-perps-monitor",
+  "private": true,
+  "devDependencies": {
+    "convex": "^1.27.3"
+  }
+}
