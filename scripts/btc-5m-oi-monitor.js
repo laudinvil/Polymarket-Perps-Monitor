@@ -247,9 +247,7 @@ async function monitorPeriod(start) {
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "BUY TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(activity.buyTurnover),
-    "SELL TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(activity.sellTurnover),
-    "BUY/SELL IMBALANCE: " + (activity.imbalance >= 0 ? "BUY +" : "SELL ") + Math.abs(activity.imbalance).toFixed(2) + "%" + changeText,
+    "IMBALANCE: " + (activity.imbalance >= 0 ? "+" : "-") + Math.abs(activity.imbalance).toFixed(2) + "%" + changeText,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
