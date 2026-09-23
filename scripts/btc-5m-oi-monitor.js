@@ -228,7 +228,6 @@ async function monitorPeriod(start) {
   const nextUrl = POLY_URL + (start + PERIOD);
 
   const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
-  const nowMs = Date.now();
   const previousOutcome = state.lastOutcome === "UP" || state.lastOutcome === "DOWN"
     ? state.lastOutcome
     : (state.largestBetOutcome === "UP" || state.largestBetOutcome === "DOWN" ? state.largestBetOutcome : null);
