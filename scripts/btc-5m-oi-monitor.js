@@ -263,11 +263,14 @@ async function monitorPeriod(start) {
     : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2);
 
   const MIN_SIDE_CHANGE = 2.1;
+  const MIN_TOTAL_CHANGE = 5.3;
   const shouldAlert =
     Number.isFinite(upChange) &&
     Number.isFinite(downChange) &&
     Math.abs(upChange) >= MIN_SIDE_CHANGE &&
-    Math.abs(downChange) >= MIN_SIDE_CHANGE;
+    Math.abs(downChange) >= MIN_SIDE_CHANGE &&
+    Number.isFinite(expectationChange) &&
+    Math.abs(expectationChange) >= MIN_TOTAL_CHANGE;
 
   if (!shouldAlert) {
     console.log(
