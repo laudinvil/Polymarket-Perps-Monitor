@@ -1,12 +1,9 @@
 {
-  "periodStart": 1790170800,
+  "periodStart": 1790171100,
   "snapshotOffset": 270,
-  "upVolume": 32169.643034000022,
-  "upTurnover": 24359.956434979136,
-  "downTurnover": 6732.0316680433925,
-  "moneyImbalance": 17627.924766935743,
-  "upImbalance": 56.6960359965598,
-  "previousUpVolume": 22776.139122000026,
-  "previousPeriodUpVolume": 22835.159122000023,
-  "updatedAt": "2026-09-23T13:44:31.944Z"
+  "buyTurnover": 23344.123531973975,
+  "sellTurnover": 2345.0393599937115,
+  "imbalance": 81.74296788217305,
+  "previousImbalance": null,
+  "updatedAt": "2026-09-23T13:49:31.666Z"
 }
