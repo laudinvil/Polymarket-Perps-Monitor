@@ -45,3 +45,35 @@ export const set = mutation({
     return null;
   },
 });
+
+export const claim = mutation({
+  args: {
+    direction: v.union(v.literal("BUY UP"), v.literal("BUY DOWN")),
+  },
+  returns: v.object({ allowed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("monitorState")
+      .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR))
+      .first();
+
+    if (row?.lastAlertDirection === args.direction) {
+      return { allowed: false };
+    }
+
+    if (row) {
+      await ctx.db.patch(row._id, {
+        lastAlertDirection: args.direction,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("monitorState", {
+        monitor: MONITOR,
+        lastAlertDirection: args.direction,
+        updatedAt: Date.now(),
+      });
+    }
+
+    return { allowed: true };
+  },
+});
