@@ -26,6 +26,9 @@ jobs:
           fetch-depth: 1
           token: ${{ github.token }}
 
+      - name: Install Convex dependencies
+        run: npm install --no-audit --no-fund
+
       - name: Deploy Convex backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
