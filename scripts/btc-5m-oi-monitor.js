@@ -319,6 +319,9 @@ async function monitorPeriod(start) {
       ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") + ")"
     );
   } else {
+    const nextOutcome = alertDirection === "BUY UP" ? "UP" : "DOWN";
+    const nextPrice = await getNextClobPrice(start, nextOutcome);
+
     const lines = [
       "🔥 BTC · 5M",
       "",
@@ -326,6 +329,7 @@ async function monitorPeriod(start) {
       "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
       "",
       "ИЗМЕНЕНИЕ: " + expectationText + (expectationChange !== null ? (expectationChange >= 0 ? " BUY UP ↑" : " BUY DOWN ↓") : ""),
+      "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
       "",
       "➡️ NEXT · Polymarket 5M",
       nextUrl
