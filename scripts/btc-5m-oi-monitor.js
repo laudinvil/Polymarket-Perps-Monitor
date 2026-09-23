@@ -82,9 +82,9 @@ async function getNextClobPrice(start, outcome) {
   return price;
 }
 
-function getTradeSide(row) {
-  const side = String(row.side || "").trim().toUpperCase();
-  if (side === "BUY" || side === "SELL") return side;
+function getTradeOutcome(row) {
+  const outcome = String(row.outcome || "").trim().toUpperCase();
+  if (outcome === "UP" || outcome === "DOWN") return outcome;
   return null;
 }
 
@@ -92,8 +92,10 @@ async function getPeriodActivity(conditionId, start, end) {
   let cursor = null;
   let pages = 0;
   let totalRows = 0;
-  let buyTurnover = 0;
-  let sellTurnover = 0;
+  let upPriceSum = 0;
+  let upTradeCount = 0;
+  let downPriceSum = 0;
+  let downTradeCount = 0;
 
   while (true) {
     const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
@@ -119,14 +121,17 @@ async function getPeriodActivity(conditionId, start, end) {
       }
       if (seconds >= end) continue;
 
-      const side = getTradeSide(row);
-      const size = Number(row.size);
+      const outcome = getTradeOutcome(row);
       const price = Number(row.price);
-      if (!side || !Number.isFinite(size) || !Number.isFinite(price)) continue;
+      if (!outcome || !Number.isFinite(price)) continue;
 
-      const turnover = size * price;
-      if (side === "BUY") buyTurnover += turnover;
-      if (side === "SELL") sellTurnover += turnover;
+      if (outcome === "UP") {
+        upPriceSum += price;
+        upTradeCount++;
+      } else {
+        downPriceSum += price;
+        downTradeCount++;
+      }
     }
 
     console.log(
@@ -134,20 +139,18 @@ async function getPeriodActivity(conditionId, start, end) {
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " buy=" + buyTurnover.toFixed(2) +
-      " sell=" + sellTurnover.toFixed(2)
+      " upTrades=" + upTradeCount +
+      " downTrades=" + downTradeCount
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
     cursor = pagination.next_cursor;
   }
 
-  const totalTurnover = buyTurnover + sellTurnover;
-  const imbalance = totalTurnover > 0
-    ? ((buyTurnover - sellTurnover) / totalTurnover) * 100
-    : 0;
+  const avgUpPrice = upTradeCount > 0 ? upPriceSum / upTradeCount : null;
+  const avgDownPrice = downTradeCount > 0 ? downPriceSum / downTradeCount : null;
 
-  return { buyTurnover, sellTurnover, imbalance, totalTurnover };
+  return { avgUpPrice, avgDownPrice, upTradeCount, downTradeCount };
 }
 
 function readState() {
@@ -225,36 +228,44 @@ async function monitorPeriod(start) {
   const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const previousImbalance = Number(state.imbalance);
-  const changePercent = Number.isFinite(previousImbalance)
-    ? activity.imbalance - previousImbalance
+  const previousAvgUpPrice = Number(state.avgUpPrice);
+  const expectationChange = Number.isFinite(previousAvgUpPrice) && Number.isFinite(activity.avgUpPrice)
+    ? (activity.avgUpPrice - previousAvgUpPrice) * 100
     : null;
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    buyTurnover: activity.buyTurnover,
-    sellTurnover: activity.sellTurnover,
-    imbalance: activity.imbalance,
-    previousImbalance: Number.isFinite(previousImbalance) ? previousImbalance : null,
+    avgUpPrice: activity.avgUpPrice,
+    avgDownPrice: activity.avgDownPrice,
+    upTradeCount: activity.upTradeCount,
+    downTradeCount: activity.downTradeCount,
+    previousAvgUpPrice: Number.isFinite(previousAvgUpPrice) ? previousAvgUpPrice : null,
     updatedAt: new Date().toISOString()
   };
 
-  const changeText = changePercent === null
-    ? ""
-    : " " + (changePercent >= 0 ? "+" : "") + changePercent.toFixed(2) + " pp";
+  const expectationText = expectationChange === null
+    ? "n/a"
+    : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2) + " pp";
 
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "IMBALANCE: " + (activity.imbalance >= 0 ? "+" : "-") + Math.abs(activity.imbalance).toFixed(2) + "%" + changeText,
+    "СРЕДНЯЯ ЦЕНА UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a"),
+    "СРЕДНЯЯ ЦЕНА DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
+    "",
+    "ИЗМЕНЕНИЕ ОЖИДАНИЙ РЫНКА: " + expectationText,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " buy=" + activity.buyTurnover.toFixed(2) + " sell=" + activity.sellTurnover.toFixed(2));
+  console.log(
+    "Telegram sent for period=" + start +
+    " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
+    " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a")
+  );
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
