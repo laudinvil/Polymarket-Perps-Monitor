@@ -3,6 +3,7 @@ const { execFileSync } = require("child_process");
 
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_API = "https://gamma-api.polymarket.com";
+const CLOB_API = "https://clob.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const TARGET_OFFSET = 285;
@@ -46,6 +47,39 @@ async function getCurrentMarket(start) {
   const slug = "btc-updown-5m-" + start;
   const event = await getJson(GAMMA_API + "/events/slug/" + slug);
   return { slug: slug, conditionId: getConditionId(event) };
+}
+
+function getOutcomeTokenId(event, outcome) {
+  const markets = Array.isArray(event && event.markets) ? event.markets : [];
+  const market = markets.find(function(m) {
+    const q = String(m.question || "").toLowerCase();
+    const s = String(m.slug || "").toLowerCase();
+    return s.indexOf("btc-updown-5m") >= 0 || q.indexOf("bitcoin") >= 0 || q.indexOf("btc") >= 0;
+  }) || markets[0];
+  if (!market) return null;
+
+  let outcomes = market.outcomes;
+  let tokenIds = market.clobTokenIds || market.clob_token_ids;
+  try { if (typeof outcomes === "string") outcomes = JSON.parse(outcomes); } catch (_) {}
+  try { if (typeof tokenIds === "string") tokenIds = JSON.parse(tokenIds); } catch (_) {}
+  if (!Array.isArray(outcomes) || !Array.isArray(tokenIds)) return null;
+
+  const index = outcomes.findIndex(function(value) {
+    return String(value).toUpperCase() === outcome;
+  });
+  return index >= 0 ? tokenIds[index] : null;
+}
+
+async function getNextClobPrice(start, outcome) {
+  const nextStart = start + PERIOD;
+  const slug = "btc-updown-5m-" + nextStart;
+  const event = await getJson(GAMMA_API + "/events/slug/" + slug);
+  const tokenId = getOutcomeTokenId(event, outcome);
+  if (!tokenId) throw new Error("CLOB token not found for next BTC 5M " + outcome);
+  const response = await getJson(CLOB_API + "/midpoint?token_id=" + encodeURIComponent(tokenId));
+  const price = Number(response && response.mid);
+  if (!Number.isFinite(price)) throw new Error("CLOB midpoint unavailable for next BTC 5M " + outcome);
+  return price;
 }
 
 async function getLargestBet(conditionId, start, end) {
@@ -218,6 +252,7 @@ async function monitorPeriod(start) {
     return;
   }
 
+  const nextClobPrice = await getNextClobPrice(start, outcome);
   const tradeSignal = outcome === "UP" ? "BUY UP 🔥" : outcome === "DOWN" ? "BUY DOWN 🔥" : "BET 🔥";
 
   const lines = [
@@ -225,6 +260,7 @@ async function monitorPeriod(start) {
     "",
     "BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
     "OUTCOME: " + outcome,
+    "CLOB PRICE: " + outcome + " " + nextClobPrice.toFixed(2),
     "STREAK: " + streak,
     "",
     "➡️ NEXT · Polymarket 5M",
