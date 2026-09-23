@@ -266,11 +266,11 @@ async function monitorPeriod(start) {
     Number.isFinite(upChange) &&
     Number.isFinite(downChange) &&
     Number.isFinite(expectationChange) &&
-    ((upChange >= 0 && downChange < 0) || (upChange < 0 && downChange >= 0));
+    ((upChange > 0 && downChange < 0) || (upChange < 0 && downChange > 0));
 
   if (!shouldAlert) {
     console.log(
-      "Alert ignored: side change below " + MIN_SIDE_CHANGE +
+      "Alert ignored: changes are not opposing" +
       " (upChange=" + (Number.isFinite(upChange) ? upChange.toFixed(2) : "n/a") +
       ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") + ")"
     );
