@@ -228,7 +228,22 @@ async function monitorPeriod(start) {
   const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const previousAvgUpPrice = Number(state.avgUpPrice);
+  let previousAvgUpPrice = Number(state.avgUpPrice);
+  if (!Number.isFinite(previousAvgUpPrice)) {
+    const previousStart = start - PERIOD;
+    try {
+      const previousMarket = await getCurrentMarket(previousStart);
+      const previousActivity = await getPeriodActivity(previousMarket.conditionId, previousStart, start);
+      previousAvgUpPrice = previousActivity.avgUpPrice;
+      console.log(
+        "Previous period baseline=" + previousStart +
+        " avgUp=" + (Number.isFinite(previousAvgUpPrice) ? previousAvgUpPrice.toFixed(4) : "n/a")
+      );
+    } catch (err) {
+      console.error("Previous period baseline failed: " + err.message);
+    }
+  }
+
   const expectationChange = Number.isFinite(previousAvgUpPrice) && Number.isFinite(activity.avgUpPrice)
     ? (activity.avgUpPrice - previousAvgUpPrice) * 100
     : null;
