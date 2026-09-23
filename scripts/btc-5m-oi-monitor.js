@@ -82,11 +82,19 @@ async function getNextClobPrice(start, outcome) {
   return price;
 }
 
-async function getPeriodTraders(conditionId, start, end) {
+async function getTradeSide(row) {
+  const outcome = String(row.outcome || row.side || row.token || "").toUpperCase();
+  if (outcome === "UP" || outcome === "YES") return "UP";
+  if (outcome === "DOWN" || outcome === "NO") return "DOWN";
+  return null;
+}
+
+async function getPeriodVolume(conditionId, start, end) {
   let cursor = null;
-  const traders = new Set();
   let pages = 0;
   let totalRows = 0;
+  let upVolume = 0;
+  let downVolume = 0;
 
   while (true) {
     const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
@@ -103,8 +111,7 @@ async function getPeriodTraders(conditionId, start, end) {
       if (!row) continue;
 
       const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
-      const trader = row.proxyWallet || row.proxy_wallet || row.wallet || row.user || row.maker_address || row.maker;
-      if (!Number.isFinite(ts) || !trader) continue;
+      if (!Number.isFinite(ts)) continue;
 
       const seconds = ts > 1e12 ? ts / 1000 : ts;
 
@@ -115,28 +122,47 @@ async function getPeriodTraders(conditionId, start, end) {
 
       if (seconds >= end) continue;
 
-      traders.add(String(trader).toLowerCase());
+      const side = getTradeSide(row);
+      const size = Number(row.size);
+      const price = Number(row.price);
+      if (!side || !Number.isFinite(size) || !Number.isFinite(price)) continue;
+
+      const turnover = size * price;
+      if (side === "UP") upVolume += turnover;
+      if (side === "DOWN") downVolume += turnover;
     }
 
     console.log(
-      "Traders page=" + pages +
+      "Volume page=" + pages +
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " traders=" + traders.size
+      " up=" + upVolume.toFixed(2) +
+      " down=" + downVolume.toFixed(2)
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
     cursor = pagination.next_cursor;
   }
 
+  const totalVolume = upVolume + downVolume;
+  const upImbalance = totalVolume > 0 ? (upVolume / totalVolume) * 100 : 0;
+
   console.log(
-    "Period traders complete: pages=" + pages +
+    "Period volume complete: pages=" + pages +
     " rows=" + totalRows +
-    " result=" + traders.size
+    " up=" + upVolume.toFixed(2) +
+    " down=" + downVolume.toFixed(2) +
+    " total=" + totalVolume.toFixed(2) +
+    " upShare=" + upImbalance.toFixed(2) + "%"
   );
 
-  return traders;
+  return {
+    upVolume: upVolume,
+    downVolume: downVolume,
+    totalVolume: totalVolume,
+    upImbalance: upImbalance
+  };
 }
 
 function readState() {
@@ -211,55 +237,45 @@ async function monitorPeriod(start) {
   }
 
   const market = await getCurrentMarket(start);
-  const traders = await getPeriodTraders(market.conditionId, start, snapshotTime + 1);
+  const volume = await getPeriodVolume(market.conditionId, start, snapshotTime + 1);
   const previousMarket = await getCurrentMarket(start - PERIOD);
-  const previousPeriodTraders = await getPeriodTraders(previousMarket.conditionId, start - PERIOD, start);
+  const previousVolume = await getPeriodVolume(previousMarket.conditionId, start - PERIOD, start);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const newTraders = [...traders].filter(function(trader) {
-    return !previousPeriodTraders.has(trader);
-  }).length;
-
-  const previousNewTraders = Number(state.newTraders);
-  const changePercent = Number.isFinite(previousNewTraders) && previousNewTraders > 0
-    ? Math.min(100, ((newTraders - previousNewTraders) / previousNewTraders) * 100)
-    : null;
-
-  const comparison = Number.isFinite(previousNewTraders)
-    ? (newTraders > previousNewTraders ? "MORE" : newTraders < previousNewTraders ? "LESS" : "SAME")
+  const previousUpVolume = Number(state.upVolume);
+  const upVolumeChange = Number.isFinite(previousUpVolume) && previousUpVolume > 0
+    ? ((volume.upVolume - previousUpVolume) / previousUpVolume) * 100
     : null;
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    traders: traders.size,
-    traderList: [...traders],
-    newTraders: newTraders,
-    previousNewTraders: Number.isFinite(previousNewTraders) ? previousNewTraders : null,
+    upVolume: volume.upVolume,
+    downVolume: volume.downVolume,
+    totalVolume: volume.totalVolume,
+    upImbalance: volume.upImbalance,
+    previousUpVolume: Number.isFinite(previousUpVolume) ? previousUpVolume : null,
+    previousPeriodUpVolume: previousVolume.upVolume,
     updatedAt: new Date().toISOString()
   };
 
-  const changeText = comparison === "MORE"
-    ? "⬆️"
-    : comparison === "LESS"
-      ? "⬇️"
-      : "➡️";
-
-  const changePercentText = changePercent === null ? "" : " " + (changePercent >= 0 ? "+" : "") + changePercent.toFixed(2) + "%";
+  const changeText = upVolumeChange === null
+    ? ""
+    : " " + (upVolumeChange >= 0 ? "+" : "") + upVolumeChange.toFixed(2) + "%";
 
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "NEW TRADERS: " + new Intl.NumberFormat("en-US").format(newTraders),
-    "PREVIOUS: " + new Intl.NumberFormat("en-US").format(previousNewTraders),
-    "CHANGE: " + changeText + changePercentText,
+    "UP VOLUME: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
+    "UP TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
+    "MONEY IMBALANCE UP: " + volume.upImbalance.toFixed(2) + "%" + changeText,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " new traders comparison=" + comparison);
+  console.log("Telegram sent for period=" + start + " UP volume=" + volume.upVolume.toFixed(2));
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
