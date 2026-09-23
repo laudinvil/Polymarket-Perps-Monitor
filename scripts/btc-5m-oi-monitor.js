@@ -229,12 +229,11 @@ async function monitorPeriod(start) {
 
   const outcome = largestBet.outcome.indexOf("DOWN") >= 0 ? "DOWN" : largestBet.outcome.indexOf("UP") >= 0 ? "UP" : largestBet.outcome;
   const nowMs = Date.now();
-  const alertTimes = Array.isArray(state.alertTimes)
-    ? state.alertTimes.map(Number).filter(Number.isFinite)
-    : [];
-  const recentAlertTimes = alertTimes.filter(function(ts) {
-    return nowMs - ts < 60 * 60 * 1000;
-  });
+  const previousOutcome = state.lastOutcome === "UP" || state.lastOutcome === "DOWN"
+    ? state.lastOutcome
+    : (state.largestBetOutcome === "UP" || state.largestBetOutcome === "DOWN" ? state.largestBetOutcome : null);
+  const previousStreak = Number.isFinite(Number(state.streak)) ? Number(state.streak) : 1;
+  const streak = previousOutcome === outcome ? previousStreak + 1 : 1;
 
   const nextState = {
     periodStart: start,
@@ -244,16 +243,13 @@ async function monitorPeriod(start) {
     largestBetSide: largestBet.side,
     largestBetPrice: Number.isFinite(largestBet.price) ? largestBet.price : null,
     largestBetTimestamp: largestBet.timestamp,
-    alertTimes: recentAlertTimes,
+    lastOutcome: outcome,
+    streak: streak,
     updatedAt: new Date().toISOString()
   };
 
-  if (largestBet.size < 700 || recentAlertTimes.length >= 3) {
-    console.log(
-      "Shares=" + largestBet.size +
-      " alertsLast60m=" + recentAlertTimes.length +
-      "; no alert"
-    );
+  if (streak < 3) {
+    console.log("Streak=" + streak + " outcome=" + outcome + "; no alert");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
@@ -268,6 +264,7 @@ async function monitorPeriod(start) {
     "",
     "BET: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(largestBet.size) + " SHARES",
     "OUTCOME: " + outcome,
+    "STREAK: " + streak,
     "CLOB PRICE: " + nextClobPrice.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
@@ -275,9 +272,7 @@ async function monitorPeriod(start) {
   ];
 
   await sendTelegram(lines.join("\n"));
-  recentAlertTimes.push(nowMs);
-  nextState.alertTimes = recentAlertTimes;
-  console.log("Telegram sent for period=" + start + " alertsLast60m=" + recentAlertTimes.length);
+  console.log("Telegram sent for period=" + start + " streak=" + streak);
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
