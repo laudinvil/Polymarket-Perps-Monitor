@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { execFileSync } = require("child_process");
 
+
 const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
@@ -163,6 +164,40 @@ function writeState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
 }
 
+function getConvexLastAlertDirection() {
+  const output = execFileSync(
+    "npx",
+    ["--yes", "convex@latest", "run", "btc5mState:get", "{}"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  ).trim();
+
+  const result = JSON.parse(output);
+  const direction = result && result.lastAlertDirection;
+  if (direction !== null && direction !== "BUY UP" && direction !== "BUY DOWN") {
+    throw new Error("Invalid Convex lastAlertDirection: " + String(direction));
+  }
+  return direction || null;
+}
+
+function setConvexLastAlertDirection(direction) {
+  if (direction !== "BUY UP" && direction !== "BUY DOWN") {
+    throw new Error("Invalid alert direction for Convex: " + direction);
+  }
+
+  execFileSync(
+    "npx",
+    [
+      "--yes",
+      "convex@latest",
+      "run",
+      "btc5mState:set",
+      JSON.stringify({ lastAlertDirection: direction })
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  );
+}
+
+
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -243,9 +278,7 @@ async function monitorPeriod(start) {
     : null;
 
   const alertDirection = expectationChange > 0 ? "BUY UP" : expectationChange < 0 ? "BUY DOWN" : null;
-  const lastAlertDirection = state.lastAlertDirection === "BUY UP" || state.lastAlertDirection === "BUY DOWN"
-    ? state.lastAlertDirection
-    : null;
+  const lastAlertDirection = getConvexLastAlertDirection();
   const shouldAlert =
     Number.isFinite(upChange) &&
     Number.isFinite(downChange) &&
@@ -262,7 +295,7 @@ async function monitorPeriod(start) {
     upTradeCount: activity.upTradeCount,
     downTradeCount: activity.downTradeCount,
     updatedAt: new Date().toISOString(),
-    lastAlertDirection: shouldAlert ? alertDirection : lastAlertDirection
+    lastAlertDirection: lastAlertDirection
   };
 
   const formatChange = function(change) {
@@ -295,6 +328,7 @@ async function monitorPeriod(start) {
     ];
 
     await sendTelegram(lines.join("\n"));
+    setConvexLastAlertDirection(alertDirection);
     console.log(
       "Telegram sent for period=" + start +
       " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
