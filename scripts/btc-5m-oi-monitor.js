@@ -218,12 +218,18 @@ async function monitorPeriod(start) {
   const priceOutcome = upPrice <= downPrice ? "UP" : "DOWN";
   const price = Math.min(upPrice, downPrice);
 
-  const previousTraders = Number(state.traders);
-  const newTraders = Number.isFinite(previousTraders)
-    ? [...traders].filter(function(trader) { return !Array.isArray(state.traderList) || state.traderList.indexOf(trader) < 0; }).length
+  const previousNewTraders = Number(state.newTraders);
+  const previousTraderList = Array.isArray(state.traderList) ? state.traderList : [];
+  const newTraders = Number.isFinite(previousNewTraders)
+    ? [...traders].filter(function(trader) { return previousTraderList.indexOf(trader) < 0; }).length
     : traders.size;
-  const comparison = Number.isFinite(previousTraders)
-    ? (newTraders > 0 ? "MORE" : "LESS")
+
+  const changePercent = Number.isFinite(previousNewTraders) && previousNewTraders > 0
+    ? ((newTraders - previousNewTraders) / previousNewTraders) * 100
+    : null;
+
+  const comparison = Number.isFinite(previousNewTraders)
+    ? (newTraders > previousNewTraders ? "MORE" : newTraders < previousNewTraders ? "LESS" : "SAME")
     : null;
 
   const nextState = {
@@ -232,11 +238,11 @@ async function monitorPeriod(start) {
     traders: traders.size,
     traderList: [...traders],
     newTraders: newTraders,
-    previousTraders: Number.isFinite(previousTraders) ? previousTraders : null,
+    previousNewTraders: Number.isFinite(previousNewTraders) ? previousNewTraders : null,
     updatedAt: new Date().toISOString()
   };
 
-  if (!Number.isFinite(previousLiquidity)) {
+  if (!Number.isFinite(previousNewTraders)) {
     console.log("First trader period=" + start + "; no comparison alert");
     writeState(nextState);
     gitCommitState(start);
@@ -244,12 +250,20 @@ async function monitorPeriod(start) {
     return;
   }
 
+  const changeText = comparison === "MORE"
+    ? "⬆️"
+    : comparison === "LESS"
+      ? "⬇️"
+      : "➡️";
+
+  const changePercentText = changePercent === null ? "" : " " + (changePercent >= 0 ? "+" : "") + changePercent.toFixed(2) + "%";
+
   const lines = [
     "🔥 BTC · 5M",
     "",
     "NEW TRADERS: " + new Intl.NumberFormat("en-US").format(newTraders),
-    "PREVIOUS TRADERS: " + new Intl.NumberFormat("en-US").format(previousTraders),
-    "CHANGE: " + (comparison === "MORE" ? "⬆️" : "⬇️"),
+    "PREVIOUS: " + new Intl.NumberFormat("en-US").format(previousNewTraders),
+    "CHANGE: " + changeText + changePercentText,
     "PRICE: " + priceOutcome + " " + price.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
@@ -257,7 +271,7 @@ async function monitorPeriod(start) {
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " liquidity comparison=" + comparison);
+  console.log("Telegram sent for period=" + start + " new traders comparison=" + comparison);
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
