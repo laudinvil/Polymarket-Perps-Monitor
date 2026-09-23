@@ -262,24 +262,40 @@ async function monitorPeriod(start) {
     ? "n/a"
     : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2);
 
-  const lines = [
-    "🔥 BTC · 5M",
-    "",
-    "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
-    "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
-    "",
-    "ИЗМЕНЕНИЕ: " + expectationText,
-    "",
-    "➡️ NEXT · Polymarket 5M",
-    nextUrl
-  ];
+  const MIN_SIDE_CHANGE = 2.1;
+  const shouldAlert =
+    Number.isFinite(upChange) &&
+    Number.isFinite(downChange) &&
+    Math.abs(upChange) >= MIN_SIDE_CHANGE &&
+    Math.abs(downChange) >= MIN_SIDE_CHANGE;
 
-  await sendTelegram(lines.join("\n"));
-  console.log(
-    "Telegram sent for period=" + start +
-    " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
-    " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a")
-  );
+  if (!shouldAlert) {
+    console.log(
+      "Alert ignored: side change below " + MIN_SIDE_CHANGE +
+      " (upChange=" + (Number.isFinite(upChange) ? upChange.toFixed(2) : "n/a") +
+      ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") + ")"
+    );
+  } else {
+    const lines = [
+      "🔥 BTC · 5M",
+      "",
+      "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
+      "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
+      "",
+      "ИЗМЕНЕНИЕ: " + expectationText,
+      "",
+      "➡️ NEXT · Polymarket 5M",
+      nextUrl
+    ];
+
+    await sendTelegram(lines.join("\n"));
+    console.log(
+      "Telegram sent for period=" + start +
+      " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
+      " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a")
+    );
+  }
+
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
