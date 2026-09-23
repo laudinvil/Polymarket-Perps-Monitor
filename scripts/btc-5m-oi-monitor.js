@@ -179,22 +179,28 @@ function getConvexLastAlertDirection() {
   return direction || null;
 }
 
-function setConvexLastAlertDirection(direction) {
+function claimConvexAlertDirection(direction) {
   if (direction !== "BUY UP" && direction !== "BUY DOWN") {
     throw new Error("Invalid alert direction for Convex: " + direction);
   }
 
-  execFileSync(
+  const output = execFileSync(
     "npx",
     [
       "--yes",
       "convex@latest",
       "run",
-      "btc5mState:set",
-      JSON.stringify({ lastAlertDirection: direction })
+      "btc5mState:claim",
+      JSON.stringify({ direction })
     ],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-  );
+  ).trim();
+
+  const result = JSON.parse(output);
+  if (!result || typeof result.allowed !== "boolean") {
+    throw new Error("Invalid Convex claim response");
+  }
+  return result.allowed;
 }
 
 
@@ -327,8 +333,15 @@ async function monitorPeriod(start) {
       nextUrl
     ];
 
+    const claimed = claimConvexAlertDirection(alertDirection);
+    if (!claimed) {
+      console.log("Alert blocked by Convex: same direction as last sent alert");
+      writeState(nextState);
+      gitCommitState(start);
+      return;
+    }
+
     await sendTelegram(lines.join("\n"));
-    setConvexLastAlertDirection(alertDirection);
     console.log(
       "Telegram sent for period=" + start +
       " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
