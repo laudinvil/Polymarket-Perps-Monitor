@@ -216,7 +216,7 @@ async function monitorPeriod(start) {
   const liquidity = await getPeriodLiquidity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const previousLiquidity = Number(state.previousLiquidity);
+  const previousLiquidity = Number(state.liquidity);
   const comparison = Number.isFinite(previousLiquidity)
     ? (liquidity > previousLiquidity ? "MORE" : liquidity < previousLiquidity ? "LESS" : "SAME")
     : null;
@@ -249,7 +249,7 @@ async function monitorPeriod(start) {
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " streak=" + streak);
+  console.log("Telegram sent for period=" + start + " liquidity comparison=" + comparison);
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
