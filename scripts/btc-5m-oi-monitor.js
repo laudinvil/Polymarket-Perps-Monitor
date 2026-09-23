@@ -82,7 +82,7 @@ async function getNextClobPrice(start, outcome) {
   return price;
 }
 
-async function getTradeSide(row) {
+function getTradeSide(row) {
   const outcome = String(row.outcome || "").trim().toUpperCase();
   if (outcome === "UP" || outcome === "YES") return "UP";
   if (outcome === "DOWN" || outcome === "NO") return "DOWN";
