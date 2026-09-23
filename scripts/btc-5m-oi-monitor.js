@@ -215,10 +215,6 @@ async function monitorPeriod(start) {
   const previousMarket = await getCurrentMarket(start - PERIOD);
   const previousPeriodTraders = await getPeriodTraders(previousMarket.conditionId, start - PERIOD, start);
   const nextUrl = POLY_URL + (start + PERIOD);
-  const upPrice = await getNextClobPrice(start, "UP");
-  const downPrice = await getNextClobPrice(start, "DOWN");
-  const priceOutcome = upPrice <= downPrice ? "UP" : "DOWN";
-  const price = Math.min(upPrice, downPrice);
 
   const newTraders = [...traders].filter(function(trader) {
     return !previousPeriodTraders.has(trader);
@@ -257,7 +253,6 @@ async function monitorPeriod(start) {
     "NEW TRADERS: " + new Intl.NumberFormat("en-US").format(newTraders),
     "PREVIOUS: " + new Intl.NumberFormat("en-US").format(previousNewTraders),
     "CHANGE: " + changeText + changePercentText,
-    "PRICE: " + priceOutcome + " " + price.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
