@@ -82,9 +82,9 @@ async function getNextClobPrice(start, outcome) {
   return price;
 }
 
-async function getPeriodLiquidity(conditionId, start, end) {
+async function getPeriodTraders(conditionId, start, end) {
   let cursor = null;
-  let liquidity = 0;
+  const traders = new Set();
   let pages = 0;
   let totalRows = 0;
 
@@ -103,10 +103,8 @@ async function getPeriodLiquidity(conditionId, start, end) {
       if (!row) continue;
 
       const ts = Number(row.timestamp != null ? row.timestamp : row.ts);
-      const size = Number(row.size != null ? row.size : row.shares);
-      const price = Number(row.price);
-
-      if (!Number.isFinite(ts) || !Number.isFinite(size) || !Number.isFinite(price)) continue;
+      const trader = row.proxyWallet || row.proxy_wallet || row.wallet || row.user || row.maker_address || row.maker;
+      if (!Number.isFinite(ts) || !trader) continue;
 
       const seconds = ts > 1e12 ? ts / 1000 : ts;
 
@@ -117,15 +115,15 @@ async function getPeriodLiquidity(conditionId, start, end) {
 
       if (seconds >= end) continue;
 
-      liquidity += size * price;
+      traders.add(String(trader).toLowerCase());
     }
 
     console.log(
-      "Liquidity page=" + pages +
+      "Traders page=" + pages +
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " liquidity=" + liquidity.toFixed(2)
+      " traders=" + traders.size
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
@@ -133,12 +131,12 @@ async function getPeriodLiquidity(conditionId, start, end) {
   }
 
   console.log(
-    "Period liquidity complete: pages=" + pages +
+    "Period traders complete: pages=" + pages +
     " rows=" + totalRows +
-    " result=" + liquidity.toFixed(2)
+    " result=" + traders.size
   );
 
-  return liquidity;
+  return traders;
 }
 
 function readState() {
@@ -213,28 +211,33 @@ async function monitorPeriod(start) {
   }
 
   const market = await getCurrentMarket(start);
-  const liquidity = await getPeriodLiquidity(market.conditionId, start, snapshotTime + 1);
+  const traders = await getPeriodTraders(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
   const upPrice = await getNextClobPrice(start, "UP");
   const downPrice = await getNextClobPrice(start, "DOWN");
   const priceOutcome = upPrice <= downPrice ? "UP" : "DOWN";
   const price = Math.min(upPrice, downPrice);
 
-  const previousLiquidity = Number(state.liquidity);
-  const comparison = Number.isFinite(previousLiquidity)
-    ? (liquidity > previousLiquidity ? "MORE" : liquidity < previousLiquidity ? "LESS" : "SAME")
+  const previousTraders = Number(state.traders);
+  const newTraders = Number.isFinite(previousTraders)
+    ? [...traders].filter(function(trader) { return !Array.isArray(state.traderList) || state.traderList.indexOf(trader) < 0; }).length
+    : traders.size;
+  const comparison = Number.isFinite(previousTraders)
+    ? (newTraders > 0 ? "MORE" : "LESS")
     : null;
 
   const nextState = {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
-    liquidity: liquidity,
-    previousLiquidity: Number.isFinite(previousLiquidity) ? previousLiquidity : null,
+    traders: traders.size,
+    traderList: [...traders],
+    newTraders: newTraders,
+    previousTraders: Number.isFinite(previousTraders) ? previousTraders : null,
     updatedAt: new Date().toISOString()
   };
 
   if (!Number.isFinite(previousLiquidity)) {
-    console.log("First liquidity period=" + start + "; no comparison alert");
+    console.log("First trader period=" + start + "; no comparison alert");
     writeState(nextState);
     gitCommitState(start);
     console.log("State saved for period=" + start);
@@ -244,9 +247,9 @@ async function monitorPeriod(start) {
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "LIQUIDITY: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(liquidity),
-    "PREVIOUS: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(previousLiquidity),
-    "CHANGE: " + (comparison === "MORE" ? "⬆️" : comparison === "LESS" ? "⬇️" : "➡️") + " " + ((liquidity - previousLiquidity) / previousLiquidity * 100).toFixed(2) + "%",
+    "NEW TRADERS: " + new Intl.NumberFormat("en-US").format(newTraders),
+    "PREVIOUS TRADERS: " + new Intl.NumberFormat("en-US").format(previousTraders),
+    "CHANGE: " + (comparison === "MORE" ? "⬆️" : "⬇️"),
     "PRICE: " + priceOutcome + " " + price.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
