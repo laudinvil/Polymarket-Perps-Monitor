@@ -284,15 +284,12 @@ async function monitorPeriod(start) {
     : null;
 
   const alertDirection = expectationChange > 0 ? "BUY UP" : expectationChange < 0 ? "BUY DOWN" : null;
-  const lastAlertDirection = getConvexLastAlertDirection();
   const shouldAlert =
     Number.isFinite(upChange) &&
     Number.isFinite(downChange) &&
     Number.isFinite(expectationChange) &&
     alertDirection !== null &&
-    (alertDirection !== "BUY DOWN" || expectationChange <= -10.5) &&
-    alertDirection !== lastAlertDirection &&
-    ((upChange > 0 && downChange < 0) || (upChange < 0 && downChange > 0));
+    Math.abs(expectationChange) >= 70;
 
   const nextState = {
     periodStart: start,
@@ -333,14 +330,6 @@ async function monitorPeriod(start) {
       "➡️ NEXT · Polymarket 5M",
       nextUrl
     ];
-
-    const claimed = claimConvexAlertDirection(alertDirection);
-    if (!claimed) {
-      console.log("Alert blocked by Convex: same direction as last sent alert");
-      writeState(nextState);
-      gitCommitState(start);
-      return;
-    }
 
     await sendTelegram(lines.join("\n"));
     console.log(
