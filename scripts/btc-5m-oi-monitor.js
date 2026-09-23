@@ -246,7 +246,7 @@ async function monitorPeriod(start) {
     "",
     "LIQUIDITY: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(liquidity),
     "PREVIOUS: " + new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(previousLiquidity),
-    "CHANGE: " + comparison,
+    "CHANGE: " + (comparison === "MORE" ? "⬆️" : comparison === "LESS" ? "⬇️" : "➡️"),
     "PRICE: " + priceOutcome + " " + price.toFixed(2),
     "",
     "➡️ NEXT · Polymarket 5M",
