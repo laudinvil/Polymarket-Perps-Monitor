@@ -94,7 +94,8 @@ async function getPeriodVolume(conditionId, start, end) {
   let pages = 0;
   let totalRows = 0;
   let upVolume = 0;
-  let downVolume = 0;
+  let upTurnover = 0;
+  let downTurnover = 0;
 
   while (true) {
     const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
@@ -128,8 +129,11 @@ async function getPeriodVolume(conditionId, start, end) {
       if (!side || !Number.isFinite(size) || !Number.isFinite(price)) continue;
 
       const turnover = size * price;
-      if (side === "UP") upVolume += turnover;
-      if (side === "DOWN") downVolume += turnover;
+      if (side === "UP") {
+        upVolume += size;
+        upTurnover += turnover;
+      }
+      if (side === "DOWN") downTurnover += turnover;
     }
 
     console.log(
@@ -137,30 +141,34 @@ async function getPeriodVolume(conditionId, start, end) {
       " rows=" + rows.length +
       " totalRows=" + totalRows +
       " hasMore=" + Boolean(pagination.has_more) +
-      " up=" + upVolume.toFixed(2) +
-      " down=" + downVolume.toFixed(2)
+      " upVolume=" + upVolume.toFixed(2) +
+      " upTurnover=" + upTurnover.toFixed(2) +
+      " downTurnover=" + downTurnover.toFixed(2)
     );
 
     if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
     cursor = pagination.next_cursor;
   }
 
-  const totalVolume = upVolume + downVolume;
-  const upImbalance = totalVolume > 0 ? (upVolume / totalVolume) * 100 : 0;
+  const moneyImbalance = upTurnover - downTurnover;
+  const totalTurnover = upTurnover + downTurnover;
+  const upImbalance = totalTurnover > 0 ? (moneyImbalance / totalTurnover) * 100 : 0;
 
   console.log(
     "Period volume complete: pages=" + pages +
     " rows=" + totalRows +
-    " up=" + upVolume.toFixed(2) +
-    " down=" + downVolume.toFixed(2) +
-    " total=" + totalVolume.toFixed(2) +
-    " upShare=" + upImbalance.toFixed(2) + "%"
+    " upVolume=" + upVolume.toFixed(2) +
+    " upTurnover=" + upTurnover.toFixed(2) +
+    " downTurnover=" + downTurnover.toFixed(2) +
+    " moneyImbalance=" + moneyImbalance.toFixed(2) +
+    " upImbalance=" + upImbalance.toFixed(2) + "%"
   );
 
   return {
     upVolume: upVolume,
-    downVolume: downVolume,
-    totalVolume: totalVolume,
+    upTurnover: upTurnover,
+    downTurnover: downTurnover,
+    moneyImbalance: moneyImbalance,
     upImbalance: upImbalance
   };
 }
@@ -251,8 +259,9 @@ async function monitorPeriod(start) {
     periodStart: start,
     snapshotOffset: TARGET_OFFSET,
     upVolume: volume.upVolume,
-    downVolume: volume.downVolume,
-    totalVolume: volume.totalVolume,
+    upTurnover: volume.upTurnover,
+    downTurnover: volume.downTurnover,
+    moneyImbalance: volume.moneyImbalance,
     upImbalance: volume.upImbalance,
     previousUpVolume: Number.isFinite(previousUpVolume) ? previousUpVolume : null,
     previousPeriodUpVolume: previousVolume.upVolume,
@@ -266,16 +275,16 @@ async function monitorPeriod(start) {
   const lines = [
     "🔥 BTC · 5M",
     "",
-    "UP VOLUME: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
-    "UP TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
-    "MONEY IMBALANCE UP: " + volume.upImbalance.toFixed(2) + "%" + changeText,
+    "UP VOLUME: " + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upVolume),
+    "UP TURNOVER: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.upTurnover),
+    "MONEY IMBALANCE UP: $" + new Intl.NumberFormat("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(volume.moneyImbalance) + " (" + volume.upImbalance.toFixed(2) + "%)" + changeText,
     "",
     "➡️ NEXT · Polymarket 5M",
     nextUrl
   ];
 
   await sendTelegram(lines.join("\n"));
-  console.log("Telegram sent for period=" + start + " UP volume=" + volume.upVolume.toFixed(2));
+  console.log("Telegram sent for period=" + start + " UP volume=" + volume.upVolume.toFixed(2) + " UP turnover=" + volume.upTurnover.toFixed(2));
   writeState(nextState);
   gitCommitState(start);
   console.log("State saved for period=" + start);
