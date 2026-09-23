@@ -1,12 +1,12 @@
 {
-  "periodStart": 1790130900,
+  "periodStart": 1790131500,
   "snapshotOffset": 285,
-  "largestBetShares": 1984.0173,
+  "largestBetShares": 1764.51,
   "largestBetOutcome": "DOWN",
   "largestBetSide": "BUY",
-  "largestBetPrice": 0.9878945748,
-  "largestBetTimestamp": 1790131156,
+  "largestBetPrice": 0.2281602258,
+  "largestBetTimestamp": 1790131703,
   "lastOutcome": "DOWN",
-  "streak": 4,
-  "updatedAt": "2026-09-23T02:39:46.705Z"
+  "streak": 5,
+  "updatedAt": "2026-09-23T02:49:46.736Z"
 }
