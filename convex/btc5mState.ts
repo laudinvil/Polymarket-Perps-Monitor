@@ -1,0 +1,47 @@
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+
+const MONITOR = "btc-5m-oi";
+
+export const get = query({
+  args: {},
+  returns: v.object({
+    lastAlertDirection: v.union(v.literal("BUY UP"), v.literal("BUY DOWN"), v.null()),
+  }),
+  handler: async (ctx) => {
+    const row = await ctx.db
+      .query("monitorState")
+      .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR))
+      .first();
+
+    return { lastAlertDirection: row?.lastAlertDirection ?? null };
+  },
+});
+
+export const set = mutation({
+  args: {
+    lastAlertDirection: v.union(v.literal("BUY UP"), v.literal("BUY DOWN")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("monitorState")
+      .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR))
+      .first();
+
+    if (row) {
+      await ctx.db.patch(row._id, {
+        lastAlertDirection: args.lastAlertDirection,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("monitorState", {
+        monitor: MONITOR,
+        lastAlertDirection: args.lastAlertDirection,
+        updatedAt: Date.now(),
+      });
+    }
+
+    return null;
+  },
+});
