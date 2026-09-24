@@ -229,6 +229,13 @@ function updatePrice(priceState, data) {
   if (mid !== null) priceState.midpoint = mid;
 
   priceState.updatedAt = new Date().toISOString();
+  console.log(
+    "CLOB STATE " +
+    (priceState === state.up ? "UP" : priceState === state.down ? "DOWN" : "") +
+    " bid=" + (priceState.bestBid ?? "null") +
+    " ask=" + (priceState.bestAsk ?? "null") +
+    " mid=" + (priceState.midpoint ?? "null")
+  );
 }
 
 function updateFromBook(priceState, bids, asks) {
@@ -256,16 +263,12 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 function displayPrice(priceState) {
-  // NEXT market is a live CLOB market, so use its current quote directly.
-  // Do not apply spread thresholds or fall back to stale trade prices.
+  // The Polymarket UI quote is the current CLOB midpoint.
+  // Recompute it from the latest stored best bid/ask on every Telegram tick.
   const bid = Number(priceState.bestBid);
   const ask = Number(priceState.bestAsk);
-
-  if (Number.isFinite(bid) && Number.isFinite(ask)) {
-    return (bid + ask) / 2;
-  }
-
-  return Number.isFinite(ask) ? ask : Number.isFinite(bid) ? bid : null;
+  if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null;
+  return (bid + ask) / 2;
 }
 
 async function runTelegramUpdater(currentStart, market) {
