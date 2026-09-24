@@ -7,7 +7,7 @@ const GAMMA_API = "https://gamma-api.polymarket.com";
 const CLOB_API = "https://clob.polymarket.com";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
-const TARGET_OFFSET = 270;
+const TARGET_OFFSET = 265;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
 function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
