@@ -304,7 +304,7 @@ async function monitorPeriod(start) {
       "",
       "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a"),
       "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
-      "ИМБАЛАНС: " + (((activity.avgUpPrice - 0.50) / 0.50 * 100) - ((activity.avgDownPrice - 0.50) / 0.50 * 100)).toFixed(2) + "%",
+      "ИМБАЛАНС: " + (((activity.avgUpPrice - 0.50) / 0.50 * 100) + ((activity.avgDownPrice - 0.50) / 0.50 * 100)).toFixed(2) + "%",
       "",
       "BUY: " + alertDirection,
       "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
