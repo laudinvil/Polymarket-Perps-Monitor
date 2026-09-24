@@ -57,10 +57,17 @@ function extractVenue(data, name) {
 }
 
 function getMarketData(data) {
+  // /v3/screener/{asset}/{window} returns data.cells[], not venue keys directly.
+  const cell = Array.isArray(data?.cells)
+    ? data.cells.find(x => x && x.asset === "btc") || data.cells[0]
+    : null;
+
+  const source = cell || data;
+
   return {
-    polymarket: extractVenue(data, "polymarket"),
-    kalshi: extractVenue(data, "kalshi"),
-    limitless: extractVenue(data, "limitless")
+    polymarket: extractVenue(source, "polymarket"),
+    kalshi: extractVenue(source, "kalshi"),
+    limitless: extractVenue(source, "limitless")
   };
 }
 
@@ -125,11 +132,12 @@ async function main() {
 
       const market = getMarketData(data);
 
-      console.log("DepthFeed data: " + JSON.stringify({
+      console.log("DepthFeed parsed data: " + JSON.stringify({
         polymarket: market.polymarket,
         kalshi: market.kalshi,
         limitless: market.limitless
       }));
+      console.log("DepthFeed response keys: " + Object.keys(data || {}).join(","));
 
       if (!sentForPeriod) {
         await sendTelegram(buildDataAlert(market));
