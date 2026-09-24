@@ -315,7 +315,7 @@ function detectThresholdCross(state, side, label) {
 
   const previousNumber = Number(previous);
 
-  if (previousNumber < 0.52 && current >= 0.52) {
+  if (previousNumber < 0.53 && current >= 0.53) {
     state.firstIncrease = {
       side: label,
       from: previousNumber,
