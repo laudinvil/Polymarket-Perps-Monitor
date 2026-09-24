@@ -1,4 +1,4 @@
-name: BTC Liquidations · Direct WebSockets
+name: BTC Liquidations · Hyperliquid via MarginPad
 
 on:
   workflow_dispatch:
