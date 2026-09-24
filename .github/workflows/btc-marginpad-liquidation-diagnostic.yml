@@ -1,4 +1,5 @@
 name: BTC Liquidation · MarginPad Diagnostic
+# Trigger raw-side diagnostic run
 
 on:
   workflow_dispatch:
