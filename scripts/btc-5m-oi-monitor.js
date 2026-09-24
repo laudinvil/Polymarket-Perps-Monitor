@@ -285,11 +285,8 @@ async function monitorPeriod(start) {
 
   const alertDirection = expectationChange > 0 ? "BUY UP" : expectationChange < 0 ? "BUY DOWN" : null;
   const shouldAlert =
-    Number.isFinite(upChange) &&
-    Number.isFinite(downChange) &&
     Number.isFinite(expectationChange) &&
-    alertDirection !== null &&
-    Math.abs(expectationChange) >= 66;
+    alertDirection !== null;
 
   const nextState = {
     periodStart: start,
@@ -298,8 +295,7 @@ async function monitorPeriod(start) {
     avgDownPrice: activity.avgDownPrice,
     upTradeCount: activity.upTradeCount,
     downTradeCount: activity.downTradeCount,
-    updatedAt: new Date().toISOString(),
-    lastAlertDirection: lastAlertDirection
+    updatedAt: new Date().toISOString()
   };
 
   const formatChange = function(change) {
@@ -314,7 +310,7 @@ async function monitorPeriod(start) {
 
   if (!shouldAlert) {
     console.log(
-      "Alert ignored: same direction or changes are not opposing" +
+      "Alert ignored: expectation is unavailable or zero" +
       " (upChange=" + (Number.isFinite(upChange) ? upChange.toFixed(2) : "n/a") +
       ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") + ")"
     );
