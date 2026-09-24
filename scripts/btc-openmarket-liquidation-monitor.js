@@ -359,7 +359,17 @@ function startMonitor() {
 
       ws.addEventListener("error", event => {
         console.error("OpenMarket WebSocket error event received");
-        logPersistent("ERROR", "ws_error_event", "WebSocket error event", { message: String(event && event.message || "unknown") });
+        logPersistent("ERROR", "ws_error_event", "WebSocket error event", {
+          message: String(event && event.message || "unknown"),
+          name: String(event && event.name || "unknown"),
+          type: String(event && event.type || "error"),
+          opened,
+          authAccepted,
+          subscriptionSent,
+          subscribed,
+          readyState: ws.readyState,
+          url: WS_URL
+        });
       });
 
       ws.addEventListener("close", event => {
