@@ -1,24 +1,30 @@
 const fs = require("fs");
-const { execFileSync } = require("child_process");
 
-
-const DATA_API = "https://data-api.polymarket.com";
 const GAMMA_API = "https://gamma-api.polymarket.com";
-const CLOB_API = "https://clob.polymarket.com";
+const WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
-const TARGET_OFFSET = 265;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
-function periodStart(ts) { return Math.floor(ts / PERIOD) * PERIOD; }
-function sleep(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); }
+function periodStart(ts) {
+  return Math.floor(ts / PERIOD) * PERIOD;
+}
+
+function sleep(ms) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, ms);
+  });
+}
 
 async function getJson(url) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch(url, {
-        headers: { "User-Agent": "btc-5m-oi-monitor/1.0", "Accept": "application/json" },
+        headers: {
+          "User-Agent": "btc-5m-next-ws-monitor/1.0",
+          "Accept": "application/json"
+        },
         signal: AbortSignal.timeout(8000)
       });
       if (!res.ok) throw new Error("HTTP " + res.status + " from " + url);
@@ -32,131 +38,71 @@ async function getJson(url) {
   throw lastError;
 }
 
-function getConditionId(event) {
+function getMarketFromEvent(event) {
   const markets = Array.isArray(event && event.markets) ? event.markets : [];
   const market = markets.find(function(m) {
     const q = String(m.question || "").toLowerCase();
     const s = String(m.slug || "").toLowerCase();
-    return s.indexOf("btc-updown-5m") >= 0 || q.indexOf("bitcoin") >= 0 || q.indexOf("btc") >= 0;
+    return s.indexOf("btc-updown-5m") >= 0 ||
+      q.indexOf("bitcoin") >= 0 ||
+      q.indexOf("btc") >= 0;
   }) || markets[0];
-  const conditionId = market && (market.conditionId || market.condition_id);
-  if (!conditionId) throw new Error("BTC 5M market conditionId not found");
-  return conditionId;
-}
 
-async function getCurrentMarket(start) {
-  const slug = "btc-updown-5m-" + start;
-  const event = await getJson(GAMMA_API + "/events/slug/" + slug);
-  return { slug: slug, conditionId: getConditionId(event) };
-}
-
-function getOutcomeTokenId(event, outcome) {
-  const markets = Array.isArray(event && event.markets) ? event.markets : [];
-  const market = markets.find(function(m) {
-    const q = String(m.question || "").toLowerCase();
-    const s = String(m.slug || "").toLowerCase();
-    return s.indexOf("btc-updown-5m") >= 0 || q.indexOf("bitcoin") >= 0 || q.indexOf("btc") >= 0;
-  }) || markets[0];
-  if (!market) return null;
+  if (!market) throw new Error("BTC 5M market not found");
 
   let outcomes = market.outcomes;
   let tokenIds = market.clobTokenIds || market.clob_token_ids;
-  try { if (typeof outcomes === "string") outcomes = JSON.parse(outcomes); } catch (_) {}
-  try { if (typeof tokenIds === "string") tokenIds = JSON.parse(tokenIds); } catch (_) {}
-  if (!Array.isArray(outcomes) || !Array.isArray(tokenIds)) return null;
 
-  const index = outcomes.findIndex(function(value) {
-    return String(value).toUpperCase() === outcome;
-  });
-  return index >= 0 ? tokenIds[index] : null;
+  try {
+    if (typeof outcomes === "string") outcomes = JSON.parse(outcomes);
+  } catch (_) {}
+  try {
+    if (typeof tokenIds === "string") tokenIds = JSON.parse(tokenIds);
+  } catch (_) {}
+
+  if (!Array.isArray(outcomes) || !Array.isArray(tokenIds)) {
+    throw new Error("BTC 5M market outcomes/token IDs unavailable");
+  }
+
+  const tokens = {};
+  for (let i = 0; i < outcomes.length; i++) {
+    const outcome = String(outcomes[i]).trim().toUpperCase();
+    if ((outcome === "UP" || outcome === "DOWN") && tokenIds[i]) {
+      tokens[outcome] = String(tokenIds[i]);
+    }
+  }
+
+  if (!tokens.UP || !tokens.DOWN) {
+    throw new Error("BTC 5M UP/DOWN token IDs not found");
+  }
+
+  return {
+    conditionId: market.conditionId || market.condition_id || null,
+    tokens: tokens
+  };
 }
 
-async function getNextClobPrice(start, outcome) {
+async function getNextMarket(start) {
   const nextStart = start + PERIOD;
   const slug = "btc-updown-5m-" + nextStart;
   const event = await getJson(GAMMA_API + "/events/slug/" + slug);
-  const tokenId = getOutcomeTokenId(event, outcome);
-  if (!tokenId) throw new Error("CLOB token not found for next BTC 5M " + outcome);
-  const response = await getJson(CLOB_API + "/midpoint?token_id=" + encodeURIComponent(tokenId));
-  const price = Number(response && response.mid);
-  if (!Number.isFinite(price)) throw new Error("CLOB midpoint unavailable for next BTC 5M " + outcome);
-  return price;
-}
+  const market = getMarketFromEvent(event);
 
-function getTradeOutcome(row) {
-  const outcome = String(row.outcome || "").trim().toUpperCase();
-  if (outcome === "UP" || outcome === "DOWN") return outcome;
-  return null;
-}
-
-async function getPeriodActivity(conditionId, start, end) {
-  let cursor = null;
-  let pages = 0;
-  let totalRows = 0;
-  let upPriceSum = 0;
-  let upTradeCount = 0;
-  let downPriceSum = 0;
-  let downTradeCount = 0;
-
-  while (true) {
-    const cursorParam = cursor ? "&cursor=" + encodeURIComponent(cursor) : "";
-    const url = DATA_API + "/v2/trades?condition=" + encodeURIComponent(conditionId) + "&limit=1000" + cursorParam;
-    const response = await getJson(url);
-    const rows = Array.isArray(response && response.data) ? response.data : [];
-    const pagination = response && response.pagination ? response.pagination : {};
-
-    pages++;
-    totalRows += rows.length;
-    let reachedOlderTrades = false;
-
-    for (const row of rows) {
-      if (!row) continue;
-
-      const ts = Number(row.timestamp != null ? row.timestamp : row.ts != null ? row.ts : row.match_time);
-      if (!Number.isFinite(ts)) continue;
-
-      const seconds = ts > 1e12 ? ts / 1000 : ts;
-      if (seconds < start) {
-        reachedOlderTrades = true;
-        continue;
-      }
-      if (seconds >= end) continue;
-
-      const outcome = getTradeOutcome(row);
-      const price = Number(row.price);
-      if (!outcome || !Number.isFinite(price)) continue;
-
-      if (outcome === "UP") {
-        upPriceSum += price;
-        upTradeCount++;
-      } else {
-        downPriceSum += price;
-        downTradeCount++;
-      }
-    }
-
-    console.log(
-      "Activity page=" + pages +
-      " rows=" + rows.length +
-      " totalRows=" + totalRows +
-      " hasMore=" + Boolean(pagination.has_more) +
-      " upTrades=" + upTradeCount +
-      " downTrades=" + downTradeCount
-    );
-
-    if (reachedOlderTrades || !pagination.has_more || !pagination.next_cursor) break;
-    cursor = pagination.next_cursor;
-  }
-
-  const avgUpPrice = upTradeCount > 0 ? upPriceSum / upTradeCount : null;
-  const avgDownPrice = downTradeCount > 0 ? downPriceSum / downTradeCount : null;
-
-  return { avgUpPrice, avgDownPrice, upTradeCount, downTradeCount };
+  return {
+    start: nextStart,
+    slug: slug,
+    url: POLY_URL + nextStart,
+    conditionId: market.conditionId,
+    tokens: market.tokens
+  };
 }
 
 function readState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); }
-  catch (_) { return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch (_) {
+    return {};
+  }
 }
 
 function writeState(state) {
@@ -164,186 +110,269 @@ function writeState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
 }
 
-function getConvexLastAlertDirection() {
-  const output = execFileSync(
-    "npx",
-    ["--yes", "convex@latest", "run", "btc5mState:get", "{}"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-  ).trim();
-
-  const result = JSON.parse(output);
-  const direction = result && result.lastAlertDirection;
-  if (direction !== null && direction !== "BUY UP" && direction !== "BUY DOWN") {
-    throw new Error("Invalid Convex lastAlertDirection: " + String(direction));
-  }
-  return direction || null;
+function midpoint(bestBid, bestAsk) {
+  const bid = Number(bestBid);
+  const ask = Number(bestAsk);
+  if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null;
+  return (bid + ask) / 2;
 }
 
-function claimConvexAlertDirection(direction) {
-  if (direction !== "BUY UP" && direction !== "BUY DOWN") {
-    throw new Error("Invalid alert direction for Convex: " + direction);
-  }
-
-  const output = execFileSync(
-    "npx",
-    [
-      "--yes",
-      "convex@latest",
-      "run",
-      "btc5mState:claim",
-      JSON.stringify({ direction })
-    ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-  ).trim();
-
-  const result = JSON.parse(output);
-  if (!result || typeof result.allowed !== "boolean") {
-    throw new Error("Invalid Convex claim response");
-  }
-  return result.allowed;
+function createPriceState() {
+  return {
+    bestBid: null,
+    bestAsk: null,
+    midpoint: null,
+    lastTrade: null,
+    updatedAt: null
+  };
 }
 
-
-async function sendTelegram(text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
-  const res = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: text, disable_web_page_preview: false }),
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!res.ok) throw new Error("Telegram HTTP " + res.status + ": " + await res.text());
-}
-
-function gitCommitState(period) {
-  try {
-    execFileSync("git", ["config", "user.name", "github-actions[bot]"]);
-    execFileSync("git", ["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
-    execFileSync("git", ["add", STATE_FILE]);
-    execFileSync("git", ["commit", "-m", "Update BTC 5M OI state " + period], { stdio: "pipe" });
-
-    try {
-      execFileSync("git", ["push"], { stdio: "pipe" });
-    } catch (pushErr) {
-      const pushMessage = String(pushErr && (pushErr.stderr || pushErr.message) || pushErr);
-      if (pushMessage.indexOf("fetch first") < 0 && pushMessage.indexOf("non-fast-forward") < 0) throw pushErr;
-
-      console.log("State push raced with another main commit; rebasing state commit");
-      const stateBackup = fs.readFileSync(STATE_FILE, "utf8");
-      execFileSync("git", ["fetch", "origin", "main"], { stdio: "pipe" });
-      execFileSync("git", ["reset", "--hard", "origin/main"], { stdio: "pipe" });
-      fs.writeFileSync(STATE_FILE, stateBackup);
-      execFileSync("git", ["add", STATE_FILE]);
-      execFileSync("git", ["commit", "-m", "Update BTC 5M OI state " + period], { stdio: "pipe" });
-      execFileSync("git", ["push", "origin", "HEAD:main"], { stdio: "pipe" });
-    }
-  } catch (err) {
-    const message = String(err && (err.stderr || err.message) || err);
-    if (message.indexOf("nothing to commit") < 0) throw err;
-  }
-}
-
-async function monitorPeriod(start) {
-  const targetTime = start + TARGET_OFFSET;
-  const now = Math.floor(Date.now() / 1000);
-  if (now < targetTime) {
-    console.log("Waiting for 4:30. Period=" + start + " wait=" + (targetTime - now) + "s");
-    await sleep((targetTime - now) * 1000);
-  }
-
-  const snapshotTime = Math.floor(Date.now() / 1000);
-  if (periodStart(snapshotTime) !== start) {
-    console.log("Period rolled over before snapshot. Period=" + start);
-    return;
-  }
-
-  const state = readState();
-  if (Number(state.periodStart) === start) {
-    console.log("Duplicate period; skipping. Period=" + start);
-    return;
-  }
-
-  const market = await getCurrentMarket(start);
-  const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
-  const nextUrl = POLY_URL + (start + PERIOD);
-
-  const alertDirection =
-    Number.isFinite(activity.avgUpPrice) && Number.isFinite(activity.avgDownPrice)
-      ? (activity.avgUpPrice > activity.avgDownPrice ? "BUY UP" : activity.avgDownPrice > activity.avgUpPrice ? "BUY DOWN" : null)
-      : null;
-
-  const shouldAlert =
-    Number.isFinite(activity.avgUpPrice) &&
-    Number.isFinite(activity.avgDownPrice) &&
-    alertDirection !== null;
-
-  const nextState = {
-    periodStart: start,
-    snapshotOffset: TARGET_OFFSET,
-    avgUpPrice: activity.avgUpPrice,
-    avgDownPrice: activity.avgDownPrice,
-    upTradeCount: activity.upTradeCount,
-    downTradeCount: activity.downTradeCount,
+function createNextState(currentStart, market) {
+  return {
+    monitoredCurrentPeriodStart: currentStart,
+    monitoredNextPeriodStart: market.start,
+    nextMarketSlug: market.slug,
+    nextMarketUrl: market.url,
+    nextMarketConditionId: market.conditionId,
+    up: createPriceState(),
+    down: createPriceState(),
     updatedAt: new Date().toISOString()
   };
+}
 
-  if (!shouldAlert) {
-    console.log(
-      "Alert ignored: average prices are unavailable or equal" +
-      " (avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
-      ", avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + ")"
-    );
-  } else {
-    const nextOutcome = alertDirection === "BUY UP" ? "UP" : "DOWN";
-    const nextPrice = await getNextClobPrice(start, nextOutcome);
+function updatePrice(priceState, data) {
+  const bestBid = data.best_bid != null ? Number(data.best_bid) : priceState.bestBid;
+  const bestAsk = data.best_ask != null ? Number(data.best_ask) : priceState.bestAsk;
 
-    const lines = [
-      "🔥 BTC · 5M",
-      "",
-      "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a"),
-      "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
-      "ИМБАЛАНС: " + (((activity.avgUpPrice - 0.50) / 0.50 * 100) + ((activity.avgDownPrice - 0.50) / 0.50 * 100)).toFixed(2) + "%",
-      "",
-      "",
-      "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
-      "",
-      "➡️ NEXT · Polymarket 5M",
-      nextUrl
-    ];
+  if (Number.isFinite(bestBid)) priceState.bestBid = bestBid;
+  if (Number.isFinite(bestAsk)) priceState.bestAsk = bestAsk;
 
-    await sendTelegram(lines.join("\n"));
-    console.log(
-      "Telegram sent for period=" + start +
-      " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
-      " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") +
-      " buy=" + alertDirection
-    );
+  const price = Number(data.price);
+  if (Number.isFinite(price)) {
+    priceState.lastTrade = price;
   }
 
-  writeState(nextState);
-  gitCommitState(start);
-  console.log("State saved for period=" + start);
+  const mid = midpoint(priceState.bestBid, priceState.bestAsk);
+  if (mid !== null) priceState.midpoint = mid;
+
+  priceState.updatedAt = new Date().toISOString();
+}
+
+function updateFromBook(priceState, bids, asks) {
+  if (Array.isArray(bids) && bids.length > 0) {
+    const prices = bids
+      .map(function(level) { return Number(level && level.price); })
+      .filter(Number.isFinite);
+    if (prices.length > 0) priceState.bestBid = Math.max.apply(null, prices);
+  }
+
+  if (Array.isArray(asks) && asks.length > 0) {
+    const prices = asks
+      .map(function(level) { return Number(level && level.price); })
+      .filter(Number.isFinite);
+    if (prices.length > 0) priceState.bestAsk = Math.min.apply(null, prices);
+  }
+
+  const mid = midpoint(priceState.bestBid, priceState.bestAsk);
+  if (mid !== null) priceState.midpoint = mid;
+
+  priceState.updatedAt = new Date().toISOString();
+}
+
+async function runWebSocket(currentStart, market) {
+  while (periodStart(Math.floor(Date.now() / 1000)) === currentStart) {
+    try {
+      await new Promise(function(resolve) {
+        const ws = new WebSocket(WS_URL);
+        let pingTimer = null;
+        let closed = false;
+
+        function finish() {
+          if (closed) return;
+          closed = true;
+          if (pingTimer) clearInterval(pingTimer);
+          try { ws.close(); } catch (_) {}
+          resolve();
+        }
+
+        ws.addEventListener("open", function() {
+          console.log(
+            "CLOB WebSocket connected; monitoring NEXT market=" +
+            market.slug +
+            " UP/DOWN"
+          );
+
+          ws.send(JSON.stringify({
+            type: "market",
+            assets_ids: [market.tokens.UP, market.tokens.DOWN],
+            custom_feature_enabled: true
+          }));
+
+          pingTimer = setInterval(function() {
+            if (ws.readyState === WebSocket.OPEN) {
+              try { ws.send("PING"); } catch (_) {}
+            }
+          }, 10000);
+        });
+
+        ws.addEventListener("message", function(event) {
+          if (event.data === "PONG") return;
+
+          let message;
+          try {
+            message = JSON.parse(event.data);
+          } catch (err) {
+            console.error("Invalid CLOB WebSocket message: " + err.message);
+            return;
+          }
+
+          const eventType = message.event_type;
+          const state = readState();
+
+          if (!state.up || !state.down ||
+              Number(state.monitoredNextPeriodStart) !== market.start) {
+            return;
+          }
+
+          if (eventType === "book") {
+            const side = message.asset_id === market.tokens.UP ? state.up :
+              message.asset_id === market.tokens.DOWN ? state.down : null;
+            if (!side) return;
+
+            updateFromBook(side, message.bids, message.asks);
+            writeState(state);
+
+            console.log(
+              "NEXT " + (side === state.up ? "UP" : "DOWN") +
+              " BOOK bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
+              " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
+              " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
+            );
+            return;
+          }
+
+          if (eventType === "price_change" || eventType === "best_bid_ask") {
+            const changes = eventType === "price_change"
+              ? (Array.isArray(message.price_changes) ? message.price_changes : [])
+              : [message];
+
+            for (const change of changes) {
+              const assetId = change.asset_id || message.asset_id;
+              const side = assetId === market.tokens.UP ? state.up :
+                assetId === market.tokens.DOWN ? state.down : null;
+              if (!side) continue;
+
+              updatePrice(side, change);
+              console.log(
+                "NEXT " + (side === state.up ? "UP" : "DOWN") +
+                " bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
+                " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
+                " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
+              );
+            }
+
+            state.updatedAt = new Date().toISOString();
+            writeState(state);
+            return;
+          }
+
+          if (eventType === "last_trade_price") {
+            const side = message.asset_id === market.tokens.UP ? state.up :
+              message.asset_id === market.tokens.DOWN ? state.down : null;
+            if (!side) return;
+
+            const price = Number(message.price);
+            if (Number.isFinite(price)) {
+              side.lastTrade = price;
+              side.updatedAt = new Date().toISOString();
+              state.updatedAt = side.updatedAt;
+              writeState(state);
+              console.log(
+                "NEXT " + (side === state.up ? "UP" : "DOWN") +
+                " last trade=" + price.toFixed(4)
+              );
+            }
+          }
+        });
+
+        ws.addEventListener("error", function(event) {
+          console.error("CLOB WebSocket error: " + String(event && event.message || "unknown"));
+        });
+
+        ws.addEventListener("close", function(event) {
+          console.log(
+            "CLOB WebSocket closed code=" +
+            event.code +
+            " reason=" +
+            String(event.reason || "")
+          );
+          finish();
+        });
+
+        const rolloverTimer = setInterval(function() {
+          if (periodStart(Math.floor(Date.now() / 1000)) !== currentStart) {
+            clearInterval(rolloverTimer);
+            finish();
+          }
+        }, 1000);
+      });
+
+      if (periodStart(Math.floor(Date.now() / 1000)) !== currentStart) {
+        break;
+      }
+
+      console.log("CLOB WebSocket reconnecting in 3s");
+      await sleep(3000);
+    } catch (err) {
+      console.error("CLOB WebSocket monitor error: " + err.stack);
+      await sleep(3000);
+    }
+  }
+}
+
+async function monitorPeriod(currentStart) {
+  const market = await getNextMarket(currentStart);
+
+  console.log(
+    "Monitoring ONLY NEXT market: " +
+    market.slug +
+    " url=" +
+    market.url
+  );
+
+  const state = createNextState(currentStart, market);
+  writeState(state);
+
+  await runWebSocket(currentStart, market);
+
+  const finalState = readState();
+  finalState.finishedMonitoringAt = new Date().toISOString();
+  writeState(finalState);
+
+  console.log(
+    "NEXT market monitoring finished: " +
+    market.slug +
+    " UP=" + (finalState.up.midpoint != null ? finalState.up.midpoint.toFixed(4) : "n/a") +
+    " DOWN=" + (finalState.down.midpoint != null ? finalState.down.midpoint.toFixed(4) : "n/a")
+  );
 }
 
 async function main() {
-  console.log("BTC 5M OI monitor started in continuous mode");
+  console.log("BTC 5M NEXT-market CLOB WebSocket monitor started");
+  console.log("Current live market is NOT monitored");
+  console.log("No 4:25 snapshot; NEXT market is streamed continuously");
+
   while (true) {
-    const current = periodStart(Math.floor(Date.now() / 1000));
+    const currentStart = periodStart(Math.floor(Date.now() / 1000));
+
     try {
-      await monitorPeriod(current);
+      await monitorPeriod(currentStart);
     } catch (err) {
       console.error("Period monitor error: " + err.stack);
       console.log("Keeping monitor alive; retrying in 15s");
       await sleep(15000);
       continue;
     }
-
-    const next = current + PERIOD;
-    const wait = Math.max(1000, (next + TARGET_OFFSET - Math.floor(Date.now() / 1000)) * 1000);
-    console.log("Next period=" + next + " sleep=" + Math.round(wait / 1000) + "s");
-    await sleep(wait);
   }
 }
 
