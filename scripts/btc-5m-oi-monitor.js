@@ -6,6 +6,76 @@ const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
+const TELEGRAM_UPDATE_MS = 2000;
+
+async function telegramRequest(method, payload) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("Missing TELEGRAM_BOT_TOKEN");
+
+  const res = await fetch("https://api.telegram.org/bot" + token + "/" + method, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10000)
+  });
+
+  const body = await res.text();
+  if (!res.ok) throw new Error("Telegram HTTP " + res.status + ": " + body);
+
+  let json;
+  try {
+    json = JSON.parse(body);
+  } catch (_) {
+    throw new Error("Invalid Telegram response: " + body);
+  }
+
+  if (!json.ok) throw new Error("Telegram API error: " + body);
+  return json.result;
+}
+
+function formatPrice(value) {
+  return Number.isFinite(value) ? value.toFixed(4) : "n/a";
+}
+
+function buildTelegramText(market, state) {
+  return [
+    "🔥 BTC · NEXT 5M",
+    "",
+    "UP: " + formatPrice(state.up.midpoint),
+    "DOWN: " + formatPrice(state.down.midpoint),
+    "",
+    "➡️ NEXT · Polymarket 5M",
+    market.url
+  ].join("\n");
+}
+
+async function createTelegramMessage(market, state) {
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) throw new Error("Missing TELEGRAM_CHAT_ID");
+
+  const result = await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: buildTelegramText(market, state),
+    disable_web_page_preview: false
+  });
+
+  console.log("Telegram NEXT message created message_id=" + result.message_id);
+  return result.message_id;
+}
+
+async function editTelegramMessage(messageId, market, state) {
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) throw new Error("Missing TELEGRAM_CHAT_ID");
+
+  await telegramRequest("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: buildTelegramText(market, state),
+    disable_web_page_preview: false
+  });
+}
+
+
 function periodStart(ts) {
   return Math.floor(ts / PERIOD) * PERIOD;
 }
@@ -186,11 +256,54 @@ async function runWebSocket(currentStart, market) {
         const ws = new WebSocket(WS_URL);
         let pingTimer = null;
         let closed = false;
+        let telegramMessageId = null;
+        let telegramUpdateTimer = null;
+        let telegramUpdateQueued = false;
+        let telegramLastText = null;
+
+        async function updateTelegram(force) {
+          if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+            return;
+          }
+
+          const state = readState();
+          if (!state.up || !state.down ||
+              Number(state.monitoredNextPeriodStart) !== market.start) {
+            return;
+          }
+
+          const text = buildTelegramText(market, state);
+          if (!force && text === telegramLastText) return;
+
+          try {
+            if (telegramMessageId === null) {
+              telegramMessageId = await createTelegramMessage(market, state);
+            } else {
+              await editTelegramMessage(telegramMessageId, market, state);
+            }
+            telegramLastText = text;
+          } catch (err) {
+            console.error("Telegram update failed: " + err.message);
+          }
+        }
+
+        function queueTelegramUpdate() {
+          telegramUpdateQueued = true;
+          if (telegramUpdateTimer) return;
+
+          telegramUpdateTimer = setTimeout(async function() {
+            telegramUpdateTimer = null;
+            if (!telegramUpdateQueued) return;
+            telegramUpdateQueued = false;
+            await updateTelegram(false);
+          }, TELEGRAM_UPDATE_MS);
+        }
 
         function finish() {
           if (closed) return;
           closed = true;
           if (pingTimer) clearInterval(pingTimer);
+          if (telegramUpdateTimer) clearTimeout(telegramUpdateTimer);
           try { ws.close(); } catch (_) {}
           resolve();
         }
@@ -201,6 +314,7 @@ async function runWebSocket(currentStart, market) {
             market.slug +
             " UP/DOWN"
           );
+          console.log("Telegram uses one message per NEXT market; edits are throttled to " + TELEGRAM_UPDATE_MS + "ms");
 
           ws.send(JSON.stringify({
             type: "market",
@@ -248,6 +362,7 @@ async function runWebSocket(currentStart, market) {
               " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
               " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
             );
+            queueTelegramUpdate();
             return;
           }
 
@@ -273,6 +388,7 @@ async function runWebSocket(currentStart, market) {
 
             state.updatedAt = new Date().toISOString();
             writeState(state);
+            queueTelegramUpdate();
             return;
           }
 
@@ -291,6 +407,7 @@ async function runWebSocket(currentStart, market) {
                 "NEXT " + (side === state.up ? "UP" : "DOWN") +
                 " last trade=" + price.toFixed(4)
               );
+              queueTelegramUpdate();
             }
           }
         });
