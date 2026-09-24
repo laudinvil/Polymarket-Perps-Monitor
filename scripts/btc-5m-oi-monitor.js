@@ -305,29 +305,31 @@ function detectThresholdCross(state, side, label) {
 
   const baselineKey = label === "UP" ? "initialPriceUp" : "initialPriceDown";
 
-  // Freeze the first valid CLOB midpoint for this side.
-  // Never replace it with later prices: FIRST INCREASE must describe
-  // the move from the market's initial observed price to the first
-  // crossing of 0.52.
+  // Freeze the first valid midpoint for each side. All later movement
+  // is measured against this same baseline, so UP and DOWN are symmetric.
   if (state[baselineKey] === null || state[baselineKey] === undefined) {
     state[baselineKey] = current;
-    console.log(
-      "INITIAL " + label + " price=" + current.toFixed(4)
-    );
+    console.log("INITIAL " + label + " price=" + current.toFixed(4));
     return false;
   }
 
   const baseline = Number(state[baselineKey]);
-  if (!Number.isFinite(baseline)) return false;
+  if (!Number.isFinite(baseline) || baseline <= 0) return false;
 
-  // FIRST INCREASE = first transition from below 0.52 to 0.52 or above.
-  // The displayed FROM value is always the frozen initial price,
-  // not the immediately preceding tick.
-  if (baseline < 0.52 && current >= 0.52) {
+  // FIRST INCREASE is the first meaningful positive percentage move
+  // from the frozen baseline. There is no fixed 0.52/0.53 price bias.
+  const movementPct = ((current - baseline) / baseline) * 100;
+
+  // Equal threshold for both sides. A 1% move means the same relative
+  // move regardless of whether the side started at 0.51 or 0.49.
+  const FIRST_INCREASE_PCT = 1;
+
+  if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
       side: label,
       from: baseline,
       to: current,
+      movementPct: movementPct,
       detectedAt: new Date().toISOString()
     };
     state.alerted = true;
@@ -335,7 +337,8 @@ function detectThresholdCross(state, side, label) {
     console.log(
       "FIRST INCREASE detected side=" + label +
       " from=" + baseline.toFixed(4) +
-      " to=" + current.toFixed(4)
+      " to=" + current.toFixed(4) +
+      " movePct=" + movementPct.toFixed(3) + "%"
     );
 
     return true;
@@ -343,7 +346,6 @@ function detectThresholdCross(state, side, label) {
 
   return false;
 }
-
 async function runTelegramUpdater(currentStart, market) {
   let telegramMessageId = null;
   let stopped = false;
