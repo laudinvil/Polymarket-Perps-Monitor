@@ -355,6 +355,8 @@ async function runTelegramUpdater(currentStart, market) {
     const text = buildTelegramText(market, state);
     if (text === telegramLastText) return;
 
+    if (telegramMessageId === -1) return;
+
     if (telegramMessageId === null && !telegramMarketClaimed) {
       try {
         const claim = await convexMutation("btc5mState:claimTelegramMarket", { marketSlug: market.slug });
