@@ -356,7 +356,7 @@ async function runTelegramUpdater(currentStart, market) {
 
     try {
       if (!telegramMarketClaimed) {
-        const claim = await convexMutation("btc5mState:claimTelegramMarketV2", {
+        const claim = await convexMutation("btc5mState:claimTelegramMarketV3", {
           marketSlug: market.slug
         });
 
