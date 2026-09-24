@@ -126,7 +126,7 @@ function startMonitor() {
 
   // OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
   // A small safety margin leaves room for auth/subscribe plus heartbeats and reconnects.
-  const WS_MESSAGE_LIMIT = 8;
+  const WS_MESSAGE_LIMIT = 9;
   const WS_WINDOW_MS = 60 * 1000;
   const wsMessageTimes = [];
 
@@ -196,7 +196,7 @@ function startMonitor() {
               console.error("OpenMarket heartbeat send failed: " + err.stack);
             });
           }
-        }, 20000);
+        }, 7000);
       });
 
       ws.addEventListener("message", event => {
