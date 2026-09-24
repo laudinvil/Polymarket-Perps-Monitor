@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: btc-5m-next-market-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
