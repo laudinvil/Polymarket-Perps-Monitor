@@ -8,9 +8,10 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
-  group: btc-5m-next-market-monitor
+  group: btc-5m-next-market-monitor-v2
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +24,24 @@ jobs:
         with:
           fetch-depth: 1
           token: ${{ github.token }}
+
+      - name: Stop older BTC monitor runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=20" |
+          jq -r --argjson current "$GITHUB_RUN_ID" '.workflow_runs[] | select(.workflow_id == 364449335 and .id != $current and (.status == "queued" or .status == "in_progress")) | .id' |
+          while read -r run_id; do
+            [ -z "$run_id" ] && continue
+            echo "Cancelling old BTC monitor run $run_id"
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel"
+          done
 
       - name: Deploy Convex and run BTC 5M NEXT market monitor
         env:
