@@ -6,6 +6,32 @@ const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 // OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
 const WS_MESSAGE_LIMIT = 9;
 const WS_WINDOW_MS = 60 * 1000;
+const CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL || null;
+
+async function convexMutation(path, args) {
+  if (!CONVEX_URL) throw new Error("Missing CONVEX_URL");
+  const res = await fetch(CONVEX_URL + "/api/mutation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, args, format: "json" }),
+    signal: AbortSignal.timeout(10000)
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error("Convex HTTP " + res.status + ": " + body);
+  const json = JSON.parse(body);
+  if (json.status !== "success") throw new Error("Convex mutation error: " + (json.errorMessage || body));
+  return json.value;
+}
+
+function logPersistent(level, event, message, data) {
+  console.log("PERSISTENT " + level + " " + event + " " + message);
+  convexMutation("btc5mState:logOpenMarket", {
+    level,
+    event,
+    message,
+    data: data == null ? undefined : JSON.stringify(data)
+  }).catch(err => console.error("Persistent log failed: " + err.message));
+}
 
 const SUBSCRIPTIONS = [
   { exchange: "BINANCE_FUTURES", symbol: "BTCUSDT" },
@@ -160,6 +186,7 @@ function startMonitor() {
       const ws = new WebSocket(WS_URL);
       let settled = false;
       let pingTimer = null;
+      let subscribed = false;
 
       function finish() {
         if (settled) return;
@@ -171,6 +198,7 @@ function startMonitor() {
 
       ws.addEventListener("open", () => {
         console.log("OpenMarket WebSocket connected: " + WS_URL);
+        logPersistent("INFO", "ws_connected", "WebSocket connected", { url: WS_URL });
 
         sendWs(ws, {
           jsonrpc: "2.0",
@@ -179,20 +207,7 @@ function startMonitor() {
           params: { token: apiKey }
         });
 
-        const channels = SUBSCRIPTIONS.map(item => ({
-          type: "LIQUIDATION",
-          category: "PERPETUAL",
-          exchange: item.exchange,
-          symbol: item.symbol
-        }));
-
-        sendWs(ws, {
-          jsonrpc: "2.0",
-          id: 2,
-          method: "public/subscribe",
-          params: { channels, version: "v2" }
-        });
-
+        logPersistent("INFO", "auth_sent", "Authentication request sent");
         pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             sendWs(ws, { type: "ping", timestamp: Date.now() });
@@ -209,9 +224,34 @@ function startMonitor() {
           return;
         }
 
+        console.log("OpenMarket WS message type=" + String(message.method || message.result?.type || message.type || "unknown"));
         if (message.error) {
           console.error("OpenMarket WS error: " + JSON.stringify(message.error));
+          logPersistent("ERROR", "ws_error", "OpenMarket WebSocket error", message.error);
           return;
+        }
+
+        if (message.id === 1 && message.result && !subscribed) {
+          subscribed = true;
+          logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
+          const channels = SUBSCRIPTIONS.map(item => ({
+            type: "LIQUIDATION",
+            category: "PERPETUAL",
+            exchange: item.exchange,
+            symbol: item.symbol
+          }));
+          sendWs(ws, {
+            jsonrpc: "2.0",
+            id: 2,
+            method: "public/subscribe",
+            params: { channels, version: "v2" }
+          });
+          logPersistent("INFO", "subscribe_sent", "Liquidation subscriptions sent", { channels });
+          return;
+        }
+
+        if (message.id === 2 || message.result?.channels || message.result?.subscriptions) {
+          logPersistent("INFO", "subscribe_response", "Subscription response received", message.result || message);
         }
 
         const points = Array.isArray(message.points) ? message.points : [];
@@ -235,6 +275,7 @@ function startMonitor() {
 
           const usd = liq.price * liq.amount;
 
+          logPersistent("INFO", "liquidation_received", "BTC liquidation received", liq);
           console.log(
             "LIQUIDATION exchange=" + liq.exchange +
             " symbol=" + liq.symbol +
@@ -260,6 +301,7 @@ function startMonitor() {
       });
 
       ws.addEventListener("error", event => {
+        logPersistent("ERROR", "ws_error_event", "WebSocket error event", { message: String(event && event.message || "unknown") });
         console.error(
           "OpenMarket WebSocket error: " +
           String(event && event.message || "unknown")
@@ -267,6 +309,7 @@ function startMonitor() {
       });
 
       ws.addEventListener("close", event => {
+        logPersistent("WARN", "ws_closed", "WebSocket closed", { code: event.code, reason: String(event.reason || "") });
         console.log(
           "OpenMarket WebSocket closed code=" +
           event.code +
@@ -299,6 +342,7 @@ function startMonitor() {
 }
 
 console.log("OpenMarket BTC liquidation monitor started");
+logPersistent("INFO", "monitor_started", "BTC liquidation monitor started", { subscriptions: SUBSCRIPTIONS });
 console.log("OpenMarket WS client rate guard: " + WS_MESSAGE_LIMIT + " messages/min; heartbeat: 9s");
 console.log("Minimum liquidation USD: " + MIN_LIQUIDATION_USD);
 console.log("Subscriptions: " + SUBSCRIPTIONS.map(x => x.exchange + ":" + x.symbol).join(", "));
