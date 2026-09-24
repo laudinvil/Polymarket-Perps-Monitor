@@ -23,8 +23,9 @@ jobs:
           fetch-depth: 1
           token: ${{ github.token }}
 
-      - name: Run BTC 5M NEXT market monitor
+      - name: Deploy Convex and run BTC 5M NEXT market monitor
         env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node scripts/btc-5m-oi-monitor.js
+        run: npx convex deploy --cmd "node scripts/btc-5m-oi-monitor.js" --cmd-url-env-var-name CONVEX_URL
