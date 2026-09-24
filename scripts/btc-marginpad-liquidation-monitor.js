@@ -1,11 +1,12 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
-const FEED_URL = "https://marginpad.io/api/v1/feed";
+const FEED_URL = "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=20";
 const POLL_MS = 4000;
 const REQUEST_TIMEOUT_MS = 4500;
 const RUN_MS = 5 * 60 * 60 * 1000;
 const seen = new Set();
+const monitorStartedAt = Date.now();
 let stopping = false;
 let pollInFlight = false;
 
@@ -140,11 +141,6 @@ async function pollMarginPad() {
     }
 
     const rawText = await response.text();
-    log("INFO", "marginpad_raw_response", "Raw MarginPad feed response", {
-      status: response.status,
-      contentType: response.headers.get("content-type"),
-      body: rawText
-    });
 
     let body;
     try {
@@ -166,6 +162,7 @@ async function pollMarginPad() {
     sourceState.MARGINPAD.lastSuccessAt = Date.now();
 
     for (const event of events) {
+      if (Number(event.ts) < monitorStartedAt) continue;
       processLiquidation({
         exchange: String(event.exchange || "").toUpperCase(),
         symbol: String(event.symbol || "").toUpperCase(),
@@ -192,7 +189,7 @@ log("INFO", "monitor_started", "BTC Hyperliquid liquidation monitor started via 
   source: "MARGINPAD",
   exchange: "HYPERLIQUID",
   symbol: "BTC",
-  method: "marginpad_feed_polling",
+  method: "marginpad_btc_live_polling",
   pollMs: POLL_MS,
   minLiquidationUsd: 0
 });
