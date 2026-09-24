@@ -244,31 +244,59 @@ function startMonitor() {
         subscribeStartTimer = setTimeout(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
 
-          const channels = SUBSCRIPTIONS.map(item => ({
-            type: "LIQUIDATION",
-            category: "*",
-            exchange: item.exchange,
-            symbol: item.symbol
-          }));
+          // Subscribe to each exchange separately so one invalid channel cannot
+          // obscure which exchange causes a protocol/connection failure.
+          const sendSubscription = async () => {
+            for (let i = 0; i < SUBSCRIPTIONS.length; i++) {
+              if (ws.readyState !== WebSocket.OPEN) return;
 
-          sendWs(ws, {
-            jsonrpc: "2.0",
-            id: 0,
-            method: "public/subscribe",
-            params: {
-              channels,
-              version: "v2"
+              const item = SUBSCRIPTIONS[i];
+              const channel = {
+                type: "LIQUIDATION",
+                category: "*",
+                exchange: item.exchange,
+                symbol: item.symbol
+              };
+              const id = i + 1;
+
+              await sendWs(ws, {
+                jsonrpc: "2.0",
+                id,
+                method: "public/subscribe",
+                params: {
+                  channels: [channel],
+                  version: "v2"
+                }
+              });
+
+              subscriptionSent = true;
+              logPersistent("INFO", "subscribe_sent", "Liquidation subscription sent", {
+                id,
+                channel
+              });
+
+              // Stay well below the 10 messages/min free-plan limit while
+              // allowing the server to process each subscription independently.
+              if (i < SUBSCRIPTIONS.length - 1) {
+                await sleep(7000);
+              }
             }
+
+            subscribeTimer = setTimeout(() => {
+              if (!subscribed) {
+                logPersistent("ERROR", "subscribe_timeout", "No subscription response observed", {
+                  timeoutMs: WS_SUBSCRIBE_TIMEOUT_MS
+                });
+              }
+            }, WS_SUBSCRIBE_TIMEOUT_MS);
+          };
+
+          sendSubscription().catch(err => {
+            logPersistent("ERROR", "subscribe_send_error", "Subscription sequence failed", {
+              message: err.message,
+              stack: err.stack
+            });
           });
-
-          subscriptionSent = true;
-          logPersistent("INFO", "subscribe_sent", "Liquidation subscriptions sent after authentication grace period", { channels });
-
-          subscribeTimer = setTimeout(() => {
-            if (!subscribed) {
-              logPersistent("ERROR", "subscribe_timeout", "No subscription response within timeout", { timeoutMs: WS_SUBSCRIBE_TIMEOUT_MS });
-            }
-          }, WS_SUBSCRIBE_TIMEOUT_MS);
         }, 1000);
 
         pingTimer = setInterval(() => {
@@ -307,13 +335,16 @@ function startMonitor() {
 
         // Subscription responses use id=0. Handle them before generic result messages
         // so a subscription response cannot be mistaken for authentication.
-        if (message.id === 0) {
-          if (subscribeTimer) clearTimeout(subscribeTimer);
-          subscribed = true;
+        if (Number.isInteger(message.id) && message.id >= 1 && message.id <= SUBSCRIPTIONS.length) {
+          const channel = SUBSCRIPTIONS[message.id - 1];
           logPersistent("INFO", "subscribe_response", "Subscription response received", {
+            id: message.id,
+            channel,
             result: message.result || message,
             subscriptionSent
           });
+          subscribed = true;
+          if (subscribeTimer) clearTimeout(subscribeTimer);
           return;
         }
 
