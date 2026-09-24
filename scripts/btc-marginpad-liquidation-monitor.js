@@ -7,6 +7,7 @@ const REQUEST_TIMEOUT_MS = 4500;
 const RUN_MS = 5 * 60 * 60 * 1000;
 const seen = new Set();
 let latestSeenTs = 0;
+let baselineEstablished = false;
 let stopping = false;
 let pollInFlight = false;
 
@@ -66,7 +67,6 @@ function dedupeKey(liq) {
 
 function processLiquidation(liq) {
   if (
-    liq.exchange !== "HYPERLIQUID" ||
     liq.symbol !== "BTC" ||
     !Number.isFinite(liq.price) ||
     !Number.isFinite(liq.amount) ||
@@ -96,7 +96,7 @@ function processLiquidation(liq) {
 
   sourceState.MARGINPAD.alerts += 1;
 
-  log("INFO", "liquidation_received", "BTC Hyperliquid liquidation received via MarginPad", {
+  log("INFO", "liquidation_received", "BTC liquidation received via MarginPad", {
     exchange: liq.exchange,
     side: liq.side,
     price: liq.price,
@@ -112,7 +112,7 @@ function processLiquidation(liq) {
     "PRICE: $" + liq.price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: $" + usd.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "AMOUNT: " + liq.amount.toFixed(6) + " BTC",
-    "EXCHANGE: HYPERLIQUID",
+    "EXCHANGE: " + liq.exchange,
     "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
     "",
     "➡️ TF",
@@ -161,18 +161,40 @@ async function pollMarginPad() {
     sourceState.MARGINPAD.successfulRequests += 1;
     sourceState.MARGINPAD.lastSuccessAt = Date.now();
 
-    for (const event of events) {
-      const eventTs = Number(event.ts);
-      if (!Number.isFinite(eventTs)) continue;
-      if (eventTs > latestSeenTs) latestSeenTs = eventTs;
-      processLiquidation({
+    const normalizedEvents = events
+      .map(event => ({
         exchange: String(event.exchange || "").toUpperCase(),
         symbol: String(event.symbol || "").toUpperCase(),
         side: event.side,
         price: Number(event.price),
         amount: Number(event.qty),
         time: Number(event.ts)
+      }))
+      .filter(event =>
+        event.symbol === "BTC" &&
+        Number.isFinite(event.time)
+      );
+
+    if (!baselineEstablished) {
+      latestSeenTs = normalizedEvents.reduce(
+        (max, event) => Math.max(max, event.time),
+        0
+      );
+      baselineEstablished = true;
+
+      log("INFO", "marginpad_baseline_established", "Existing BTC liquidation history ignored; only new events will alert", {
+        baselineTs: latestSeenTs,
+        baselineIso: latestSeenTs ? new Date(latestSeenTs).toISOString() : null,
+        eventsSeenAtStartup: normalizedEvents.length
       });
+
+      return;
+    }
+
+    for (const event of normalizedEvents) {
+      if (event.time <= latestSeenTs) continue;
+      if (event.time > latestSeenTs) latestSeenTs = event.time;
+      processLiquidation(event);
     }
   } catch (err) {
     sourceState.MARGINPAD.state = "ERROR";
@@ -186,24 +208,26 @@ async function pollMarginPad() {
   }
 }
 
-console.log("BTC Hyperliquid liquidation monitor started");
-log("INFO", "monitor_started", "BTC Hyperliquid liquidation monitor started via MarginPad", {
+console.log("BTC liquidation monitor started");
+log("INFO", "monitor_started", "BTC liquidation monitor started via MarginPad", {
   source: "MARGINPAD",
-  exchange: "HYPERLIQUID",
   symbol: "BTC",
   method: "marginpad_btc_live_polling",
   pollMs: POLL_MS,
-  minLiquidationUsd: 0
+  minLiquidationUsd: 0,
+  startupBacklogIgnored: true
 });
 
 pollMarginPad();
 const pollTimer = setInterval(pollMarginPad, POLL_MS);
 
 const heartbeatTimer = setInterval(() => {
-  log("INFO", "monitor_heartbeat", "BTC Hyperliquid liquidation monitor heartbeat", {
+  log("INFO", "monitor_heartbeat", "BTC liquidation monitor heartbeat", {
     uptimeSec: Math.floor(process.uptime()),
     MARGINPAD: sourceState.MARGINPAD,
-    seen: seen.size
+    seen: seen.size,
+    latestSeenTs,
+    baselineEstablished
   });
 }, 30000);
 
@@ -211,7 +235,7 @@ setTimeout(() => {
   stopping = true;
   clearInterval(pollTimer);
   clearInterval(heartbeatTimer);
-  log("INFO", "monitor_stopped", "BTC Hyperliquid liquidation monitor stopped");
+  log("INFO", "monitor_stopped", "BTC liquidation monitor stopped");
 }, RUN_MS);
 
 process.on("SIGTERM", () => {
