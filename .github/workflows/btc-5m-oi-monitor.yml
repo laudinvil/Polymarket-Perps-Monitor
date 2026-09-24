@@ -1,9 +1,6 @@
 name: BTC 5M NEXT Market Monitor
 
 on:
-  push:
-    branches:
-      - main
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
