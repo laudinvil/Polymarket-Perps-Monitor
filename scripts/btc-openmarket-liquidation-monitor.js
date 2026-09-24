@@ -124,6 +124,29 @@ function startMonitor() {
   const startedAt = Date.now();
   let stopping = false;
 
+  // OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
+  // A small safety margin leaves room for auth/subscribe plus heartbeats and reconnects.
+  const WS_MESSAGE_LIMIT = 8;
+  const WS_WINDOW_MS = 60 * 1000;
+  const wsMessageTimes = [];
+
+  async function sendWs(ws, payload) {
+    const now = Date.now();
+    while (wsMessageTimes.length && now - wsMessageTimes[0] >= WS_WINDOW_MS) {
+      wsMessageTimes.shift();
+    }
+
+    if (wsMessageTimes.length >= WS_MESSAGE_LIMIT) {
+      const waitMs = WS_WINDOW_MS - (now - wsMessageTimes[0]) + 50;
+      console.log("OpenMarket WS rate guard: waiting " + waitMs + "ms");
+      await sleep(waitMs);
+      return sendWs(ws, payload);
+    }
+
+    ws.send(JSON.stringify(payload));
+    wsMessageTimes.push(Date.now());
+  }
+
   async function connect() {
     if (stopping) return;
 
@@ -143,12 +166,12 @@ function startMonitor() {
       ws.addEventListener("open", () => {
         console.log("OpenMarket WebSocket connected: " + WS_URL);
 
-        ws.send(JSON.stringify({
+        sendWs(ws, {
           jsonrpc: "2.0",
           id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
-        }));
+        }).catch(err => console.error("OpenMarket auth send failed: " + err.stack));
 
         const channels = SUBSCRIPTIONS.map(item => ({
           type: "LIQUIDATION",
@@ -157,7 +180,7 @@ function startMonitor() {
           symbol: item.symbol
         }));
 
-        ws.send(JSON.stringify({
+        sendWs(ws, {
           jsonrpc: "2.0",
           id: 2,
           method: "public/subscribe",
@@ -165,11 +188,13 @@ function startMonitor() {
             channels,
             version: "v2"
           }
-        }));
+        }).catch(err => console.error("OpenMarket subscribe send failed: " + err.stack));
 
         pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            try { ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() })); } catch (_) {}
+            sendWs(ws, { type: "ping", timestamp: Date.now() }).catch(err => {
+              console.error("OpenMarket heartbeat send failed: " + err.stack);
+            });
           }
         }, 20000);
       });
