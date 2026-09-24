@@ -41,8 +41,8 @@ function buildTelegramText(market, state) {
   return [
     "🔥 BTC · NEXT 5M",
     "",
-    "UP: " + formatPrice(state.up.midpoint),
-    "DOWN: " + formatPrice(state.down.midpoint),
+    "UP: " + formatPrice(displayPrice(state.up)),
+    "DOWN: " + formatPrice(displayPrice(state.down)),
     "",
     "➡️ NEXT · Polymarket 5M",
     market.url
@@ -192,6 +192,7 @@ function createPriceState() {
     bestAsk: null,
     midpoint: null,
     lastTrade: null,
+    price: null,
     updatedAt: null
   };
 }
@@ -220,6 +221,7 @@ function updatePrice(priceState, data) {
 
   const price = Number(data.price);
   if (Number.isFinite(price)) {
+    priceState.price = price;
     priceState.lastTrade = price;
   }
 
@@ -246,8 +248,20 @@ function updateFromBook(priceState, bids, asks) {
 
   const mid = midpoint(priceState.bestBid, priceState.bestAsk);
   if (mid !== null) priceState.midpoint = mid;
+  if (priceState.price == null && priceState.lastTrade != null) {
+    priceState.price = priceState.lastTrade;
+  }
 
   priceState.updatedAt = new Date().toISOString();
+}
+
+function displayPrice(priceState) {
+  const price = Number(priceState.price);
+  if (Number.isFinite(price)) return price;
+  const mid = Number(priceState.midpoint);
+  if (Number.isFinite(mid)) return mid;
+  const trade = Number(priceState.lastTrade);
+  return Number.isFinite(trade) ? trade : null;
 }
 
 async function runTelegramUpdater(currentStart, market) {
@@ -267,8 +281,8 @@ async function runTelegramUpdater(currentStart, market) {
     }
 
     // Do not create the message until at least one live CLOB price exists.
-    if (!Number.isFinite(Number(state.up.midpoint)) &&
-        !Number.isFinite(Number(state.down.midpoint))) {
+    if (!Number.isFinite(Number(displayPrice(state.up))) &&
+        !Number.isFinite(Number(displayPrice(state.down)))) {
       return;
     }
 
@@ -294,8 +308,8 @@ async function runTelegramUpdater(currentStart, market) {
       console.log(
         "Telegram NEXT message edited message_id=" +
         telegramMessageId +
-        " UP=" + formatPrice(state.up.midpoint) +
-        " DOWN=" + formatPrice(state.down.midpoint)
+        " UP=" + formatPrice(displayPrice(state.up)) +
+        " DOWN=" + formatPrice(displayPrice(state.down))
       );
     } catch (err) {
       console.error(
@@ -510,8 +524,8 @@ async function monitorPeriod(currentStart) {
   console.log(
     "NEXT market monitoring finished: " +
     market.slug +
-    " UP=" + (finalState.up.midpoint != null ? finalState.up.midpoint.toFixed(4) : "n/a") +
-    " DOWN=" + (finalState.down.midpoint != null ? finalState.down.midpoint.toFixed(4) : "n/a")
+    " UP=" + formatPrice(displayPrice(finalState.up)) +
+    " DOWN=" + formatPrice(displayPrice(finalState.down))
   );
 }
 
