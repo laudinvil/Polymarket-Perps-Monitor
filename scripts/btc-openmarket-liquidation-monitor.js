@@ -3,6 +3,10 @@ const MIN_LIQUIDATION_USD = Number(process.env.MIN_LIQUIDATION_USD || "0");
 const RECONNECT_MS = 3000;
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 
+// OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
+const WS_MESSAGE_LIMIT = 9;
+const WS_WINDOW_MS = 60 * 1000;
+
 const SUBSCRIPTIONS = [
   { exchange: "BINANCE_FUTURES", symbol: "BTCUSDT" },
   { exchange: "BYBIT", symbol: "BTCUSDT" },
@@ -123,13 +127,7 @@ function startMonitor() {
   const seen = new Set();
   const startedAt = Date.now();
   let stopping = false;
-
-  // OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
-  // A small safety margin leaves room for auth/subscribe plus heartbeats and reconnects.
-  const WS_MESSAGE_LIMIT = 9;
-  const WS_WINDOW_MS = 60 * 1000;
   const wsMessageTimes = [];
-
   let wsSendQueue = Promise.resolve();
 
   function sendWs(ws, payload) {
@@ -179,7 +177,7 @@ function startMonitor() {
           id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
-        }).catch(err => console.error("OpenMarket auth send failed: " + err.stack));
+        });
 
         const channels = SUBSCRIPTIONS.map(item => ({
           type: "LIQUIDATION",
@@ -192,17 +190,12 @@ function startMonitor() {
           jsonrpc: "2.0",
           id: 2,
           method: "public/subscribe",
-          params: {
-            channels,
-            version: "v2"
-          }
-        }).catch(err => console.error("OpenMarket subscribe send failed: " + err.stack));
+          params: { channels, version: "v2" }
+        });
 
         pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            sendWs(ws, { type: "ping", timestamp: Date.now() }).catch(err => {
-              console.error("OpenMarket heartbeat send failed: " + err.stack);
-            });
+            sendWs(ws, { type: "ping", timestamp: Date.now() });
           }
         }, 9000);
       });
@@ -282,7 +275,6 @@ function startMonitor() {
         );
         finish();
       });
-
     });
 
     if (!stopping) {
