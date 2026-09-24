@@ -1,19 +1,19 @@
-name: BTC 5M OI Monitor
+name: BTC 5M NEXT Market Monitor
 
 on:
   push:
     branches:
       - main
   schedule:
-    - cron: "0-59/5 * * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: btc-5m-oi-monitor
-  cancel-in-progress: true
+  group: btc-5m-next-market-monitor
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -26,17 +26,5 @@ jobs:
           fetch-depth: 1
           token: ${{ github.token }}
 
-      - name: Install Convex dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Deploy Convex backend
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: npx --yes convex@latest deploy
-
-      - name: Run BTC 5M OI monitor
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      - name: Run BTC 5M NEXT market monitor
         run: node scripts/btc-5m-oi-monitor.js
