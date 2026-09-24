@@ -130,21 +130,29 @@ function startMonitor() {
   const WS_WINDOW_MS = 60 * 1000;
   const wsMessageTimes = [];
 
-  async function sendWs(ws, payload) {
-    const now = Date.now();
-    while (wsMessageTimes.length && now - wsMessageTimes[0] >= WS_WINDOW_MS) {
-      wsMessageTimes.shift();
-    }
+  let wsSendQueue = Promise.resolve();
 
-    if (wsMessageTimes.length >= WS_MESSAGE_LIMIT) {
-      const waitMs = WS_WINDOW_MS - (now - wsMessageTimes[0]) + 50;
-      console.log("OpenMarket WS rate guard: waiting " + waitMs + "ms");
-      await sleep(waitMs);
-      return sendWs(ws, payload);
-    }
+  function sendWs(ws, payload) {
+    wsSendQueue = wsSendQueue.then(async () => {
+      const now = Date.now();
+      while (wsMessageTimes.length && now - wsMessageTimes[0] >= WS_WINDOW_MS) {
+        wsMessageTimes.shift();
+      }
 
-    ws.send(JSON.stringify(payload));
-    wsMessageTimes.push(Date.now());
+      if (wsMessageTimes.length >= WS_MESSAGE_LIMIT) {
+        const waitMs = WS_WINDOW_MS - (now - wsMessageTimes[0]) + 50;
+        console.log("OpenMarket WS rate guard: waiting " + waitMs + "ms");
+        await sleep(waitMs);
+      }
+
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(payload));
+      wsMessageTimes.push(Date.now());
+    }).catch(err => {
+      console.error("OpenMarket WS send queue error: " + err.stack);
+    });
+
+    return wsSendQueue;
   }
 
   async function connect() {
@@ -196,7 +204,7 @@ function startMonitor() {
               console.error("OpenMarket heartbeat send failed: " + err.stack);
             });
           }
-        }, 7000);
+        }, 9000);
       });
 
       ws.addEventListener("message", event => {
@@ -275,7 +283,6 @@ function startMonitor() {
         finish();
       });
 
-      setTimeout(finish, 60000);
     });
 
     if (!stopping) {
@@ -300,6 +307,7 @@ function startMonitor() {
 }
 
 console.log("OpenMarket BTC liquidation monitor started");
+console.log("OpenMarket WS client rate guard: " + WS_MESSAGE_LIMIT + " messages/min; heartbeat: 9s");
 console.log("Minimum liquidation USD: " + MIN_LIQUIDATION_USD);
 console.log("Subscriptions: " + SUBSCRIPTIONS.map(x => x.exchange + ":" + x.symbol).join(", "));
 startMonitor();
