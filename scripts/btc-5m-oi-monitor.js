@@ -250,86 +250,88 @@ function updateFromBook(priceState, bids, asks) {
   priceState.updatedAt = new Date().toISOString();
 }
 
-async function runWebSocket(currentStart, market) {
-  // Keep Telegram message identity across WebSocket reconnects.
-  // Otherwise every reconnect creates a duplicate message for the same NEXT market.
+async function runTelegramUpdater(currentStart, market) {
   let telegramMessageId = null;
   let telegramLastText = null;
   let telegramCreateAttempted = false;
-  let telegramUpdateInFlight = false;
+  let stopped = false;
 
+  async function updateTelegram() {
+    if (stopped) return;
+    if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+
+    const state = readState();
+    if (!state.up || !state.down ||
+        Number(state.monitoredNextPeriodStart) !== market.start) {
+      return;
+    }
+
+    // Do not create the message until at least one live CLOB price exists.
+    if (!Number.isFinite(Number(state.up.midpoint)) &&
+        !Number.isFinite(Number(state.down.midpoint))) {
+      return;
+    }
+
+    const text = buildTelegramText(market, state);
+    if (text === telegramLastText) return;
+
+    if (telegramMessageId === null) {
+      if (telegramCreateAttempted) return;
+
+      telegramCreateAttempted = true;
+      try {
+        telegramMessageId = await createTelegramMessage(market, state);
+        telegramLastText = text;
+      } catch (err) {
+        console.error("Telegram initial send failed; refusing duplicate send for NEXT market: " + err.message);
+      }
+      return;
+    }
+
+    try {
+      await editTelegramMessage(telegramMessageId, market, state);
+      telegramLastText = text;
+      console.log(
+        "Telegram NEXT message edited message_id=" +
+        telegramMessageId +
+        " UP=" + formatPrice(state.up.midpoint) +
+        " DOWN=" + formatPrice(state.down.midpoint)
+      );
+    } catch (err) {
+      console.error(
+        "Telegram edit failed; message_id=" +
+        telegramMessageId +
+        ": " + err.message
+      );
+    }
+  }
+
+  await updateTelegram();
+
+  const timer = setInterval(function() {
+    updateTelegram().catch(function(err) {
+      console.error("Telegram updater error: " + err.stack);
+    });
+  }, TELEGRAM_UPDATE_MS);
+
+  return function stopTelegramUpdater() {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+async function runWebSocket(currentStart, market) {
   while (periodStart(Math.floor(Date.now() / 1000)) === currentStart) {
     try {
       await new Promise(function(resolve) {
         const ws = new WebSocket(WS_URL);
         let pingTimer = null;
         let closed = false;
-        let telegramUpdateTimer = null;
-        let telegramUpdateQueued = false;
-
-        async function updateTelegram(force) {
-          if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
-            return;
-          }
-
-          if (telegramUpdateInFlight) return;
-          telegramUpdateInFlight = true;
-
-          try {
-            const state = readState();
-            if (!state.up || !state.down ||
-                Number(state.monitoredNextPeriodStart) !== market.start) {
-              return;
-            }
-
-            const text = buildTelegramText(market, state);
-            if (!force && text === telegramLastText) return;
-
-            if (telegramMessageId === null) {
-              if (telegramCreateAttempted) {
-                console.log("Telegram message creation already attempted for NEXT market; refusing to send a second message.");
-                return;
-              }
-
-              telegramCreateAttempted = true;
-              try {
-                telegramMessageId = await createTelegramMessage(market, state);
-              } catch (err) {
-                console.error("Telegram initial send failed; no automatic second send for this NEXT market: " + err.message);
-                return;
-              }
-            } else {
-              try {
-                await editTelegramMessage(telegramMessageId, market, state);
-              } catch (err) {
-                console.error("Telegram edit failed; message_id=" + telegramMessageId + ": " + err.message);
-                return;
-              }
-            }
-
-            telegramLastText = text;
-          } finally {
-            telegramUpdateInFlight = false;
-          }
-        }
-
-        function queueTelegramUpdate() {
-          telegramUpdateQueued = true;
-          if (telegramUpdateTimer) return;
-
-          telegramUpdateTimer = setTimeout(async function() {
-            telegramUpdateTimer = null;
-            if (!telegramUpdateQueued) return;
-            telegramUpdateQueued = false;
-            await updateTelegram(false);
-          }, TELEGRAM_UPDATE_MS);
-        }
 
         function finish() {
           if (closed) return;
           closed = true;
           if (pingTimer) clearInterval(pingTimer);
-          if (telegramUpdateTimer) clearTimeout(telegramUpdateTimer);
           try { ws.close(); } catch (_) {}
           resolve();
         }
@@ -389,7 +391,6 @@ async function runWebSocket(currentStart, market) {
               " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
               " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
             );
-            queueTelegramUpdate();
             return;
           }
 
@@ -423,7 +424,6 @@ async function runWebSocket(currentStart, market) {
 
             state.updatedAt = new Date().toISOString();
             writeState(state);
-            queueTelegramUpdate();
             return;
           }
 
@@ -443,8 +443,7 @@ async function runWebSocket(currentStart, market) {
                 "NEXT " + (side === state.up ? "UP" : "DOWN") +
                 " last trade=" + price.toFixed(4)
               );
-              queueTelegramUpdate();
-            }
+              }
           }
         });
 
@@ -496,7 +495,13 @@ async function monitorPeriod(currentStart) {
   const state = createNextState(currentStart, market);
   writeState(state);
 
-  await runWebSocket(currentStart, market);
+  const stopTelegramUpdater = await runTelegramUpdater(currentStart, market);
+
+  try {
+    await runWebSocket(currentStart, market);
+  } finally {
+    stopTelegramUpdater();
+  }
 
   const finalState = readState();
   finalState.finishedMonitoringAt = new Date().toISOString();
