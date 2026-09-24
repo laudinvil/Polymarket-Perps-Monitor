@@ -1,6 +1,8 @@
 name: BTC 5M NEXT Market Monitor
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
@@ -15,6 +17,7 @@ concurrency:
 
 jobs:
   monitor:
+    if: github.event_name != 'push' || github.event.head_commit.message == 'START BTC 5M MONITOR'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
