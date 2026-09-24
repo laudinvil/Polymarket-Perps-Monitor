@@ -77,3 +77,32 @@ export const claim = mutation({
     return { allowed: true };
   },
 });
+
+
+export const claimTelegramMarket = mutation({
+  args: {
+    marketSlug: v.string(),
+  },
+  returns: v.object({ allowed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const monitor = MONITOR;
+    const existing = await ctx.db
+      .query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) =>
+        q.eq("monitor", monitor).eq("marketSlug", args.marketSlug)
+      )
+      .first();
+
+    if (existing) {
+      return { allowed: false };
+    }
+
+    await ctx.db.insert("telegramDedupe", {
+      monitor,
+      marketSlug: args.marketSlug,
+      claimedAt: Date.now(),
+    });
+
+    return { allowed: true };
+  },
+});
