@@ -76,13 +76,7 @@ function logPersistent(level, event, message, data) {
 }
 
 const SUBSCRIPTIONS = [
-  { exchange: "BINANCE_FUTURES", symbol: "BTCUSDT" },
-  { exchange: "BYBIT", symbol: "BTCUSDT" },
-  { exchange: "OKEX_SWAP", symbol: "BTC-USDT-SWAP" },
-  { exchange: "HYPERLIQUID_FUTURES", symbol: "BTC" },
-  { exchange: "BITMEX", symbol: "XBTUSD" },
-  { exchange: "BITGET", symbol: "BTCUSDT" },
-  { exchange: "GATE_IO_FUTURES", symbol: "BTC_USDT" }
+  { exchange: "BINANCE_FUTURES", symbol: "BTCUSDT" }
 ];
 
 function sleep(ms) {
@@ -310,11 +304,9 @@ function startMonitor() {
                 channel
               });
 
-              // Stay well below the 10 messages/min free-plan limit while
-              // allowing the server to process each subscription independently.
-              if (i < SUBSCRIPTIONS.length - 1) {
-                await sleep(7000);
-              }
+              // Only one documented BTC Binance liquidation channel is enabled for
+              // the diagnostic run. Additional exchanges will be added after this
+              // subscription is confirmed stable.
             }
 
             subscribeTimer = setTimeout(() => {
