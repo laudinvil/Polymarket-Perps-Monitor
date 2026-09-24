@@ -29,14 +29,50 @@ async function convexMutation(path, args) {
   return json.value;
 }
 
+const persistentLogQueue = [];
+let persistentLogFlushTimer = null;
+let persistentLogFlushing = false;
+
+async function flushPersistentLogs() {
+  if (persistentLogFlushing || persistentLogQueue.length === 0) return;
+  persistentLogFlushing = true;
+  const batch = persistentLogQueue.splice(0, 20);
+  try {
+    await convexMutation("btc5mState:logOpenMarketBatch", { logs: batch });
+  } catch (err) {
+    console.error("Persistent log batch failed: " + err.message);
+    // Put failed entries back so transient Convex failures do not lose diagnostics.
+    persistentLogQueue.unshift(...batch);
+  } finally {
+    persistentLogFlushing = false;
+  }
+}
+
 function logPersistent(level, event, message, data) {
   console.log("PERSISTENT " + level + " " + event + " " + message);
-  convexMutation("btc5mState:logOpenMarket", {
+  persistentLogQueue.push({
     level,
     event,
     message,
     data: data == null ? undefined : JSON.stringify(data)
-  }).catch(err => console.error("Persistent log failed: " + err.message));
+  });
+
+  if (persistentLogQueue.length >= 20) {
+    void flushPersistentLogs();
+  }
+
+  if (!persistentLogFlushTimer) {
+    persistentLogFlushTimer = setTimeout(async () => {
+      persistentLogFlushTimer = null;
+      await flushPersistentLogs();
+      if (persistentLogQueue.length > 0) {
+        persistentLogFlushTimer = setTimeout(() => {
+          persistentLogFlushTimer = null;
+          void flushPersistentLogs();
+        }, 2000);
+      }
+    }, 2000);
+  }
 }
 
 const SUBSCRIPTIONS = [
@@ -318,9 +354,11 @@ function startMonitor() {
 
         const rawMessage = JSON.stringify(message);
         console.log("OpenMarket WS message: " + rawMessage.slice(0, 4000));
-        logPersistent("INFO", "ws_message", "OpenMarket WebSocket message", { message: rawMessage.slice(0, 4000) });
 
         if (message.error) {
+          logPersistent("ERROR", "ws_message_error", "OpenMarket WebSocket error message", {
+            message: rawMessage.slice(0, 4000)
+          });
           console.error("OpenMarket WS error: " + JSON.stringify(message.error));
           logPersistent("ERROR", "auth_or_protocol_error", "OpenMarket returned an error response", {
             error: message.error,
