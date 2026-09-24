@@ -298,17 +298,10 @@ function detectFirstIncrease(state, side, label) {
     return;
   }
 
-  if (baseline < 0.5) {
-    if (current < 0.5) {
-      state[baselineKey] = current;
-      return;
-    }
-
-    // Crossing from below 0.5 to 0.5 or above is never an increase.
-    // Reset the baseline at the first value at/above 0.5.
-    state[baselineKey] = current;
-    return;
-  }
+  // The baseline is the actual starting price captured in the first
+  // Telegram message for this NEXT market. Never replace it with 0.5
+  // or with a later price.
+  if (baseline < 0.5) return;
 
   if (current >= 0.5 && current > baseline) {
     state.firstIncrease = {
@@ -326,9 +319,6 @@ function detectFirstIncrease(state, side, label) {
     );
   }
 
-  if (current >= 0.5) {
-    state[baselineKey] = current;
-  }
 }
 
 async function runTelegramUpdater(currentStart, market) {
