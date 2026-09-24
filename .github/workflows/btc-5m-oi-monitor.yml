@@ -44,6 +44,9 @@ jobs:
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" || true
           done
 
+      - name: Install Convex dependencies
+        run: npm install --no-audit --no-fund
+
       - name: Deploy Convex backend
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
