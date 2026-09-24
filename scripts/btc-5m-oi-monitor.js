@@ -216,6 +216,8 @@ function createNextState(currentStart, market) {
     down: createPriceState(),
     firstIncrease: null,
     increaseTrackingStarted: false,
+    increaseBaselineUp: null,
+    increaseBaselineDown: null,
     updatedAt: new Date().toISOString()
   };
 }
@@ -285,17 +287,26 @@ function detectFirstIncrease(state, side, label) {
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return;
 
-  const previous = Number(side.lastObservedDisplayPrice);
+  const baselineKey = label === "UP"
+    ? "increaseBaselineUp"
+    : "increaseBaselineDown";
 
-  if (
-    Number.isFinite(previous) &&
-    previous >= 0.5 &&
-    current >= 0.5 &&
-    current > previous
-  ) {
+  let baseline = Number(state[baselineKey]);
+
+  if (!Number.isFinite(baseline)) {
+    if (current >= 0.5) state[baselineKey] = current;
+    return;
+  }
+
+  if (baseline < 0.5) {
+    if (current >= 0.5) state[baselineKey] = current;
+    return;
+  }
+
+  if (current >= 0.5 && current > baseline) {
     state.firstIncrease = {
       side: label,
-      from: previous,
+      from: baseline,
       to: current,
       detectedAt: new Date().toISOString()
     };
@@ -303,12 +314,14 @@ function detectFirstIncrease(state, side, label) {
     console.log(
       "FIRST INCREASE detected side=" +
       label +
-      " from=" + previous.toFixed(4) +
+      " from=" + baseline.toFixed(4) +
       " to=" + current.toFixed(4)
     );
   }
 
-  if (current >= 0.5) side.lastObservedDisplayPrice = current;
+  if (current >= 0.5 && current !== baseline) {
+    state[baselineKey] = current;
+  }
 }
 
 async function runTelegramUpdater(currentStart, market) {
@@ -346,8 +359,8 @@ async function runTelegramUpdater(currentStart, market) {
             Number(baselineState.monitoredNextPeriodStart) === market.start) {
           const upBaseline = displayPrice(baselineState.up);
           const downBaseline = displayPrice(baselineState.down);
-          if (Number.isFinite(upBaseline)) baselineState.up.lastObservedDisplayPrice = upBaseline;
-          if (Number.isFinite(downBaseline)) baselineState.down.lastObservedDisplayPrice = downBaseline;
+          baselineState.increaseBaselineUp = Number.isFinite(upBaseline) ? upBaseline : null;
+          baselineState.increaseBaselineDown = Number.isFinite(downBaseline) ? downBaseline : null;
           baselineState.increaseTrackingStarted = true;
           baselineState.updatedAt = new Date().toISOString();
           writeState(baselineState);
