@@ -194,6 +194,7 @@ function startMonitor() {
       let settled = false;
       let pingTimer = null;
       let subscribed = false;
+      let authAccepted = false;
       let opened = false;
       let authTimer = null;
       let subscribeTimer = null;
@@ -258,13 +259,20 @@ function startMonitor() {
 
         if (message.error) {
           console.error("OpenMarket WS error: " + JSON.stringify(message.error));
+          logPersistent("ERROR", "auth_or_protocol_error", "OpenMarket returned an error response", {
+            error: message.error,
+            opened,
+            authAccepted,
+            subscribed
+          });
           logPersistent("ERROR", "ws_protocol_error", "OpenMarket protocol error", { error: message.error });
           logPersistent("ERROR", "ws_error", "OpenMarket WebSocket error", message.error);
           return;
         }
 
-        if (message.result && !subscribed && !message.points) {
-          logPersistent("INFO", "auth_response_candidate", "OpenMarket result received before subscription", { result: message.result });
+        if (message.result && !authAccepted && !message.points) {
+          authAccepted = true;
+          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
           subscribed = true;
           if (authTimer) clearTimeout(authTimer);
 
@@ -340,6 +348,7 @@ function startMonitor() {
           code: event.code,
           reason: String(event.reason || ""),
           opened,
+          authAccepted,
           subscribed,
           readyState: ws.readyState
         });
