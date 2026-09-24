@@ -71,7 +71,7 @@ function buildTelegramText(market, state) {
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
     "",
-    "TIME: " + formatAlertTime(),
+    formatAlertTime(),
     "",
     (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " + formatPrice(from) + " → " + formatPrice(to),
