@@ -1,4 +1,4 @@
-name: BTC 5M NEXT Market Monitor
+name: BTC 5M NEXT Market Monitor # start monitor
 
 on:
   push:
