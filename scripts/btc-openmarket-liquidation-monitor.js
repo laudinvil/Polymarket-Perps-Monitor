@@ -211,9 +211,8 @@ function startMonitor() {
 
     await new Promise(resolve => {
       console.log("OpenMarket: about to create WebSocket");
-      convexMutation("btc5mState:logOpenMarket", { level: "INFO", event: "ws_connect_attempt", message: "Opening WebSocket connection", data: JSON.stringify({ url: WS_URL }) })
-        .catch(err => console.error("Connect-attempt persistent log failed: " + err.message))
-        .finally(() => createSocket(resolve));
+      logPersistent("INFO", "ws_connect_attempt", "Opening WebSocket connection", { url: WS_URL });
+      createSocket(resolve);
     });
 
     function createSocket(resolve) {
@@ -371,7 +370,7 @@ function startMonitor() {
           return;
         }
 
-        // Subscription responses use id=0. Handle them before generic result messages
+        // Subscription responses use the request id (1..7). Handle them before generic result messages
         // so a subscription response cannot be mistaken for authentication.
         if (Number.isInteger(message.id) && message.id >= 1 && message.id <= SUBSCRIPTIONS.length) {
           const channel = SUBSCRIPTIONS[message.id - 1];
