@@ -71,9 +71,8 @@ function buildTelegramText(market, state) {
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
     "",
-    formatAlertTime(),
-    "",
-    (side === "UP" ? "⬇️ BUY DOWN" : "⬆️ BUY UP"),
+    (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
+      " " + formatPrice(from) + " → " + formatPrice(to),
     "",
     "➡️ Polymarket 5M",
     market.url
@@ -336,7 +335,7 @@ function detectThresholdCross(state, side, label, marketStart) {
 
   // Equal threshold for both sides. A 3% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 20;
+  const FIRST_INCREASE_PCT = 4;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
