@@ -1,9 +1,9 @@
 {
-  "periodStart": 1790227500,
-  "snapshotOffset": 270,
-  "avgUpPrice": 0.6237055240971537,
-  "avgDownPrice": 0.38869813696678435,
-  "upTradeCount": 457,
-  "downTradeCount": 283,
-  "updatedAt": "2026-09-24T05:29:30.273Z"
+  "periodStart": 1790227800,
+  "snapshotOffset": 265,
+  "avgUpPrice": 0.31142674311921564,
+  "avgDownPrice": 0.7528928639654551,
+  "upTradeCount": 255,
+  "downTradeCount": 385,
+  "updatedAt": "2026-09-24T05:34:26.153Z"
 }
