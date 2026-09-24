@@ -112,7 +112,10 @@ function processLiquidation(liq) {
     "SIZE: $" + usd.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "AMOUNT: " + liq.amount.toFixed(6) + " BTC",
     "EXCHANGE: HYPERLIQUID",
-    "TIME: " + new Date(liq.time).toISOString().replace("T", " ").replace(".000Z", " UTC")
+    "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
+    "",
+    "➡️ TF",
+    "https://tf.xyz/events/"
   ].join("\n");
 
   sendTelegram(text).catch(err =>
@@ -151,6 +154,12 @@ async function pollMarginPad() {
     }
 
     const events = Array.isArray(body?.events) ? body.events : [];
+    if (!Array.isArray(body?.events)) {
+      log("WARN", "marginpad_unexpected_shape", "MarginPad response has no events array; monitoring continues", {
+        bodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
+        bodyType: typeof body
+      });
+    }
 
     sourceState.MARGINPAD.state = "OPEN";
     sourceState.MARGINPAD.successfulRequests += 1;
