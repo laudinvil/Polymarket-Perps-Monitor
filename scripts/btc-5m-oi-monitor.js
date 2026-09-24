@@ -7,6 +7,24 @@ const PERIOD = 300;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 const TELEGRAM_UPDATE_MS = 3000;
 
+const CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL || null;
+
+async function convexMutation(path, args) {
+  if (!CONVEX_URL) throw new Error("Missing CONVEX_URL");
+  const res = await fetch(CONVEX_URL + "/api/mutation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: path, args: args, format: "json" }),
+    signal: AbortSignal.timeout(10000)
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error("Convex HTTP " + res.status + ": " + body);
+  const json = JSON.parse(body);
+  if (json.status !== "success") throw new Error("Convex mutation error: " + (json.errorMessage || body));
+  return json.value;
+}
+
+
 async function telegramRequest(method, payload) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error("Missing TELEGRAM_BOT_TOKEN");
@@ -316,7 +334,7 @@ function detectFirstIncrease(state, side, label) {
 async function runTelegramUpdater(currentStart, market) {
   let telegramMessageId = null;
   let telegramLastText = null;
-  let telegramCreateAttempted = false;
+  let telegramMarketClaimed = false;
   let stopped = false;
 
   async function updateTelegram() {
@@ -337,11 +355,17 @@ async function runTelegramUpdater(currentStart, market) {
     const text = buildTelegramText(market, state);
     if (text === telegramLastText) return;
 
-    if (telegramMessageId === null) {
-      if (telegramCreateAttempted) return;
-
-      telegramCreateAttempted = true;
+    if (telegramMessageId === null && !telegramMarketClaimed) {
       try {
+        const claim = await convexMutation("btc5mState:claimTelegramMarket", { marketSlug: market.slug });
+        if (!claim.allowed) {
+          telegramMarketClaimed = true;
+          telegramMessageId = -1;
+          console.log("Telegram DEDUPE blocked market=" + market.slug);
+          return;
+        }
+        telegramMarketClaimed = true;
+
         // Freeze the actual prices shown in the first Telegram message.
         // Nothing observed before this snapshot can become FIRST INCREASE.
         const baselineState = readState();
@@ -367,7 +391,7 @@ async function runTelegramUpdater(currentStart, market) {
         }
         telegramLastText = buildTelegramText(market, baselineState);
       } catch (err) {
-        console.error("Telegram initial send failed; refusing duplicate send for NEXT market: " + err.message);
+        console.error("Telegram initial send/Convex claim failed; no message sent: " + err.message);
       }
       return;
     }
