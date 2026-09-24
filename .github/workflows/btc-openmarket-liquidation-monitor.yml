@@ -34,7 +34,7 @@ jobs:
       - name: Deploy Convex logging functions
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: npx convex deploy
+        run: npx convex deploy --cmd 'printf "CONVEX_URL=%s\n" "$CONVEX_URL" >> "$GITHUB_ENV"'
 
       - name: Run BTC liquidation monitor
         env:
@@ -42,5 +42,5 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MIN_LIQUIDATION_USD: "0"
-          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+          CONVEX_URL: ${{ env.CONVEX_URL }}
         run: node scripts/btc-openmarket-liquidation-monitor.js
