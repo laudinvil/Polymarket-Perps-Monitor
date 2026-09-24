@@ -241,6 +241,7 @@ function createNextState(currentStart, market) {
     down: createPriceState(),
     firstIncrease: null,
     alerted: false,
+    increaseStreak: null,
     initialPriceUp: null,
     initialPriceDown: null,
     updatedAt: new Date().toISOString()
@@ -306,7 +307,7 @@ function displayPrice(priceState) {
 }
 
 function detectThresholdCross(state, side, label) {
-  if (state.alerted) return false;
+  if (state.firstIncrease) return false;
 
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return false;
@@ -330,7 +331,7 @@ function detectThresholdCross(state, side, label) {
 
   // Equal threshold for both sides. A 3% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 3;
+  const FIRST_INCREASE_PCT = 2.5;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
@@ -340,16 +341,31 @@ function detectThresholdCross(state, side, label) {
       movementPct: movementPct,
       detectedAt: new Date().toISOString()
     };
-    state.alerted = true;
+
+    const previousStreak = state.increaseStreak &&
+      state.increaseStreak.side === label
+      ? Number(state.increaseStreak.count) || 0
+      : 0;
+
+    state.increaseStreak = {
+      side: label,
+      count: previousStreak + 1,
+      lastMarketStart: state.monitoredNextPeriodStart,
+      detectedAt: new Date().toISOString()
+    };
+
+    state.alerted = state.increaseStreak.count >= 2;
 
     console.log(
-      "FIRST INCREASE detected side=" + label +
+      "INCREASE detected side=" + label +
       " from=" + baseline.toFixed(4) +
       " to=" + current.toFixed(4) +
-      " movePct=" + movementPct.toFixed(3) + "%"
+      " movePct=" + movementPct.toFixed(3) + "%" +
+      " streak=" + state.increaseStreak.count +
+      " alert=" + state.alerted
     );
 
-    return true;
+    return state.alerted;
   }
 
   return false;
@@ -599,7 +615,11 @@ async function monitorPeriod(currentStart) {
     market.url
   );
 
+  const previousState = readState();
   const state = createNextState(currentStart, market);
+  if (previousState.increaseStreak && previousState.increaseStreak.side) {
+    state.increaseStreak = previousState.increaseStreak;
+  }
   writeState(state);
 
   const stopTelegramUpdater = await runTelegramUpdater(currentStart, market);
