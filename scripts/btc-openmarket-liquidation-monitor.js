@@ -216,8 +216,6 @@ function startMonitor() {
         logPersistent("INFO", "ws_connected", "WebSocket connected", { url: WS_URL });
 
         sendWs(ws, {
-          jsonrpc: "2.0",
-          id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
         });
@@ -248,7 +246,7 @@ function startMonitor() {
           return;
         }
 
-        console.log("OpenMarket WS message type=" + String(message.method || message.result?.type || message.type || "unknown"));
+        console.log("OpenMarket WS message: " + JSON.stringify(message).slice(0, 2000));
 
         if (message.error) {
           console.error("OpenMarket WS error: " + JSON.stringify(message.error));
@@ -256,7 +254,7 @@ function startMonitor() {
           return;
         }
 
-        if (message.id === 1 && message.result && !subscribed) {
+        if (message.result && !subscribed && !message.points) {
           subscribed = true;
           if (authTimer) clearTimeout(authTimer);
 
@@ -271,7 +269,7 @@ function startMonitor() {
 
           sendWs(ws, {
             jsonrpc: "2.0",
-            id: 2,
+            id: 0,
             method: "public/subscribe",
             params: {
               channels,
@@ -287,7 +285,7 @@ function startMonitor() {
           return;
         }
 
-        if (message.id === 2 || message.result?.channels || message.result?.subscriptions) {
+        if (message.id === 0 || message.result?.channels || message.result?.subscriptions) {
           if (subscribeTimer) clearTimeout(subscribeTimer);
           logPersistent("INFO", "subscribe_response", "Subscription response received", message.result || message);
         }
