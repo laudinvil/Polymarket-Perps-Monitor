@@ -7,7 +7,7 @@ const BYBIT_WS_URL = "wss://stream.bybit.com/v5/public/linear";
 const RUN_MS = 6 * 60 * 60 * 1000;
 const COOLDOWN_MS = 30 * 1000;
 const RECONNECT_MS = 3000;
-const TURBOFLOW_URL = "https://laudinvil.github.io/Turboflow/";
+const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/";
 
 let stopping = false;
 let cooldownUntil = 0;
@@ -271,7 +271,7 @@ log("INFO", "monitor_started", "BTC liquidation monitor started via Binance and 
   symbol: "BTCUSDT",
   cooldownMs: COOLDOWN_MS,
   directionMode: "raw_exchange_side",
-  turbowflowUrl: TURBOFLOW_URL
+  turboflowUrl: TURBOFLOW_URL
 });
 
 if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
