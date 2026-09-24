@@ -194,6 +194,7 @@ function startMonitor() {
       let settled = false;
       let pingTimer = null;
       let subscribed = false;
+      let subscriptionSent = false;
       let authAccepted = false;
       let opened = false;
       let authTimer = null;
@@ -223,6 +224,8 @@ function startMonitor() {
         logPersistent("INFO", "ws_connected", "WebSocket connected", { url: WS_URL });
 
         sendWs(ws, {
+          jsonrpc: "2.0",
+          id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
         });
@@ -230,7 +233,7 @@ function startMonitor() {
         logPersistent("INFO", "auth_sent", "Authentication request sent");
 
         authTimer = setTimeout(() => {
-          if (!subscribed) {
+          if (!authAccepted) {
             logPersistent("ERROR", "auth_timeout", "No authentication response within timeout", { timeoutMs: WS_AUTH_TIMEOUT_MS });
             try { ws.close(); } catch (_) {}
           }
@@ -273,7 +276,6 @@ function startMonitor() {
         if (message.result && !authAccepted && !message.points) {
           authAccepted = true;
           logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
-          subscribed = true;
           if (authTimer) clearTimeout(authTimer);
 
           logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
@@ -297,6 +299,7 @@ function startMonitor() {
 
           logPersistent("INFO", "subscribe_sent", "Liquidation subscriptions sent", { channels });
 
+          subscriptionSent = true;
           subscribeTimer = setTimeout(() => {
             logPersistent("ERROR", "subscribe_timeout", "No subscription response within timeout", { timeoutMs: WS_SUBSCRIBE_TIMEOUT_MS });
           }, WS_SUBSCRIBE_TIMEOUT_MS);
@@ -305,7 +308,11 @@ function startMonitor() {
 
         if (message.id === 0 || message.result?.channels || message.result?.subscriptions) {
           if (subscribeTimer) clearTimeout(subscribeTimer);
-          logPersistent("INFO", "subscribe_response", "Subscription response received", message.result || message);
+          subscribed = true;
+          logPersistent("INFO", "subscribe_response", "Subscription response received", {
+            result: message.result || message,
+            subscriptionSent
+          });
         }
 
         const points = Array.isArray(message.points) ? message.points : [];
