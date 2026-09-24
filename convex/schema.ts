@@ -7,4 +7,10 @@ export default defineSchema({
     lastAlertDirection: v.union(v.literal("BUY UP"), v.literal("BUY DOWN"), v.null()),
     updatedAt: v.number(),
   }).index("by_monitor", ["monitor"]),
+
+  telegramDedupe: defineTable({
+    monitor: v.string(),
+    marketSlug: v.string(),
+    claimedAt: v.number(),
+  }).index("by_monitor_market", ["monitor", "marketSlug"]),
 });
