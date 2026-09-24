@@ -116,9 +116,7 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
     "SIZE: " + formatUsd(usd),
     "",
     '<a href="' + TURBOFLOW_URL + '">ОТКРЫТЬ TURBOFLOW</a>',
-    "",
-    "➡️ TF",
-    "https://tf.xyz/events/"
+    ""
   ].join("\n");
 
   sendTelegram(text).catch(err => {
