@@ -162,7 +162,7 @@ async function pollMarginPad() {
     sourceState.MARGINPAD.successfulRequests += 1;
     sourceState.MARGINPAD.lastSuccessAt = Date.now();
 
-    const normalizedEvents = events
+    const hyperliquidEvents = events
       .map(event => ({
         exchange: String(event.exchange || "").toUpperCase(),
         symbol: String(event.symbol || "").toUpperCase(),
@@ -172,30 +172,37 @@ async function pollMarginPad() {
         time: Number(event.ts)
       }))
       .filter(event =>
+        event.exchange === "HYPERLIQUID" &&
         event.symbol === "BTC" &&
         Number.isFinite(event.time)
       );
 
     if (!baselineEstablished) {
-      latestSeenTs = normalizedEvents.reduce(
+      latestSeenTs = hyperliquidEvents.reduce(
         (max, event) => Math.max(max, event.time),
         0
       );
       baselineEstablished = true;
 
-      log("INFO", "marginpad_baseline_established", "Existing BTC liquidation history ignored; only new events will alert", {
+      log("INFO", "marginpad_baseline_established", "Existing BTC Hyperliquid liquidation history ignored; only new Hyperliquid events will alert", {
         baselineTs: latestSeenTs,
         baselineIso: latestSeenTs ? new Date(latestSeenTs).toISOString() : null,
-        eventsSeenAtStartup: normalizedEvents.length
+        hyperliquidEventsSeenAtStartup: hyperliquidEvents.length
       });
 
       return;
     }
 
-    for (const event of normalizedEvents) {
+    for (const event of hyperliquidEvents) {
       if (event.time <= latestSeenTs) continue;
-      if (event.time > latestSeenTs) latestSeenTs = event.time;
       processLiquidation(event);
+    }
+
+    if (hyperliquidEvents.length > 0) {
+      latestSeenTs = Math.max(
+        latestSeenTs,
+        ...hyperliquidEvents.map(event => event.time)
+      );
     }
   } catch (err) {
     sourceState.MARGINPAD.state = "ERROR";
