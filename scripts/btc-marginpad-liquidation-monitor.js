@@ -67,6 +67,7 @@ function dedupeKey(liq) {
 
 function processLiquidation(liq) {
   if (
+    liq.exchange !== "HYPERLIQUID" ||
     liq.symbol !== "BTC" ||
     !Number.isFinite(liq.price) ||
     !Number.isFinite(liq.amount) ||
@@ -96,7 +97,7 @@ function processLiquidation(liq) {
 
   sourceState.MARGINPAD.alerts += 1;
 
-  log("INFO", "liquidation_received", "BTC liquidation received via MarginPad", {
+  log("INFO", "liquidation_received", "BTC Hyperliquid liquidation received via MarginPad", {
     exchange: liq.exchange,
     side: liq.side,
     price: liq.price,
@@ -112,7 +113,7 @@ function processLiquidation(liq) {
     "PRICE: $" + liq.price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: $" + usd.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "AMOUNT: " + liq.amount.toFixed(6) + " BTC",
-    "EXCHANGE: " + liq.exchange,
+    "EXCHANGE: HYPERLIQUID",
     "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
     "",
     "➡️ TF",
@@ -208,9 +209,10 @@ async function pollMarginPad() {
   }
 }
 
-console.log("BTC liquidation monitor started");
-log("INFO", "monitor_started", "BTC liquidation monitor started via MarginPad", {
+console.log("BTC Hyperliquid liquidation monitor started");
+log("INFO", "monitor_started", "BTC Hyperliquid liquidation monitor started via MarginPad", {
   source: "MARGINPAD",
+  exchange: "HYPERLIQUID",
   symbol: "BTC",
   method: "marginpad_btc_live_polling",
   pollMs: POLL_MS,
@@ -222,7 +224,7 @@ pollMarginPad();
 const pollTimer = setInterval(pollMarginPad, POLL_MS);
 
 const heartbeatTimer = setInterval(() => {
-  log("INFO", "monitor_heartbeat", "BTC liquidation monitor heartbeat", {
+  log("INFO", "monitor_heartbeat", "BTC Hyperliquid liquidation monitor heartbeat", {
     uptimeSec: Math.floor(process.uptime()),
     MARGINPAD: sourceState.MARGINPAD,
     seen: seen.size,
@@ -235,7 +237,7 @@ setTimeout(() => {
   stopping = true;
   clearInterval(pollTimer);
   clearInterval(heartbeatTimer);
-  log("INFO", "monitor_stopped", "BTC liquidation monitor stopped");
+  log("INFO", "monitor_stopped", "BTC Hyperliquid liquidation monitor stopped");
 }, RUN_MS);
 
 process.on("SIGTERM", () => {
