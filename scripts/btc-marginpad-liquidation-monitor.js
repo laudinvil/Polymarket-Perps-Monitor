@@ -121,7 +121,7 @@ function processLiquidation(liq) {
     "EXCHANGE: HYPERLIQUID",
     "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
     "",
-    '<a href="turboflow-prod://wc">ОТКРЫТЬ TURBOFLOW</a>',
+    '<a href="https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/">ОТКРЫТЬ TURBOFLOW</a>',
     "",
     "➡️ TF",
     "https://tf.xyz/events/"
