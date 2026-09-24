@@ -12,6 +12,7 @@ const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turb
 
 let stopping = false;
 let cooldownUntil = 0;
+let lastLiquidationKey = "";
 
 const stats = {
   BINANCE: { state: "STARTING", received: 0, alerts: 0, ignoredCooldown: 0, reconnects: 0 },
@@ -78,6 +79,14 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
 
   stats[exchange].received += 1;
 
+  const liquidationKey = price + "|" + amount;
+  if (liquidationKey === lastLiquidationKey) {
+    log("INFO", "liquidation_duplicate", "Duplicate liquidation ignored by price and size", {
+      exchange, side, price, amount
+    });
+    return;
+  }
+
   const now = Date.now();
 
   if (now < cooldownUntil) {
@@ -93,6 +102,7 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
   }
 
   cooldownUntil = now + COOLDOWN_MS;
+  lastLiquidationKey = liquidationKey;
 
   const usd = price * amount;
 
