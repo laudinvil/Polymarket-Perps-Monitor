@@ -26,10 +26,16 @@ jobs:
         with:
           node-version: 24
 
+      - name: Deploy Convex logging functions
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy
+
       - name: Run BTC liquidation monitor
         env:
           OPENMARKET_API_KEY: ${{ secrets.OPENMARKET_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MIN_LIQUIDATION_USD: "0"
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
         run: node scripts/btc-openmarket-liquidation-monitor.js
