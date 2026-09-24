@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   monitor:
-    if: github.event_name != 'push' || github.event.head_commit.message == 'START BTC 5M MONITOR'
+    if: true
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
