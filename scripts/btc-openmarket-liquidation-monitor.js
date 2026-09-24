@@ -252,15 +252,19 @@ function startMonitor() {
           return;
         }
 
-        console.log("OpenMarket WS message: " + JSON.stringify(message).slice(0, 2000));
+        const rawMessage = JSON.stringify(message);
+        console.log("OpenMarket WS message: " + rawMessage.slice(0, 4000));
+        logPersistent("INFO", "ws_message", "OpenMarket WebSocket message", { message: rawMessage.slice(0, 4000) });
 
         if (message.error) {
           console.error("OpenMarket WS error: " + JSON.stringify(message.error));
+          logPersistent("ERROR", "ws_protocol_error", "OpenMarket protocol error", { error: message.error });
           logPersistent("ERROR", "ws_error", "OpenMarket WebSocket error", message.error);
           return;
         }
 
         if (message.result && !subscribed && !message.points) {
+          logPersistent("INFO", "auth_response_candidate", "OpenMarket result received before subscription", { result: message.result });
           subscribed = true;
           if (authTimer) clearTimeout(authTimer);
 
@@ -332,7 +336,13 @@ function startMonitor() {
       });
 
       ws.addEventListener("close", event => {
-        logPersistent("WARN", "ws_closed", "WebSocket closed", { code: event.code, reason: String(event.reason || "") });
+        logPersistent("WARN", "ws_closed", "WebSocket closed", {
+          code: event.code,
+          reason: String(event.reason || ""),
+          opened,
+          subscribed,
+          readyState: ws.readyState
+        });
         console.log("OpenMarket WebSocket closed code=" + event.code + " reason=" + String(event.reason || ""));
         finish();
       });
