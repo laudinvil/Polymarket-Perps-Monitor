@@ -262,6 +262,12 @@ function startMonitor() {
         });
 
         logPersistent("INFO", "auth_sent", "Authentication request sent");
+        logPersistent("INFO", "auth_wire", "Authentication request sent to OpenMarket", {
+          method: "public/authenticate",
+          jsonrpc: "2.0",
+          id: 1,
+          hasToken: Boolean(apiKey)
+        });
 
         authTimer = setTimeout(() => {
           if (!authAccepted) {
@@ -353,6 +359,15 @@ function startMonitor() {
 
         const rawMessage = JSON.stringify(message);
         console.log("OpenMarket WS message: " + rawMessage.slice(0, 4000));
+        logPersistent("INFO", "ws_server_message_meta", "OpenMarket server message received", {
+          keys: Object.keys(message),
+          id: message.id,
+          method: message.method,
+          hasResult: Boolean(message.result),
+          hasError: Boolean(message.error),
+          hasPoints: Array.isArray(message.points),
+          readyState: ws.readyState
+        });
 
         if (message.error) {
           logPersistent("ERROR", "ws_message_error", "OpenMarket WebSocket error message", {
