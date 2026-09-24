@@ -60,7 +60,7 @@ function buildTelegramText(market, state) {
   const to = state.firstIncrease ? state.firstIncrease.to : null;
 
   return [
-    "🔥 BTC · NEXT 5M",
+    "🔥 BTC · 5M",
     "",
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
@@ -69,7 +69,7 @@ function buildTelegramText(market, state) {
       formatPrice(from) + " → " + formatPrice(to) +
       " · BUY " + (side === "UP" ? "DOWN" : "UP"),
     "",
-    "➡️ NEXT · Polymarket 5M",
+    "➡️ Polymarket 5M",
     market.url
   ].join("\n");
 }
@@ -323,7 +323,7 @@ function detectThresholdCross(state, side, label) {
 
   // Equal threshold for both sides. A 1% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 1;
+  const FIRST_INCREASE_PCT = 4;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
