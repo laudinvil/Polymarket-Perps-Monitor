@@ -1,0 +1,38 @@
+name: BTC 5M · Cross-Venue Divergence Monitor
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/btc-5m-cross-venue-monitor.yml"
+      - "scripts/btc-5m-cross-venue-monitor.js"
+  schedule:
+    - cron: "3 */5 * * *"
+
+concurrency:
+  group: btc-5m-cross-venue-monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run BTC cross-venue divergence monitor
+        env:
+          DEPTHFEED_API_KEY: ${{ secrets.DEPTHFEED_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DIVERGENCE_TRIGGER_PP: "4"
+          DIVERGENCE_RESET_PP: "2"
+          CONSENSUS_MAX_PP: "2"
+        run: node scripts/btc-5m-cross-venue-monitor.js
