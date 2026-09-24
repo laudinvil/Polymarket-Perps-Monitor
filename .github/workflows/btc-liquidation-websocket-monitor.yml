@@ -8,7 +8,7 @@ on:
       - "scripts/btc-liquidation-websocket-monitor.js"
 
 concurrency:
-  group: btc-liquidation-websocket-monitor
+  group: btc-marginpad-liquidation-monitor
   cancel-in-progress: true
 
 jobs:
