@@ -269,23 +269,14 @@ async function monitorPeriod(start) {
   const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const previousAvgUpPrice = Number(state.avgUpPrice);
-  const previousAvgDownPrice = Number(state.avgDownPrice);
+  const alertDirection =
+    Number.isFinite(activity.avgUpPrice) && Number.isFinite(activity.avgDownPrice)
+      ? (activity.avgUpPrice > activity.avgDownPrice ? "BUY UP" : activity.avgDownPrice > activity.avgUpPrice ? "BUY DOWN" : null)
+      : null;
 
-  const upChange = Number.isFinite(previousAvgUpPrice) && Number.isFinite(activity.avgUpPrice)
-    ? (activity.avgUpPrice - previousAvgUpPrice) * 100
-    : null;
-  const downChange = Number.isFinite(previousAvgDownPrice) && Number.isFinite(activity.avgDownPrice)
-    ? (activity.avgDownPrice - previousAvgDownPrice) * 100
-    : null;
-
-  const overallChange = Number.isFinite(upChange) && Number.isFinite(downChange)
-    ? upChange + downChange
-    : null;
-
-  const alertDirection = overallChange > 0 ? "BUY DOWN" : overallChange < 0 ? "BUY UP" : null;
   const shouldAlert =
-    Number.isFinite(overallChange) &&
+    Number.isFinite(activity.avgUpPrice) &&
+    Number.isFinite(activity.avgDownPrice) &&
     alertDirection !== null;
 
   const nextState = {
@@ -298,18 +289,11 @@ async function monitorPeriod(start) {
     updatedAt: new Date().toISOString()
   };
 
-  const formatChange = function(change) {
-    if (!Number.isFinite(change)) return "n/a";
-    const arrow = change >= 0 ? "↑" : "↓";
-    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2);
-  };
-
   if (!shouldAlert) {
     console.log(
-      "Alert ignored: overall change is unavailable or zero" +
-      " (upChange=" + (Number.isFinite(upChange) ? upChange.toFixed(2) : "n/a") +
-      ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") +
-      ", overall=" + (Number.isFinite(overallChange) ? overallChange.toFixed(2) : "n/a") + ")"
+      "Alert ignored: average prices are unavailable or equal" +
+      " (avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
+      ", avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + ")"
     );
   } else {
     const nextOutcome = alertDirection === "BUY UP" ? "UP" : "DOWN";
@@ -318,10 +302,10 @@ async function monitorPeriod(start) {
     const lines = [
       "🔥 BTC · 5M",
       "",
-      "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
-      "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
+      "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a"),
+      "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
       "",
-      "ИЗМЕНЕНИЕ: " + formatChange(overallChange) + (overallChange !== null ? (overallChange >= 0 ? " BUY DOWN ↓" : " BUY UP ↑") : ""),
+      "BUY: " + alertDirection,
       "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
       "",
       "➡️ NEXT · Polymarket 5M",
@@ -333,7 +317,7 @@ async function monitorPeriod(start) {
       "Telegram sent for period=" + start +
       " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
       " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") +
-      " overall=" + (Number.isFinite(overallChange) ? overallChange.toFixed(2) : "n/a")
+      " buy=" + alertDirection
     );
   }
 
