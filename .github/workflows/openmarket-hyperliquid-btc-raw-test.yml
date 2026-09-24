@@ -2,6 +2,10 @@ name: OpenMarket · Hyperliquid BTC Raw Test
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/openmarket-hyperliquid-btc-raw-test.yml"
+      - "scripts/openmarket-hyperliquid-btc-raw-test.js"
 
 concurrency:
   group: openmarket-hyperliquid-btc-raw-test
