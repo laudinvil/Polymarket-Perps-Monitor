@@ -328,9 +328,9 @@ function detectThresholdCross(state, side, label) {
   // from the frozen baseline. There is no fixed 0.52/0.53 price bias.
   const movementPct = ((current - baseline) / baseline) * 100;
 
-  // Equal threshold for both sides. A 1% move means the same relative
+  // Equal threshold for both sides. A 3% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 2;
+  const FIRST_INCREASE_PCT = 3;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
