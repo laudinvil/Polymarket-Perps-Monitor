@@ -148,7 +148,7 @@ function handleBinanceMessage(raw) {
 
   acceptLiquidation({
     exchange: "BINANCE",
-    side: order.S === "BUY" ? "BUY" : order.S === "SELL" ? "SELL" : order.S,
+    side: String(order.S || "").toUpperCase(),
     price: Number(order.ap),
     amount: Number(order.z || order.q),
     eventTime: Number(order.T || msg.E)
@@ -218,7 +218,7 @@ function handleBybitMessage(raw) {
 
     acceptLiquidation({
       exchange: "BYBIT",
-      side: item.S,
+      side: String(item.S || "").toUpperCase(),
       price: Number(item.p),
       amount: Number(item.v),
       eventTime: Number(item.T || msg.ts)
