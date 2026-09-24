@@ -256,12 +256,19 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 function displayPrice(priceState) {
-  const price = Number(priceState.price);
-  if (Number.isFinite(price)) return price;
+  // Polymarket UI's displayed buy price corresponds to the current best ask.
+  // Do not use price_change.price here: that field can be the changed order
+  // level rather than the current quote shown in the UI.
+  const ask = Number(priceState.bestAsk);
+  if (Number.isFinite(ask)) return ask;
+
   const mid = Number(priceState.midpoint);
   if (Number.isFinite(mid)) return mid;
-  const trade = Number(priceState.lastTrade);
-  return Number.isFinite(trade) ? trade : null;
+
+  const bid = Number(priceState.bestBid);
+  if (Number.isFinite(bid)) return bid;
+
+  return null;
 }
 
 async function runTelegramUpdater(currentStart, market) {
