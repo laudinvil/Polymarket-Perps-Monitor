@@ -256,21 +256,16 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 function displayPrice(priceState) {
-  // Match the Polymarket-style displayed price: use midpoint when the
-  // spread is reasonably tight, otherwise fall back to the last trade.
+  // NEXT market is a live CLOB market, so use its current quote directly.
+  // Do not apply spread thresholds or fall back to stale trade prices.
   const bid = Number(priceState.bestBid);
   const ask = Number(priceState.bestAsk);
-  if (Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid) {
-    const spread = ask - bid;
-    if (spread <= 0.10) return (bid + ask) / 2;
+
+  if (Number.isFinite(bid) && Number.isFinite(ask)) {
+    return (bid + ask) / 2;
   }
 
-  const trade = Number(priceState.lastTrade);
-  if (Number.isFinite(trade)) return trade;
-
-  if (Number.isFinite(ask)) return ask;
-  if (Number.isFinite(bid)) return bid;
-  return null;
+  return Number.isFinite(ask) ? ask : Number.isFinite(bid) ? bid : null;
 }
 
 async function runTelegramUpdater(currentStart, market) {
