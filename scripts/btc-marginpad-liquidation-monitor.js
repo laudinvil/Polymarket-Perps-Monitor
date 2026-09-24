@@ -114,14 +114,11 @@ function processLiquidation(liq) {
   });
 
   const text = [
-    "🔥 BTC · LIQUIDATION",
+    "🔥 BTC",
     "",
-    "SIDE: " + sideText,
+    sideText,
     "PRICE: $" + liq.price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: $" + usd.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    "AMOUNT: " + liq.amount.toFixed(6) + " BTC",
-    "EXCHANGE: HYPERLIQUID",
-    "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
     "",
     '<a href="https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/">ОТКРЫТЬ TURBOFLOW</a>',
     "",
