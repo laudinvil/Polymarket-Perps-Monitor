@@ -106,3 +106,64 @@ export const claimTelegramMarketV3 = mutation({
     return { allowed: true };
   },
 });
+
+
+const OPENMARKET_MONITOR = "btc-openmarket-btc-liquidation";
+
+export const logOpenMarket = mutation({
+  args: {
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert("openMarketLogs", {
+      monitor: OPENMARKET_MONITOR,
+      level: args.level,
+      event: args.event,
+      message: args.message,
+      data: args.data,
+      createdAt: Date.now(),
+    });
+
+    const oldRows = await ctx.db
+      .query("openMarketLogs")
+      .withIndex("by_monitor_time", (q) => q.eq("monitor", OPENMARKET_MONITOR))
+      .order("desc")
+      .collect();
+
+    for (const row of oldRows.slice(500)) {
+      await ctx.db.delete(row._id);
+    }
+
+    return null;
+  },
+});
+
+export const recentOpenMarketLogs = query({
+  args: {},
+  returns: v.array(v.object({
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+    createdAt: v.number(),
+  })),
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("openMarketLogs")
+      .withIndex("by_monitor_time", (q) => q.eq("monitor", OPENMARKET_MONITOR))
+      .order("desc")
+      .take(100);
+
+    return rows.map((row) => ({
+      level: row.level,
+      event: row.event,
+      message: row.message,
+      data: row.data,
+      createdAt: row.createdAt,
+    }));
+  },
+});
