@@ -7,24 +7,19 @@ const RECONNECT_MS = 5000;
 const seen = new Set();
 let stopping = false;
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function convexMutation(path, args) {
-  if (!CONVEX_URL) return;
+function convexMutation(path, args) {
+  if (!CONVEX_URL) return Promise.resolve();
   const url = CONVEX_URL.replace(/\/$/, "");
-  try {
-    const response = await fetch(url + "/api/mutation", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path, args, format: "json" }),
-      signal: AbortSignal.timeout(8000)
-    });
+  return fetch(url + "/api/mutation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, args, format: "json" }),
+    signal: AbortSignal.timeout(8000)
+  }).then(response => {
     if (!response.ok) throw new Error("HTTP " + response.status);
-  } catch (err) {
+  }).catch(err => {
     console.error("Convex logging failed: " + err.message);
-  }
+  });
 }
 
 function log(level, event, message, data) {
@@ -33,7 +28,7 @@ function log(level, event, message, data) {
     ...(data === undefined ? {} : { data: JSON.stringify(data) })
   };
   console.log(JSON.stringify(payload));
-  convexMutation("btc5mState:logOpenMarket", payload).catch(() => {});
+  void convexMutation("btc5mState:logOpenMarket", payload);
 }
 
 async function sendTelegram(text) {
@@ -41,48 +36,32 @@ async function sendTelegram(text) {
   const response = await fetch("https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      disable_web_page_preview: true
-    }),
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
     signal: AbortSignal.timeout(10000)
   });
   if (!response.ok) throw new Error("Telegram HTTP " + response.status);
 }
 
 function dedupeKey(liq) {
-  return [
-    liq.exchange, liq.time, liq.side,
-    liq.price, liq.amount
-  ].join(":");
+  return [liq.exchange, liq.time, liq.side, liq.price, liq.amount].join(":");
 }
 
 function processLiquidation(liq) {
   if (!Number.isFinite(liq.price) || !Number.isFinite(liq.amount) || liq.amount <= 0) return;
-
   const key = dedupeKey(liq);
   if (seen.has(key)) return;
   seen.add(key);
-  if (seen.size > 10000) {
-    seen.delete(seen.values().next().value);
-  }
+  if (seen.size > 10000) seen.delete(seen.values().next().value);
 
   const usd = liq.price * liq.amount;
   const sideText = liq.side === "LONG" ? "LONG LIQUIDATED" : "SHORT LIQUIDATED";
 
   log("INFO", "liquidation_received", "BTC liquidation received", {
-    exchange: liq.exchange,
-    side: liq.side,
-    price: liq.price,
-    amount: liq.amount,
-    usd,
-    time: liq.time
+    exchange: liq.exchange, side: liq.side, price: liq.price, amount: liq.amount, usd, time: liq.time
   });
 
   const text = [
-    "🔥 BTC · LIQUIDATION",
-    "",
+    "🔥 BTC · LIQUIDATION", "",
     "SIDE: " + sideText,
     "PRICE: $" + liq.price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: $" + usd.toLocaleString("en-US", { maximumFractionDigits: 2 }),
@@ -95,7 +74,7 @@ function processLiquidation(liq) {
 }
 
 function connectBinance() {
-  const url = "wss://fstream.binance.com/ws/btcusdt@forceOrder";
+  const url = "wss://fstream.binance.com/market/ws/btcusdt@forceOrder";
   log("INFO", "source_connect", "Connecting Binance liquidation stream", { url });
   const ws = new WebSocket(url);
 
@@ -120,15 +99,10 @@ function connectBinance() {
     }
   });
 
-  ws.addEventListener("error", () => {
-    log("ERROR", "source_error", "Binance WebSocket error");
-  });
+  ws.addEventListener("error", () => log("ERROR", "source_error", "Binance WebSocket error"));
 
   ws.addEventListener("close", event => {
-    log("WARN", "source_closed", "Binance liquidation stream closed", {
-      code: event.code,
-      reason: String(event.reason || "")
-    });
+    log("WARN", "source_closed", "Binance liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
     if (!stopping) setTimeout(connectBinance, RECONNECT_MS);
   });
 }
@@ -141,10 +115,7 @@ function connectBybit() {
 
   ws.addEventListener("open", () => {
     log("INFO", "source_connected", "Bybit liquidation stream connected");
-    ws.send(JSON.stringify({
-      op: "subscribe",
-      args: ["allLiquidation.BTCUSDT"]
-    }));
+    ws.send(JSON.stringify({ op: "subscribe", args: ["allLiquidation.BTCUSDT"] }));
     pingTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: "ping" }));
     }, 20000);
@@ -155,7 +126,6 @@ function connectBybit() {
       const m = JSON.parse(event.data);
       if (m.op === "subscribe" || m.op === "pong") return;
       if (m.topic !== "allLiquidation.BTCUSDT" || !Array.isArray(m.data)) return;
-
       for (const o of m.data) {
         processLiquidation({
           exchange: "BYBIT",
@@ -170,16 +140,11 @@ function connectBybit() {
     }
   });
 
-  ws.addEventListener("error", () => {
-    log("ERROR", "source_error", "Bybit WebSocket error");
-  });
+  ws.addEventListener("error", () => log("ERROR", "source_error", "Bybit WebSocket error"));
 
   ws.addEventListener("close", event => {
     clearInterval(pingTimer);
-    log("WARN", "source_closed", "Bybit liquidation stream closed", {
-      code: event.code,
-      reason: String(event.reason || "")
-    });
+    log("WARN", "source_closed", "Bybit liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
     if (!stopping) setTimeout(connectBybit, RECONNECT_MS);
   });
 }
@@ -193,6 +158,14 @@ log("INFO", "monitor_started", "BTC liquidation monitor started", {
 
 connectBinance();
 connectBybit();
+
+setInterval(() => {
+  log("INFO", "monitor_heartbeat", "BTC liquidation monitor heartbeat", {
+    sources: ["BINANCE", "BYBIT"],
+    seen: seen.size,
+    uptimeSec: Math.floor(process.uptime())
+  });
+}, 60000);
 
 setTimeout(() => {
   stopping = true;
