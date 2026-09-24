@@ -256,18 +256,20 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 function displayPrice(priceState) {
-  // Polymarket UI's displayed buy price corresponds to the current best ask.
-  // Do not use price_change.price here: that field can be the changed order
-  // level rather than the current quote shown in the UI.
-  const ask = Number(priceState.bestAsk);
-  if (Number.isFinite(ask)) return ask;
-
-  const mid = Number(priceState.midpoint);
-  if (Number.isFinite(mid)) return mid;
-
+  // Match the Polymarket-style displayed price: use midpoint when the
+  // spread is reasonably tight, otherwise fall back to the last trade.
   const bid = Number(priceState.bestBid);
-  if (Number.isFinite(bid)) return bid;
+  const ask = Number(priceState.bestAsk);
+  if (Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid) {
+    const spread = ask - bid;
+    if (spread <= 0.10) return (bid + ask) / 2;
+  }
 
+  const trade = Number(priceState.lastTrade);
+  if (Number.isFinite(trade)) return trade;
+
+  if (Number.isFinite(ask)) return ask;
+  if (Number.isFinite(bid)) return bid;
   return null;
 }
 
