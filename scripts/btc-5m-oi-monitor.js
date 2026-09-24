@@ -306,7 +306,7 @@ function displayPrice(priceState) {
 function detectThresholdCross(state, side, label, marketStart) {
   if (state.firstIncrease) return false;
 
-  // The alert is valid only if the 10% increase happened BEFORE the
+  // The alert is valid only if the increase happened BEFORE the
   // start of the market referenced by the Telegram link.
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (!Number.isFinite(Number(marketStart)) || nowSeconds >= Number(marketStart)) {
@@ -333,9 +333,9 @@ function detectThresholdCross(state, side, label, marketStart) {
   // from the frozen baseline. There is no fixed 0.52/0.53 price bias.
   const movementPct = ((current - baseline) / baseline) * 100;
 
-  // Equal threshold for both sides. A 3% move means the same relative
+  // Equal threshold for both sides. A 4% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 15;
+  const FIRST_INCREASE_PCT = 4;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
