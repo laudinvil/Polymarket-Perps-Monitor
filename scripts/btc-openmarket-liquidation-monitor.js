@@ -10,7 +10,7 @@ const RAW_CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_
 // Convex function API uses the .convex.cloud deployment URL. If the secret contains
 // the previously used .convex.site URL, normalize it automatically.
 const CONVEX_URL = RAW_CONVEX_URL
-  ? RAW_CONVEX_URL.replace(/\\.convex\\.site\\/?$/, ".convex.cloud").replace(/\\/$/, "")
+  ? RAW_CONVEX_URL.replace(/\.convex\.site\/?$/, ".convex.cloud").replace(/\/$/, "")
   : null;
 
 async function convexMutation(path, args) {
