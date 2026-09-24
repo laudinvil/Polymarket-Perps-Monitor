@@ -47,30 +47,55 @@ async function fetchScreener() {
 
 function num(value) { const n = Number(value); return Number.isFinite(n) ? n : null; }
 
-function extractVenue(data, name) {
-  const v = data && data[name];
-  if (!v || typeof v !== "object") return null;
+function midFromBook(book) {
+  if (!book || typeof book !== "object") return null;
+  if (Number.isFinite(Number(book.midpoint))) return Number(book.midpoint);
+
+  const bids = Array.isArray(book.bids) ? book.bids : [];
+  const asks = Array.isArray(book.asks) ? book.asks : [];
+  const bid = bids.length ? Number(bids[0]?.[0]) : NaN;
+  const ask = asks.length ? Number(asks[0]?.[0]) : NaN;
+
+  if (Number.isFinite(bid) && Number.isFinite(ask)) return (bid + ask) / 2;
+  if (Number.isFinite(bid)) return bid;
+  if (Number.isFinite(ask)) return ask;
+  return null;
+}
+
+function extractVenueFromBook(book, upKey, downKey) {
+  if (!book || typeof book !== "object") return null;
+
+  const upBook = book[upKey] || book.up || book.yes;
+  const downBook = book[downKey] || book.down || book.no;
+
+  let up = num(book.up);
+  let down = num(book.down);
+
+  if (!Number.isFinite(up)) up = midFromBook(upBook);
+  if (!Number.isFinite(down)) down = midFromBook(downBook);
+
+  if (Number.isFinite(up) && !Number.isFinite(down)) down = 1 - up;
+  if (Number.isFinite(down) && !Number.isFinite(up)) up = 1 - down;
+
   return {
-    up: num(v.up), down: num(v.down), bestBid: num(v.best_bid), bestAsk: num(v.best_ask),
-    priceToBeat: num(v.price_to_beat), slug: v.slug || null
+    up: Number.isFinite(up) ? up : null,
+    down: Number.isFinite(down) ? down : null,
+    bestBid: num(book.best_bid),
+    bestAsk: num(book.best_ask),
+    priceToBeat: num(book.price_to_beat),
+    slug: book.slug || null
   };
 }
 
 function getMarketData(data) {
-  // /v3/screener/{asset}/{window} returns data.cells[], not venue keys directly.
-  const cell = Array.isArray(data?.cells)
-    ? data.cells.find(x => x && x.asset === "btc") || data.cells[0]
-    : null;
-
-  const source = cell || data;
+  const books = data?.books || {};
 
   return {
-    polymarket: extractVenue(source, "polymarket"),
-    kalshi: extractVenue(source, "kalshi"),
-    limitless: extractVenue(source, "limitless")
+    polymarket: extractVenueFromBook(books.polymarket, "up", "down"),
+    kalshi: extractVenueFromBook(books.kalshi, "yes", "no"),
+    limitless: extractVenueFromBook(books.limitless, "up", "down")
   };
 }
-
 function pp(a, b) { return Math.abs(a - b) * 100; }
 function periodStartSec() { return Math.floor(Date.now() / 1000 / 300) * 300; }
 
