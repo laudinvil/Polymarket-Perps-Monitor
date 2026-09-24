@@ -255,6 +255,8 @@ function startMonitor() {
         logPersistent("INFO", "ws_connected", "WebSocket connected", { url: WS_URL });
 
         sendWs(ws, {
+          jsonrpc: "2.0",
+          id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
         });
@@ -389,9 +391,9 @@ function startMonitor() {
           !authAccepted &&
           !message.points &&
           (
+            (message.id === 1 && message.result) ||
             message.method === "public/authenticate" ||
-            message.method === "public/authenticate.result" ||
-            (message.result && message.id === undefined)
+            message.method === "public/authenticate.result"
           )
         ) {
           authAccepted = true;
