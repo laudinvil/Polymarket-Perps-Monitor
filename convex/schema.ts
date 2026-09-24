@@ -13,4 +13,13 @@ export default defineSchema({
     marketSlug: v.string(),
     claimedAt: v.number(),
   }).index("by_monitor_market", ["monitor", "marketSlug"]),
+
+  openMarketLogs: defineTable({
+    monitor: v.string(),
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_monitor_time", ["monitor", "createdAt"]),
 });
