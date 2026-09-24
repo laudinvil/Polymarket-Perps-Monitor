@@ -55,19 +55,19 @@ function formatPrice(value) {
 }
 
 function buildTelegramText(market, state) {
+  const side = state.firstIncrease ? state.firstIncrease.side : null;
+  const from = state.firstIncrease ? state.firstIncrease.from : null;
+  const to = state.firstIncrease ? state.firstIncrease.to : null;
+
   return [
     "🔥 BTC · NEXT 5M",
     "",
     "⬆️ UP: " + formatPrice(displayPrice(state.up)),
     "⬇️ DOWN: " + formatPrice(displayPrice(state.down)),
-    state.firstIncrease ? (
-      "\nFIRST INCREASE: " +
-      (state.firstIncrease.side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
-      " " +
-      formatPrice(state.firstIncrease.from) +
-      " → " +
-      formatPrice(state.firstIncrease.to)
-    ) : "",
+    "",
+    "FIRST INCREASE: " +
+      (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
+      " " + formatPrice(from) + " → " + formatPrice(to),
     "",
     "➡️ NEXT · Polymarket 5M",
     market.url
@@ -233,9 +233,9 @@ function createNextState(currentStart, market) {
     up: createPriceState(),
     down: createPriceState(),
     firstIncrease: null,
-    increaseTrackingStarted: false,
-    increaseBaselineUp: null,
-    increaseBaselineDown: null,
+    alerted: false,
+    previousPriceUp: null,
+    previousPriceDown: null,
     updatedAt: new Date().toISOString()
   };
 }
@@ -298,48 +298,52 @@ function displayPrice(priceState) {
   return (bid + ask) / 2;
 }
 
-function detectFirstIncrease(state, side, label) {
-  if (!state.increaseTrackingStarted) return;
-  if (state.firstIncrease) return;
+function detectThresholdCross(state, side, label) {
+  if (state.alerted) return false;
 
   const current = displayPrice(side);
-  if (!Number.isFinite(current)) return;
+  if (!Number.isFinite(current)) return false;
 
-  const baselineKey = label === "UP"
-    ? "increaseBaselineUp"
-    : "increaseBaselineDown";
+  const previousKey = label === "UP" ? "previousPriceUp" : "previousPriceDown";
+  const previous = state[previousKey];
 
-  if (state[baselineKey] === null || state[baselineKey] === undefined) return;
-  const baseline = Number(state[baselineKey]);
-  if (!Number.isFinite(baseline)) return;
+  state[previousKey] = current;
 
-  // FIRST INCREASE is the first move that reaches or crosses 0.52
-  // from below. Once detected, state.firstIncrease blocks everything else.
-  if (baseline < 0.52 && current >= 0.52) {
+  if (previous === null || previous === undefined || !Number.isFinite(Number(previous))) {
+    return false;
+  }
+
+  const previousNumber = Number(previous);
+
+  if (previousNumber < 0.52 && current >= 0.52) {
     state.firstIncrease = {
       side: label,
-      from: baseline,
+      from: previousNumber,
       to: current,
       detectedAt: new Date().toISOString()
     };
+    state.alerted = true;
 
     console.log(
-      "FIRST INCREASE detected side=" +
-      label +
-      " from=" + baseline.toFixed(4) +
+      "THRESHOLD CROSS detected side=" + label +
+      " from=" + previousNumber.toFixed(4) +
       " to=" + current.toFixed(4)
     );
+
+    return true;
   }
+
+  return false;
 }
 
 async function runTelegramUpdater(currentStart, market) {
   let telegramMessageId = null;
-  let telegramLastText = null;
-  let telegramMarketClaimed = false;
   let stopped = false;
+  let telegramMarketClaimed = false;
 
   async function updateTelegram() {
     if (stopped) return;
+    if (telegramMessageId !== null) return;
     if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
 
     const state = readState();
@@ -348,72 +352,34 @@ async function runTelegramUpdater(currentStart, market) {
       return;
     }
 
-    if (!Number.isFinite(Number(displayPrice(state.up))) &&
-        !Number.isFinite(Number(displayPrice(state.down)))) {
-      return;
-    }
+    if (!state.alerted || !state.firstIncrease) return;
 
-    const text = buildTelegramText(market, state);
-    if (text === telegramLastText) return;
+    try {
+      if (!telegramMarketClaimed) {
+        const claim = await convexMutation("btc5mState:claimTelegramMarketV2", {
+          marketSlug: market.slug
+        });
 
-    if (telegramMessageId === -1) return;
-
-    if (telegramMessageId === null && !telegramMarketClaimed) {
-      try {
-        const claim = await convexMutation("btc5mState:claimTelegramMarketV2", { marketSlug: market.slug });
         if (!claim.allowed) {
           telegramMarketClaimed = true;
           telegramMessageId = -1;
           console.log("Telegram DEDUPE blocked market=" + market.slug);
           return;
         }
+
         telegramMarketClaimed = true;
-
-        // Freeze the actual prices shown in the first Telegram message.
-        // Nothing observed before this snapshot can become FIRST INCREASE.
-        const baselineState = readState();
-        if (baselineState.up && baselineState.down &&
-            Number(baselineState.monitoredNextPeriodStart) === market.start) {
-          const upBaseline = displayPrice(baselineState.up);
-          const downBaseline = displayPrice(baselineState.down);
-          baselineState.increaseBaselineUp = Number.isFinite(upBaseline) ? upBaseline : null;
-          baselineState.increaseBaselineDown = Number.isFinite(downBaseline) ? downBaseline : null;
-          baselineState.increaseTrackingStarted = false;
-          baselineState.firstIncrease = null;
-          baselineState.updatedAt = new Date().toISOString();
-          writeState(baselineState);
-        }
-
-        telegramMessageId = await createTelegramMessage(market, baselineState);
-        const trackingState = readState();
-        if (trackingState.up && trackingState.down &&
-            Number(trackingState.monitoredNextPeriodStart) === market.start) {
-          trackingState.increaseTrackingStarted = true;
-          trackingState.updatedAt = new Date().toISOString();
-          writeState(trackingState);
-        }
-        telegramLastText = buildTelegramText(market, baselineState);
-      } catch (err) {
-        console.error("Telegram initial send/Convex claim failed; no message sent: " + err.message);
       }
-      return;
-    }
 
-    try {
-      await editTelegramMessage(telegramMessageId, market, state);
-      telegramLastText = text;
+      telegramMessageId = await createTelegramMessage(market, state);
       console.log(
-        "Telegram NEXT message edited message_id=" +
-        telegramMessageId +
-        " UP=" + formatPrice(displayPrice(state.up)) +
-        " DOWN=" + formatPrice(displayPrice(state.down))
+        "Telegram threshold alert sent market=" + market.slug +
+        " side=" + state.firstIncrease.side +
+        " from=" + formatPrice(state.firstIncrease.from) +
+        " to=" + formatPrice(state.firstIncrease.to)
       );
     } catch (err) {
-      console.error(
-        "Telegram edit failed; message_id=" +
-        telegramMessageId +
-        ": " + err.message
-      );
+      console.error("Telegram threshold alert failed: " + err.message);
+      telegramMarketClaimed = false;
     }
   }
 
@@ -494,7 +460,7 @@ async function runWebSocket(currentStart, market) {
             if (!side) return;
 
             updateFromBook(side, message.bids, message.asks);
-            detectFirstIncrease(
+            detectThresholdCross(
               state,
               side,
               side === state.up ? "UP" : "DOWN"
@@ -531,7 +497,7 @@ async function runWebSocket(currentStart, market) {
                 price: price
               }, side === state.up ? "UP" : "DOWN");
 
-              detectFirstIncrease(
+              detectThresholdCross(
                 state,
                 side,
                 side === state.up ? "UP" : "DOWN"
