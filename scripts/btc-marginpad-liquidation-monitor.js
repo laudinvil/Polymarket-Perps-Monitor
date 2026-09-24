@@ -4,7 +4,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 const FEED_URL = "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400";
 const POLL_MS = 4000;
 const REQUEST_TIMEOUT_MS = 4500;
-const RUN_MS = 5 * 60 * 60 * 1000;
+const RUN_MS = 6 * 60 * 60 * 1000;
 const seen = new Set();
 let latestSeenTs = 0;
 let baselineEstablished = false;
@@ -197,7 +197,11 @@ async function pollMarginPad() {
       );
       baselineEstablished = true;
 
-      log("INFO", "marginpad_baseline_established", "Existing BTC Hyperliquid liquidation history ignored; only new Hyperliquid events will alert", {
+      for (const event of hyperliquidEvents) {
+        seen.add(dedupeKey(event));
+      }
+
+      log("INFO", "marginpad_baseline_established", "Existing BTC Hyperliquid liquidation history marked as seen; only events not previously observed will alert", {
         baselineTs: latestSeenTs,
         baselineIso: latestSeenTs ? new Date(latestSeenTs).toISOString() : null,
         hyperliquidEventsSeenAtStartup: hyperliquidEvents.length
