@@ -66,7 +66,7 @@ function buildTelegramText(market, state) {
   const to = state.firstIncrease ? state.firstIncrease.to : null;
 
   return [
-    "🔥 BTC · NEXT 5M",
+    "🔥 BTC · 5M",
     "",
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
@@ -76,7 +76,7 @@ function buildTelegramText(market, state) {
     (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " + formatPrice(from) + " → " + formatPrice(to),
     "",
-    "➡️ NEXT · Polymarket 5M",
+    "➡️ Polymarket 5M",
     market.url
   ].join("\n");
 }
