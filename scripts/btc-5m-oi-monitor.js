@@ -306,7 +306,7 @@ async function monitorPeriod(start) {
       "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a"),
       "ИМБАЛАНС: " + (((activity.avgUpPrice - 0.50) / 0.50 * 100) + ((activity.avgDownPrice - 0.50) / 0.50 * 100)).toFixed(2) + "%",
       "",
-      "BUY: " + alertDirection,
+      "BUY: " + alertDirection.replace("BUY ", ""),
       "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
       "",
       "➡️ NEXT · Polymarket 5M",
