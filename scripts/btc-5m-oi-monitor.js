@@ -294,12 +294,19 @@ function detectFirstIncrease(state, side, label) {
   let baseline = Number(state[baselineKey]);
 
   if (!Number.isFinite(baseline)) {
-    if (current >= 0.5) state[baselineKey] = current;
+    state[baselineKey] = current;
     return;
   }
 
   if (baseline < 0.5) {
-    if (current >= 0.5) state[baselineKey] = current;
+    if (current < 0.5) {
+      state[baselineKey] = current;
+      return;
+    }
+
+    // Crossing from below 0.5 to 0.5 or above is never an increase.
+    // Reset the baseline at the first value at/above 0.5.
+    state[baselineKey] = current;
     return;
   }
 
@@ -319,7 +326,7 @@ function detectFirstIncrease(state, side, label) {
     );
   }
 
-  if (current >= 0.5 && current !== baseline) {
+  if (current >= 0.5) {
     state[baselineKey] = current;
   }
 }
