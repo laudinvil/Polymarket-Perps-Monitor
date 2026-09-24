@@ -249,16 +249,19 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 async function runWebSocket(currentStart, market) {
+  // Keep Telegram message identity across WebSocket reconnects.
+  // Otherwise every reconnect creates a duplicate message for the same NEXT market.
+  let telegramMessageId = null;
+  let telegramLastText = null;
+
   while (periodStart(Math.floor(Date.now() / 1000)) === currentStart) {
     try {
       await new Promise(function(resolve) {
         const ws = new WebSocket(WS_URL);
         let pingTimer = null;
         let closed = false;
-        let telegramMessageId = null;
         let telegramUpdateTimer = null;
         let telegramUpdateQueued = false;
-        let telegramLastText = null;
 
         async function updateTelegram(force) {
           if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
