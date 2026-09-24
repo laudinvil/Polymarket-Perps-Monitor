@@ -174,13 +174,13 @@ function startMonitor() {
     if (stopping) return;
 
     await new Promise(resolve => {
-      logPersistent("INFO", "ws_connect_attempt", "Opening WebSocket connection", { url: WS_URL });
-
+      console.log("OpenMarket: about to create WebSocket");
+      await convexMutation("btc5mState:logOpenMarket", { level: "INFO", event: "ws_connect_attempt", message: "Opening WebSocket connection", data: JSON.stringify({ url: WS_URL }) }).catch(err => console.error("Connect-attempt persistent log failed: " + err.message));
       let ws;
       try {
         ws = new WebSocket(WS_URL);
       } catch (err) {
-        logPersistent("ERROR", "ws_constructor_error", "WebSocket constructor failed", { message: err.message, stack: err.stack });
+        console.error("OpenMarket WebSocket constructor failed: " + err.stack);\n        logPersistent("ERROR", "ws_constructor_error", "WebSocket constructor failed", { message: err.message, stack: err.stack });
         resolve();
         return;
       }
