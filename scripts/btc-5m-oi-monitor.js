@@ -6,6 +6,7 @@ const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 const TELEGRAM_UPDATE_MS = 3000;
+const INITIAL_INCREASE_PCT = 13;
 
 const CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL || null;
 
@@ -175,16 +176,15 @@ function getMarketFromEvent(event) {
   };
 }
 
-async function getNextMarket(start) {
-  const nextStart = start + PERIOD;
-  const slug = "btc-updown-5m-" + nextStart;
+async function getLiveMarket(start) {
+  const slug = "btc-updown-5m-" + start;
   const event = await getJson(GAMMA_API + "/events/slug/" + slug);
   const market = getMarketFromEvent(event);
 
   return {
-    start: nextStart,
+    start: start,
     slug: slug,
-    url: POLY_URL + nextStart,
+    url: POLY_URL + start,
     conditionId: market.conditionId,
     tokens: market.tokens
   };
@@ -222,13 +222,13 @@ function createPriceState() {
   };
 }
 
-function createNextState(currentStart, market) {
+function createMarketState(currentStart, market) {
   return {
     monitoredCurrentPeriodStart: currentStart,
-    monitoredNextPeriodStart: market.start,
-    nextMarketSlug: market.slug,
-    nextMarketUrl: market.url,
-    nextMarketConditionId: market.conditionId,
+    monitoredMarketStart: market.start,
+    marketSlug: market.slug,
+    marketUrl: market.url,
+    marketConditionId: market.conditionId,
     up: createPriceState(),
     down: createPriceState(),
     firstIncrease: null,
@@ -321,7 +321,7 @@ function detectThresholdCross(state, side, label) {
   const movementPct = ((current - baseline) / baseline) * 100;
 
   // Equal relative threshold for both sides.
-  const FIRST_INCREASE_PCT = 4;
+  const FIRST_INCREASE_PCT = INITIAL_INCREASE_PCT;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
@@ -357,7 +357,7 @@ async function runTelegramUpdater(currentStart, market) {
 
     const state = readState();
     if (!state.up || !state.down ||
-        Number(state.monitoredNextPeriodStart) !== market.start) {
+        Number(state.monitoredMarketStart) !== market.start) {
       return;
     }
 
@@ -424,11 +424,11 @@ async function runWebSocket(currentStart, market) {
 
         ws.addEventListener("open", function() {
           console.log(
-            "CLOB WebSocket connected; monitoring NEXT market=" +
+            "CLOB WebSocket connected; monitoring LIVE market=" +
             market.slug +
             " UP/DOWN"
           );
-          console.log("Telegram uses one message per NEXT market; edits are throttled to " + TELEGRAM_UPDATE_MS + "ms");
+          console.log("Telegram uses one message per LIVE market; edits are throttled to " + TELEGRAM_UPDATE_MS + "ms");
 
           ws.send(JSON.stringify({
             type: "market",
@@ -477,7 +477,7 @@ async function runWebSocket(currentStart, market) {
             writeState(state);
 
             console.log(
-              "NEXT " + (side === state.up ? "UP" : "DOWN") +
+              "LIVE " + (side === state.up ? "UP" : "DOWN") +
               " BOOK bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
               " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
               " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
@@ -513,7 +513,7 @@ async function runWebSocket(currentStart, market) {
               );
 
               console.log(
-                "NEXT " + (side === state.up ? "UP" : "DOWN") +
+                "LIVE " + (side === state.up ? "UP" : "DOWN") +
                 " bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
                 " ask=" + (side.bestAsk != null ? side.bestAsk.toFixed(4) : "n/a") +
                 " mid=" + (side.midpoint != null ? side.midpoint.toFixed(4) : "n/a")
@@ -538,7 +538,7 @@ async function runWebSocket(currentStart, market) {
               state.updatedAt = side.updatedAt;
               writeState(state);
               console.log(
-                "NEXT " + (side === state.up ? "UP" : "DOWN") +
+                "LIVE " + (side === state.up ? "UP" : "DOWN") +
                 " last trade=" + price.toFixed(4)
               );
             }
@@ -581,17 +581,28 @@ async function runWebSocket(currentStart, market) {
 }
 
 async function monitorPeriod(currentStart) {
-  const market = await getNextMarket(currentStart);
+  const market = await getLiveMarket(currentStart);
 
   console.log(
-    "Monitoring ONLY NEXT market: " +
+    "Monitoring LIVE market until next 5M boundary: " +
     market.slug +
     " url=" +
     market.url
   );
 
-  const state = createNextState(currentStart, market);
-  writeState(state);
+  let state = readState();
+  if (!state || Number(state.monitoredMarketStart) !== market.start) {
+    state = createMarketState(currentStart, market);
+    writeState(state);
+  } else {
+    console.log(
+      "Reusing existing state for LIVE market=" +
+      market.slug +
+      " initialUP=" + (state.initialPriceUp ?? "null") +
+      " initialDOWN=" + (state.initialPriceDown ?? "null") +
+      " alerted=" + Boolean(state.alerted)
+    );
+  }
 
   const stopTelegramUpdater = await runTelegramUpdater(currentStart, market);
 
@@ -606,7 +617,7 @@ async function monitorPeriod(currentStart) {
   writeState(finalState);
 
   console.log(
-    "NEXT market monitoring finished: " +
+    "LIVE market monitoring finished: " +
     market.slug +
     " UP=" + formatPrice(displayPrice(finalState.up)) +
     " DOWN=" + formatPrice(displayPrice(finalState.down))
@@ -614,9 +625,9 @@ async function monitorPeriod(currentStart) {
 }
 
 async function main() {
-  console.log("BTC 5M NEXT-market CLOB WebSocket monitor started");
-  console.log("Current live market is NOT monitored");
-  console.log("No 4:25 snapshot; NEXT market is streamed continuously");
+  console.log("BTC 5M LIVE-market CLOB WebSocket monitor started");
+  console.log("Monitoring the CURRENT live market continuously until the next 5M boundary");
+  console.log("Initial price = first valid CLOB midpoint observed for each side; alert threshold = +" + INITIAL_INCREASE_PCT + "%");
 
   while (true) {
     const currentStart = periodStart(Math.floor(Date.now() / 1000));
