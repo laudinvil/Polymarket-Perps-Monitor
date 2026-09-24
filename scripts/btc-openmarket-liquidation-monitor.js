@@ -185,7 +185,8 @@ function startMonitor() {
       try {
         ws = new WebSocket(WS_URL);
       } catch (err) {
-        console.error("OpenMarket WebSocket constructor failed: " + err.stack);\n        logPersistent("ERROR", "ws_constructor_error", "WebSocket constructor failed", { message: err.message, stack: err.stack });
+        console.error("OpenMarket WebSocket constructor failed: " + err.stack);
+        logPersistent("ERROR", "ws_constructor_error", "WebSocket constructor failed", { message: err.message, stack: err.stack });
         resolve();
         return;
       }
