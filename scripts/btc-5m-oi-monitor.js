@@ -269,23 +269,23 @@ async function monitorPeriod(start) {
   const activity = await getPeriodActivity(market.conditionId, start, snapshotTime + 1);
   const nextUrl = POLY_URL + (start + PERIOD);
 
-  const expectationChange = Number.isFinite(activity.avgUpPrice) && Number.isFinite(activity.avgDownPrice)
-    ? (activity.avgUpPrice - activity.avgDownPrice) * 100
+  const averagePrice = Number.isFinite(activity.avgUpPrice) && Number.isFinite(activity.avgDownPrice)
+    ? (activity.avgUpPrice + activity.avgDownPrice) / 2
     : null;
 
-  const previousAvgUpPrice = Number(state.avgUpPrice);
-  const previousAvgDownPrice = Number(state.avgDownPrice);
+  const previousAveragePrice = Number.isFinite(Number(state.averagePrice))
+    ? Number(state.averagePrice)
+    : Number.isFinite(Number(state.avgUpPrice)) && Number.isFinite(Number(state.avgDownPrice))
+      ? (Number(state.avgUpPrice) + Number(state.avgDownPrice)) / 2
+      : null;
 
-  const upChange = Number.isFinite(previousAvgUpPrice) && Number.isFinite(activity.avgUpPrice)
-    ? (activity.avgUpPrice - previousAvgUpPrice) * 100
-    : null;
-  const downChange = Number.isFinite(previousAvgDownPrice) && Number.isFinite(activity.avgDownPrice)
-    ? (activity.avgDownPrice - previousAvgDownPrice) * 100
+  const averageChange = Number.isFinite(previousAveragePrice) && previousAveragePrice !== 0 && Number.isFinite(averagePrice)
+    ? ((averagePrice - previousAveragePrice) / previousAveragePrice) * 100
     : null;
 
-  const alertDirection = expectationChange > 0 ? "BUY UP" : expectationChange < 0 ? "BUY DOWN" : null;
+  const alertDirection = averageChange > 0 ? "BUY UP" : averageChange < 0 ? "BUY DOWN" : null;
   const shouldAlert =
-    Number.isFinite(expectationChange) &&
+    Number.isFinite(averageChange) &&
     alertDirection !== null;
 
   const nextState = {
@@ -293,6 +293,7 @@ async function monitorPeriod(start) {
     snapshotOffset: TARGET_OFFSET,
     avgUpPrice: activity.avgUpPrice,
     avgDownPrice: activity.avgDownPrice,
+    averagePrice: averagePrice,
     upTradeCount: activity.upTradeCount,
     downTradeCount: activity.downTradeCount,
     updatedAt: new Date().toISOString()
@@ -301,18 +302,14 @@ async function monitorPeriod(start) {
   const formatChange = function(change) {
     if (!Number.isFinite(change)) return "n/a";
     const arrow = change >= 0 ? "↑" : "↓";
-    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2);
+    return arrow + " " + (change >= 0 ? "+" : "") + change.toFixed(2) + "%";
   };
-
-  const expectationText = expectationChange === null
-    ? "n/a"
-    : (expectationChange >= 0 ? "+" : "") + expectationChange.toFixed(2);
 
   if (!shouldAlert) {
     console.log(
-      "Alert ignored: expectation is unavailable or zero" +
-      " (upChange=" + (Number.isFinite(upChange) ? upChange.toFixed(2) : "n/a") +
-      ", downChange=" + (Number.isFinite(downChange) ? downChange.toFixed(2) : "n/a") + ")"
+      "Alert ignored: average change is unavailable or zero" +
+      " (average=" + (Number.isFinite(averagePrice) ? averagePrice.toFixed(4) : "n/a") +
+      ", change=" + (Number.isFinite(averageChange) ? averageChange.toFixed(2) + "%" : "n/a") + ")"
     );
   } else {
     const nextOutcome = alertDirection === "BUY UP" ? "UP" : "DOWN";
@@ -321,10 +318,8 @@ async function monitorPeriod(start) {
     const lines = [
       "🔥 BTC · 5M",
       "",
-      "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
-      "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
-      "",
-      "ИЗМЕНЕНИЕ: " + expectationText + (expectationChange !== null ? (expectationChange >= 0 ? " BUY UP ↑" : " BUY DOWN ↓") : ""),
+      "СРЕДНЯЯ: " + (Number.isFinite(averagePrice) ? averagePrice.toFixed(4) : "n/a"),
+      "ИЗМЕНЕНИЕ: " + formatChange(averageChange) + (averageChange !== null ? (averageChange >= 0 ? " BUY UP ↑" : " BUY DOWN ↓") : ""),
       "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
       "",
       "➡️ NEXT · Polymarket 5M",
@@ -334,8 +329,8 @@ async function monitorPeriod(start) {
     await sendTelegram(lines.join("\n"));
     console.log(
       "Telegram sent for period=" + start +
-      " avgUp=" + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") +
-      " avgDown=" + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a")
+      " average=" + (Number.isFinite(averagePrice) ? averagePrice.toFixed(4) : "n/a") +
+      " change=" + (Number.isFinite(averageChange) ? averageChange.toFixed(2) + "%" : "n/a")
     );
   }
 
