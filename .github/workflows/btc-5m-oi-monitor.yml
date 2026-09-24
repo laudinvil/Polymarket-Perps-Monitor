@@ -1,4 +1,4 @@
-name: BTC 5M NEXT Market Monitor # start monitor
+name: BTC 5M LIVE Market Monitor # start monitor
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: btc-5m-next-market-monitor-v2
+  group: btc-5m-live-market-monitor-v1
   cancel-in-progress: true
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: npx convex deploy
 
-      - name: Run BTC 5M NEXT market monitor
+      - name: Run BTC 5M LIVE market monitor
         env:
           CONVEX_URL: https://brainy-canary-207.eu-west-1.convex.cloud
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
