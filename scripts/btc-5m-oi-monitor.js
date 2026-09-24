@@ -65,8 +65,7 @@ function buildTelegramText(market, state) {
     "⬆️ UP: " + formatPrice(displayPrice(state.up)),
     "⬇️ DOWN: " + formatPrice(displayPrice(state.down)),
     "",
-    "FIRST INCREASE: " +
-      (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
+    (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " + formatPrice(from) + " → " + formatPrice(to),
     "",
     "➡️ NEXT · Polymarket 5M",
