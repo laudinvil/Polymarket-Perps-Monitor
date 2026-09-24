@@ -169,7 +169,7 @@ function startMonitor() {
 
         pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            try { ws.send(JSON.stringify({ method: "public/ping" })); } catch (_) {}
+            try { ws.send(JSON.stringify({ type: "ping", timestamp: Date.now() })); } catch (_) {}
           }
         }, 20000);
       });
