@@ -617,7 +617,9 @@ async function monitorPeriod(currentStart) {
 
   const previousState = readState();
   const state = createNextState(currentStart, market);
-  if (previousState.increaseStreak && previousState.increaseStreak.side) {
+  if (previousState.firstIncrease &&
+      previousState.increaseStreak &&
+      previousState.increaseStreak.side) {
     state.increaseStreak = previousState.increaseStreak;
   }
   writeState(state);
