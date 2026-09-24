@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Install Convex dependencies
+        run: npm install
+
       - name: Deploy Convex logging functions
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
