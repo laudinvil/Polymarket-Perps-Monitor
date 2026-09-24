@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/btc-openmarket-liquidation-monitor.yml"
-      - "scripts/btc-openmarket-liquidation-monitor.js"
+      - ".github/workflows/btc-marginpad-liquidation-monitor.yml"
+      - "scripts/btc-marginpad-liquidation-monitor.js"
   schedule:
     - cron: "7 */6 * * *"
 
