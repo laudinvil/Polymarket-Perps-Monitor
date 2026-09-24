@@ -5,7 +5,6 @@ const WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
-
 const TELEGRAM_UPDATE_MS = 3000;
 
 async function telegramRequest(method, payload) {
@@ -210,7 +209,7 @@ function createNextState(currentStart, market) {
   };
 }
 
-function updatePrice(priceState, data) {
+function updatePrice(priceState, data, label) {
   const bestBid = data.best_bid != null ? Number(data.best_bid) :
     data.bestBid != null ? Number(data.bestBid) : priceState.bestBid;
   const bestAsk = data.best_ask != null ? Number(data.best_ask) :
@@ -230,8 +229,7 @@ function updatePrice(priceState, data) {
 
   priceState.updatedAt = new Date().toISOString();
   console.log(
-    "CLOB STATE " +
-    (priceState === state.up ? "UP" : priceState === state.down ? "DOWN" : "") +
+    "CLOB STATE " + label +
     " bid=" + (priceState.bestBid ?? "null") +
     " ask=" + (priceState.bestAsk ?? "null") +
     " mid=" + (priceState.midpoint ?? "null")
@@ -263,8 +261,6 @@ function updateFromBook(priceState, bids, asks) {
 }
 
 function displayPrice(priceState) {
-  // The Polymarket UI quote is the current CLOB midpoint.
-  // Recompute it from the latest stored best bid/ask on every Telegram tick.
   const bid = Number(priceState.bestBid);
   const ask = Number(priceState.bestAsk);
   if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null;
@@ -287,7 +283,6 @@ async function runTelegramUpdater(currentStart, market) {
       return;
     }
 
-    // Do not create the message until at least one live CLOB price exists.
     if (!Number.isFinite(Number(displayPrice(state.up))) &&
         !Number.isFinite(Number(displayPrice(state.down)))) {
       return;
@@ -434,7 +429,8 @@ async function runWebSocket(currentStart, market) {
                 best_bid: bestBid,
                 best_ask: bestAsk,
                 price: price
-              });
+              }, side === state.up ? "UP" : "DOWN");
+
               console.log(
                 "NEXT " + (side === state.up ? "UP" : "DOWN") +
                 " bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
@@ -464,7 +460,7 @@ async function runWebSocket(currentStart, market) {
                 "NEXT " + (side === state.up ? "UP" : "DOWN") +
                 " last trade=" + price.toFixed(4)
               );
-              }
+            }
           }
         });
 
