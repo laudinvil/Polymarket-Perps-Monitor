@@ -267,11 +267,17 @@ function startMonitor() {
           }
         }, WS_AUTH_TIMEOUT_MS);
 
-        // OpenMarket documents authentication as a one-way message and does not document
-        // an authentication response. Send the subscription after a short grace period;
-        // protocol errors remain visible in the persistent log.
+        // Do not subscribe before authentication has been positively acknowledged.
+        // The previous implementation subscribed after 1s even when authAccepted=false,
+        // which produced the exact failure state seen in Convex.
         subscribeStartTimer = setTimeout(() => {
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (ws.readyState !== WebSocket.OPEN || !authAccepted) {
+            logPersistent("WARN", "subscribe_blocked_until_auth", "Subscription not sent because authentication was not confirmed", {
+              authAccepted,
+              readyState: ws.readyState
+            });
+            return;
+          }
 
           // Subscribe to each exchange separately so one invalid channel cannot
           // obscure which exchange causes a protocol/connection failure.
@@ -379,11 +385,19 @@ function startMonitor() {
 
         // Authentication responses are not documented by OpenMarket, but if the server
         // sends an uncorrelated result message, retain it as diagnostic information.
-        if (message.result && !authAccepted && !message.points) {
+        if (
+          !authAccepted &&
+          !message.points &&
+          (
+            message.method === "public/authenticate" ||
+            message.method === "public/authenticate.result" ||
+            (message.result && message.id === undefined)
+          )
+        ) {
           authAccepted = true;
           if (authTimer) clearTimeout(authTimer);
-          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
-          logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
+          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result || message });
+          logPersistent("INFO", "auth_ok", "Authentication accepted", message.result || message);
           return;
         }
 
