@@ -2,12 +2,15 @@ name: BTC Liquidations · OpenMarket
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/btc-openmarket-liquidation-monitor.yml"
   schedule:
     - cron: "7 */6 * * *"
 
 concurrency:
   group: btc-openmarket-liquidation-monitor
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
