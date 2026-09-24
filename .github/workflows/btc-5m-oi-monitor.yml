@@ -27,4 +27,7 @@ jobs:
           token: ${{ github.token }}
 
       - name: Run BTC 5M NEXT market monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/btc-5m-oi-monitor.js
