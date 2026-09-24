@@ -342,30 +342,17 @@ function detectThresholdCross(state, side, label) {
       detectedAt: new Date().toISOString()
     };
 
-    const previousStreak = state.increaseStreak &&
-      state.increaseStreak.side === label
-      ? Number(state.increaseStreak.count) || 0
-      : 0;
-
-    state.increaseStreak = {
-      side: label,
-      count: previousStreak + 1,
-      lastMarketStart: state.monitoredNextPeriodStart,
-      detectedAt: new Date().toISOString()
-    };
-
-    state.alerted = state.increaseStreak.count >= 2;
+    state.alerted = true;
 
     console.log(
       "INCREASE detected side=" + label +
       " from=" + baseline.toFixed(4) +
       " to=" + current.toFixed(4) +
-      " movePct=" + movementPct.toFixed(3) + "%" +
-      " streak=" + state.increaseStreak.count +
-      " alert=" + state.alerted
+      " movePct=" + movementPct.toFixed(3) +
+      "% alert=true"
     );
 
-    return state.alerted;
+    return true;
   }
 
   return false;
