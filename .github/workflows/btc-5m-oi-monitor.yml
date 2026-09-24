@@ -1,6 +1,7 @@
 name: BTC 5M NEXT Market Monitor
 
 on:
+  push:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
@@ -32,7 +33,12 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=20" |
-          printf "%s\n" 35973908813 |
+          curl -fsSL --fail-with-body \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=50" | \
+          jq -r --argjson current "$GITHUB_RUN_ID" \
+            '.workflow_runs[] | select(.workflow_id == 364449335 and .id != $current and (.status == "queued" or .status == "in_progress")) | .id' |
           while read -r run_id; do
             [ -z "$run_id" ] && continue
             echo "Cancelling old BTC monitor run $run_id"
