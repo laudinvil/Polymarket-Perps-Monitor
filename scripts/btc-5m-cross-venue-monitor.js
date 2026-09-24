@@ -48,6 +48,7 @@ async function fetchScreener() {
 function num(value) { const n = Number(value); return Number.isFinite(n) ? n : null; }
 
 function midFromBook(book) {
+  if (Array.isArray(book)) return num(book[0]?.[0]);
   if (!book || typeof book !== "object") return null;
   if (Number.isFinite(Number(book.midpoint))) return Number(book.midpoint);
 
@@ -62,17 +63,14 @@ function midFromBook(book) {
   return null;
 }
 
-function extractVenueFromBook(book, upKey, downKey) {
+function extractVenueFromBook(book, venue) {
   if (!book || typeof book !== "object") return null;
 
-  const upBook = book[upKey] || book.up || book.yes;
-  const downBook = book[downKey] || book.down || book.no;
-
-  let up = num(book.up);
-  let down = num(book.down);
-
-  if (!Number.isFinite(up)) up = midFromBook(upBook);
-  if (!Number.isFinite(down)) down = midFromBook(downBook);
+  let up = num(book.up ?? book.price_up);
+  let down = num(book.down ?? book.price_down);
+  if (venue === "kalshi") { up = Number.isFinite(up) ? up : midFromBook(book.yes); down = Number.isFinite(down) ? down : midFromBook(book.no); }
+  else if (venue === "polymarket") { up = Number.isFinite(up) ? up : midFromBook(book.orderbook_up); down = Number.isFinite(down) ? down : midFromBook(book.orderbook_down); }
+  else { up = Number.isFinite(up) ? up : midFromBook(book); }
 
   if (Number.isFinite(up) && !Number.isFinite(down)) down = 1 - up;
   if (Number.isFinite(down) && !Number.isFinite(up)) up = 1 - down;
@@ -91,9 +89,9 @@ function getMarketData(data) {
   const books = data?.books || {};
 
   return {
-    polymarket: extractVenueFromBook(books.polymarket, "up", "down"),
-    kalshi: extractVenueFromBook(books.kalshi, "yes", "no"),
-    limitless: extractVenueFromBook(books.limitless, "up", "down")
+    polymarket: extractVenueFromBook(books.polymarket, "polymarket"),
+    kalshi: extractVenueFromBook(books.kalshi, "kalshi"),
+    limitless: extractVenueFromBook(books.limitless, "limitless")
   };
 }
 function pp(a, b) { return Math.abs(a - b) * 100; }
