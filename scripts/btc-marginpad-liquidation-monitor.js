@@ -48,6 +48,7 @@ async function sendTelegram(text) {
       body: JSON.stringify({
         chat_id: TELEGRAM_CHAT_ID,
         text,
+        parse_mode: "HTML",
         disable_web_page_preview: true
       }),
       signal: AbortSignal.timeout(10000)
@@ -119,6 +120,8 @@ function processLiquidation(liq) {
     "AMOUNT: " + liq.amount.toFixed(6) + " BTC",
     "EXCHANGE: HYPERLIQUID",
     "TIME: " + new Date(liq.time).toISOString().replace("T", " "),
+    "",
+    '<a href="turboflow-prod://wc">ОТКРЫТЬ TURBOFLOW</a>',
     "",
     "➡️ TF",
     "https://tf.xyz/events/"
