@@ -1,26 +1,14 @@
 const WebSocket = globalThis.WebSocket;
-const CONVEX_URL = process.env.CONVEX_URL || null;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 const RUN_MS = 5 * 60 * 60 * 1000;
 const RECONNECT_MS = 5000;
 const seen = new Set();
 let stopping = false;
-
-function convexMutation(path, args) {
-  if (!CONVEX_URL) return Promise.resolve();
-  const url = CONVEX_URL.replace(/\/$/, "");
-  return fetch(url + "/api/mutation", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, args, format: "json" }),
-    signal: AbortSignal.timeout(8000)
-  }).then(response => {
-    if (!response.ok) throw new Error("HTTP " + response.status);
-  }).catch(err => {
-    console.error("Convex logging failed: " + err.message);
-  });
-}
+const sourceState = {
+  BINANCE: { state: "STARTING", messages: 0, liquidations: 0, lastMessageAt: null },
+  BYBIT: { state: "STARTING", messages: 0, liquidations: 0, lastMessageAt: null }
+};
 
 function log(level, event, message, data) {
   const payload = {
@@ -28,7 +16,6 @@ function log(level, event, message, data) {
     ...(data === undefined ? {} : { data: JSON.stringify(data) })
   };
   console.log(JSON.stringify(payload));
-  void convexMutation("btc5mState:logOpenMarket", payload);
 }
 
 async function sendTelegram(text) {
@@ -56,6 +43,7 @@ function processLiquidation(liq) {
   const usd = liq.price * liq.amount;
   const sideText = liq.side === "LONG" ? "LONG LIQUIDATED" : "SHORT LIQUIDATED";
 
+  sourceState[liq.exchange].liquidations += 1;
   log("INFO", "liquidation_received", "BTC liquidation received", {
     exchange: liq.exchange, side: liq.side, price: liq.price, amount: liq.amount, usd, time: liq.time
   });
@@ -79,12 +67,18 @@ function connectBinance() {
   const ws = new WebSocket(url);
 
   ws.addEventListener("open", () => {
-    log("INFO", "source_connected", "Binance liquidation stream connected");
+    sourceState.BINANCE.state = "OPEN";
+    log("INFO", "source_open", "BINANCE OPEN confirmed", { url });
   });
 
   ws.addEventListener("message", event => {
+    sourceState.BINANCE.messages += 1;
+    sourceState.BINANCE.lastMessageAt = Date.now();
     try {
       const m = JSON.parse(event.data);
+      if (sourceState.BINANCE.messages === 1) {
+        log("INFO", "source_message_received", "BINANCE first WebSocket message received", { event: m.e || null });
+      }
       if (m.e !== "forceOrder" || !m.o) return;
       const o = m.o;
       processLiquidation({
@@ -99,10 +93,11 @@ function connectBinance() {
     }
   });
 
-  ws.addEventListener("error", () => log("ERROR", "source_error", "Binance WebSocket error"));
+  ws.addEventListener("error", () => log("ERROR", "source_error", "BINANCE WebSocket error"));
 
   ws.addEventListener("close", event => {
-    log("WARN", "source_closed", "Binance liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
+    sourceState.BINANCE.state = "CLOSED";
+    log("WARN", "source_closed", "BINANCE liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
     if (!stopping) setTimeout(connectBinance, RECONNECT_MS);
   });
 }
@@ -114,7 +109,8 @@ function connectBybit() {
   let pingTimer;
 
   ws.addEventListener("open", () => {
-    log("INFO", "source_connected", "Bybit liquidation stream connected");
+    sourceState.BYBIT.state = "OPEN";
+    log("INFO", "source_open", "BYBIT OPEN confirmed", { url });
     ws.send(JSON.stringify({ op: "subscribe", args: ["allLiquidation.BTCUSDT"] }));
     pingTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: "ping" }));
@@ -122,8 +118,13 @@ function connectBybit() {
   });
 
   ws.addEventListener("message", event => {
+    sourceState.BYBIT.messages += 1;
+    sourceState.BYBIT.lastMessageAt = Date.now();
     try {
       const m = JSON.parse(event.data);
+      if (sourceState.BYBIT.messages === 1) {
+        log("INFO", "source_message_received", "BYBIT first WebSocket message received", { op: m.op || null, success: m.success ?? null, topic: m.topic || null });
+      }
       if (m.op === "subscribe" || m.op === "pong") return;
       if (m.topic !== "allLiquidation.BTCUSDT" || !Array.isArray(m.data)) return;
       for (const o of m.data) {
@@ -140,11 +141,12 @@ function connectBybit() {
     }
   });
 
-  ws.addEventListener("error", () => log("ERROR", "source_error", "Bybit WebSocket error"));
+  ws.addEventListener("error", () => log("ERROR", "source_error", "BYBIT WebSocket error"));
 
   ws.addEventListener("close", event => {
     clearInterval(pingTimer);
-    log("WARN", "source_closed", "Bybit liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
+    sourceState.BYBIT.state = "CLOSED";
+    log("WARN", "source_closed", "BYBIT liquidation stream closed", { code: event.code, reason: String(event.reason || "") });
     if (!stopping) setTimeout(connectBybit, RECONNECT_MS);
   });
 }
@@ -161,11 +163,12 @@ connectBybit();
 
 setInterval(() => {
   log("INFO", "monitor_heartbeat", "BTC liquidation monitor heartbeat", {
-    sources: ["BINANCE", "BYBIT"],
-    seen: seen.size,
-    uptimeSec: Math.floor(process.uptime())
+    uptimeSec: Math.floor(process.uptime()),
+    BINANCE: sourceState.BINANCE,
+    BYBIT: sourceState.BYBIT,
+    seen: seen.size
   });
-}, 60000);
+}, 30000);
 
 setTimeout(() => {
   stopping = true;
