@@ -136,7 +136,20 @@ async function pollMarginPad() {
       throw new Error("MarginPad HTTP " + response.status);
     }
 
-    const body = await response.json();
+    const rawText = await response.text();
+    log("INFO", "marginpad_raw_response", "Raw MarginPad feed response", {
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      body: rawText
+    });
+
+    let body;
+    try {
+      body = JSON.parse(rawText);
+    } catch (parseErr) {
+      throw new Error("MarginPad returned non-JSON response: " + parseErr.message);
+    }
+
     const events = Array.isArray(body?.events) ? body.events : [];
 
     sourceState.MARGINPAD.state = "OPEN";
