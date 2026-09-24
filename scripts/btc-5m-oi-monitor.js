@@ -73,8 +73,7 @@ function buildTelegramText(market, state) {
     "",
     formatAlertTime(),
     "",
-    (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
-      " " + formatPrice(from) + " → " + formatPrice(to),
+    (side === "UP" ? "⬇️ BUY DOWN" : "⬆️ BUY UP"),
     "",
     "➡️ Polymarket 5M",
     market.url
