@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - ".github/workflows/btc-openmarket-liquidation-monitor.yml"
+      - "scripts/btc-openmarket-liquidation-monitor.js"
   schedule:
     - cron: "7 */6 * * *"
 
