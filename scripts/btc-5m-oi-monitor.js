@@ -50,12 +50,6 @@ async function telegramRequest(method, payload) {
   return json.result;
 }
 
-function formatAlertTime() {
-  const now = new Date();
-  const utcPlus3 = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-  return utcPlus3.toISOString().slice(0, 19).replace("T", " ");
-}
-
 function formatPrice(value) {
   return Number.isFinite(value) ? value.toFixed(4) : "n/a";
 }
@@ -66,17 +60,15 @@ function buildTelegramText(market, state) {
   const to = state.firstIncrease ? state.firstIncrease.to : null;
 
   return [
-    "🔥 BTC · 5M",
+    "🔥 BTC · NEXT 5M",
     "",
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
     "",
-    "BUY → " + (side === "UP" ? "DOWN" : "UP") +
+    (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " + formatPrice(from) + " → " + formatPrice(to),
     "",
-    formatAlertTime(),
-    "",
-    "➡️ Polymarket 5M",
+    "➡️ NEXT · Polymarket 5M",
     market.url
   ].join("\n");
 }
@@ -91,7 +83,7 @@ async function createTelegramMessage(market, state) {
     disable_web_page_preview: false
   });
 
-  console.log("Telegram message created message_id=" + result.message_id);
+  console.log("Telegram NEXT message created message_id=" + result.message_id);
   return result.message_id;
 }
 
@@ -305,15 +297,8 @@ function displayPrice(priceState) {
   return (bid + ask) / 2;
 }
 
-function detectThresholdCross(state, side, label, marketStart) {
-  if (state.firstIncrease) return false;
-
-  // The alert is valid only if the increase happened BEFORE the
-  // start of the market referenced by the Telegram link.
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(Number(marketStart)) || nowSeconds >= Number(marketStart)) {
-    return false;
-  }
+function detectThresholdCross(state, side, label) {
+  if (state.alerted) return false;
 
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return false;
@@ -335,9 +320,9 @@ function detectThresholdCross(state, side, label, marketStart) {
   // from the frozen baseline. There is no fixed 0.52/0.53 price bias.
   const movementPct = ((current - baseline) / baseline) * 100;
 
-  // Equal threshold for both sides. A 4% move means the same relative
+  // Equal threshold for both sides. A 1% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 13;
+  const FIRST_INCREASE_PCT = 1;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
@@ -347,15 +332,13 @@ function detectThresholdCross(state, side, label, marketStart) {
       movementPct: movementPct,
       detectedAt: new Date().toISOString()
     };
-
     state.alerted = true;
 
     console.log(
-      "INCREASE detected side=" + label +
+      "FIRST INCREASE detected side=" + label +
       " from=" + baseline.toFixed(4) +
       " to=" + current.toFixed(4) +
-      " movePct=" + movementPct.toFixed(3) +
-      "% alert=true"
+      " movePct=" + movementPct.toFixed(3) + "%"
     );
 
     return true;
@@ -446,7 +429,7 @@ async function runWebSocket(currentStart, market) {
             market.slug +
             " UP/DOWN"
           );
-          console.log("Telegram uses one message per market");
+          console.log("Telegram uses one message per NEXT market; edits are throttled to " + TELEGRAM_UPDATE_MS + "ms");
 
           ws.send(JSON.stringify({
             type: "market",
@@ -490,8 +473,7 @@ async function runWebSocket(currentStart, market) {
             detectThresholdCross(
               state,
               side,
-              side === state.up ? "UP" : "DOWN",
-              market.start
+              side === state.up ? "UP" : "DOWN"
             );
             writeState(state);
 
@@ -528,8 +510,7 @@ async function runWebSocket(currentStart, market) {
               detectThresholdCross(
                 state,
                 side,
-                side === state.up ? "UP" : "DOWN",
-                market.start
+                side === state.up ? "UP" : "DOWN"
               );
 
               console.log(
@@ -610,7 +591,6 @@ async function monitorPeriod(currentStart) {
     market.url
   );
 
-  const previousState = readState();
   const state = createNextState(currentStart, market);
   writeState(state);
 
