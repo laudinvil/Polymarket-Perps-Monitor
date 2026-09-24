@@ -42,13 +42,13 @@ function buildTelegramText(market, state) {
     "",
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
-    state.firstUpwardMove ? (
-      "\n📈 FIRST UP: " +
-      state.firstUpwardMove.side +
+    state.firstIncrease ? (
+      "\n📈 FIRST INCREASE: " +
+      state.firstIncrease.side +
       " " +
-      formatPrice(state.firstUpwardMove.from) +
+      formatPrice(state.firstIncrease.from) +
       " → " +
-      formatPrice(state.firstUpwardMove.to)
+      formatPrice(state.firstIncrease.to)
     ) : "",
     "",
     "➡️ NEXT · Polymarket 5M",
@@ -214,7 +214,7 @@ function createNextState(currentStart, market) {
     nextMarketConditionId: market.conditionId,
     up: createPriceState(),
     down: createPriceState(),
-    firstUpwardMove: null,
+    firstIncrease: null,
     updatedAt: new Date().toISOString()
   };
 }
@@ -277,15 +277,15 @@ function displayPrice(priceState) {
   return (bid + ask) / 2;
 }
 
-function detectFirstUpwardMove(state, side, label) {
-  if (state.firstUpwardMove) return;
+function detectFirstIncrease(state, side, label) {
+  if (state.firstIncrease) return;
 
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return;
 
   const previous = Number(side.lastObservedDisplayPrice);
   if (Number.isFinite(previous) && previous > 0 && current > previous) {
-    state.firstUpwardMove = {
+    state.firstIncrease = {
       side: label,
       from: previous,
       to: current,
@@ -293,7 +293,7 @@ function detectFirstUpwardMove(state, side, label) {
     };
 
     console.log(
-      "FIRST UPWARD MOVE detected side=" +
+      "FIRST INCREASE detected side=" +
       label +
       " from=" + previous.toFixed(4) +
       " to=" + current.toFixed(4)
@@ -435,7 +435,7 @@ async function runWebSocket(currentStart, market) {
             if (!side) return;
 
             updateFromBook(side, message.bids, message.asks);
-            detectFirstUpwardMove(
+            detectFirstIncrease(
               state,
               side,
               side === state.up ? "UP" : "DOWN"
@@ -472,7 +472,7 @@ async function runWebSocket(currentStart, market) {
                 price: price
               }, side === state.up ? "UP" : "DOWN");
 
-              detectFirstUpwardMove(
+              detectFirstIncrease(
                 state,
                 side,
                 side === state.up ? "UP" : "DOWN"
