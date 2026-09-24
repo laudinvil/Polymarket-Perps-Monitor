@@ -1,7 +1,7 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
-const FEED_URL = "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=20";
+const FEED_URL = "https://marginpad.io/api/v1/liquidations/live?symbol=BTC&limit=400";
 const POLL_MS = 4000;
 const REQUEST_TIMEOUT_MS = 4500;
 const RUN_MS = 5 * 60 * 60 * 1000;
