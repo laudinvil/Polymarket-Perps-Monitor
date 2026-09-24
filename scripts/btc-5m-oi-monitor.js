@@ -40,8 +40,8 @@ function buildTelegramText(market, state) {
   return [
     "🔥 BTC · NEXT 5M",
     "",
-    "UP: " + formatPrice(displayPrice(state.up)),
-    "DOWN: " + formatPrice(displayPrice(state.down)),
+    "⬆️ UP: " + formatPrice(displayPrice(state.up)),
+    "⬇️ DOWN: " + formatPrice(displayPrice(state.down)),
     state.firstIncrease ? (
       "\n📈 FIRST INCREASE: " +
       state.firstIncrease.side +
