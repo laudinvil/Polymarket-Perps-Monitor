@@ -301,9 +301,9 @@ function detectFirstIncrease(state, side, label) {
   // The baseline is the actual starting price captured in the first
   // Telegram message for this NEXT market. Never replace it with 0.5
   // or with a later price.
-  if (baseline < 0.5) return;
+  if (baseline < 0.52) return;
 
-  if (current >= 0.5 && current > baseline) {
+  if (current >= 0.52 && current > baseline) {
     state.firstIncrease = {
       side: label,
       from: baseline,
