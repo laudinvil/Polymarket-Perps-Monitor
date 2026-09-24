@@ -2,6 +2,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 const BINANCE_WS_URL = "wss://fstream.binance.com/ws/btcusdt@forceOrder";
+const BYBIT_PING_MS = 20000;
 const BYBIT_WS_URL = "wss://stream.bybit.com/v5/public/linear";
 
 const RUN_MS = 6 * 60 * 60 * 1000;
@@ -147,7 +148,7 @@ function handleBinanceMessage(raw) {
 
   acceptLiquidation({
     exchange: "BINANCE",
-    side: order.S,
+    side: order.S === "BUY" ? "BUY" : order.S === "SELL" ? "SELL" : order.S,
     price: Number(order.ap),
     amount: Number(order.z || order.q),
     eventTime: Number(order.T || msg.E)
@@ -231,8 +232,15 @@ function connectBybit() {
   const ws = new WebSocket(BYBIT_WS_URL);
   stats.BYBIT.state = "CONNECTING";
 
+  let pingTimer = null;
+
   ws.addEventListener("open", () => {
     stats.BYBIT.state = "OPEN";
+    pingTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ op: "ping" }));
+      }
+    }, BYBIT_PING_MS);
 
     ws.send(JSON.stringify({
       op: "subscribe",
@@ -254,6 +262,7 @@ function connectBybit() {
   });
 
   ws.addEventListener("close", () => {
+    if (pingTimer) clearInterval(pingTimer);
     stats.BYBIT.state = "CLOSED";
     if (stopping) return;
 
