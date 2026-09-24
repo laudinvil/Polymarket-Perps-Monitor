@@ -29,10 +29,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=20" |
           curl -fsSL --fail-with-body \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
