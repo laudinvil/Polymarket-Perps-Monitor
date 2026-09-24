@@ -6,7 +6,12 @@ const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 // OpenMarket Free plan: keep client-initiated WebSocket traffic below 10 messages/min.
 const WS_MESSAGE_LIMIT = 9;
 const WS_WINDOW_MS = 60 * 1000;
-const CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL || null;
+const RAW_CONVEX_URL = process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL || null;
+// Convex function API uses the .convex.cloud deployment URL. If the secret contains
+// the previously used .convex.site URL, normalize it automatically.
+const CONVEX_URL = RAW_CONVEX_URL
+  ? RAW_CONVEX_URL.replace(/\\.convex\\.site\\/?$/, ".convex.cloud").replace(/\\/$/, "")
+  : null;
 
 async function convexMutation(path, args) {
   if (!CONVEX_URL) throw new Error("Missing CONVEX_URL");
