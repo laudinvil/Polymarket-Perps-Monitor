@@ -110,6 +110,32 @@ export const claimTelegramMarketV3 = mutation({
 
 const OPENMARKET_MONITOR = "btc-openmarket-btc-liquidation";
 
+export const logOpenMarketBatch = mutation({
+  args: {
+    logs: v.array(v.object({
+      level: v.string(),
+      event: v.string(),
+      message: v.string(),
+      data: v.optional(v.string()),
+    })),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    for (const log of args.logs) {
+      await ctx.db.insert("openMarketLogs", {
+        monitor: OPENMARKET_MONITOR,
+        level: log.level,
+        event: log.event,
+        message: log.message,
+        data: log.data,
+        createdAt: now,
+      });
+    }
+    return null;
+  },
+});
+
 export const logOpenMarket = mutation({
   args: {
     level: v.string(),
@@ -127,17 +153,6 @@ export const logOpenMarket = mutation({
       data: args.data,
       createdAt: Date.now(),
     });
-
-    const oldRows = await ctx.db
-      .query("openMarketLogs")
-      .withIndex("by_monitor_time", (q) => q.eq("monitor", OPENMARKET_MONITOR))
-      .order("desc")
-      .collect();
-
-    for (const row of oldRows.slice(500)) {
-      await ctx.db.delete(row._id);
-    }
-
     return null;
   },
 });
