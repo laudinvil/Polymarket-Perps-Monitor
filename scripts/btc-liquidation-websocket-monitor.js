@@ -163,6 +163,16 @@ function handleBinanceMessage(raw) {
   const order = msg?.o;
   if (msg?.e !== "forceOrder" || !order || order.s !== "BTCUSDT") return;
 
+  log("INFO", "binance_raw_liquidation", "Raw Binance BTC liquidation event", {
+    symbol: order.s,
+    side: order.S,
+    averagePrice: order.ap,
+    executedQty: order.z,
+    originalQty: order.q,
+    orderTime: order.T,
+    eventTime: msg.E
+  });
+
   acceptLiquidation({
     exchange: "BINANCE",
     side: String(order.S || "").toUpperCase(),
@@ -232,6 +242,15 @@ function handleBybitMessage(raw) {
 
   for (const item of items) {
     if (!item) continue;
+
+    log("INFO", "bybit_raw_liquidation", "Raw Bybit BTC liquidation event", {
+      symbol: item.s,
+      side: item.S,
+      executedSize: item.v,
+      bankruptcyPrice: item.p,
+      eventTime: item.T,
+      messageTime: msg.ts
+    });
 
     acceptLiquidation({
       exchange: "BYBIT",
