@@ -6,7 +6,7 @@ const STATE_FILE = "state/btc-5m-oi.json";
 const PERIOD = 300;
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
 
-const TELEGRAM_UPDATE_MS = 2000;
+const TELEGRAM_UPDATE_MS = 3000;
 
 async function telegramRequest(method, payload) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -74,7 +74,6 @@ async function editTelegramMessage(messageId, market, state) {
     disable_web_page_preview: false
   });
 }
-
 
 function periodStart(ts) {
   return Math.floor(ts / PERIOD) * PERIOD;
