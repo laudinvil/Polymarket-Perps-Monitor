@@ -6,7 +6,7 @@ const POLL_MS = 4000;
 const REQUEST_TIMEOUT_MS = 4500;
 const RUN_MS = 5 * 60 * 60 * 1000;
 const seen = new Set();
-const monitorStartedAt = Date.now();
+let latestSeenTs = 0;
 let stopping = false;
 let pollInFlight = false;
 
@@ -162,7 +162,9 @@ async function pollMarginPad() {
     sourceState.MARGINPAD.lastSuccessAt = Date.now();
 
     for (const event of events) {
-      if (Number(event.ts) < monitorStartedAt) continue;
+      const eventTs = Number(event.ts);
+      if (!Number.isFinite(eventTs)) continue;
+      if (eventTs > latestSeenTs) latestSeenTs = eventTs;
       processLiquidation({
         exchange: String(event.exchange || "").toUpperCase(),
         symbol: String(event.symbol || "").toUpperCase(),
