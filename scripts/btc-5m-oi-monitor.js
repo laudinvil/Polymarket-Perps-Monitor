@@ -280,7 +280,7 @@ async function monitorPeriod(start) {
     : null;
 
   const overallChange = Number.isFinite(upChange) && Number.isFinite(downChange)
-    ? (upChange + downChange) / 2
+    ? upChange + downChange
     : null;
 
   const alertDirection = overallChange > 0 ? "BUY UP" : overallChange < 0 ? "BUY DOWN" : null;
