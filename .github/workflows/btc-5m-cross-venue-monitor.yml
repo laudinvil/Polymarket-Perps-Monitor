@@ -36,3 +36,5 @@ jobs:
           DIVERGENCE_RESET_PP: "2"
           CONSENSUS_MAX_PP: "2"
         run: node scripts/btc-5m-cross-venue-monitor.js
+
+# Start after DepthFeed API key setup
