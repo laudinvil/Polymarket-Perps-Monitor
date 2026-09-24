@@ -284,7 +284,13 @@ function detectFirstIncrease(state, side, label) {
   if (!Number.isFinite(current)) return;
 
   const previous = Number(side.lastObservedDisplayPrice);
-  if (Number.isFinite(previous) && previous > 0 && current > previous) {
+
+  if (
+    Number.isFinite(previous) &&
+    previous >= 0.5 &&
+    current >= 0.5 &&
+    current > previous
+  ) {
     state.firstIncrease = {
       side: label,
       from: previous,
@@ -300,7 +306,7 @@ function detectFirstIncrease(state, side, label) {
     );
   }
 
-  if (current > 0) side.lastObservedDisplayPrice = current;
+  if (current >= 0.5) side.lastObservedDisplayPrice = current;
 }
 
 async function runTelegramUpdater(currentStart, market) {
