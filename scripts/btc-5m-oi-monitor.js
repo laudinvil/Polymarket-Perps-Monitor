@@ -255,6 +255,8 @@ async function runWebSocket(currentStart, market) {
   // Otherwise every reconnect creates a duplicate message for the same NEXT market.
   let telegramMessageId = null;
   let telegramLastText = null;
+  let telegramCreateAttempted = false;
+  let telegramUpdateInFlight = false;
 
   while (periodStart(Math.floor(Date.now() / 1000)) === currentStart) {
     try {
@@ -270,24 +272,44 @@ async function runWebSocket(currentStart, market) {
             return;
           }
 
-          const state = readState();
-          if (!state.up || !state.down ||
-              Number(state.monitoredNextPeriodStart) !== market.start) {
-            return;
-          }
-
-          const text = buildTelegramText(market, state);
-          if (!force && text === telegramLastText) return;
+          if (telegramUpdateInFlight) return;
+          telegramUpdateInFlight = true;
 
           try {
-            if (telegramMessageId === null) {
-              telegramMessageId = await createTelegramMessage(market, state);
-            } else {
-              await editTelegramMessage(telegramMessageId, market, state);
+            const state = readState();
+            if (!state.up || !state.down ||
+                Number(state.monitoredNextPeriodStart) !== market.start) {
+              return;
             }
+
+            const text = buildTelegramText(market, state);
+            if (!force && text === telegramLastText) return;
+
+            if (telegramMessageId === null) {
+              if (telegramCreateAttempted) {
+                console.log("Telegram message creation already attempted for NEXT market; refusing to send a second message.");
+                return;
+              }
+
+              telegramCreateAttempted = true;
+              try {
+                telegramMessageId = await createTelegramMessage(market, state);
+              } catch (err) {
+                console.error("Telegram initial send failed; no automatic second send for this NEXT market: " + err.message);
+                return;
+              }
+            } else {
+              try {
+                await editTelegramMessage(telegramMessageId, market, state);
+              } catch (err) {
+                console.error("Telegram edit failed; message_id=" + telegramMessageId + ": " + err.message);
+                return;
+              }
+            }
+
             telegramLastText = text;
-          } catch (err) {
-            console.error("Telegram update failed: " + err.message);
+          } finally {
+            telegramUpdateInFlight = false;
           }
         }
 
