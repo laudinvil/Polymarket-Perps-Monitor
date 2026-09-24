@@ -93,11 +93,13 @@ function processLiquidation(liq) {
   }
 
   const usd = liq.price * liq.amount;
+  // MarginPad's Hyperliquid feed reports the liquidation execution side,
+  // which is opposite to the side of the liquidated position.
   const sideText =
     liq.side === "long_liquidated"
-      ? "LONG LIQUIDATED"
+      ? "SHORT LIQUIDATED"
       : liq.side === "short_liquidated"
-        ? "SHORT LIQUIDATED"
+        ? "LONG LIQUIDATED"
         : String(liq.side).toUpperCase();
 
   sourceState.MARGINPAD.alerts += 1;
