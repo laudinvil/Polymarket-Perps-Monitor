@@ -284,7 +284,7 @@ function detectFirstUpwardMove(state, side, label) {
   if (!Number.isFinite(current)) return;
 
   const previous = Number(side.lastObservedDisplayPrice);
-  if (Number.isFinite(previous) && current > previous) {
+  if (Number.isFinite(previous) && previous > 0 && current > previous) {
     state.firstUpwardMove = {
       side: label,
       from: previous,
@@ -300,7 +300,7 @@ function detectFirstUpwardMove(state, side, label) {
     );
   }
 
-  side.lastObservedDisplayPrice = current;
+  if (current > 0) side.lastObservedDisplayPrice = current;
 }
 
 async function runTelegramUpdater(currentStart, market) {
