@@ -50,6 +50,12 @@ async function telegramRequest(method, payload) {
   return json.result;
 }
 
+function formatAlertTime() {
+  const now = new Date();
+  const utcPlus3 = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+  return utcPlus3.toISOString().slice(0, 19).replace("T", " ");
+}
+
 function formatPrice(value) {
   return Number.isFinite(value) ? value.toFixed(4) : "n/a";
 }
@@ -64,6 +70,8 @@ function buildTelegramText(market, state) {
     "",
     "UP: " + formatPrice(displayPrice(state.up)),
     "DOWN: " + formatPrice(displayPrice(state.down)),
+    "",
+    "TIME: " + formatAlertTime(),
     "",
     (side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " + formatPrice(from) + " → " + formatPrice(to),
