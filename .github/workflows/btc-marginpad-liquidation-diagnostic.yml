@@ -2,6 +2,9 @@ name: BTC Liquidation · MarginPad Diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/btc-marginpad-liquidation-diagnostic.yml"
 
 jobs:
   diagnostic:
