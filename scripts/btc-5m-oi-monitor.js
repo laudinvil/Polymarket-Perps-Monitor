@@ -210,8 +210,10 @@ function createNextState(currentStart, market) {
 }
 
 function updatePrice(priceState, data) {
-  const bestBid = data.best_bid != null ? Number(data.best_bid) : priceState.bestBid;
-  const bestAsk = data.best_ask != null ? Number(data.best_ask) : priceState.bestAsk;
+  const bestBid = data.best_bid != null ? Number(data.best_bid) :
+    data.bestBid != null ? Number(data.bestBid) : priceState.bestBid;
+  const bestAsk = data.best_ask != null ? Number(data.best_ask) :
+    data.bestAsk != null ? Number(data.bestAsk) : priceState.bestAsk;
 
   if (Number.isFinite(bestBid)) priceState.bestBid = bestBid;
   if (Number.isFinite(bestAsk)) priceState.bestAsk = bestAsk;
@@ -380,7 +382,15 @@ async function runWebSocket(currentStart, market) {
                 assetId === market.tokens.DOWN ? state.down : null;
               if (!side) continue;
 
-              updatePrice(side, change);
+              const bestBid = change.best_bid ?? change.bestBid ?? change.bid;
+              const bestAsk = change.best_ask ?? change.bestAsk ?? change.ask;
+              const price = change.price ?? change.last_trade_price ?? change.lastTradePrice;
+
+              updatePrice(side, {
+                best_bid: bestBid,
+                best_ask: bestAsk,
+                price: price
+              });
               console.log(
                 "NEXT " + (side === state.up ? "UP" : "DOWN") +
                 " bid=" + (side.bestBid != null ? side.bestBid.toFixed(4) : "n/a") +
