@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   monitor:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 355
 
@@ -32,9 +33,6 @@ jobs:
           DEPTHFEED_API_KEY: ${{ secrets.DEPTHFEED_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DIVERGENCE_TRIGGER_PP: "4"
-          DIVERGENCE_RESET_PP: "2"
-          CONSENSUS_MAX_PP: "2"
         run: node scripts/btc-5m-cross-venue-monitor.js
 
-# Start after DepthFeed API key setup
+# Monitor stopped
