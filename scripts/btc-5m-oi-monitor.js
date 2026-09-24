@@ -283,7 +283,7 @@ async function monitorPeriod(start) {
     ? upChange + downChange
     : null;
 
-  const alertDirection = overallChange > 0 ? "BUY UP" : overallChange < 0 ? "BUY DOWN" : null;
+  const alertDirection = overallChange > 0 ? "BUY DOWN" : overallChange < 0 ? "BUY UP" : null;
   const shouldAlert =
     Number.isFinite(overallChange) &&
     alertDirection !== null;
@@ -321,7 +321,7 @@ async function monitorPeriod(start) {
       "СРЕДНЯЯ UP: " + (Number.isFinite(activity.avgUpPrice) ? activity.avgUpPrice.toFixed(4) : "n/a") + " " + formatChange(upChange),
       "СРЕДНЯЯ DOWN: " + (Number.isFinite(activity.avgDownPrice) ? activity.avgDownPrice.toFixed(4) : "n/a") + " " + formatChange(downChange),
       "",
-      "ИЗМЕНЕНИЕ: " + formatChange(overallChange) + (overallChange !== null ? (overallChange >= 0 ? " BUY UP ↑" : " BUY DOWN ↓") : ""),
+      "ИЗМЕНЕНИЕ: " + formatChange(overallChange) + (overallChange !== null ? (overallChange >= 0 ? " BUY DOWN ↓" : " BUY UP ↑") : ""),
       "NEXT " + nextOutcome + " PRICE: " + nextPrice.toFixed(4),
       "",
       "➡️ NEXT · Polymarket 5M",
