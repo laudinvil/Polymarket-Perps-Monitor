@@ -16,8 +16,12 @@ const sourceState = {
     state: "STARTING",
     requests: 0,
     successfulRequests: 0,
+    fetchedEvents: 0,
+    hyperliquidEvents: 0,
+    newEvents: 0,
     matchingEvents: 0,
     alerts: 0,
+    lastHyperliquidEventAt: null,
     lastSuccessAt: null,
     lastErrorAt: null
   }
@@ -160,6 +164,7 @@ async function pollMarginPad() {
 
     sourceState.MARGINPAD.state = "OPEN";
     sourceState.MARGINPAD.successfulRequests += 1;
+    sourceState.MARGINPAD.fetchedEvents = events.length;
     sourceState.MARGINPAD.lastSuccessAt = Date.now();
 
     const hyperliquidEvents = events
@@ -177,6 +182,12 @@ async function pollMarginPad() {
         Number.isFinite(event.time)
       );
 
+    sourceState.MARGINPAD.hyperliquidEvents = hyperliquidEvents.length;
+    sourceState.MARGINPAD.lastHyperliquidEventAt =
+      hyperliquidEvents.length > 0
+        ? Math.max(...hyperliquidEvents.map(event => event.time))
+        : sourceState.MARGINPAD.lastHyperliquidEventAt;
+
     if (!baselineEstablished) {
       latestSeenTs = hyperliquidEvents.reduce(
         (max, event) => Math.max(max, event.time),
@@ -193,10 +204,23 @@ async function pollMarginPad() {
       return;
     }
 
+    let newEvents = 0;
+
     for (const event of hyperliquidEvents) {
       if (event.time <= latestSeenTs) continue;
+      newEvents += 1;
       processLiquidation(event);
     }
+
+    sourceState.MARGINPAD.newEvents = newEvents;
+
+    log("INFO", "marginpad_poll", "MarginPad poll completed", {
+      fetchedEvents: events.length,
+      hyperliquidBtcEvents: hyperliquidEvents.length,
+      newHyperliquidBtcEvents: newEvents,
+      latestSeenTs,
+      latestSeenIso: latestSeenTs ? new Date(latestSeenTs).toISOString() : null
+    });
 
     if (hyperliquidEvents.length > 0) {
       latestSeenTs = Math.max(
@@ -205,6 +229,7 @@ async function pollMarginPad() {
       );
     }
   } catch (err) {
+    sourceState.MARGINPAD.newEvents = 0;
     sourceState.MARGINPAD.state = "ERROR";
     sourceState.MARGINPAD.lastErrorAt = Date.now();
 
