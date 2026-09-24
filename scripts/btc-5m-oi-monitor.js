@@ -323,7 +323,7 @@ function detectThresholdCross(state, side, label) {
 
   // Equal threshold for both sides. A 1% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 4;
+  const FIRST_INCREASE_PCT = 3;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
