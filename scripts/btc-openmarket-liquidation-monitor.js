@@ -199,6 +199,7 @@ function startMonitor() {
       let opened = false;
       let authTimer = null;
       let subscribeTimer = null;
+      let subscribeStartTimer = null;
 
       const connectTimer = setTimeout(() => {
         if (!opened) {
@@ -213,6 +214,7 @@ function startMonitor() {
         clearTimeout(connectTimer);
         if (authTimer) clearTimeout(authTimer);
         if (subscribeTimer) clearTimeout(subscribeTimer);
+        if (subscribeStartTimer) clearTimeout(subscribeStartTimer);
         if (pingTimer) clearInterval(pingTimer);
         try { ws.close(); } catch (_) {}
         resolve();
@@ -224,8 +226,6 @@ function startMonitor() {
         logPersistent("INFO", "ws_connected", "WebSocket connected", { url: WS_URL });
 
         sendWs(ws, {
-          jsonrpc: "2.0",
-          id: 1,
           method: "public/authenticate",
           params: { token: apiKey }
         });
@@ -234,16 +234,48 @@ function startMonitor() {
 
         authTimer = setTimeout(() => {
           if (!authAccepted) {
-            logPersistent("ERROR", "auth_timeout", "No authentication response within timeout", { timeoutMs: WS_AUTH_TIMEOUT_MS });
-            try { ws.close(); } catch (_) {}
+            logPersistent("WARN", "auth_no_response", "No authentication response observed; continuing with documented subscribe flow", { timeoutMs: WS_AUTH_TIMEOUT_MS });
           }
         }, WS_AUTH_TIMEOUT_MS);
+
+        // OpenMarket documents authentication as a one-way message and does not document
+        // an authentication response. Send the subscription after a short grace period;
+        // protocol errors remain visible in the persistent log.
+        subscribeStartTimer = setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          const channels = SUBSCRIPTIONS.map(item => ({
+            type: "LIQUIDATION",
+            category: "*",
+            exchange: item.exchange,
+            symbol: item.symbol
+          }));
+
+          sendWs(ws, {
+            jsonrpc: "2.0",
+            id: 0,
+            method: "public/subscribe",
+            params: {
+              channels,
+              version: "v2"
+            }
+          });
+
+          subscriptionSent = true;
+          logPersistent("INFO", "subscribe_sent", "Liquidation subscriptions sent after authentication grace period", { channels });
+
+          subscribeTimer = setTimeout(() => {
+            if (!subscribed) {
+              logPersistent("ERROR", "subscribe_timeout", "No subscription response within timeout", { timeoutMs: WS_SUBSCRIBE_TIMEOUT_MS });
+            }
+          }, WS_SUBSCRIBE_TIMEOUT_MS);
+        }, 1000);
 
         pingTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             sendWs(ws, { type: "ping", timestamp: Date.now() });
           }
-        }, 9000);
+        }, 30000);
       });
 
       ws.addEventListener("message", event => {
@@ -275,34 +307,9 @@ function startMonitor() {
 
         if (message.result && !authAccepted && !message.points) {
           authAccepted = true;
-          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
           if (authTimer) clearTimeout(authTimer);
-
+          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
           logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
-
-          const channels = SUBSCRIPTIONS.map(item => ({
-            type: "LIQUIDATION",
-            category: "PERPETUAL",
-            exchange: item.exchange,
-            symbol: item.symbol
-          }));
-
-          sendWs(ws, {
-            jsonrpc: "2.0",
-            id: 0,
-            method: "public/subscribe",
-            params: {
-              channels,
-              version: "v2"
-            }
-          });
-
-          logPersistent("INFO", "subscribe_sent", "Liquidation subscriptions sent", { channels });
-
-          subscriptionSent = true;
-          subscribeTimer = setTimeout(() => {
-            logPersistent("ERROR", "subscribe_timeout", "No subscription response within timeout", { timeoutMs: WS_SUBSCRIBE_TIMEOUT_MS });
-          }, WS_SUBSCRIBE_TIMEOUT_MS);
           return;
         }
 
