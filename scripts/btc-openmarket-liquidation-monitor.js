@@ -305,21 +305,26 @@ function startMonitor() {
           return;
         }
 
-        if (message.result && !authAccepted && !message.points) {
-          authAccepted = true;
-          if (authTimer) clearTimeout(authTimer);
-          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
-          logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
-          return;
-        }
-
-        if (message.id === 0 || message.result?.channels || message.result?.subscriptions) {
+        // Subscription responses use id=0. Handle them before generic result messages
+        // so a subscription response cannot be mistaken for authentication.
+        if (message.id === 0) {
           if (subscribeTimer) clearTimeout(subscribeTimer);
           subscribed = true;
           logPersistent("INFO", "subscribe_response", "Subscription response received", {
             result: message.result || message,
             subscriptionSent
           });
+          return;
+        }
+
+        // Authentication responses are not documented by OpenMarket, but if the server
+        // sends an uncorrelated result message, retain it as diagnostic information.
+        if (message.result && !authAccepted && !message.points) {
+          authAccepted = true;
+          if (authTimer) clearTimeout(authTimer);
+          logPersistent("INFO", "auth_response", "OpenMarket authentication response received", { result: message.result });
+          logPersistent("INFO", "auth_ok", "Authentication accepted", message.result);
+          return;
         }
 
         const points = Array.isArray(message.points) ? message.points : [];
@@ -396,7 +401,7 @@ function startMonitor() {
 
 console.log("OpenMarket BTC liquidation monitor started");
 logPersistent("INFO", "monitor_started", "BTC liquidation monitor started", { subscriptions: SUBSCRIPTIONS });
-console.log("OpenMarket WS client rate guard: " + WS_MESSAGE_LIMIT + " messages/min; heartbeat: 9s");
+console.log("OpenMarket WS client rate guard: " + WS_MESSAGE_LIMIT + " messages/min; heartbeat: 30s");
 console.log("Minimum liquidation USD: " + MIN_LIQUIDATION_USD);
 console.log("Subscriptions: " + SUBSCRIPTIONS.map(x => x.exchange + ":" + x.symbol).join(", "));
 startMonitor();
