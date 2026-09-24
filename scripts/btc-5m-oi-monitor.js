@@ -339,7 +339,8 @@ async function runWebSocket(currentStart, market) {
             return;
           }
 
-          const eventType = message.event_type;
+          const eventType = message.event_type || message.type || "unknown";
+          console.log("CLOB EVENT type=" + eventType);
           const state = readState();
 
           if (!state.up || !state.down ||
@@ -371,7 +372,7 @@ async function runWebSocket(currentStart, market) {
               : [message];
 
             for (const change of changes) {
-              const assetId = change.asset_id || message.asset_id;
+              const assetId = change.asset_id || message.asset_id || change.asset;
               const side = assetId === market.tokens.UP ? state.up :
                 assetId === market.tokens.DOWN ? state.down : null;
               if (!side) continue;
@@ -392,8 +393,9 @@ async function runWebSocket(currentStart, market) {
           }
 
           if (eventType === "last_trade_price") {
-            const side = message.asset_id === market.tokens.UP ? state.up :
-              message.asset_id === market.tokens.DOWN ? state.down : null;
+            const assetId = message.asset_id || message.asset;
+            const side = assetId === market.tokens.UP ? state.up :
+              assetId === market.tokens.DOWN ? state.down : null;
             if (!side) return;
 
             const price = Number(message.price);
