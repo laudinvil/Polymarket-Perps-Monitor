@@ -64,11 +64,9 @@ function formatUsd(value) {
   });
 }
 
-function formatKyivTime(timestamp) {
-  return new Date(timestamp).toLocaleString("sv-SE", {
-    timeZone: "Europe/Kyiv",
-    hour12: false
-  }).replace(" ", " ");
+function formatUtcPlus3(timestamp) {
+  const date = new Date(Number(timestamp) + 3 * 60 * 60 * 1000);
+  return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
@@ -134,7 +132,7 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
     String(side).toUpperCase() + " LIQUIDATED",
     "PRICE: $" + price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: " + formatUsd(usd),
-    formatKyivTime(eventTime),
+    formatUtcPlus3(eventTime),
     "",
     '<a href="' + TURBOFLOW_URL + '">ОТКРЫТЬ TURBOFLOW</a>',
     ""
