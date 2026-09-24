@@ -91,7 +91,7 @@ async function createTelegramMessage(market, state) {
     disable_web_page_preview: false
   });
 
-  console.log("Telegram NEXT message created message_id=" + result.message_id);
+  console.log("Telegram message created message_id=" + result.message_id);
   return result.message_id;
 }
 
@@ -241,7 +241,6 @@ function createNextState(currentStart, market) {
     down: createPriceState(),
     firstIncrease: null,
     alerted: false,
-    increaseStreak: null,
     initialPriceUp: null,
     initialPriceDown: null,
     updatedAt: new Date().toISOString()
@@ -440,7 +439,7 @@ async function runWebSocket(currentStart, market) {
             market.slug +
             " UP/DOWN"
           );
-          console.log("Telegram uses one message per NEXT market; edits are throttled to " + TELEGRAM_UPDATE_MS + "ms");
+          console.log("Telegram uses one message per market");
 
           ws.send(JSON.stringify({
             type: "market",
@@ -604,11 +603,6 @@ async function monitorPeriod(currentStart) {
 
   const previousState = readState();
   const state = createNextState(currentStart, market);
-  if (previousState.firstIncrease &&
-      previousState.increaseStreak &&
-      previousState.increaseStreak.side) {
-    state.increaseStreak = previousState.increaseStreak;
-  }
   writeState(state);
 
   const stopTelegramUpdater = await runTelegramUpdater(currentStart, market);
