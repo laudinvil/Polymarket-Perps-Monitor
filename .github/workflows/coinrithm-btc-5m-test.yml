@@ -1,0 +1,20 @@
+name: CoinRithm BTC 5M Test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/coinrithm-btc-5m-test.js"
+      - ".github/workflows/coinrithm-btc-5m-test.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test CoinRithm BTC 5M + SSE
+        run: node scripts/coinrithm-btc-5m-test.js
