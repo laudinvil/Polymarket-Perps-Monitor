@@ -79,7 +79,7 @@ export const claim = mutation({
 });
 
 
-export const claimTelegramMarket = mutation({
+export const claimTelegramMarketV2 = mutation({
   args: {
     marketSlug: v.string(),
   },
