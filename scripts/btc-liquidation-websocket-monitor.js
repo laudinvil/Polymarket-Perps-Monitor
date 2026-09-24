@@ -1,7 +1,7 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
-const BINANCE_WS_URL = "wss://fstream.binance.com/ws/btcusdt@forceOrder";
+const BINANCE_WS_URL = "wss://fstream.binance.com/market/ws/btcusdt@forceOrder";
 const BYBIT_PING_MS = 20000;
 const BYBIT_WS_URL = "wss://stream.bybit.com/v5/public/linear";
 
