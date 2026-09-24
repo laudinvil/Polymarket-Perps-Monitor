@@ -305,8 +305,15 @@ function displayPrice(priceState) {
   return (bid + ask) / 2;
 }
 
-function detectThresholdCross(state, side, label) {
+function detectThresholdCross(state, side, label, marketStart) {
   if (state.firstIncrease) return false;
+
+  // The alert is valid only if the 10% increase happened BEFORE the
+  // start of the market referenced by the Telegram link.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(Number(marketStart)) || nowSeconds >= Number(marketStart)) {
+    return false;
+  }
 
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return false;
@@ -330,7 +337,7 @@ function detectThresholdCross(state, side, label) {
 
   // Equal threshold for both sides. A 3% move means the same relative
   // move regardless of whether the side started at 0.51 or 0.49.
-  const FIRST_INCREASE_PCT = 4;
+  const FIRST_INCREASE_PCT = 10;
 
   if (movementPct >= FIRST_INCREASE_PCT) {
     state.firstIncrease = {
@@ -483,7 +490,8 @@ async function runWebSocket(currentStart, market) {
             detectThresholdCross(
               state,
               side,
-              side === state.up ? "UP" : "DOWN"
+              side === state.up ? "UP" : "DOWN",
+              market.start
             );
             writeState(state);
 
@@ -520,7 +528,8 @@ async function runWebSocket(currentStart, market) {
               detectThresholdCross(
                 state,
                 side,
-                side === state.up ? "UP" : "DOWN"
+                side === state.up ? "UP" : "DOWN",
+                market.start
               );
 
               console.log(
