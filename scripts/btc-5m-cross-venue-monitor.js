@@ -1,7 +1,4 @@
 const POLL_MS = 1100;
-const TRIGGER_PP = Number(process.env.DIVERGENCE_TRIGGER_PP || 2);
-const RESET_PP = Number(process.env.DIVERGENCE_RESET_PP || 1);
-const CONSENSUS_MAX_PP = Number(process.env.CONSENSUS_MAX_PP || 1);
 
 const DEPTHFEED_URL = "https://api.depthfeed.com/v3/screener/btc/5m";
 const POLY_URL = "https://polymarket.com/event/btc-updown-5m-";
@@ -60,71 +57,66 @@ function extractVenue(data, name) {
 }
 
 function getMarketData(data) {
-  const polymarket = extractVenue(data, "polymarket");
-  const kalshi = extractVenue(data, "kalshi");
-  const limitless = extractVenue(data, "limitless");
-  if (!polymarket || !kalshi || !limitless) return null;
-  if (![polymarket.up, kalshi.up, limitless.up].every(Number.isFinite)) return null;
-  return { polymarket, kalshi, limitless };
+  return {
+    polymarket: extractVenue(data, "polymarket"),
+    kalshi: extractVenue(data, "kalshi"),
+    limitless: extractVenue(data, "limitless")
+  };
 }
 
 function pp(a, b) { return Math.abs(a - b) * 100; }
-function average(a, b) { return (a + b) / 2; }
 function periodStartSec() { return Math.floor(Date.now() / 1000 / 300) * 300; }
 
 function marketUrl(data) {
-  const slug = data.polymarket.slug || data.limitless.slug;
+  const slug = data.polymarket?.slug || data.limitless?.slug;
   if (slug && slug.startsWith("btc-updown-5m-")) return POLY_URL + slug.split("btc-updown-5m-")[1];
   return POLY_URL + periodStartSec();
 }
 
-function buildAlert(market, side, externalAverage, divergence) {
-  const p = market.polymarket[side], k = market.kalshi[side], l = market.limitless[side];
-  const relation = p < externalAverage ? "POLYMARKET BELOW EXTERNAL" : "POLYMARKET ABOVE EXTERNAL";
-  return [
-    "🔥 BTC · 5M · CROSS-VENUE", "",
-    "POLYMARKET " + side + ": " + p.toFixed(4),
-    "KALSHI " + side + ": " + k.toFixed(4),
-    "LIMITLESS " + side + ": " + l.toFixed(4), "",
-    "EXTERNAL AVG: " + externalAverage.toFixed(4),
-    "DIVERGENCE: " + divergence.toFixed(2) + " pp",
-    "SIGNAL: " + relation, "", "➡️ Polymarket 5M", marketUrl(market)
-  ].join("\n");
+function fmt(value) {
+  return Number.isFinite(value) ? value.toFixed(4) : "n/a";
 }
 
-function analyze(market) {
-  const externalUpSpread = pp(market.kalshi.up, market.limitless.up);
-  if (externalUpSpread > CONSENSUS_MAX_PP) {
-    return { triggered: false, reason: "external venues disagree by " + externalUpSpread.toFixed(2) + " pp" };
+function buildDataAlert(market) {
+  const lines = [
+    "📡 BTC · 5M · DATA",
+    "",
+    "POLYMARKET UP: " + fmt(market.polymarket?.up),
+    "POLYMARKET DOWN: " + fmt(market.polymarket?.down),
+    "KALSHI UP: " + fmt(market.kalshi?.up),
+    "KALSHI DOWN: " + fmt(market.kalshi?.down),
+    "LIMITLESS UP: " + fmt(market.limitless?.up),
+    "LIMITLESS DOWN: " + fmt(market.limitless?.down),
+    ""
+  ];
+
+  if (Number.isFinite(market.kalshi?.up) && Number.isFinite(market.limitless?.up) && Number.isFinite(market.polymarket?.up)) {
+    const externalUp = (market.kalshi.up + market.limitless.up) / 2;
+    lines.push("EXTERNAL AVG UP: " + fmt(externalUp));
+    lines.push("KALSHI ↔ LIMITLESS: " + pp(market.kalshi.up, market.limitless.up).toFixed(2) + " pp");
+    lines.push("POLYMARKET ↔ AVG: " + pp(market.polymarket.up, externalUp).toFixed(2) + " pp");
+  } else {
+    lines.push("VENUE DATA: incomplete");
   }
 
-  const externalUp = average(market.kalshi.up, market.limitless.up);
-  const divergenceUp = (market.polymarket.up - externalUp) * 100;
-  const absDivergence = Math.abs(divergenceUp);
-
-  if (absDivergence < TRIGGER_PP) {
-    return { triggered: false, divergence: absDivergence, externalUp, reason: "below trigger" };
-  }
-
-  const side = divergenceUp >= 0 ? "UP" : "DOWN";
-  const externalSide = side === "UP" ? externalUp : 1 - externalUp;
-  const sideDivergence = Math.abs((side === "UP" ? market.polymarket.up : market.polymarket.down) - externalSide) * 100;
-
-  return { triggered: sideDivergence >= TRIGGER_PP, side, divergence: sideDivergence, externalAverage: externalSide, externalUp, externalUpSpread, reason: "trigger" };
+  lines.push("", "➡️ Polymarket 5M", marketUrl(market));
+  return lines.join("\n");
 }
 
 async function main() {
-  console.log("BTC 5M cross-venue divergence monitor started");
+  console.log("BTC 5M cross-venue DATA monitor started");
   console.log("Endpoint: " + DEPTHFEED_URL);
-  console.log("Trigger=" + TRIGGER_PP + "pp reset=" + RESET_PP + "pp external-consensus-max=" + CONSENSUS_MAX_PP + "pp");
+  console.log("FILTERS: DISABLED");
 
-  let alertedForPeriod = false, armed = true, lastPeriod = periodStartSec();
+  let lastPeriod = periodStartSec();
+  let sentForPeriod = false;
 
   while (true) {
     try {
       const currentPeriod = periodStartSec();
       if (currentPeriod !== lastPeriod) {
-        lastPeriod = currentPeriod; alertedForPeriod = false; armed = true;
+        lastPeriod = currentPeriod;
+        sentForPeriod = false;
         console.log("New BTC 5M period: " + currentPeriod);
       }
 
@@ -132,19 +124,17 @@ async function main() {
       if (!data) { await sleep(POLL_MS); continue; }
 
       const market = getMarketData(data);
-      if (!market) { console.log("Screener returned incomplete venue data; skipping"); await sleep(POLL_MS); continue; }
 
-      const result = analyze(market);
-      console.log("BTC 5M UP " + market.polymarket.up.toFixed(4) + "/" + market.kalshi.up.toFixed(4) + "/" + market.limitless.up.toFixed(4) + " divergence=" + (result.divergence != null ? result.divergence.toFixed(2) + "pp" : "n/a"));
+      console.log("DepthFeed data: " + JSON.stringify({
+        polymarket: market.polymarket,
+        kalshi: market.kalshi,
+        limitless: market.limitless
+      }));
 
-      if (!armed && result.divergence != null && result.divergence <= RESET_PP) {
-        armed = true; console.log("Signal reset; monitor re-armed");
-      }
-
-      if (armed && !alertedForPeriod && result.triggered && result.side && result.divergence >= TRIGGER_PP) {
-        await sendTelegram(buildAlert(market, result.side, result.externalAverage, result.divergence));
-        alertedForPeriod = true; armed = false;
-        console.log("ALERT sent side=" + result.side + " divergence=" + result.divergence.toFixed(2) + "pp");
+      if (!sentForPeriod) {
+        await sendTelegram(buildDataAlert(market));
+        sentForPeriod = true;
+        console.log("DATA ALERT sent");
       }
     } catch (err) {
       console.error("Monitor error: " + err.message);
