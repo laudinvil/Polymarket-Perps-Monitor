@@ -215,7 +215,6 @@ function createNextState(currentStart, market) {
     up: createPriceState(),
     down: createPriceState(),
     firstIncrease: null,
-    increaseTrackingStarted: false,
     updatedAt: new Date().toISOString()
   };
 }
@@ -279,7 +278,6 @@ function displayPrice(priceState) {
 }
 
 function detectFirstIncrease(state, side, label) {
-  if (!state.increaseTrackingStarted) return;
   if (state.firstIncrease) return;
 
   const current = displayPrice(side);
@@ -341,17 +339,6 @@ async function runTelegramUpdater(currentStart, market) {
       telegramCreateAttempted = true;
       try {
         telegramMessageId = await createTelegramMessage(market, state);
-        const baselineState = readState();
-        if (baselineState.up && baselineState.down &&
-            Number(baselineState.monitoredNextPeriodStart) === market.start) {
-          const upBaseline = displayPrice(baselineState.up);
-          const downBaseline = displayPrice(baselineState.down);
-          if (Number.isFinite(upBaseline)) baselineState.up.lastObservedDisplayPrice = upBaseline;
-          if (Number.isFinite(downBaseline)) baselineState.down.lastObservedDisplayPrice = downBaseline;
-          baselineState.increaseTrackingStarted = true;
-          baselineState.updatedAt = new Date().toISOString();
-          writeState(baselineState);
-        }
         telegramLastText = text;
       } catch (err) {
         console.error("Telegram initial send failed; refusing duplicate send for NEXT market: " + err.message);
