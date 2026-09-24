@@ -346,7 +346,7 @@ function startMonitor() {
         console.log("OpenMarket WebSocket closed code=" + event.code + " reason=" + String(event.reason || ""));
         finish();
       });
-    });
+    }
 
     if (!stopping) {
       console.log("Reconnecting OpenMarket WebSocket in " + RECONNECT_MS + "ms");
