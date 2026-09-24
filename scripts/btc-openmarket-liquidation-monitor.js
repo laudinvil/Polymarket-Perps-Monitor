@@ -13,7 +13,7 @@ function sleep(ms) {
 
 async function convexMutation(path, args) {
   if (!CONVEX_URL) return;
-  const url = CONVEX_URL.replace(/\\/$/, "");
+  const url = CONVEX_URL.replace(/\/$/, "");
   try {
     const response = await fetch(url + "/api/mutation", {
       method: "POST",
