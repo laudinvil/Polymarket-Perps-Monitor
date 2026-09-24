@@ -43,8 +43,8 @@ function buildTelegramText(market, state) {
     "⬆️ UP: " + formatPrice(displayPrice(state.up)),
     "⬇️ DOWN: " + formatPrice(displayPrice(state.down)),
     state.firstIncrease ? (
-      "\n📈 FIRST INCREASE: " +
-      state.firstIncrease.side +
+      "\nFIRST INCREASE: " +
+      (state.firstIncrease.side === "UP" ? "⬆️ UP" : "⬇️ DOWN") +
       " " +
       formatPrice(state.firstIncrease.from) +
       " → " +
