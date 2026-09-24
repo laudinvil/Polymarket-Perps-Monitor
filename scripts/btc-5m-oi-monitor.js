@@ -309,6 +309,7 @@ function detectFirstIncrease(state, side, label) {
     ? "increaseBaselineUp"
     : "increaseBaselineDown";
 
+  if (state[baselineKey] === null || state[baselineKey] === undefined) return;
   const baseline = Number(state[baselineKey]);
   if (!Number.isFinite(baseline)) return;
 
