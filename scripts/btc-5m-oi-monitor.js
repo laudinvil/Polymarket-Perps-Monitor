@@ -233,8 +233,8 @@ function createNextState(currentStart, market) {
     down: createPriceState(),
     firstIncrease: null,
     alerted: false,
-    previousPriceUp: null,
-    previousPriceDown: null,
+    initialPriceUp: null,
+    initialPriceDown: null,
     updatedAt: new Date().toISOString()
   };
 }
@@ -303,29 +303,38 @@ function detectThresholdCross(state, side, label) {
   const current = displayPrice(side);
   if (!Number.isFinite(current)) return false;
 
-  const previousKey = label === "UP" ? "previousPriceUp" : "previousPriceDown";
-  const previous = state[previousKey];
+  const baselineKey = label === "UP" ? "initialPriceUp" : "initialPriceDown";
 
-  state[previousKey] = current;
-
-  if (previous === null || previous === undefined || !Number.isFinite(Number(previous))) {
+  // Freeze the first valid CLOB midpoint for this side.
+  // Never replace it with later prices: FIRST INCREASE must describe
+  // the move from the market's initial observed price to the first
+  // crossing of 0.52.
+  if (state[baselineKey] === null || state[baselineKey] === undefined) {
+    state[baselineKey] = current;
+    console.log(
+      "INITIAL " + label + " price=" + current.toFixed(4)
+    );
     return false;
   }
 
-  const previousNumber = Number(previous);
+  const baseline = Number(state[baselineKey]);
+  if (!Number.isFinite(baseline)) return false;
 
-  if (previousNumber < 0.53 && current >= 0.53) {
+  // FIRST INCREASE = first transition from below 0.52 to 0.52 or above.
+  // The displayed FROM value is always the frozen initial price,
+  // not the immediately preceding tick.
+  if (baseline < 0.52 && current >= 0.52) {
     state.firstIncrease = {
       side: label,
-      from: previousNumber,
+      from: baseline,
       to: current,
       detectedAt: new Date().toISOString()
     };
     state.alerted = true;
 
     console.log(
-      "THRESHOLD CROSS detected side=" + label +
-      " from=" + previousNumber.toFixed(4) +
+      "FIRST INCREASE detected side=" + label +
+      " from=" + baseline.toFixed(4) +
       " to=" + current.toFixed(4)
     );
 
