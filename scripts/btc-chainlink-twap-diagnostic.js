@@ -7,6 +7,7 @@ const POLL_MS = 15 * 1000;
 const PERIOD_MS = 5 * 60 * 1000;
 const HISTORY_MAX = 240;
 const MIN_EDGE = Number(process.env.BTC_5M_MIN_EDGE ?? "0.00");
+const MIN_ALERT_AGE_MS = 60 * 1000;
 
 const API_KEY = process.env.CHAINLINK_DATA_STREAMS_API_KEY || "";
 const USER_SECRET = process.env.CHAINLINK_DATA_STREAMS_USER_SECRET || "";
@@ -481,6 +482,16 @@ async function sendTelegram(message) {
 }
 
 async function maybeAlert(market, probabilityUp, prices, edge) {
+  const ageMs = Date.now() - market.startMs;
+  if (ageMs < MIN_ALERT_AGE_MS) {
+    log("INFO", "alert_too_early", "Skipping BTC 5M alert during the first minute of the period", {
+      start: new Date(market.startMs).toISOString(),
+      ageMs,
+      minAlertAgeMs: MIN_ALERT_AGE_MS
+    });
+    return;
+  }
+
   if (!edge || edge.edge < MIN_EDGE) return;
 
   const alertUrl = market.url;
