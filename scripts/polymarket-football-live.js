@@ -520,7 +520,7 @@ async function nutmegRows() {
       // Anchor the match on its own displayed date/time. The previous regex
       // searched backwards through arbitrary page text, which could capture
       // headings such as "Next 24h window" as the home team.
-      const re = /(\\d{2}-\\d{2})\\s+(\\d{1,2}):(\\d{2})\\s+(.{2,100}?)\\s+VS\\s+(.{2,100}?)\\s+\\d+[\\u2013-]\\d+\\s+total goals[\\s\\S]*?Home win\\s*(\\d+(?:\\.\\d+)?)%\\s+Draw\\s*(\\d+(?:\\.\\d+)?)%\\s+Away win\\s*(\\d+(?:\\.\\d+)?)%/gi;
+      const re = /(\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s+(.{2,100}?)\s+VS\s+(.{2,100}?)\s+\d+[\u2013-]\d+\s+total goals[\s\S]*?Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
       let m, count = 0;
       while ((m = re.exec(body))) {
         const kickoffAt = parseTimezoneDate(
