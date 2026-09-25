@@ -126,3 +126,27 @@ export const claimTelegramAlert = mutation({
     return true;
   },
 });
+
+export const releaseTelegramAlert = mutation({
+  args: { monitor: v.string(), marketSlug: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
+export const recentLogs = query({
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(v.object({
+    _id: v.id("footballLogs"), _creationTime: v.number(), monitor: v.string(),
+    level: v.string(), event: v.string(), message: v.string(),
+    data: v.optional(v.string()), createdAt: v.number(),
+  })),
+  handler: async (ctx, args) => await ctx.db.query("footballLogs")
+    .withIndex("by_monitor_time", (q) => q.eq("monitor", MONITOR))
+    .order("desc").take(Math.min(args.limit ?? 500, 1000)),
+});
