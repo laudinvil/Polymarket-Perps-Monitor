@@ -17,43 +17,65 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Rebuild football monitor from working strategy + discovery commits
-        shell: bash
+      - name: Restore full strategy and merge current discovery
+        shell: python
         run: |
-          set -euo pipefail
-          TARGET="scripts/polymarket-football-live.js"
-          AFCA="afca899383ed51e98b6c527c613446a10d1e08e8"
-          GROUP="b5c6371ae20cbd4a3d77fd37c67aedfe53ac589a"
-          CONT="05f4c465996fa75eaf0a1d3ad1431ede7029e65c"
-          POLL="288809112f4958fca96e65b3b9e04fb77efe1cd6"
+          import subprocess, pathlib
 
-          git show "$AFCA:$TARGET" > "$TARGET"
-          git add "$TARGET"
+          target = pathlib.Path("scripts/polymarket-football-live.js")
+          base_ref = "151696414dbce1276a3b664b3cbff9b03d157959"
+          current_ref = "a7d867c25943e5e256a3335a06117fca77ab24c6"
 
-          git diff "$AFCA" "$GROUP" -- "$TARGET" > /tmp/group.patch
-          git apply --3way /tmp/group.patch
-          git add "$TARGET"
+          def show(ref):
+              return subprocess.check_output(["git","show",f"{ref}:{target}"], text=True)
 
-          git diff "$GROUP" "$CONT" -- "$TARGET" > /tmp/continuous.patch
-          git apply --3way /tmp/continuous.patch
-          git add "$TARGET"
+          base = show(base_ref)
+          current = show(current_ref)
 
-          git diff "$CONT" "$POLL" -- "$TARGET" > /tmp/poll.patch
-          git apply --3way /tmp/poll.patch
-          git add "$TARGET"
+          # Keep the complete, working strategy/Telegram implementation from
+          # 1516964. Replace only its discovery layer with the current
+          # event-first fixture discovery (including child-market grouping).
+          cur_start = current.index("function eventUrl(event)")
+          cur_discovery_end = current.index("\n\n\nasync function runCycle()")
+          discovery = current[cur_start:cur_discovery_end]
 
-          node --check "$TARGET"
-          grep -q "async function tick" "$TARGET"
-          grep -q "function enrichLiveMatches" "$TARGET"
-          grep -q "function sendTelegram" "$TARGET"
-          grep -q "const POLL_MS = 20_000" "$TARGET"
-          grep -q "monitor_cycle_complete" "$TARGET"
+          base_start = base.index("function eventUrl(event)")
+          base_discovery_end = base.index("\nfunction stripHtml")
+          rebuilt = base[:base_start] + discovery + base[base_discovery_end:]
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --cached --quiet; then
-            echo "No repair changes needed"
-            exit 0
-          fi
-          git commit -m "Restore football strategy pipeline with continuous 20s monitor"
-          git push origin HEAD:main
+          # Preserve the full strategy but use the requested 20-second cycle.
+          rebuilt = rebuilt.replace("const POLL_MS = 10_000;", "const POLL_MS = 20_000;", 1)
+
+          # Replace the old interval/setTimeout entrypoint with the continuous
+          # 6-hour cycle runner from the current monitor.
+          old_tail = base[base.rfind("function stop()"):]
+          new_tail = current[current.rfind("async function main()"):]
+          rebuilt = rebuilt.replace(old_tail, new_tail)
+
+          target.write_text(rebuilt)
+          print("rebuilt bytes:", len(rebuilt))
+          print("strategy tick:", "async function tick()" in rebuilt)
+          print("telegram sender:", "async function sendTelegram" in rebuilt)
+          print("sportscore enrichment:", "async function enrichLiveMatches" in rebuilt)
+          print("continuous main:", "async function main()" in rebuilt)
+          print("20s poll:", "const POLL_MS = 20_000;" in rebuilt)
+
+          if not all([
+              "async function tick()" in rebuilt,
+              "async function sendTelegram" in rebuilt,
+              "async function enrichLiveMatches" in rebuilt,
+              "async function main()" in rebuilt,
+              "const POLL_MS = 20_000;" in rebuilt,
+              "function discoverPolymarket()" in rebuilt,
+              "fixture_event_grouped" in rebuilt,
+              "maybeOneOneAlert" in rebuilt,
+          ]):
+              raise SystemExit("required football pipeline components missing")
+
+          subprocess.run(["node","--check",str(target)], check=True)
+
+          subprocess.run(["git","add",str(target)], check=True)
+          subprocess.run(["git","config","user.name","github-actions[bot]"], check=True)
+          subprocess.run(["git","config","user.email","41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+          subprocess.run(["git","commit","-m","Restore full football strategy with event-first discovery and 20s monitor"], check=True)
+          subprocess.run(["git","push","origin","HEAD:main"], check=True)
