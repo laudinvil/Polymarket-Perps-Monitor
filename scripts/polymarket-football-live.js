@@ -415,7 +415,8 @@ async function maybeOneOneAlert(match, nutmeg) {
       const sent = await sendTelegram(message);
       if (!sent) return;
     } catch (err) {
-      log("ERROR", "telegram_send_failed", "BUY alert send failed", { eventId: match.eventId, message: err.message });
+      await releaseTelegramAlert(key + ":BUY");
+      log("ERROR", "telegram_send_failed", "BUY alert send failed; claim released for retry", { eventId: match.eventId, message: err.message });
       return;
     }
     state.first = true;
@@ -440,7 +441,8 @@ async function maybeOneOneAlert(match, nutmeg) {
       const sent = await sendTelegram(message);
       if (!sent) return;
     } catch (err) {
-      log("ERROR", "telegram_send_failed", "SELL alert send failed", { eventId: match.eventId, message: err.message });
+      await releaseTelegramAlert(key + ":SELL");
+      log("ERROR", "telegram_send_failed", "SELL alert send failed; claim released for retry", { eventId: match.eventId, message: err.message });
       return;
     }
     state.second = true;
@@ -665,6 +667,20 @@ async function claimTelegramAlert(key) {
   } catch (err) {
     log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
     return false;
+  }
+}
+
+async function releaseTelegramAlert(key) {
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  try {
+    const response = await fetch(base.replace(/\/$/, "") + "/football/release", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("Convex release HTTP " + response.status);
+  } catch (err) {
+    log("WARN", "telegram_release_failed", "Could not release Telegram claim", { key, message: err.message });
   }
 }
 
