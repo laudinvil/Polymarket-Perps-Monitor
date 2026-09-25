@@ -397,10 +397,10 @@ async function fetchMarketPrices(market) {
   return { up, down };
 }
 
-function bestEdge(probabilityUp, prices) {
-  if (probabilityUp === null) return null;
+function edgeCandidates(probabilityUp, prices) {
+  if (probabilityUp === null) return [];
 
-  const candidates = [
+  return [
     {
       side: "UP",
       model: probabilityUp,
@@ -414,8 +414,10 @@ function bestEdge(probabilityUp, prices) {
       edge: prices.down === null ? null : (1 - probabilityUp) - prices.down
     }
   ];
+}
 
-  return candidates
+function bestEdge(probabilityUp, prices) {
+  return edgeCandidates(probabilityUp, prices)
     .filter(x => Number.isFinite(x.edge) && Number.isFinite(x.price))
     .sort((a, b) => b.edge - a.edge)[0] || null;
 }
@@ -533,6 +535,12 @@ async function tick() {
       rtdsTwap60: latestRtds?.value ?? null,
       prices,
       probabilityUp,
+      modelUp: probabilityUp,
+      modelDown: probabilityUp === null ? null : 1 - probabilityUp,
+      edgeUp: edgeCandidates(probabilityUp, prices).find(x => x.side === "UP")?.edge ?? null,
+      edgeDown: edgeCandidates(probabilityUp, prices).find(x => x.side === "DOWN")?.edge ?? null,
+      selectedEdge: edge?.edge ?? null,
+      selectedSide: edge?.side ?? null,
       edge,
       minEdge: MIN_EDGE
     });
