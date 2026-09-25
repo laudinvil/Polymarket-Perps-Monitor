@@ -147,31 +147,44 @@ async function discoverPolymarket() {
   let eventScanned = 0, footballEventFound = 0, candidatesFound = 0;
 
   await checkpoint("discovery_start", {
-    strategy: "football_match_first_v4",
-    pages: 6,
-    pageSize: 500
+    strategy: "football_match_first_v5",
+    source: "tag_slug=soccer",
+    note: "Discover football directly from Polymarket sports tag; do not scan generic event pages"
   });
 
-  const offsets = Array.from({ length: 6 }, (_, i) => i * 500);
-  const results = await Promise.all(offsets.map(async offset => {
+  // The old discovery scanned the generic /events feed and then guessed football
+  // from free-text fields. That is unreliable because the generic feed is not a
+  // sports index and football can sit outside the first 3000 rows.
+  // Polymarket exposes sports events through the soccer tag, so query that index
+  // directly. Keep a sports-tag fallback as a second source.
+  const sources = [
+    {
+      name: "soccer_tag",
+      url: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=500&order=startDate&ascending=true"
+    },
+    {
+      name: "sports_tag",
+      url: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=500&order=startDate&ascending=true"
+    }
+  ];
+
+  const results = await Promise.all(sources.map(async source => {
     try {
-      const data = await getJson(
-        GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
-      );
+      const data = await getJson(source.url);
       return {
-        offset,
+        name: source.name,
         rows: Array.isArray(data) ? data : (data.events || data.data || []),
         error: null
       };
     } catch (error) {
-      return { offset, rows: [], error };
+      return { name: source.name, rows: [], error };
     }
   }));
 
-  for (const result of results.sort((a, b) => a.offset - b.offset)) {
+  for (const result of results) {
     if (result.error) {
-      log("WARN", "event_page_failed", "Polymarket event page failed", {
-        offset: result.offset,
+      log("WARN", "event_source_failed", "Polymarket football source failed", {
+        source: result.name,
         message: result.error.message
       });
       continue;
@@ -187,6 +200,9 @@ async function discoverPolymarket() {
         event.category, event.tags, event.title, event.question
       ].flat(Infinity).map(text).join(" ");
 
+      // Source selection is authoritative enough for discovery, but retain a
+      // light football sanity check to avoid non-match sports grouped under a
+      // broad sports tag.
       if (!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay)) {
         continue;
       }
@@ -220,8 +236,7 @@ async function discoverPolymarket() {
             question: text(market?.question || market?.title),
             outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
             outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
-              ? parseJson(market?.outcomePrices || market?.outcome_prices)
-              : [],
+              ? parseJson(market.outcomes) : [],
             active: market?.active !== false,
             closed: market?.closed === true
           }))
@@ -239,7 +254,8 @@ async function discoverPolymarket() {
         markets: nestedMarkets
       });
 
-      log("INFO", "candidate_discovered", "Football match candidate discovered", {
+      log("INFO", "candidate_discovered", "Football match candidate discovered from Polymarket sports index", {
+        source: result.name,
         eventId,
         teams: [home, away],
         startTime,
@@ -249,8 +265,8 @@ async function discoverPolymarket() {
       });
     }
 
-    await checkpoint("event_page_done", {
-      offset: result.offset,
+    await checkpoint("event_source_done", {
+      source: result.name,
       rows: result.rows.length,
       eventScanned,
       footballEventFound,
