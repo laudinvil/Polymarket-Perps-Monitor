@@ -107,6 +107,18 @@ export const claimTelegramAlert = mutation({
   },
 });
 
+export const releaseTelegramAlert = mutation({
+  args: { monitor: v.string(), marketSlug: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
 export const recentLogs = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(v.object({
