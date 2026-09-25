@@ -30,7 +30,7 @@ export const ingest = mutation({
       rejectedBuyFilter += item.event === "candidate_rejected_buy_filter" ? 1 : 0;
       candidateGatePassed += item.event === "candidate_match_found" ? 1 : 0;
       candidates += item.event === "candidate_match_found" ? 1 : 0;
-      evaluations += item.event === "candidate_match_found" ? 1 : 0;
+      evaluations += item.event === "candidate_evaluation" ? 1 : 0;
       marketMissing += item.event === "one_one_market_missing" ? 1 : 0;
       unresolved += item.event === "match_unresolved" ? 1 : 0;
       buyAlerts += item.event === "one_one_buy_alert_sent" ? 1 : 0;
