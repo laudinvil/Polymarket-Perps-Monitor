@@ -1,5 +1,6 @@
 name: Polymarket Football · Live Discovery
 # Force a fresh deployment after strategy changes; push trigger is intentional.
+# Tick-overlap guard deployed in monitor script.
 # Continuous monitor; push trigger keeps the deployed monitor on the latest strategy.
 
 on:
