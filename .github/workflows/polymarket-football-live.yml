@@ -10,6 +10,9 @@ on:
     paths:
       - ".github/workflows/polymarket-football-live.yml"
       - "scripts/polymarket-football-live.js"
+      - "convex/http.ts"
+      - "convex/footballLogs.ts"
+      - "convex/schema.ts"
 
 concurrency:
   group: polymarket-football-live
