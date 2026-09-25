@@ -84,13 +84,11 @@ function eventUrl(event) {
 
 function isPrimaryMatchEvent(event) {
   const title = text(event.title || event.question);
-  // The soccer index also contains separate market events for the same fixture:
-  // "Total Corners", "More Markets", "First Team to Score", "Exact Score", etc.
-  // They are not independent matches and must never become candidates.
-  return !/(?:^|\s)(?:total corners|more markets|first team to score|exact score|correct score|second half result|halftime result|half time result|both teams to score|double chance|match result)\s*$/i.test(title) &&
-    !/\s[-–—:]\s*(?:total corners|more markets|first team to score|exact score|correct score|second half result|halftime result|half time result|both teams to score|double chance|match result)\b/i.test(title);
+  // Only the actual fixture is a candidate. Player props, starting-XI props,
+  // and other derivative markets are not football matches for this strategy.
+  const derivative = /(?:total corners|more markets|first team to score|exact score|correct score|second half result|halftime result|half time result|both teams to score|double chance|match result|player props?|player specials?|starting 11|starting xi|player performance|player goals|player assists|player cards|player shots|player tackles|team props?|corners|cards)\b/i;
+  return !derivative.test(title);
 }
-
 function extractTeams(event) {
   const title = text(event.title || event.question);
   const candidates = [
@@ -454,39 +452,59 @@ function stripHtml(value) {
 }
 
 async function nutmegRows() {
-  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
-  const rows = [];
-  const pages = [1, 2, 3, 4, 5];
-  const statuses = ["upcoming", "live"];
-  const jobs = [];
-  for (const status of statuses) for (const page of pages) jobs.push({ status, page });
+  // Nutmegly now exposes server-rendered daily prediction pages.
+  // The old query-string endpoint returns an app shell, which made the
+  // previous parser silently produce zero rows.
+  if (nutmegCache.rows.length && Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
 
-  const results = await Promise.all(jobs.map(async ({ status, page }) => {
+  const rows = [];
+  const dates = [];
+  const base = new Date();
+  for (let offset = 0; offset <= 7; offset++) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() + offset);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  await Promise.all(dates.map(async date => {
     try {
-      const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
-      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
-      if (!r.ok) return [];
-      const body = stripHtml(await r.text());
-      const out = [];
-      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
-      let m;
-      while ((m = re.exec(body))) out.push({
-        home: m[1].trim(), away: m[2].trim(),
-        homeProb: Number(m[3]) / 100, drawProb: Number(m[4]) / 100,
-        awayProb: Number(m[5]) / 100, bttsProb: NaN
+      const url = "https://nutmegly.com/predictions/" + date;
+      const r = await fetch(url, {
+        headers: { accept: "text/html" },
+        signal: AbortSignal.timeout(8_000)
       });
-      return out;
+      if (!r.ok) {
+        log("WARN", "nutmeg_fetch_failed", "Nutmegly predictions page failed", { date, status: r.status });
+        return;
+      }
+      const body = stripHtml(await r.text());
+      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
+      let m, count = 0;
+      while ((m = re.exec(body))) {
+        rows.push({
+          home: m[1].trim(),
+          away: m[2].trim(),
+          homeProb: Number(m[3]) / 100,
+          drawProb: Number(m[4]) / 100,
+          awayProb: Number(m[5]) / 100,
+          bttsProb: NaN
+        });
+        count++;
+      }
+      log("INFO", "nutmeg_page_parsed", "Nutmegly predictions page parsed", { date, rows: count });
     } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
-      return [];
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly predictions page fetch failed", {
+        date, message: err.message
+      });
     }
   }));
-  for (const part of results) rows.push(...part);
+
   nutmegCache = { at: Date.now(), rows };
-  log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
+  log(rows.length ? "INFO" : "WARN", "nutmeg_refresh", "Nutmegly balance data refreshed", {
+    rows: rows.length, dates: dates.length
+  });
   return rows;
 }
-
 function findNutmegMatch(match, rows) {
   let best = null, bestScore = 0;
   for (const row of rows) {
