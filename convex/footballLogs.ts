@@ -20,6 +20,7 @@ export const ingest = mutation({
     const existing = await ctx.db.query("footballStats")
       .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();
 
+    let eventsScanned = 0, candidateGatePassed = 0;
     let candidates = 0, evaluations = 0, balanced = 0, marketMissing = 0;
     let unresolved = 0, buyAlerts = 0, sellAlerts = 0, errors = 0;
 
@@ -29,6 +30,8 @@ export const ingest = mutation({
         message: item.message, data: item.data, createdAt: item.createdAt,
       });
 
+      eventsScanned += item.event === "event_source_response" ? 1 : 0;
+      candidateGatePassed += item.event === "candidate_gate_passed" ? 1 : 0;
       candidates += ["candidate_match_found", "candidate_discovered"].includes(item.event) ? 1 : 0;
       evaluations += item.event === "one_one_evaluation" ? 1 : 0;
       marketMissing += item.event === "one_one_market_missing" ? 1 : 0;
@@ -48,6 +51,8 @@ export const ingest = mutation({
 
     const patch = {
       ticks: (existing?.ticks ?? 0) + (args.tickCount ?? 0),
+      eventsScanned: (existing?.eventsScanned ?? 0) + eventsScanned,
+      candidateGatePassed: (existing?.candidateGatePassed ?? 0) + candidateGatePassed,
       candidates: (existing?.candidates ?? 0) + candidates,
       evaluations: (existing?.evaluations ?? 0) + evaluations,
       balanced: (existing?.balanced ?? 0) + balanced,
@@ -69,8 +74,11 @@ export const stats = query({
   args: {},
   returns: v.union(
     v.object({
-      monitor: v.string(), ticks: v.number(), candidates: v.number(),
-      evaluations: v.number(), balanced: v.number(), marketMissing: v.number(),
+      monitor: v.string(), ticks: v.number(),
+      eventsScanned: v.optional(v.number()),
+      candidateGatePassed: v.optional(v.number()),
+      candidates: v.number(), evaluations: v.number(),
+      balanced: v.number(), marketMissing: v.number(),
       unresolved: v.number(), buyAlerts: v.number(), sellAlerts: v.number(),
       errors: v.number(), updatedAt: v.number(),
     }), v.null(),
@@ -80,10 +88,13 @@ export const stats = query({
       .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();
     if (!row) return null;
     return {
-      monitor: row.monitor, ticks: row.ticks, candidates: row.candidates,
-      evaluations: row.evaluations, balanced: row.balanced, marketMissing: row.marketMissing,
-      unresolved: row.unresolved, buyAlerts: row.buyAlerts, sellAlerts: row.sellAlerts,
-      errors: row.errors, updatedAt: row.updatedAt,
+      monitor: row.monitor, ticks: row.ticks,
+      eventsScanned: row.eventsScanned ?? 0,
+      candidateGatePassed: row.candidateGatePassed ?? 0,
+      candidates: row.candidates, evaluations: row.evaluations,
+      balanced: row.balanced, marketMissing: row.marketMissing,
+      unresolved: row.unresolved, buyAlerts: row.buyAlerts,
+      sellAlerts: row.sellAlerts, errors: row.errors, updatedAt: row.updatedAt,
     };
   },
 });
