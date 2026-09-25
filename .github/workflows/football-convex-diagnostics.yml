@@ -19,21 +19,26 @@ jobs:
     steps:
       - name: Read Convex football health
         run: |
-          set -e
+          set +e
           mkdir -p diagnostics
-          curl --fail --silent --show-error --max-time 15 \
+          curl --silent --show-error --max-time 15 -w "\nHTTP_STATUS:%{http_code}\n" \
             "https://brainy-canary-207.eu-west-1.convex.site/football/health" \
             -o diagnostics/football-health.json
-          curl --fail --silent --show-error --max-time 20 \
+          health_rc=$?
+          curl --silent --show-error --max-time 20 -w "\nHTTP_STATUS:%{http_code}\n" \
             "https://brainy-canary-207.eu-west-1.convex.site/football/status" \
             -o diagnostics/football-status.json
+          status_rc=$?
+          echo "Health curl exit: $health_rc"
+          echo "Status curl exit: $status_rc"
           echo "Health:"
-          cat diagnostics/football-health.json
+          cat diagnostics/football-health.json || true
           echo
           echo "Status:"
-          cat diagnostics/football-status.json
+          cat diagnostics/football-status.json || true
 
       - name: Upload Convex diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: football-convex-diagnostics-${{ github.run_id }}
