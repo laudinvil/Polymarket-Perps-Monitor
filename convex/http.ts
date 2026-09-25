@@ -36,12 +36,7 @@ http.route({
   handler: httpAction(async (ctx) => {
     const stats = await ctx.runQuery(internal.footballLogs.stats, {});
     const recentLogs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit: 500 });
-    return Response.json({
-      monitor: "polymarket-football-1-1",
-      status: "ok",
-      stats,
-      recentLogs,
-    });
+    return Response.json({ monitor: "polymarket-football-1-1", status: "ok", stats, recentLogs });
   }),
 });
 
@@ -51,18 +46,12 @@ http.route({
   handler: httpAction(async (ctx) => {
     const stats = await ctx.runQuery(internal.footballLogs.stats, {});
     return Response.json({
-      status: "ok",
-      monitor: "polymarket-football-1-1",
-      updatedAt: stats?.updatedAt ?? null,
-      ticks: stats?.ticks ?? 0,
-      candidates: stats?.candidates ?? 0,
-      evaluations: stats?.evaluations ?? 0,
-      balanced: stats?.balanced ?? 0,
-      marketMissing: stats?.marketMissing ?? 0,
-      unresolved: stats?.unresolved ?? 0,
-      buyAlerts: stats?.buyAlerts ?? 0,
-      sellAlerts: stats?.sellAlerts ?? 0,
-      errors: stats?.errors ?? 0,
+      status: "ok", monitor: "polymarket-football-1-1",
+      updatedAt: stats?.updatedAt ?? null, ticks: stats?.ticks ?? 0,
+      candidates: stats?.candidates ?? 0, evaluations: stats?.evaluations ?? 0,
+      balanced: stats?.balanced ?? 0, marketMissing: stats?.marketMissing ?? 0,
+      unresolved: stats?.unresolved ?? 0, buyAlerts: stats?.buyAlerts ?? 0,
+      sellAlerts: stats?.sellAlerts ?? 0, errors: stats?.errors ?? 0,
     });
   }),
 });
@@ -75,8 +64,22 @@ http.route({
     const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
     const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
     if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
-    const claimed = await ctx.runMutation(internal.footballLogs.claimTelegramAlert, { monitor, marketSlug });
-    return new Response(claimed ? "claimed" : "already_claimed", { status: claimed ? 200 : 409 });
+    const result = await ctx.runMutation(internal.footballLogs.claimTelegramAlert, { monitor, marketSlug });
+    return Response.json(result, { status: result.claimed ? 200 : 409 });
+  }),
+});
+
+http.route({
+  path: "/football/telegram-message",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
+    const messageId = Number(body.messageId);
+    if (!marketSlug || !Number.isInteger(messageId)) return new Response("invalid request", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.saveTelegramMessageId, { monitor, marketSlug, messageId });
+    return new Response("saved", { status: 200 });
   }),
 });
 
