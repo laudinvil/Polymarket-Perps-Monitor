@@ -592,7 +592,36 @@ function bestEdge(match) {
 
 async function maybeAlert(match) {
   const best = bestEdge(match);
-  if (!best || best.edge <= 0 || !match.url) return;
+  if (!match.url) return;
+
+  const bucket = Math.floor(Date.now() / ALERT_BUCKET_MS);
+  const key = String(match.eventId || match.url);
+  const diagnosticKey = key + ":diagnostic:" + bucket;
+
+  if (!best || best.edge <= 0) {
+    if (alerted.get(key) === diagnosticKey) return;
+
+    const message = [
+      "⚽ FOOTBALL · LIVE DIAGNOSTIC",
+      "",
+      "MATCH: " + (match.homeTeam || "?") + " vs " + (match.awayTeam || "?"),
+      "SCORE: " + (match.live?.score || "?"),
+      "MINUTE: " + (match.live?.minute ?? "?"),
+      "",
+      "EDGE: NO POSITIVE EDGE",
+      "",
+      "➡️ POLYMARKET",
+      match.url
+    ].join("\n");
+
+    await sendTelegram(message);
+    alerted.set(key, diagnosticKey);
+    log("INFO", "telegram_diagnostic_sent", "Football diagnostic Telegram alert sent", {
+      eventId: match.eventId,
+      bestEdge: best?.edge ?? null
+    });
+    return;
+  }
 
   const key = match.eventId || match.slug;
   const bucket = Math.floor(Date.now() / 60_000);
