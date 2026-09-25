@@ -25,4 +25,6 @@ jobs:
           node-version: 24
 
       - name: Discover live Polymarket football
+        env:
+          SPORTMONKS_TOKEN: ${{ secrets.SPORTMONKS_TOKEN }}
         run: node scripts/polymarket-football-live.js
