@@ -73,6 +73,19 @@ export const stats = query({
     .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first(),
 });
 
+export const claimTelegramAlert = mutation({
+  args: { monitor: v.string(), marketSlug: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
+      .first();
+    if (existing) return false;
+    await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: Date.now() });
+    return true;
+  },
+});
+
 export const recentLogs = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(v.object({
