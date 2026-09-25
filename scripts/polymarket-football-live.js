@@ -163,8 +163,9 @@ async function discoverPolymarket() {
   let sourceSeriesCount = 0;
 
   try {
-    // Pull the soccer-tagged feed with pagination.
-    for (let offset = 0; offset < 5000; offset += 500) {
+    // Pull the soccer-tagged feed with pagination. Stop as soon as the API
+    // returns a short page; do not scan thousands of rows unnecessarily.
+    for (let offset = 0; offset < 2000; offset += 500) {
       const data = await getJson(
         GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=" + offset + "&order=startDate&ascending=true"
       );
@@ -177,10 +178,12 @@ async function discoverPolymarket() {
     log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using football-series discovery", { message: err.message });
   }
 
-  const footballIds = await footballSeriesIds();
+  // The soccer-tag feed is already scoped to football. Only fall back to
+  // league-series discovery when the direct feed returned nothing.
+  const footballIds = sourceIsSoccerTag ? new Set() : await footballSeriesIds();
   if (footballIds.size) {
     const seriesResults = await Promise.all(
-      [...footballIds].map(async (seriesId) => {
+      [...footballIds].slice(0, 100).map(async (seriesId) => {
         try {
           return await activeEventsBySeries(seriesId);
         } catch (err) {
@@ -212,11 +215,14 @@ async function discoverPolymarket() {
     if (!event || (!sourceIsSoccerTag && !isFootballEvent(event, footballIds))) continue;
 
     const start = Date.parse(event.startDate || event.start_date || event.startTime || "");
-    const inWindow =
-      Number.isFinite(start) &&
-      start <= now + PREMATCH_WINDOW_MS &&
-      (now < start || now <= start + EARLY_WINDOW_MS);
-    if (!inWindow) continue;
+    // Discovery must not discard a valid football event merely because
+    // Polymarket omitted/changed its start-time field. Pre-match alerting
+    // still requires a valid future start time in maybeOneOneAlert().
+    if (Number.isFinite(start) &&
+        start > now + PREMATCH_WINDOW_MS) continue;
+    if (Number.isFinite(start) &&
+        start <= now &&
+        now > start + EARLY_WINDOW_MS) continue;
 
     const id = text(event.id || event.eventId || event.event_id);
     const slug = text(event.slug);
@@ -225,23 +231,14 @@ async function discoverPolymarket() {
     seen.add(key);
 
     const [home, away] = extractTeams(event);
-    let markets = Array.isArray(event.markets) ? [...event.markets] : [];
-    try {
-      const eventData = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(id));
-      const extraMarkets = Array.isArray(eventData?.markets) ? eventData.markets : [];
-      if (extraMarkets.length) markets = [...markets, ...extraMarkets];
-      log("INFO", "match_markets_loaded", "Loaded markets directly from football match event", {
-        eventId: id,
-        teams: [home, away],
-        markets: markets.length
-      });
-    } catch (err) {
-      log("WARN", "match_markets_fetch_failed", "Could not load markets directly from football match event", {
-        eventId: id,
-        teams: [home, away],
-        message: err.message
-      });
-    }
+    // Events already include their markets. Avoid one extra HTTP request
+    // per candidate; this was making discovery stall on large soccer feeds.
+    const markets = Array.isArray(event.markets) ? [...event.markets] : [];
+    log("INFO", "match_markets_loaded", "Loaded markets from football event payload", {
+      eventId: id,
+      teams: [home, away],
+      markets: markets.length
+    });
 
     const item = {
       eventId: id,
