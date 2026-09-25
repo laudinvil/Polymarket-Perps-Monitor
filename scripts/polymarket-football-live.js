@@ -373,29 +373,45 @@ function outcomeName(value) {
 
 function marketPrices(match, probabilities) {
   const rows = [];
+  const homeName = norm(match.homeTeam);
+  const awayName = norm(match.awayTeam);
+
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
     const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
+
     for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
-      const name = outcomeName(outcomes[i]);
+      const outcome = text(outcomes[i]);
+      const name = outcomeName(outcome);
       const price = Number(prices[i]);
       if (!Number.isFinite(price)) continue;
 
       let model = NaN;
-      if (/home|1st|first/.test(name)) model = probabilities.home;
-      else if (/away|2nd|second/.test(name)) model = probabilities.away;
-      else if (/no goal|none/.test(name)) model = probabilities.none;
+      let modelSide = "unmapped";
+
+      if (/home|1st|first/.test(name) || (homeName && norm(outcome) === homeName)) {
+        model = probabilities.home;
+        modelSide = "home";
+      } else if (/away|2nd|second/.test(name) || (awayName && norm(outcome) === awayName)) {
+        model = probabilities.away;
+        modelSide = "away";
+      } else if (/no goal|none/.test(name)) {
+        model = probabilities.none;
+        modelSide = "none";
+      }
 
       rows.push({
         marketId: market.marketId,
         question: market.question,
-        outcome: text(outcomes[i]),
+        outcome,
         price,
         modelProbability: model,
+        modelSide,
         edge: Number.isFinite(model) ? model - price : NaN
       });
     }
   }
+
   return rows;
 }
 
@@ -615,8 +631,51 @@ async function tick() {
 
   try {
     const matches = await discoverPolymarket();
+    log("INFO", "polymarket_discovery", "Polymarket football discovery completed", {
+      count: matches.length,
+      matches: matches.map(m => ({
+        eventId: m.eventId,
+        title: m.title,
+        teams: [m.homeTeam, m.awayTeam],
+        url: m.url,
+        marketCount: m.markets.length
+      }))
+    });
+
     await enrichLiveMatches(matches);
-    for (const match of matches) await maybeAlert(match);
+    for (const match of matches) {
+      if (match.live?.status === "unresolved") {
+        log("INFO", "match_unresolved", "Live Polymarket match has no SportMonks fixture match", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam]
+        });
+        continue;
+      }
+
+      if (match.live?.status === "provider_error") continue;
+
+      const prices = match.model?.prices || [];
+      const mapped = prices.filter(p => Number.isFinite(p.modelProbability));
+      const best = bestEdge(match);
+
+      log("INFO", "edge_evaluation", "Football edge evaluated", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        score: match.live.score,
+        minute: match.live.minute,
+        mappedOutcomes: mapped.map(p => ({
+          outcome: p.outcome,
+          side: p.modelSide,
+          polymarket: p.price,
+          model: p.modelProbability,
+          edge: p.edge
+        })),
+        bestEdge: best?.edge ?? null,
+        bestOutcome: best?.outcome ?? null
+      });
+
+      await maybeAlert(match);
+    }
 
     log("INFO", "live_snapshot", "Polymarket football matches with live provider data", {
       count: matches.length,
