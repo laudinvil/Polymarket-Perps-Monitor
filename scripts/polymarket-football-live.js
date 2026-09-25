@@ -997,11 +997,3 @@ function keywordTeamSimilarity(a, b) {
   if (!x.length || !y.length) return 0;
   return x.filter(token => y.includes(token)).length / Math.max(x.length, y.length);
 }
-
-function teamSimilarity(a, b) {
-  const x = norm(a), y = norm(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.85;
-  const xa = new Set(x.split(" ")), ya = new Set(y.split(" "));
-  const overlap = [...xa].filter(token => ya.has(token)).length;
