@@ -694,6 +694,10 @@ async function sendTelegram(textMessage) {
   return true;
 }
 
+async function runCycle() {
+  return await tick();
+}
+
 async function main(){
   console.log(JSON.stringify({event:"monitor_start",message:"football monitor continuous entrypoint started",runMs:RUN_MS,pollMs:POLL_MS,createdAt:Date.now()}));
   const deadline=Date.now()+RUN_MS;
