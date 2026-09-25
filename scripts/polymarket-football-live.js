@@ -312,8 +312,8 @@ async function maybeOneOneAlert(match, nutmeg) {
 
   if (preMatch || (home === 0 && away === 0)) {
     const claimKey = key + ":BUY";
-    const claimed = await claimTelegramAlert(claimKey);
-    if (!claimed) return;
+    const claim = await claimTelegramAlert(claimKey);
+    if (!claim.claimed) return;
 
     const message = [
       "⚽ 1:1 · BUY", "",
@@ -323,9 +323,11 @@ async function maybeOneOneAlert(match, nutmeg) {
     ].join("\n");
 
     try {
-      if (!await sendTelegram(message)) throw new Error("Telegram not configured");
+      const sent = await sendTelegram(message);
+      if (!sent.ok) throw new Error("Telegram not configured");
+      await saveTelegramMessageId(claimKey, sent.messageId);
       log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", {
-        eventId: match.eventId, preMatch, reason: "balanced_nutmeg_candidate"
+        eventId: match.eventId, preMatch, reason: "balanced_nutmeg_candidate", telegramMessageId: sent.messageId
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
@@ -348,8 +350,8 @@ async function maybeOneOneAlert(match, nutmeg) {
   }
 
   const claimKey = key + (recovery ? ":SELL_11" : ":SELL");
-  const claimed = await claimTelegramAlert(claimKey);
-  if (!claimed) return;
+  const claim = await claimTelegramAlert(claimKey);
+  if (!claim.claimed) return;
 
   const message = [
     "⚽ 1:1 · SELL", "",
@@ -359,9 +361,10 @@ async function maybeOneOneAlert(match, nutmeg) {
   ].join("\n");
 
   try {
-    if (!await sendTelegram(message)) throw new Error("Telegram not configured");
-    log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after valid post-BUY score transition", {
-      eventId: match.eventId, score: { home, away }, recovery
+    const sent = await sendTelegram(message, claim.replyToMessageId);
+    if (!sent.ok) throw new Error("Telegram not configured");
+    log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent as Telegram reply to BUY", {
+      eventId: match.eventId, score: { home, away }, recovery, replyToMessageId: claim.replyToMessageId
     });
   } catch (err) {
     await releaseTelegramAlert(claimKey);
@@ -661,13 +664,24 @@ async function claimTelegramAlert(key) {
       body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
       signal: AbortSignal.timeout(2_000),
     });
-    if (response.status === 200) return true;
-    if (response.status === 409) return false;
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 200) return { claimed: true, replyToMessageId: body.replyToMessageId ?? null };
+    if (response.status === 409) return { claimed: false, replyToMessageId: null };
     throw new Error("Convex claim HTTP " + response.status);
   } catch (err) {
     log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
-    return false;
+    return { claimed: false, replyToMessageId: null };
   }
+}
+
+async function saveTelegramMessageId(key, messageId) {
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  const response = await fetch(base.replace(/\/$/, "") + "/football/telegram-message", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key, messageId }),
+    signal: AbortSignal.timeout(2_000),
+  });
+  if (!response.ok) throw new Error("Convex telegram-message HTTP " + response.status);
 }
 
 async function releaseTelegramAlert(key) {
@@ -684,24 +698,32 @@ async function releaseTelegramAlert(key) {
   }
 }
 
-async function sendTelegram(textMessage) {
+async function sendTelegram(textMessage, replyToMessageId = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
   const chatId = process.env.TELEGRAM_CHAT_ID || "";
   if (!token || !chatId) {
     log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
-    return false;
+    return { ok: false, messageId: null };
   }
   const url = "https://api.telegram.org/bot" + token + "/sendMessage";
+  const payload = {
+    chat_id: chatId,
+    text: textMessage,
+    disable_web_page_preview: false,
+    ...(Number.isInteger(replyToMessageId) ? {
+      reply_parameters: { message_id: replyToMessageId, allow_sending_without_reply: true }
+    } : {})
+  };
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: textMessage, disable_web_page_preview: false }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000)
   });
   if (!response.ok) throw new Error("Telegram HTTP " + response.status);
   const body = await response.json();
   if (!body.ok) throw new Error("Telegram API rejected message");
-  return true;
+  return { ok: true, messageId: Number(body.result?.message_id) || null };
 }
 
 async function runCycle() {
