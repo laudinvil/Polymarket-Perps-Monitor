@@ -74,3 +74,21 @@ async function discoverPolymarket(){
   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_newest"||result.name==="soccer_live";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;if(!isPrimaryMatchEvent(event)){log("INFO","non_fixture_filtered","Football event has no recognizable fixture form; not passed to Nutmeg",{eventId:text(event.id||event.eventId||event.event_id),title:text(event.title||event.question),source:result.name});continue;}const [home,away]=extractTeams(event);if(!home||!away){log("INFO","match_teams_missing","Football event has no recognizable teams",{eventId:text(event.id),title:text(event.title)});continue;}const startTime=event.startDate||event.start_date||event.startTime||null,endTime=event.endDate||event.end_date||event.endTime||null,eventId=text(event.id||event.eventId||event.event_id),slug=text(event.slug),key=eventId||slug;if(!key){log("WARN","match_identity_missing","Football match has teams but no event id/slug",{title:text(event.title||event.question),home,away});continue;}if(seen.has(key))continue;seen.add(key);matchesFound++;const nestedMarkets=Array.isArray(event.markets)?event.markets.map(market=>({marketId:text(market?.id||market?.marketId),question:text(market?.question||market?.title),outcomes:Array.isArray(parseJson(market?.outcomes))?parseJson(market.outcomes):[],outcomePrices:Array.isArray(parseJson(market?.outcomePrices||market?.outcome_prices))?parseJson(market?.outcomePrices||market?.outcome_prices):[],active:market?.active!==false,closed:market?.closed===true})):[];matches.push({eventId,slug,url:eventUrl(event),title:text(event.title||event.question),homeTeam:home,awayTeam:away,startTime,endTime,markets:nestedMarkets});log("INFO","match_discovery_passed","Football fixture passed discovery",{source:result.name,eventId,slug,teams:[home,away],startTime,active:event.active,closed:event.closed,marketCount:nestedMarkets.length});}await checkpoint("event_source_done",{source:result.name,rows:result.rows.length,eventScanned,footballEventFound,matchesFound});}
   await checkpoint("discovery_done",{eventScanned,footballEventFound,matchesFound,matches:matches.map(m=>({eventId:m.eventId,teams:[m.homeTeam,m.awayTeam],startTime:m.startTime}))});return matches;
 }
+
+
+async function main(){
+  console.log(JSON.stringify({event:"monitor_start",message:"football monitor entrypoint started",createdAt:Date.now()}));
+  try {
+    const matches = await discoverPolymarket();
+    console.log(JSON.stringify({event:"discovery_control",message:"FOOTBALL_DISCOVERY_MATCHES_FOUND",matchesFound:matches.length,createdAt:Date.now()}));
+    await flushConvexLogs();
+    console.log(JSON.stringify({event:"monitor_exit",message:"football discovery cycle completed",matchesFound:matches.length,createdAt:Date.now()}));
+  } catch (error) {
+    log("ERROR","monitor_failed","Football monitor failed",{message:error?.message||String(error),stack:error?.stack});
+    await flushConvexLogs();
+    console.error(JSON.stringify({event:"monitor_failed",message:error?.message||String(error),createdAt:Date.now()}));
+    process.exitCode = 1;
+  }
+}
+
+main();
