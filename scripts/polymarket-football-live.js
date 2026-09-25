@@ -6,6 +6,12 @@ const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
+const PREMATCH_WINDOW_MS = 10 * 60 * 1000;
+const EARLY_WINDOW_MS = 7 * 60 * 1000;
+const NUTMEG_CACHE_MS = 5 * 60 * 1000;
+const BALANCE_MAX_DIFF = 0.12;
+const MIN_DRAW_PROB = 0.22;
+const MIN_BTTS_PROB = 0.45;
 
 let stopping = false;
 let timer = null;
@@ -137,7 +143,7 @@ async function discoverPolymarket() {
     events = Array.isArray(data) ? data : (data.events || data.data || []);
   }
 
-  const live = [];
+  const candidates = [];
   const seen = new Set();
 
   for (const event of events) {
@@ -145,8 +151,13 @@ async function discoverPolymarket() {
 
     const start = Date.parse(event.startDate || event.start_date || event.startTime || "");
     const end = Date.parse(event.endDate || event.end_date || event.endTime || "");
-    const isLiveWindow = Number.isFinite(start) && start <= now && (!Number.isFinite(end) || end > now);
-    if (!isLiveWindow) continue;
+    const inWindow =
+      Number.isFinite(start) &&
+      start <= now + PREMATCH_WINDOW_MS &&
+      (!Number.isFinite(end) || end > now) &&
+      now >= start - PREMATCH_WINDOW_MS &&
+      now <= start + EARLY_WINDOW_MS;
+    if (!inWindow) continue;
 
     const id = text(event.id || event.eventId || event.event_id);
     const slug = text(event.slug);
@@ -179,480 +190,159 @@ async function discoverPolymarket() {
       }))
     };
 
-    live.push(item);
-
+    candidates.push(item);
     if (!known.has(key)) {
       known.set(key, now);
-      log("INFO", "live_match_found", "New live Polymarket football match", item);
+      log("INFO", "candidate_match_found", "Polymarket football candidate for 1:1 strategy", item);
     }
   }
 
-  return live;
+  return candidates;
 }
 
-
-function participants(fixture) {
-  return Array.isArray(fixture?.participants) ? fixture.participants : [];
+function stripHtml(value) {
+  return text(value)
+    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
+    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\\s+/g, " ")
+    .trim();
 }
 
-function fixtureTeams(fixture) {
-  const parts = participants(fixture);
-  const home = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
-  const away = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
-  return { home: text(home?.name), away: text(away?.name) };
-}
+async function nutmegRows() {
+  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
 
-function matchScore(fixture) {
-  const scores = Array.isArray(fixture?.scores) ? fixture.scores : [];
-  const current = scores.filter(s => s.description === "CURRENT" || s.type?.code === "current");
-  const list = current.length ? current : scores;
-  const parts = participants(fixture);
-  const homeId = parts.find(p => p.meta?.location === "home")?.id;
-  const awayId = parts.find(p => p.meta?.location === "away")?.id;
-  const home = list.find(s => s.participant_id === homeId);
-  const away = list.find(s => s.participant_id === awayId);
-  return {
-    home: Number(home?.score?.goals ?? home?.goals ?? 0),
-    away: Number(away?.score?.goals ?? away?.goals ?? 0)
-  };
-}
-
-function currentMinute(fixture) {
-  const periods = Array.isArray(fixture?.periods) ? fixture.periods : [];
-  const ticking = periods.find(p => p.ticking === true);
-  if (ticking?.minutes != null) return Number(ticking.minutes);
-  return Number(periods.at(-1)?.minutes ?? 0);
-}
-
-function extractXg(fixture) {
-  const rows = Array.isArray(fixture?.xgfixture) ? fixture.xgfixture : [];
-  const home = rows.find(x => x.location === "home" && (x.type?.code === "expected-goals" || /expected goals/i.test(text(x.type?.name))));
-  const away = rows.find(x => x.location === "away" && (x.type?.code === "expected-goals" || /expected goals/i.test(text(x.type?.name))));
-  return {
-    home: Number(home?.data?.value ?? NaN),
-    away: Number(away?.data?.value ?? NaN)
-  };
-}
-
-function statisticRows(fixture) {
-  return Array.isArray(fixture?.statistics) ? fixture.statistics : [];
-}
-
-function statValue(row) {
-  const value = row?.data?.value ?? row?.value;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-function extractStats(fixture) {
-  const parts = participants(fixture);
-  const homeId = parts.find(p => p.meta?.location === "home")?.id;
-  const awayId = parts.find(p => p.meta?.location === "away")?.id;
-  const result = {
-    home: { shots: NaN, shotsOnTarget: NaN },
-    away: { shots: NaN, shotsOnTarget: NaN }
-  };
-
-  for (const row of statisticRows(fixture)) {
-    const name = text(row?.type?.name || row?.type?.code).toLowerCase();
-    const value = statValue(row);
-    const participantId = row?.participant_id ?? row?.participant?.id;
-    const side = participantId === homeId ? "home" : participantId === awayId ? "away" : null;
-    if (!side || !Number.isFinite(value)) continue;
-
-    if (/shots on target|shot on target/.test(name)) result[side].shotsOnTarget = value;
-    else if (/shots|total shots/.test(name)) result[side].shots = value;
-  }
-
-  return result;
-}
-
-function normalizeFixture(fixture) {
-  const teams = fixtureTeams(fixture);
-  return {
-    fixtureId: String(fixture.id),
-    name: text(fixture.name),
-    homeTeam: teams.home,
-    awayTeam: teams.away,
-    minute: currentMinute(fixture),
-    score: matchScore(fixture),
-    xg: extractXg(fixture),
-    stats: extractStats(fixture),
-    startingAt: fixture.starting_at || null,
-    stateId: fixture.state_id ?? fixture.state?.id ?? null,
-    events: Array.isArray(fixture.events) ? fixture.events.map(e => ({
-      minute: e.minute,
-      extraMinute: e.extra_minute,
-      type: text(e.type?.name || e.type?.code),
-      player: text(e.player_name),
-      result: text(e.result)
-    })) : []
-  };
-}
-
-function snapshotAtOrBefore(rows, cutoff) {
-  let best = null;
-  for (const row of rows) {
-    if (row.timestamp <= cutoff) best = row;
-    else break;
-  }
-  return best;
-}
-
-function delta(current, previous) {
-  if (!Number.isFinite(current) || !Number.isFinite(previous)) return NaN;
-  return Math.max(0, current - previous);
-}
-
-function calculateFeatures(match, snapshot) {
-  const key = match.eventId || match.slug;
-  const rows = history.get(key) || [];
-  const now = Date.now();
-
-  const five = snapshotAtOrBefore(rows, now - 5 * 60 * 1000);
-  const ten = snapshotAtOrBefore(rows, now - 10 * 60 * 1000);
-
-  const xg5Home = five ? delta(snapshot.xg.home, five.xg.home) : NaN;
-  const xg5Away = five ? delta(snapshot.xg.away, five.xg.away) : NaN;
-  const xg10Home = ten ? delta(snapshot.xg.home, ten.xg.home) : NaN;
-  const xg10Away = ten ? delta(snapshot.xg.away, ten.xg.away) : NaN;
-
-  const shots10Home = ten ? delta(snapshot.stats.home.shots, ten.stats.home.shots) : NaN;
-  const shots10Away = ten ? delta(snapshot.stats.away.shots, ten.stats.away.shots) : NaN;
-  const sot10Home = ten ? delta(snapshot.stats.home.shotsOnTarget, ten.stats.home.shotsOnTarget) : NaN;
-  const sot10Away = ten ? delta(snapshot.stats.away.shotsOnTarget, ten.stats.away.shotsOnTarget) : NaN;
-
-  const elapsed = Math.max(1, Number(snapshot.minute) || 1);
-  const expected10Home = Number.isFinite(snapshot.xg.home) ? snapshot.xg.home * 10 / elapsed : NaN;
-  const expected10Away = Number.isFinite(snapshot.xg.away) ? snapshot.xg.away * 10 / elapsed : NaN;
-
-  return {
-    xg5m: { home: xg5Home, away: xg5Away },
-    xg10m: { home: xg10Home, away: xg10Away },
-    shots10m: { home: shots10Home, away: shots10Away },
-    shotsOnTarget10m: { home: sot10Home, away: sot10Away },
-    momentum10m: {
-      home: Number.isFinite(xg10Home) && Number.isFinite(expected10Home) ? xg10Home - expected10Home : NaN,
-      away: Number.isFinite(xg10Away) && Number.isFinite(expected10Away) ? xg10Away - expected10Away : NaN
-    },
-    historyPoints: rows.length
-  };
-}
-
-
-function goalProbabilities(snapshot, features) {
-  const minute = Math.max(1, Number(snapshot.minute) || 1);
-  const remaining = Math.max(0, 90 - minute);
-  if (!remaining) return { home: 0, away: 0, none: 1 };
-
-  const baseHomeRate = Number.isFinite(snapshot.xg.home) ? snapshot.xg.home / minute : NaN;
-  const baseAwayRate = Number.isFinite(snapshot.xg.away) ? snapshot.xg.away / minute : NaN;
-  const recentHome = Number.isFinite(features?.xg10m?.home) ? features.xg10m.home / 10 : NaN;
-  const recentAway = Number.isFinite(features?.xg10m?.away) ? features.xg10m.away / 10 : NaN;
-
-  const homeRate = Number.isFinite(recentHome) && Number.isFinite(baseHomeRate) ? 0.6 * recentHome + 0.4 * baseHomeRate : baseHomeRate;
-  const awayRate = Number.isFinite(recentAway) && Number.isFinite(baseAwayRate) ? 0.6 * recentAway + 0.4 * baseAwayRate : baseAwayRate;
-
-  if (!Number.isFinite(homeRate) || !Number.isFinite(awayRate)) return { home: NaN, away: NaN, none: NaN };
-
-  const h = Math.max(0, homeRate * remaining);
-  const a = Math.max(0, awayRate * remaining);
-  const total = h + a;
-  const none = Math.exp(-total);
-  const scored = 1 - none;
-  if (total <= 0) return { home: 0, away: 0, none: 1 };
-
-  return { home: scored * h / total, away: scored * a / total, none };
-}
-
-function outcomeName(value) {
-  return text(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function marketPrices(match, probabilities) {
   const rows = [];
-  const homeName = norm(match.homeTeam);
-  const awayName = norm(match.awayTeam);
-
-  for (const market of match.markets || []) {
-    const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
-    const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
-
-    for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
-      const outcome = text(outcomes[i]);
-      const name = outcomeName(outcome);
-      const price = Number(prices[i]);
-      if (!Number.isFinite(price)) continue;
-
-      let model = NaN;
-      let modelSide = "unmapped";
-
-      if (/home|1st|first/.test(name) || (homeName && norm(outcome) === homeName)) {
-        model = probabilities.home;
-        modelSide = "home";
-      } else if (/away|2nd|second/.test(name) || (awayName && norm(outcome) === awayName)) {
-        model = probabilities.away;
-        modelSide = "away";
-      } else if (/no goal|none/.test(name)) {
-        model = probabilities.none;
-        modelSide = "none";
+  const pages = [1, 2, 3, 4, 5];
+  for (const page of pages) {
+    try {
+      const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=upcoming&tz=UTC";
+      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) continue;
+      const body = stripHtml(await r.text());
+      const re = /([^|]{2,80})\\s+VS\\s+([^|]{2,80})\\s+(?:Home win|Home)\\s*(\\d+)%\\s*(?:Draw)\\s*(\\d+)%\\s*(?:Away win|Away)\\s*(\\d+)%/gi;
+      let m;
+      while ((m = re.exec(body))) {
+        rows.push({
+          home: m[1].trim(),
+          away: m[2].trim(),
+          homeProb: Number(m[3]) / 100,
+          drawProb: Number(m[4]) / 100,
+          awayProb: Number(m[5]) / 100,
+          bttsProb: NaN
+        });
       }
-
-      rows.push({
-        marketId: market.marketId,
-        question: market.question,
-        outcome,
-        price,
-        modelProbability: model,
-        modelSide,
-        edge: Number.isFinite(model) ? model - price : NaN
-      });
+    } catch (err) {
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
     }
   }
 
+  nutmegCache = { at: Date.now(), rows };
+  log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
   return rows;
 }
 
-function calculateModel(match, snapshot, features) {
-  const probabilities = goalProbabilities(snapshot, features);
-  const prices = marketPrices(match, probabilities);
-  return { probabilities, prices };
-}
-
-function recordHistory(match, snapshot) {
-  const key = match.eventId || match.slug;
-  if (!key) return null;
-
-  const rows = history.get(key) || [];
-  const timestamp = Date.now();
-  const row = {
-    timestamp,
-    minute: snapshot.minute,
-    score: snapshot.score,
-    xg: snapshot.xg,
-    stats: snapshot.stats
-  };
-
-  rows.push(row);
-  const cutoff = timestamp - HISTORY_MS;
-  const kept = rows.filter(item => item.timestamp >= cutoff);
-  history.set(key, kept);
-  return calculateFeatures(match, snapshot);
-}
-
-async function sportscoreLatest() {
-  const url = SPORTScore_URL + "/matches/?sport=football&limit=50";
-  const data = await getJson(url);
-  return Array.isArray(data?.matches) ? data.matches : [];
-}
-
-async function sportscoreMatch(slug) {
-  const url = SPORTScore_URL + "/match/?sport=football&slug=" + encodeURIComponent(slug);
-  const data = await getJson(url);
-  return data?.match || null;
-}
-
-function sportscoreSlug(url) {
-  const m = text(url).match(/\/football\/match\/([^/?#]+)\/?$/i);
-  return m ? m[1] : "";
-}
-
-function normalizeSportScore(match) {
-  const home = text(match.home);
-  const away = text(match.away);
-  const scoreHome = Number(match.home_score ?? match.score?.home ?? 0);
-  const scoreAway = Number(match.away_score ?? match.score?.away ?? 0);
-  const minute = Number(match.live_minute ?? match.minute ?? 0);
-
-  const incidents = Array.isArray(match.incidents) ? match.incidents : [];
-  const stats = match.stats && typeof match.stats === "object" ? match.stats : {};
-
-  const pickStat = (side, names) => {
-    const bucket = stats[side] || {};
-    for (const name of names) {
-      const value = Number(bucket[name]);
-      if (Number.isFinite(value)) return value;
-    }
-    return NaN;
-  };
-
-  const shotsHome = pickStat("home", ["shots", "total_shots", "totalShots"]);
-  const shotsAway = pickStat("away", ["shots", "total_shots", "totalShots"]);
-  const sotHome = pickStat("home", ["shots_on_target", "shotsOnTarget", "on_target"]);
-  const sotAway = pickStat("away", ["shots_on_target", "shotsOnTarget", "on_target"]);
-
-  const proxyXg = (shots, sot) => {
-    if (Number.isFinite(sot) || Number.isFinite(shots)) {
-      const s = Number.isFinite(shots) ? Math.max(0, shots) : 0;
-      const on = Number.isFinite(sot) ? Math.max(0, sot) : 0;
-      return Math.max(0.01, on * 0.12 + Math.max(0, s - on) * 0.035);
-    }
-    return NaN;
-  };
-
-  return {
-    fixtureId: text(match.url) || home + ":" + away,
-    name: home + " vs " + away,
-    homeTeam: home,
-    awayTeam: away,
-    minute: Number.isFinite(minute) ? minute : 0,
-    score: { home: scoreHome, away: scoreAway },
-    xg: { home: proxyXg(shotsHome, sotHome), away: proxyXg(shotsAway, sotAway) },
-    stats: {
-      home: { shots: shotsHome, shotsOnTarget: sotHome },
-      away: { shots: shotsAway, shotsOnTarget: sotAway }
-    },
-    startingAt: match.time || match.start_time || null,
-    stateId: text(match.status),
-    events: incidents
-  };
-}
-
-function teamSimilarity(a, b) {
-  const x = norm(a);
-  const y = norm(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.85;
-  const xa = new Set(x.split(" "));
-  const ya = new Set(y.split(" "));
-  const overlap = [...xa].filter(token => ya.has(token)).length;
-  return overlap / Math.max(xa.size, ya.size);
-}
-
-function resolveSportScore(match, fixtures) {
+function findNutmegMatch(match, rows) {
   let best = null;
   let bestScore = 0;
-  for (const fixture of fixtures) {
-    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
-    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
+  for (const row of rows) {
+    const direct = teamSimilarity(match.homeTeam, row.home) + teamSimilarity(match.awayTeam, row.away);
+    const swapped = teamSimilarity(match.homeTeam, row.away) + teamSimilarity(match.awayTeam, row.home);
     const score = Math.max(direct, swapped);
-    if (score > bestScore) { bestScore = score; best = fixture; }
+    if (score > bestScore) { bestScore = score; best = row; }
   }
-  if (!best || bestScore < 1.4) return null;
-  return { fixture: best, score: bestScore };
+  return best && bestScore >= 1.35 ? { row: best, score: bestScore } : null;
 }
 
-async function enrichLiveMatches(polymarketMatches) {
-  const fixtures = await sportscoreLatest();
-  const liveFixtures = fixtures.filter(f => /live|in progress|1st half|2nd half|halftime|playing|started|ongoing/i.test(text(f.status) + " " + text(f.status_text)));
+function balancedForOneOne(nutmeg) {
+  if (!nutmeg) return false;
+  const r = nutmeg.row;
+  return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF &&
+    r.drawProb >= MIN_DRAW_PROB &&
+    (!Number.isFinite(r.bttsProb) || r.bttsProb >= MIN_BTTS_PROB);
+}
 
-  for (const match of polymarketMatches) {
-    const key = match.eventId || match.slug;
-    let resolvedMatch = resolved.get(key);
-    if (!resolvedMatch) {
-      resolvedMatch = resolveSportScore(match, liveFixtures);
-      if (resolvedMatch) {
-        const slug = sportscoreSlug(resolvedMatch.fixture.url);
-        if (!slug) {
-          log("WARN", "sportscore_slug_missing", "SportScore match matched but fixture URL has no usable slug", { fixture: resolvedMatch.fixture });
-          continue;
-        }
-        resolved.set(key, { fixtureId: slug, confidence: resolvedMatch.score });
-        log("INFO", "match_resolved", "Polymarket match linked to SportScore fixture", {
-          eventId: match.eventId, url: match.url,
-          polymarketTeams: [match.homeTeam, match.awayTeam],
-          sportscoreTeams: [resolvedMatch.fixture.home, resolvedMatch.fixture.away],
-          confidence: resolvedMatch.score
-        });
+function findOneOneMarket(match) {
+  for (const market of match.markets || []) {
+    const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
+    for (let i = 0; i < outcomes.length; i++) {
+      if (/^1\\s*[-:]\\s*1$/.test(text(outcomes[i]))) {
+        const price = Number((market.outcomePrices || [])[i]);
+        if (Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
       }
     }
-    if (!resolvedMatch) {
-      match.live = { status: "unresolved" };
-      continue;
+    if (/correct score|exact score|score/i.test(market.question || "")) {
+      const i = outcomes.findIndex(v => /^1\\s*[-:]\\s*1$/.test(text(v)));
+      const price = Number((market.outcomePrices || [])[i]);
+      if (i >= 0 && Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
     }
-
-    const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
-      log("WARN", "fixture_failed", "SportScore match refresh failed", { fixture: resolvedMatch.fixtureId, message: err.message });
-      return null;
-    });
-    if (!detail) { match.live = { status: "provider_error" }; continue; }
-
-    match.provider = "sportscore";
-    match.providerFixtureId = resolvedMatch.fixtureId;
-    match.live = normalizeSportScore(detail);
-    match.features = recordHistory(match, match.live);
-    match.model = calculateModel(match, match.live, match.features);
   }
+  return null;
 }
 
-function telegramConfigured() {
-  return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+function scoreTotal(match) {
+  return Number(match.live?.score?.home || 0) + Number(match.live?.score?.away || 0);
 }
 
-async function sendTelegram(textMessage) {
-  const token = process.env.TELEGRAM_BOT_TOKEN || "";
-  const chatId = process.env.TELEGRAM_CHAT_ID || "";
-  if (!token || !chatId) {
-    log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
-    return false;
+async function maybeOneOneAlert(match, nutmeg) {
+  if (!match.url || !match.live) return;
+  const market = findOneOneMarket(match);
+  if (!market) {
+    log("INFO", "one_one_market_missing", "No 1:1 exact-score market found", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
+    return;
   }
-
-  const url = "https://api.telegram.org/bot" + token + "/sendMessage";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: textMessage,
-      disable_web_page_preview: false
-    }),
-    signal: AbortSignal.timeout(10_000)
-  });
-
-  if (!response.ok) {
-    throw new Error("Telegram HTTP " + response.status);
-  }
-  const body = await response.json();
-  if (!body.ok) throw new Error("Telegram API rejected message");
-  return true;
-}
-
-const alerted = new Map();
-
-function bestEdge(match) {
-  const prices = match.model?.prices || [];
-  return prices
-    .filter(row => Number.isFinite(row.edge) && Number.isFinite(row.modelProbability) && Number.isFinite(row.price))
-    .sort((a, b) => b.edge - a.edge)[0] || null;
-}
-
-async function maybeAlert(match) {
-  const best = bestEdge(match);
-  if (!match.url) return;
-
-  if (!best || best.edge < MIN_EDGE) return;
 
   const key = match.eventId || match.slug;
-  const bucket = Math.floor(Date.now() / ALERT_BUCKET_MS);
-  const alertKey = key + ":" + best.outcome + ":" + bucket;
-  if (alerted.get(key) === alertKey) return;
+  const total = scoreTotal(match);
+  const state = oneOneState.get(key) || { first: false, second: false, lastTotal: -1 };
 
-  const p = match.model.probabilities;
-  const message = [
-    "⚽ POLYMARKET · LIVE",
-    "",
-    match.homeTeam + " vs " + match.awayTeam,
-    "SCORE: " + match.live.score.home + "–" + match.live.score.away,
-    "TIME: " + match.live.minute + "'",
-    "",
-    "SIGNAL: " + best.outcome,
-    "MODEL: " + (best.modelProbability * 100).toFixed(1) + "%",
-    "POLYMARKET: " + (best.price * 100).toFixed(1) + "%",
-    "EDGE: +" + (best.edge * 100).toFixed(1) + "%",
-    "",
-    "➡️ OPEN MATCH",
-    match.url
-  ].join("\n");
+  if (!balancedForOneOne(nutmeg)) {
+    log("INFO", "one_one_rejected_balance", "Match rejected by Nutmegly balance filter", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      nutmeg: nutmeg?.row || null
+    });
+    oneOneState.set(key, state);
+    return;
+  }
 
-  await sendTelegram(message);
-  alerted.set(key, alertKey);
-  log("INFO", "telegram_alert_sent", "Positive-edge Polymarket football alert sent", {
-    eventId: match.eventId,
-    url: match.url,
-    outcome: best.outcome,
-    edge: best.edge
-  });
+  if (total === 0 && !state.first) {
+    const message = [
+      "⚽ 1:1 · BUY",
+      "",
+      match.homeTeam + " vs " + match.awayTeam,
+      "SCORE: 0–0",
+      "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
+      "",
+      "➡️ OPEN MATCH",
+      match.url
+    ].join("\\n");
+    await sendTelegram(message);
+    state.first = true;
+    state.firstPrice = market.price;
+    log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", { eventId: match.eventId, price: market.price, nutmeg: nutmeg.row });
+  }
+
+  if (total === 1 && state.first && !state.second) {
+    const message = [
+      "⚽ 1:1 · SELL",
+      "",
+      match.homeTeam + " vs " + match.awayTeam,
+      "SCORE: " + match.live.score.home + "–" + match.live.score.away,
+      "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
+      "",
+      "➡️ OPEN MATCH",
+      match.url
+    ].join("\\n");
+    await sendTelegram(message);
+    state.second = true;
+    log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", { eventId: match.eventId, price: market.price, firstPrice: state.firstPrice });
+  }
+
+  state.lastTotal = total;
+  oneOneState.set(key, state);
 }
 
 async function tick() {
@@ -660,83 +350,42 @@ async function tick() {
 
   try {
     const matches = await discoverPolymarket();
-    log("INFO", "polymarket_discovery", "Polymarket football discovery completed", {
+    const nutmeg = await nutmegRows();
+
+    log("INFO", "polymarket_discovery", "Polymarket football 1:1 candidates discovered", {
       count: matches.length,
       matches: matches.map(m => ({
         eventId: m.eventId,
-        title: m.title,
         teams: [m.homeTeam, m.awayTeam],
+        startTime: m.startTime,
         url: m.url,
         marketCount: m.markets.length
       }))
     });
 
     await enrichLiveMatches(matches);
+
     for (const match of matches) {
       if (match.live?.status === "unresolved") {
-        log("INFO", "match_unresolved", "Live Polymarket match has no SportScore fixture match", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam]
-        });
+        log("INFO", "match_unresolved", "Candidate has no SportScore fixture match", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
         continue;
       }
-
       if (match.live?.status === "provider_error") continue;
 
-      const prices = match.model?.prices || [];
-      const mapped = prices.filter(p => Number.isFinite(p.modelProbability));
-      const best = bestEdge(match);
-
-      log("INFO", "edge_evaluation", "Football edge evaluated", {
+      const nm = findNutmegMatch(match, nutmeg);
+      log("INFO", "one_one_evaluation", "1:1 strategy evaluated", {
         eventId: match.eventId,
         teams: [match.homeTeam, match.awayTeam],
         score: match.live.score,
         minute: match.live.minute,
-        mappedOutcomes: mapped.map(p => ({
-          outcome: p.outcome,
-          side: p.modelSide,
-          polymarket: p.price,
-          model: p.modelProbability,
-          edge: p.edge
-        })),
-        bestEdge: best?.edge ?? null,
-        bestOutcome: best?.outcome ?? null
+        nutmeg: nm?.row || null,
+        balanced: balancedForOneOne(nm),
+        oneOneMarket: findOneOneMarket(match)?.price ?? null
       });
 
-      await maybeAlert(match);
+      await maybeOneOneAlert(match, nm);
     }
-
-    log("INFO", "live_snapshot", "Polymarket football matches with live provider data", {
-      count: matches.length,
-      matches
-    });
   } catch (err) {
-    log("ERROR", "discovery_failed", "Football monitoring failed; monitoring continues", {
-      message: err.message
-    });
+    log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
   }
 }
-
-function stop() {
-  if (stopping) return;
-  stopping = true;
-  if (timer) clearInterval(timer);
-  log("INFO", "monitor_stopped", "Polymarket live football monitor stopped");
-}
-
-async function start() {
-  log("INFO", "monitor_started", "Polymarket football live monitor started", {
-    pollSec: POLL_MS / 1000,
-    runHours: RUN_MS / 3_600_000,
-    provider: "sportscore",
-    providerConfigured: true,
-    historyMinutes: HISTORY_MS / 60_000
-  });
-
-  await tick();
-  timer = setInterval(() => { tick(); }, POLL_MS);
-  setTimeout(stop, RUN_MS);
-}
-
-process.on("SIGTERM", () => { stop(); process.exit(0); });
-start();
