@@ -2,7 +2,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 const AMANEKI_URL = "https://api.amaneki.com/v1/regime/btcusdt";
-const POLL_MS = 10 * 1000;
+const POLL_MS = 5 * 1000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/";
 
@@ -66,7 +66,7 @@ async function poll() {
   try {
     const response = await fetch(AMANEKI_URL, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(4000)
     });
 
     if (!response.ok) {
@@ -92,25 +92,31 @@ async function poll() {
       computed_at_ms: data.computed_at_ms
     });
 
-    const transitionedToHigh = regime === "high" && lastRegime !== "high";
+    const transitionedToAlertRegime =
+      (regime === "normal" || regime === "high") &&
+      regime !== lastRegime;
+
     lastRegime = regime;
 
-    if (!transitionedToHigh) return;
+    if (!transitionedToAlertRegime) return;
 
     const eventTime = Number(data.computed_at_ms || data.last_update_ms || Date.now());
+    const label = regime.toUpperCase();
+    const icon = regime === "high" ? "🔥" : "⚠️";
 
     const text = [
-      "🔥 <b>BTC VOLATILITY HIGH</b>",
+      icon + " <b>BTC VOLATILITY " + label + "</b>",
       "",
       "Z-VOL: " + formatNumber(zVol, 2),
-      "REGIME: <b>HIGH</b>",
+      "REGIME: <b>" + label + "</b>",
       "TIME: " + formatUtcPlus3(eventTime),
       "",
       '<a href="' + TURBOFLOW_URL + '">ОТКРЫТЬ TURBOFLOW</a>',
       ""
     ].join("\n");
 
-    log("INFO", "high_alert", "BTC volatility entered HIGH regime", {
+    log("INFO", "regime_alert", "BTC volatility entered alert regime", {
+      regime,
       z_vol: zVol,
       eventTime
     });
@@ -118,6 +124,7 @@ async function poll() {
     sendTelegram(text).catch(err => {
       log("ERROR", "telegram_error", "Telegram alert failed", {
         message: err.message,
+        regime,
         z_vol: zVol
       });
     });
@@ -133,7 +140,7 @@ async function start() {
     source: AMANEKI_URL,
     symbol: "BTCUSDT",
     pollMs: POLL_MS,
-    strategy: "alert_on_transition_to_high",
+    strategy: "alert_on_transition_to_normal_or_high",
     turboflowUrl: TURBOFLOW_URL
   });
 
@@ -145,7 +152,6 @@ async function start() {
   }
 
   await poll();
-
   pollTimer = setInterval(poll, POLL_MS);
 
   setTimeout(() => {
