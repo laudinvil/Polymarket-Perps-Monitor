@@ -7,7 +7,7 @@ const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turb
 
 const SAMPLE_MS = 1000;
 const CURRENT_WINDOW_MS = 5_000;
-const BASELINE_WINDOW_MS = 5 * 60_000;
+const BASELINE_WINDOW_MS = 60_000;
 const BLOCK_MS = 5_000;
 const SPIKE_Z = 2.0;
 const RESET_Z = 1.0;
@@ -109,7 +109,7 @@ function computeMetrics(now) {
     baselineRvs.push(realizedVol(block));
   }
 
-  if (baselineRvs.length < 50) return null;
+  if (baselineRvs.length < 10) return null;
 
   const baselineMean = mean(baselineRvs);
   const baselineStd = stddev(baselineRvs, baselineMean);
@@ -150,7 +150,7 @@ function evaluate(now) {
       "",
       "Z-SCORE: <b>" + formatNumber(metrics.z, 2) + "</b>",
       "5S RV: " + formatNumber(metrics.currentRv * 100, 3) + "%",
-      "5M BASELINE: " + formatNumber(metrics.baselineMean * 100, 3) + "%",
+      "1M BASELINE: " + formatNumber(metrics.baselineMean * 100, 3) + "%",
       "5S RANGE: " + formatNumber(metrics.rangePct, 3) + "%",
       "PRICE: $" + formatNumber(metrics.price, 2),
       "TIME: " + formatUtcPlus3(now),
@@ -266,7 +266,7 @@ async function start() {
     spikeZ: SPIKE_Z,
     resetZ: RESET_Z,
     cooldownSec: COOLDOWN_MS / 1000,
-    strategy: "5s_realized_vol_vs_5m_5s_block_baseline"
+    strategy: "5s_realized_vol_vs_1m_5s_block_baseline"
   });
 
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
