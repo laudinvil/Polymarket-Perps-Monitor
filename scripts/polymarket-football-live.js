@@ -194,30 +194,6 @@ function balancedForOneOne(nutmeg) {
     (!Number.isFinite(r.bttsProb) || r.bttsProb >= MIN_BTTS_PROB);
 }
 
-async function sportscoreFallbackMatches() {
-  try {
-    const fixtures = await sportscoreLatest();
-    log("INFO", "sportscore_fallback_refresh", "SportScore loaded as Nutmegly fallback candidate source", {
-      rows: fixtures.length
-    });
-    return fixtures;
-  } catch (err) {
-    log("WARN", "sportscore_fallback_unavailable", "SportScore fallback unavailable", { message: err.message });
-    return [];
-  }
-}
-
-function sportscoreFallbackMatch(match, fixtures) {
-  let best = null, bestScore = 0;
-  for (const fixture of fixtures) {
-    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
-    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
-    const score = Math.max(direct, swapped);
-    if (score > bestScore) { bestScore = score; best = fixture; }
-  }
-  return best && bestScore >= 1.4 ? { fixture: best, score: bestScore } : null;
-}
-
 async function ensureEventMarkets(match) {
   if (Array.isArray(match.markets) && match.markets.length) return true;
   if (!match.eventId) return false;
@@ -386,7 +362,6 @@ async function tick() {
       }))
     });
 
-    const fallbackFixtures = candidateFallback ? await sportscoreFallbackMatches() : [];
     const now = Date.now();
     const todayUtc = new Date(now).toISOString().slice(0, 10);
     const fixtureDate = match => {
@@ -437,18 +412,7 @@ async function tick() {
         const nm = findNutmegMatch(match, nutmeg);
         let candidateProvider = "nutmeg";
         let candidate = Boolean(nm && balancedForOneOne(nm));
-        if (!candidate && candidateFallback) {
-          const fallback = sportscoreFallbackMatch(match, fallbackFixtures);
-          candidate = Boolean(fallback);
-          candidateProvider = "sportscore_fallback";
-          log("INFO", "candidate_fallback_evaluated", "SportScore used because Nutmegly was unavailable", {
-            eventId: match.eventId,
-            teams: [match.homeTeam, match.awayTeam],
-            matched: Boolean(fallback),
-            score: fallback?.score ?? null
-          });
-        }
-        log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
+                log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: true,
@@ -500,19 +464,8 @@ async function tick() {
       // At 0:0, apply BUY filters.
       if (Number(score.home) === 0 && Number(score.away) === 0) {
         const nm = findNutmegMatch(match, nutmeg);
-        let candidateProvider = "nutmeg";
-        let candidate = Boolean(nm && balancedForOneOne(nm));
-        if (!candidate && candidateFallback) {
-          const fallback = sportscoreFallbackMatch(match, fallbackFixtures);
-          candidate = Boolean(fallback);
-          candidateProvider = "sportscore_fallback";
-          log("INFO", "candidate_fallback_evaluated", "SportScore used because Nutmegly was unavailable", {
-            eventId: match.eventId,
-            teams: [match.homeTeam, match.awayTeam],
-            matched: Boolean(fallback),
-            score: fallback?.score ?? null
-          });
-        }
+        const candidateProvider = "nutmeg";
+        const candidate = Boolean(nm && balancedForOneOne(nm));
         log("INFO", "candidate_match_found", "Live 0:0 candidate evaluated for BUY", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
