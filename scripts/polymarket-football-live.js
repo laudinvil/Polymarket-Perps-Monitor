@@ -95,19 +95,41 @@ async function discoverPolymarket(){
 }
 
 
-async function main(){
-  console.log(JSON.stringify({event:"monitor_start",message:"football monitor entrypoint started",createdAt:Date.now()}));
+async function runCycle(){
+  const startedAt=Date.now();
   try {
-    const matches = await discoverPolymarket();
-    console.log(JSON.stringify({event:"discovery_control",message:"FOOTBALL_DISCOVERY_MATCHES_FOUND",matchesFound:matches.length,createdAt:Date.now()}));
+    const matches=await discoverPolymarket();
+    console.log(JSON.stringify({event:"discovery_control",message:"FOOTBALL_DISCOVERY_MATCHES_FOUND",matchesFound:matches.length,cycleMs:Date.now()-startedAt,createdAt:Date.now()}));
     await flushConvexLogs();
-    console.log(JSON.stringify({event:"monitor_exit",message:"football discovery cycle completed",matchesFound:matches.length,createdAt:Date.now()}));
-  } catch (error) {
-    log("ERROR","monitor_failed","Football monitor failed",{message:error?.message||String(error),stack:error?.stack});
+    return matches.length;
+  } catch(error) {
+    log("ERROR","monitor_cycle_failed","Football discovery cycle failed",{message:error?.message||String(error),stack:error?.stack});
     await flushConvexLogs();
-    console.error(JSON.stringify({event:"monitor_failed",message:error?.message||String(error),createdAt:Date.now()}));
-    process.exitCode = 1;
+    console.error(JSON.stringify({event:"monitor_cycle_failed",message:error?.message||String(error),createdAt:Date.now()}));
+    return null;
   }
 }
 
-main();
+async function main(){
+  console.log(JSON.stringify({event:"monitor_start",message:"football monitor continuous entrypoint started",runMs:RUN_MS,pollMs:POLL_MS,createdAt:Date.now()}));
+  const deadline=Date.now()+RUN_MS;
+  let cycle=0;
+  while(!stopping && Date.now()<deadline){
+    cycle++;
+    const matchesFound=await runCycle();
+    const remaining=Math.max(0,deadline-Date.now());
+    console.log(JSON.stringify({event:"monitor_cycle_complete",cycle,matchesFound,remainingMs:remaining,createdAt:Date.now()}));
+    if(remaining<=0)break;
+    await new Promise(resolve=>setTimeout(resolve,Math.min(POLL_MS,remaining)));
+  }
+  await flushConvexLogs();
+  console.log(JSON.stringify({event:"monitor_exit",message:"football continuous monitor window completed",cycles:cycle,createdAt:Date.now()}));
+}
+
+process.on("SIGTERM",()=>{stopping=true;});
+process.on("SIGINT",()=>{stopping=true;});
+main().catch(async(error)=>{
+  log("ERROR","monitor_failed","Football monitor terminated unexpectedly",{message:error?.message||String(error),stack:error?.stack});
+  await flushConvexLogs();
+  process.exitCode=1;
+});
