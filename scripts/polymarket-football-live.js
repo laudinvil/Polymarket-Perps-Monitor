@@ -68,7 +68,11 @@ function text(v) {
 }
 
 function norm(v) {
-  return text(v).toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+  return text(v).toLowerCase()
+    .normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/\\b(fc|cf|sc|afc|ac|club|football club)\\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function parseJson(v) {
@@ -162,7 +166,7 @@ async function nutmegRows() {
       const probabilityRe = /Home win\s*(\d+(?:\.\d+)?)%\s*Draw\s*(\d+(?:\.\d+)?)%\s*Away win\s*(\d+(?:\.\d+)?)%/gi;
       let m;
       while ((m = probabilityRe.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 320), m.index).replace(/\s+/g, " ").trim();
+        const prefix = body.slice(Math.max(0, m.index - 1000), m.index).replace(/\s+/g, " ").trim();
         let home = "", away = "";
         // Current Nutmegly cards put the score/minute between the team names
         // (e.g. "Serbia 1 - 0 21' Greece") and upcoming cards put the kickoff
@@ -170,9 +174,15 @@ async function nutmegRows() {
         // Keep the captures explicit; the previous live regex had only two
         // capture groups but the code read five, so live rows were discarded.
         const team = "[\\p{L}\\p{N}.'’&()\\- ]{2,70}";
-        const live = prefix.match(new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})'\\s+(" + team + ")$", "u"));
-        const vs = prefix.match(new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")$", "iu"));
-        const upcoming = prefix.match(new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking off soon\\s+(" + team + ")$", "iu"));
+        const liveRe = new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})'\\s+(" + team + ")", "gu");
+        const vsRe = new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")", "giu");
+        const upcomingRe = new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking off soon\\s+(" + team + ")", "giu");
+        const liveMatches = [...prefix.matchAll(liveRe)];
+        const vsMatches = [...prefix.matchAll(vsRe)];
+        const upcomingMatches = [...prefix.matchAll(upcomingRe)];
+        const live = liveMatches.at(-1) || null;
+        const upcoming = upcomingMatches.at(-1) || null;
+        const vs = vsMatches.at(-1) || null;
         const candidate = live || upcoming || vs;
         let score = null;
         let minute = null;
