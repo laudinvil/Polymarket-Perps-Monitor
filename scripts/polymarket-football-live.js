@@ -584,6 +584,9 @@ async function maybeOneOneAlert(match, nutmeg) {
     });
     return;
   }
+  log("INFO", "one_one_market_found", "1:1 exact-score market found", {
+    eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], price: market.price
+  });
 
   const key = match.eventId || match.slug;
   const preMatch = Number.isFinite(Date.parse(match.startTime || "")) &&
