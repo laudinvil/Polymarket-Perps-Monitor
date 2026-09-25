@@ -292,8 +292,9 @@ async function maybeOneOneAlert(match, nutmeg) {
     return;
   }
 
-  // SELL is a second phase. Convex only allows it when a BUY claim exists.
-  if ((home === 1 && away === 0) || (home === 0 && away === 1)) {
+  // SELL is a second phase. First exit at 0:1 or 1:0; once that
+  // transition has happened, 1:1 is also a valid later SELL state.
+  if ((home === 1 && away === 0) || (home === 0 && away === 1) || (home === 1 && away === 1)) {
     const claimKey = key + ":SELL";
     const claimed = await claimTelegramAlert(claimKey);
     if (!claimed) return;
