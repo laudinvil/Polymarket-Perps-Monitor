@@ -9,7 +9,7 @@ const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = 30 * 60 * 1000;
 const EARLY_WINDOW_MS = 15 * 60 * 1000;
 const NUTMEG_CACHE_MS = 5 * 60 * 1000;
-const BALANCE_MAX_DIFF = 0.12;
+const BALANCE_MAX_DIFF = 0.15;
 const MIN_DRAW_PROB = 0.22;
 const MIN_BTTS_PROB = 0.45;
 
@@ -129,18 +129,15 @@ async function activeEventsBySeries(seriesId) {
 
 async function discoverPolymarket() {
   const now = Date.now();
-  const seriesIds = await footballSeriesIds();
   let events = [];
 
-  if (seriesIds.size) {
-    const chunks = await Promise.all([...seriesIds].map(id =>
-      activeEventsBySeries(id).catch(err => {
-        log("WARN", "series_failed", "Football series query failed", { seriesId: id, message: err.message });
-        return [];
-      })
-    ));
-    events = chunks.flat();
-  } else {
+  try {
+    const data = await getJson(
+      GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=0&order=startDate&ascending=true"
+    );
+    events = Array.isArray(data) ? data : (data.events || data.data || []);
+  } catch (err) {
+    log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using active-event fallback", { message: err.message });
     const data = await getJson(GAMMA_URL + "/events?active=true&closed=false&limit=500");
     events = Array.isArray(data) ? data : (data.events || data.data || []);
   }
@@ -149,7 +146,7 @@ async function discoverPolymarket() {
   const seen = new Set();
 
   for (const event of events) {
-    if (!event || !isFootballEvent(event, seriesIds)) continue;
+    if (!event || !isFootballEvent(event, new Set())) continue;
 
     const start = Date.parse(event.startDate || event.start_date || event.startTime || "");
     const end = Date.parse(event.endDate || event.end_date || event.endTime || "");
@@ -201,7 +198,6 @@ async function discoverPolymarket() {
 
   return candidates;
 }
-
 function stripHtml(value) {
   return text(value)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -218,26 +214,30 @@ async function nutmegRows() {
 
   const rows = [];
   const pages = [1, 2, 3, 4, 5];
-  for (const page of pages) {
-    try {
-      const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=upcoming&tz=UTC";
-      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
-      if (!r.ok) continue;
-      const body = stripHtml(await r.text());
-      const re = /(.{2,80}?)\s+VS\s+(.{2,80}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
-      let m;
-      while ((m = re.exec(body))) {
-        rows.push({
-          home: m[1].trim(),
-          away: m[2].trim(),
-          homeProb: Number(m[3]) / 100,
-          drawProb: Number(m[4]) / 100,
-          awayProb: Number(m[5]) / 100,
-          bttsProb: NaN
-        });
+  const statuses = ["upcoming", "live"];
+
+  for (const status of statuses) {
+    for (const page of pages) {
+      try {
+        const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
+        const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
+        if (!r.ok) continue;
+        const body = stripHtml(await r.text());
+        const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
+        let m;
+        while ((m = re.exec(body))) {
+          rows.push({
+            home: m[1].trim(),
+            away: m[2].trim(),
+            homeProb: Number(m[3]) / 100,
+            drawProb: Number(m[4]) / 100,
+            awayProb: Number(m[5]) / 100,
+            bttsProb: NaN
+          });
+        }
+      } catch (err) {
+        log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
       }
-    } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
     }
   }
 
@@ -245,7 +245,6 @@ async function nutmegRows() {
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
   return rows;
 }
-
 function findNutmegMatch(match, rows) {
   let best = null;
   let bestScore = 0;
