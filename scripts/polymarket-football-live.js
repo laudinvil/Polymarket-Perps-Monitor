@@ -197,8 +197,11 @@ async function discoverPolymarket() {
     if (!markets.some(m => /correct score|exact score|score/i.test(text(m?.question || m?.title)) ||
       (Array.isArray(parseJson(m?.outcomes)) && parseJson(m?.outcomes).some(v => /^1\s*[-:]\s*1$/.test(text(v)))))) {
       try {
-        const marketData = await getJson(GAMMA_URL + "/markets?event_id=" + encodeURIComponent(id) + "&active=true&closed=false&limit=500");
-        const extraMarkets = Array.isArray(marketData) ? marketData : (marketData.markets || marketData.data || []);
+        // Football exact-score markets are submarkets of the event. Fetch the event
+        // record directly instead of relying on /markets?event_id=..., which does
+        // not reliably return the event's submarkets.
+        const eventData = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(id));
+        const extraMarkets = Array.isArray(eventData?.markets) ? eventData.markets : [];
         if (extraMarkets.length) markets = [...markets, ...extraMarkets];
       } catch (err) {
         log("WARN", "exact_score_markets_fetch_failed", "Could not load detailed Polymarket markets for candidate", { eventId: id, message: err.message });
@@ -326,7 +329,7 @@ function scoreTotal(match) {
 }
 
 async function maybeOneOneAlert(match, nutmeg) {
-  if (!match.url || !match.live || match.live.status === "unresolved" || match.live.status === "provider_error") return;
+  if (!match.url) return;
   const market = findOneOneMarket(match);
   if (!market) {
     log("INFO", "one_one_market_missing", "No 1:1 exact-score market found", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
@@ -334,7 +337,9 @@ async function maybeOneOneAlert(match, nutmeg) {
   }
 
   const key = match.eventId || match.slug;
-  const total = scoreTotal(match);
+  const preMatch = Number.isFinite(Date.parse(match.startTime || "")) && Date.parse(match.startTime) > Date.now();
+  const total = preMatch ? 0 : scoreTotal(match);
+  if (!preMatch && (!match.live || match.live.status === "unresolved" || match.live.status === "provider_error")) return;
   const state = oneOneState.get(key) || { first: false, second: false, lastTotal: -1 };
 
   if (!balancedForOneOne(nutmeg)) {
