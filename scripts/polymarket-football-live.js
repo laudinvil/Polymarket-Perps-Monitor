@@ -415,24 +415,31 @@ async function tick() {
     await enrichLiveMatches(matches);
 
     for (const match of matches) {
-      if (match.live?.status === "unresolved") {
+      if (match.live?.status === "provider_error") continue;
+
+      const startMs = Date.parse(match.startTime || "");
+      const preMatch = Number.isFinite(startMs) && startMs > Date.now();
+      if (match.live?.status === "unresolved" && !preMatch) {
         log("INFO", "match_unresolved", "Candidate has no SportScore fixture match", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
         continue;
       }
-      if (match.live?.status === "provider_error") continue;
+
+      const score = preMatch ? { home: 0, away: 0 } : match.live?.score;
+      const minute = preMatch ? 0 : match.live?.minute;
 
       const nm = findNutmegMatch(match, nutmeg);
       log("INFO", "one_one_evaluation", "1:1 strategy evaluated", {
         eventId: match.eventId,
         teams: [match.homeTeam, match.awayTeam],
-        score: match.live.score,
-        minute: match.live.minute,
+        score,
+        minute,
+        preMatch,
         nutmeg: nm?.row || null,
         balanced: balancedForOneOne(nm),
         oneOneMarket: findOneOneMarket(match)?.price ?? null
       });
 
-      await maybeOneOneAlert(match, nm);
+      await maybeOneOneAlert({ ...match, live: { ...(match.live || {}), score, minute, status: preMatch ? "scheduled" : match.live?.status } }, nm);
     }
   } catch (err) {
     log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
