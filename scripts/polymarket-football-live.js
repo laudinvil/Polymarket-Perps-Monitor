@@ -6,8 +6,8 @@ const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = 30 * 60 * 1000;
-const EARLY_WINDOW_MS = 15 * 60 * 1000;
+const PREMATCH_WINDOW_MS = 60 * 60 * 1000;
+const EARLY_WINDOW_MS = 120 * 60 * 1000;
 const NUTMEG_CACHE_MS = 5 * 60 * 1000;
 const BALANCE_MAX_DIFF = 0.15;
 const MIN_DRAW_PROB = 0.22;
@@ -453,10 +453,13 @@ async function sportscoreMatch(slug) {
 }
 
 function normalizeSportScore(match) {
-  const home = text(match.home);
-  const away = text(match.away);
-  const scoreHome = Number(match.home_score ?? match.score?.home ?? 0);
-  const scoreAway = Number(match.away_score ?? match.score?.away ?? 0);
+  const parts = participants(match);
+  const partHome = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
+  const partAway = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
+  const home = text(match.home || match.homeTeam || partHome?.name);
+  const away = text(match.away || match.awayTeam || partAway?.name);
+  const scoreHome = Number(match.home_score ?? match.score?.home ?? match.scores?.home ?? 0);
+  const scoreAway = Number(match.away_score ?? match.score?.away ?? match.scores?.away ?? 0);
   const minute = Number(match.live_minute ?? match.minute ?? 0);
   return {
     fixtureId: text(match.url) || home + ":" + away,
