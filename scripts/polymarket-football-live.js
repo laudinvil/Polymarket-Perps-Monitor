@@ -6,8 +6,8 @@ const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = 10 * 60 * 1000;
-const EARLY_WINDOW_MS = 7 * 60 * 1000;
+const PREMATCH_WINDOW_MS = 30 * 60 * 1000;
+const EARLY_WINDOW_MS = 15 * 60 * 1000;
 const NUTMEG_CACHE_MS = 5 * 60 * 1000;
 const BALANCE_MAX_DIFF = 0.12;
 const MIN_DRAW_PROB = 0.22;
@@ -224,7 +224,7 @@ async function nutmegRows() {
       const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
       if (!r.ok) continue;
       const body = stripHtml(await r.text());
-      const re = /([^|]{2,80})\s+VS\s+([^|]{2,80})\s+(?:Home win|Home)\s*(\d+)%\s*(?:Draw)\s*(\d+)%\s*(?:Away win|Away)\s*(\d+)%/gi;
+      const re = /(.{2,80}?)\s+VS\s+(.{2,80}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
       let m;
       while ((m = re.exec(body))) {
         rows.push({
@@ -289,7 +289,7 @@ function scoreTotal(match) {
 }
 
 async function maybeOneOneAlert(match, nutmeg) {
-  if (!match.url || !match.live) return;
+  if (!match.url || !match.live || match.live.status === "unresolved" || match.live.status === "provider_error") return;
   const market = findOneOneMarket(match);
   if (!market) {
     log("INFO", "one_one_market_missing", "No 1:1 exact-score market found", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
