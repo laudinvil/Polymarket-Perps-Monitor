@@ -1,0 +1,28 @@
+name: Football telemetry now
+run-name: Football telemetry immediate snapshot
+
+on:
+  push:
+    paths:
+      - ".github/workflows/football-telemetry-now.yml"
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read Convex football health
+        env:
+          CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
+        run: |
+          set -e
+          mkdir -p telemetry
+          date -u +"%Y-%m-%dT%H:%M:%SZ" | tee telemetry/timestamp.txt
+          curl --fail --silent --show-error --max-time 15 "$CONVEX_SITE_URL/football/health" | tee telemetry/health.json
+          echo
+          curl --fail --silent --show-error --max-time 20 "$CONVEX_SITE_URL/football/status" | tee telemetry/status.json
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-telemetry-now
+          path: telemetry/
+          retention-days: 7
