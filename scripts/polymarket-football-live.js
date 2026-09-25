@@ -6,7 +6,7 @@ const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = 60 * 60 * 1000;
+const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
 const EARLY_WINDOW_MS = 120 * 60 * 1000;
 const NUTMEG_CACHE_MS = 5 * 60 * 1000;
 const BALANCE_MAX_DIFF = 0.15;
@@ -183,8 +183,7 @@ async function discoverPolymarket() {
       Number.isFinite(start) &&
       start <= now + PREMATCH_WINDOW_MS &&
       (!Number.isFinite(end) || end > now) &&
-      now >= start - PREMATCH_WINDOW_MS &&
-      now <= start + EARLY_WINDOW_MS;
+      (now < start || now <= start + EARLY_WINDOW_MS);
     if (!inWindow) continue;
 
     const id = text(event.id || event.eventId || event.event_id);
