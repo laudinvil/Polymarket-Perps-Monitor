@@ -424,7 +424,7 @@ async function maybeOneOneAlert(match, nutmeg) {
     log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", { eventId: match.eventId, price: market.price, nutmeg: nutmeg.row });
   }
 
-  if (total >= 1 && !state.second) {
+  if (total === 1 && state.first && !state.second) {
     const message = [
       "⚽ 1:1 · SELL",
       "",
@@ -449,7 +449,6 @@ async function maybeOneOneAlert(match, nutmeg) {
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", { eventId: match.eventId, price: market.price, firstPrice: state.firstPrice });
   }
 
-  if (total > 0 && !state.second) state.first = true;
   state.lastTotal = total;
   oneOneState.set(key, state);
 }
