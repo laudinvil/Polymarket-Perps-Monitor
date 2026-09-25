@@ -7,6 +7,7 @@ const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turb
 const SAMPLE_MS = 1000;
 const CURRENT_WINDOW_MS = 5_000;
 const BASELINE_WINDOW_MS = 10 * 60_000;
+const BLOCK_MS = 5_000;
 const SPIKE_Z = 2.5;
 const RESET_Z = 1.0;
 const COOLDOWN_MS = 30_000;
@@ -81,6 +82,10 @@ function stddev(values, avg) {
   return Math.sqrt(variance);
 }
 
+function realizedVol(returns) {
+  return Math.sqrt(returns.reduce((sum, r) => sum + r * r, 0));
+}
+
 function computeMetrics(now) {
   const currentCutoff = now - CURRENT_WINDOW_MS;
   const baselineCutoff = now - BASELINE_WINDOW_MS;
@@ -94,16 +99,19 @@ function computeMetrics(now) {
   const baselineReturns = baseline.map(s => s.r).filter(Number.isFinite);
   if (currentReturns.length < 3 || baselineReturns.length < 120) return null;
 
-  const currentRv = Math.sqrt(currentReturns.reduce((sum, r) => sum + r * r, 0));
+  const currentRv = realizedVol(currentReturns);
 
-  const chunks = [];
-  for (let i = 0; i + 29 < baselineReturns.length; i += 30) {
-    const chunk = baselineReturns.slice(i, i + 30);
-    chunks.push(Math.sqrt(chunk.reduce((sum, r) => sum + r * r, 0)));
+  const baselineRvs = [];
+  const blockSamples = BLOCK_MS / SAMPLE_MS;
+  for (let i = 0; i + blockSamples - 1 < baselineReturns.length; i += blockSamples) {
+    const block = baselineReturns.slice(i, i + blockSamples);
+    baselineRvs.push(realizedVol(block));
   }
 
-  const baselineMean = mean(chunks);
-  const baselineStd = stddev(chunks, baselineMean);
+  if (baselineRvs.length < 100) return null;
+
+  const baselineMean = mean(baselineRvs);
+  const baselineStd = stddev(baselineRvs, baselineMean);
   const z = baselineStd > 0 ? (currentRv - baselineMean) / baselineStd : 0;
 
   const prices = current.map(s => s.p);
@@ -119,7 +127,8 @@ function computeMetrics(now) {
     rangePct,
     price: prices[prices.length - 1],
     samples: current.length,
-    baselineSamples: baseline.length
+    baselineSamples: baseline.length,
+    baselineBlocks: baselineRvs.length
   };
 }
 
@@ -153,6 +162,7 @@ function evaluate(now) {
       currentRv: metrics.currentRv,
       baselineMean: metrics.baselineMean,
       baselineStd: metrics.baselineStd,
+      baselineBlocks: metrics.baselineBlocks,
       rangePct: metrics.rangePct,
       price: metrics.price,
       signals
@@ -169,6 +179,8 @@ function evaluate(now) {
       z: Number(metrics.z.toFixed(3)),
       currentRv: Number((metrics.currentRv * 100).toFixed(4)),
       baselineRv: Number((metrics.baselineMean * 100).toFixed(4)),
+      baselineStd: Number((metrics.baselineStd * 100).toFixed(4)),
+      baselineBlocks: metrics.baselineBlocks,
       rangePct: Number(metrics.rangePct.toFixed(4)),
       price: metrics.price,
       signals,
@@ -245,12 +257,15 @@ function scheduleReconnect() {
 async function start() {
   log("INFO", "monitor_started", "BTC Volatility Spike monitor started", {
     source: WS_URL,
+    sampleSec: SAMPLE_MS / 1000,
     currentWindowSec: CURRENT_WINDOW_MS / 1000,
     baselineMin: BASELINE_WINDOW_MS / 60000,
+    baselineBlockSec: BLOCK_MS / 1000,
+    expectedBaselineBlocks: BASELINE_WINDOW_MS / BLOCK_MS,
     spikeZ: SPIKE_Z,
     resetZ: RESET_Z,
     cooldownSec: COOLDOWN_MS / 1000,
-    strategy: "5s_realized_vol_vs_10m_rolling_baseline"
+    strategy: "5s_realized_vol_vs_10m_5s_block_baseline"
   });
 
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
