@@ -26,3 +26,4 @@ jobs:
           name: football-telemetry-now
           path: telemetry/
           retention-days: 7
+# telemetry refresh
