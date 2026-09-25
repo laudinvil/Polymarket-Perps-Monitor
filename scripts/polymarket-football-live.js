@@ -687,7 +687,7 @@ async function tick() {
     const now = Date.now();
     const todayUtc = new Date(now).toISOString().slice(0, 10);
     const fixtureDate = match => {
-      const m = text(match.slug).match(/(?:^|-)((?:20)\\d{2}-\\d{2}-\\d{2})(?:-|$)/);
+      const m = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/);
       return m ? m[1] : null;
     };
     // Gamma startDate is often the event publication/update timestamp, not
@@ -737,7 +737,7 @@ async function tick() {
     }
 
     for (const match of matches) {
-      const slugDate = text(match.slug).match(/(?:^|-)((?:20)\\d{2}-\\d{2}-\\d{2})(?:-|$)/)?.[1] || null;
+      const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
       const preMatch = Boolean(slugDate && slugDate > new Date().toISOString().slice(0, 10));
 
       if (preMatch) {
