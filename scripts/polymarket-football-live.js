@@ -1,13 +1,13 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
 const SPORTScore_URL = "https://sportscore.com/api/widget";
 
-const POLL_MS = 15_000;
+const POLL_MS = 10_000;
 const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
-const EARLY_WINDOW_MS = 120 * 60 * 1000;
+const EARLY_WINDOW_MS = 45 * 60 * 1000;
 const NUTMEG_CACHE_MS = 5 * 60 * 1000;
 const BALANCE_MAX_DIFF = 0.15;
 const MIN_DRAW_PROB = 0.22;
@@ -171,17 +171,45 @@ async function discoverPolymarket() {
   // then the alert uses the price of the exact-score 1:1 market for that game.
   await checkpoint("match_discovery_start");
 
+  const pages = [];
+  // Do not depend on Polymarket's soccer tag alone: football markets can be
+  // exposed through league/series feeds without the generic soccer tag.
+  try {
+    const seriesIds = await footballSeriesIds();
+    await checkpoint("football_series_discovered", { count: seriesIds.size });
+    for (const seriesId of seriesIds) {
+      try {
+        const rows = await activeEventsBySeries(seriesId);
+        pages.push({ source: "series", seriesId, rows });
+        await checkpoint("series_page_done", { seriesId, rows: rows.length });
+      } catch (err) {
+        log("WARN", "series_page_failed", "Football series feed failed", { seriesId, message: err.message });
+      }
+    }
+  } catch (err) {
+    log("WARN", "series_discovery_failed", "Football series discovery failed", { message: err.message });
+  }
+
+  // Keep the soccer-tag feed as a fallback/additional source.
   for (let offset = 0; offset < 2000; offset += 500) {
     try {
-      await checkpoint("match_page_start", { offset });
       const data = await getJson(
         GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=" +
         offset + "&order=startDate&ascending=true"
       );
       const rows = Array.isArray(data) ? data : (data.events || data.data || []);
-      await checkpoint("match_page_done", { offset, rows: rows.length });
+      pages.push({ source: "soccer_tag", offset, rows });
+      await checkpoint("match_page_done", { source: "soccer_tag", offset, rows: rows.length });
+      if (rows.length < 500) break;
+    } catch (err) {
+      log("WARN", "match_page_failed", "Football soccer-tag discovery failed", { offset, message: err.message });
+      break;
+    }
+  }
 
-      for (const event of rows) {
+  for (const page of pages) {
+    const rows = page.rows || [];
+    for (const event of rows) {
         if (!event) continue;
 
         const startValue = event.startDate || event.start_date || event.startTime || null;
@@ -234,17 +262,12 @@ async function discoverPolymarket() {
         });
       }
 
-      if (rows.length < 500) break;
-    } catch (err) {
-      log("WARN", "match_page_failed", "Football match discovery failed", {
-        offset,
-        message: err.message
-      });
-      break;
-    }
   }
 
-  await checkpoint("match_discovery_done", { candidates: candidates.length });
+  await checkpoint("match_discovery_done", {
+    candidates: candidates.length,
+    pages: pages.length
+  });
   return candidates;
 }
 
@@ -266,30 +289,29 @@ async function nutmegRows() {
   const pages = [1, 2, 3, 4, 5];
   const statuses = ["upcoming", "live"];
 
-  for (const status of statuses) {
-    for (const page of pages) {
-      try {
-        const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
-        const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
-        if (!r.ok) continue;
-        const body = stripHtml(await r.text());
-        const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
-        let m;
-        while ((m = re.exec(body))) {
-          rows.push({
-            home: m[1].trim(),
-            away: m[2].trim(),
-            homeProb: Number(m[3]) / 100,
-            drawProb: Number(m[4]) / 100,
-            awayProb: Number(m[5]) / 100,
-            bttsProb: NaN
-          });
-        }
-      } catch (err) {
-        log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
-      }
+  const jobs = [];
+  for (const status of statuses) for (const page of pages) jobs.push({ status, page });
+  const results = await Promise.all(jobs.map(async ({ status, page }) => {
+    try {
+      const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
+      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
+      if (!r.ok) return [];
+      const body = stripHtml(await r.text());
+      const out = [];
+      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
+      let m;
+      while ((m = re.exec(body))) out.push({
+        home: m[1].trim(), away: m[2].trim(),
+        homeProb: Number(m[3]) / 100, drawProb: Number(m[4]) / 100,
+        awayProb: Number(m[5]) / 100, bttsProb: NaN
+      });
+      return out;
+    } catch (err) {
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
+      return [];
     }
-  }
+  }));
+  for (const part of results) rows.push(...part);
 
   nutmegCache = { at: Date.now(), rows };
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
@@ -414,7 +436,8 @@ async function maybeOneOneAlert(match, nutmeg) {
 }
 
 async function tick() {
-  if (stopping) return;
+  if (stopping || tick.running) return;
+  tick.running = true;
   convexTickCount += 1;
 
   try {
@@ -464,6 +487,7 @@ async function tick() {
   } catch (err) {
     log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
   } finally {
+    tick.running = false;
     await flushConvexLogs();
   }
 }
