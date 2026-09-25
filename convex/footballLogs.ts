@@ -84,6 +84,14 @@ export const claimTelegramAlert = mutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const existing = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug)).first();
+    if (args.marketSlug.endsWith(":LOSS")) {
+      if (existing) return { claimed: false, replyToMessageId: null };
+      const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
+      const buy = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
+      if (!buy || !buy.telegramMessageId) return { claimed: false, replyToMessageId: null };
+      await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now });
+      return { claimed: true, replyToMessageId: buy.telegramMessageId };
+    }
     if (existing && now - existing.claimedAt < 5 * 60 * 1000) return { claimed: false, replyToMessageId: null };
     if (args.marketSlug.endsWith(":SELL")) {
       const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
