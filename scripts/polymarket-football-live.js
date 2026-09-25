@@ -546,8 +546,19 @@ async function tick() {
   convexTickCount += 1;
 
   try {
+    const tickStartedAt = Date.now();
+    log("INFO", "stage_start", "Discovery stage started", { stage: "polymarket_discovery" });
     const matches = await discoverPolymarket();
+    log("INFO", "stage_done", "Discovery stage finished", {
+      stage: "polymarket_discovery", elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
+    });
+
+    const nutmegStartedAt = Date.now();
+    log("INFO", "stage_start", "Nutmeg stage started", { stage: "nutmeg" });
     const nutmeg = await nutmegRows();
+    log("INFO", "stage_done", "Nutmeg stage finished", {
+      stage: "nutmeg", elapsedMs: Date.now() - nutmegStartedAt, rows: nutmeg.length
+    });
 
     log("INFO", "polymarket_discovery", "Event-first football 1:1 candidates discovered", {
       count: matches.length,
@@ -565,7 +576,19 @@ async function tick() {
       return !(Number.isFinite(startMs) && startMs > now);
     });
 
+    const sportscoreStartedAt = Date.now();
+    log("INFO", "stage_start", "SportScore stage started", {
+      stage: "sportscore", liveCandidates: liveCandidates.length
+    });
     await enrichLiveMatches(liveCandidates);
+    log("INFO", "stage_done", "SportScore stage finished", {
+      stage: "sportscore", elapsedMs: Date.now() - sportscoreStartedAt, liveCandidates: liveCandidates.length
+    });
+
+    const evaluationStartedAt = Date.now();
+    log("INFO", "stage_start", "Alert evaluation stage started", {
+      stage: "evaluation", candidates: matches.length
+    });
 
     for (const match of matches) {
       const startMs = Date.parse(match.startTime || "");
@@ -651,6 +674,13 @@ async function tick() {
       // and Convex will reject SELL unless the BUY phase was completed.
       await maybeOneOneAlert({ ...match, live: { ...match.live, score } }, null);
     }
+
+    log("INFO", "stage_done", "Alert evaluation stage finished", {
+      stage: "evaluation", elapsedMs: Date.now() - evaluationStartedAt, candidates: matches.length
+    });
+    log("INFO", "tick_done", "Football monitor tick completed", {
+      elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
+    });
   } catch (err) {
     log("ERROR", "discovery_failed", "Football 1:1 monitor tick failed; monitoring continues", {
       message: err.message
