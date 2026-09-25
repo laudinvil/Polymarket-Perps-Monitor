@@ -450,7 +450,7 @@ function sportscoreSlug(url) {
 }
 
 async function sportscoreLatest() {
-  const url = SPORTScore_URL + "/matches/?sport=football&limit=200";
+  const url = SPORTScore_URL + "/matches/?sport=football&limit=50";
   const data = await getJson(url);
   return Array.isArray(data?.matches) ? data.matches : [];
 }
