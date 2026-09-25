@@ -117,10 +117,14 @@ function evaluate(now) {
     const sd = std(retBaseline, m);
     const currentReturn = current[current.length - 1].r;
     const z = sd > 0 ? (currentReturn - m) / sd : 0;
-    returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
-    returnSignalTimes.push(now);
+    if (Math.abs(z) > 0) {
+      returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
+      if (!returnSignalTimes.length || now - returnSignalTimes[returnSignalTimes.length - 1] >= SAMPLE_MS) {
+        returnSignalTimes.push(now);
+      }
+    }
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
-      alert("RETURN", "1S RETURN CASCADE: <b>" + returnSignalTimes.length + " signals / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      alert("RETURN", "1S RETURN CASCADE: <b>3 real signals / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
       returnSignalTimes = [];
     }
   }
