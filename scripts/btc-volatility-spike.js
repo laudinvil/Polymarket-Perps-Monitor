@@ -17,6 +17,8 @@ let ws = null;
 let reconnectTimer = null;
 let sampleTimer = null;
 let lastPrice = null;
+let latestTradePrice = null;
+let latestTradeTime = null;
 let samples = [];
 let currentSpikeActive = false;
 let lastAlertAt = 0;
@@ -174,20 +176,26 @@ function evaluate(now) {
   }
 }
 
-function addPrice(price, timestamp) {
+function addTradePrice(price, timestamp) {
   if (!Number.isFinite(price) || !Number.isFinite(timestamp)) return;
+  latestTradePrice = Number(price);
+  latestTradeTime = Number(timestamp);
+}
 
-  const t = Number(timestamp);
-  const p = Number(price);
+function samplePrice(now) {
+  if (!Number.isFinite(latestTradePrice) || latestTradePrice <= 0) return;
 
-  if (lastPrice !== null && p > 0 && lastPrice > 0) {
-    samples.push({ t, p, r: Math.log(p / lastPrice) });
+  const price = latestTradePrice;
+  const timestamp = now;
+
+  if (lastPrice !== null && lastPrice > 0) {
+    samples.push({ t: timestamp, p: price, r: Math.log(price / lastPrice) });
   } else {
-    samples.push({ t, p, r: 0 });
+    samples.push({ t: timestamp, p: price, r: 0 });
   }
 
-  lastPrice = p;
-  const cutoff = t - BASELINE_WINDOW_MS - CURRENT_WINDOW_MS;
+  lastPrice = price;
+  const cutoff = timestamp - BASELINE_WINDOW_MS - CURRENT_WINDOW_MS;
   samples = samples.filter(s => s.t >= cutoff);
 }
 
@@ -206,7 +214,7 @@ function connect() {
     try {
       const data = JSON.parse(event.data);
       if (data.e !== "aggTrade") return;
-      addPrice(Number(data.p), Number(data.T || data.E));
+      addTradePrice(Number(data.p), Number(data.T || data.E));
     } catch (err) {
       log("WARN", "message_error", "Invalid Binance websocket message", {
         message: err.message
@@ -251,7 +259,10 @@ async function start() {
   connect();
 
   sampleTimer = setInterval(() => {
-    if (!stopping) evaluate(Date.now());
+    if (stopping) return;
+    const now = Date.now();
+    samplePrice(now);
+    evaluate(now);
   }, SAMPLE_MS);
 
   setTimeout(() => {
