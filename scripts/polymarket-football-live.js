@@ -187,6 +187,11 @@ async function nutmegRows() {
           "giu"
         ))];
 
+        const finishedMatches = [...prefix.matchAll(new RegExp(
+          "(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(" + team + ")\\s*$",
+          "giu"
+        ))];
+
         const upcomingMatches = [...prefix.matchAll(new RegExp(
           "(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")\\s*$",
           "giu"
@@ -198,9 +203,10 @@ async function nutmegRows() {
         ))];
 
         const live = liveMatches.at(-1) || null;
+        const finished = finishedMatches.at(-1) || null;
         const upcoming = upcomingMatches.at(-1) || null;
         const vs = vsMatches.at(-1) || null;
-        const candidate = live || upcoming || vs;
+        const candidate = live || finished || upcoming || vs;
         const prefixWindow = prefix.slice(Math.max(0, prefix.length - 900));
         const nutmegLiveMarker = /\bLIVE\b/i.test(prefixWindow);
         if (!candidate) continue;
@@ -215,6 +221,11 @@ async function nutmegRows() {
           away = live[5].trim();
           score = { home: Number(live[2]), away: Number(live[3]) };
           minute = Number(String(live[4]).replace(/[^0-9]/g, ""));
+        } else if (candidate === finished) {
+          home = finished[1].trim();
+          away = finished[4].trim();
+          score = { home: Number(finished[2]), away: Number(finished[3]) };
+          minute = null;
         } else {
           home = candidate[1].trim();
           away = candidate[2].trim();
