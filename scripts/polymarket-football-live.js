@@ -158,17 +158,23 @@ async function discoverPolymarket() {
   // Polymarket exposes sports events through the soccer tag, so query that index
   // directly. Keep a sports-tag fallback as a second source.
   const sources = [
-    {
-      name: "soccer_tag",
-      url: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=500&order=startDate&ascending=true"
-    },
-    {
-      name: "sports_tag",
-      url: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=500&order=startDate&ascending=true"
-    }
+    { name: "soccer_tag", baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=true" },
+    { name: "sports_tag", baseUrl: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=100&order=startDate&ascending=true" }
   ];
 
-  const results = await Promise.all(sources.map(async source => {
+  // Gamma currently returns 100 rows even when a larger limit is requested.
+  // Walk several pages so the first 100 generic/tagged markets cannot hide
+  // the actual live match events behind long-term winner/season markets.
+  const pages = 10;
+  const sourcePages = sources.flatMap(source =>
+    Array.from({ length: pages }, (_, page) => ({
+      name: source.name,
+      url: source.baseUrl + "&offset=" + (page * 100),
+      page
+    }))
+  );
+
+  const results = await Promise.all(sourcePages.map(async source => {
     const startedAt = Date.now();
     try {
       const response = await fetch(source.url, {
