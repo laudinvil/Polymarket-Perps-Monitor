@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
+  push:
+    paths:
+      - ".github/workflows/football-convex-diagnostics.yml"
+      - "convex/**"
+      - "scripts/polymarket-football-live.js"
 
 permissions:
   contents: read
