@@ -165,108 +165,119 @@ async function discoverPolymarket() {
   const now = Date.now();
   const candidates = [];
   const seen = new Set();
+  let marketScanned = 0;
+  let exactScoreFound = 0;
+  let oneOneFound = 0;
+  let matchRecognized = 0;
 
-  // Strategy: discover MATCHES, not "1:1" markets.
-  // We want suitable football games currently 0:0 (or not started yet),
-  // then the alert uses the price of the exact-score 1:1 market for that game.
-  await checkpoint("match_discovery_start");
+  await checkpoint("match_discovery_start", { strategy: "exact_score_1_1_market_first" });
 
-  const pages = [];
-  // Do not depend on Polymarket's soccer tag alone: football markets can be
-  // exposed through league/series feeds without the generic soccer tag.
-  try {
-    const seriesIds = await footballSeriesIds();
-    await checkpoint("football_series_discovered", { count: seriesIds.size });
-    for (const seriesId of seriesIds) {
-      try {
-        const rows = await activeEventsBySeries(seriesId);
-        pages.push({ source: "series", seriesId, rows });
-        await checkpoint("series_page_done", { seriesId, rows: rows.length });
-      } catch (err) {
-        log("WARN", "series_page_failed", "Football series feed failed", { seriesId, message: err.message });
-      }
-    }
-  } catch (err) {
-    log("WARN", "series_discovery_failed", "Football series discovery failed", { message: err.message });
-  }
-
-  // Keep the soccer-tag feed as a fallback/additional source.
-  for (let offset = 0; offset < 2000; offset += 500) {
+  // Start from the actual 1:1 market. This avoids relying on soccer tags,
+  // series metadata, or event-level market embedding.
+  for (let offset = 0; offset < 5000; offset += 500) {
     try {
       const data = await getJson(
-        GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=" +
-        offset + "&order=startDate&ascending=true"
+        GAMMA_URL + "/markets?active=true&closed=false&limit=500&offset=" + offset
       );
-      const rows = Array.isArray(data) ? data : (data.events || data.data || []);
-      pages.push({ source: "soccer_tag", offset, rows });
-      await checkpoint("match_page_done", { source: "soccer_tag", offset, rows: rows.length });
-      if (rows.length < 500) break;
-    } catch (err) {
-      log("WARN", "match_page_failed", "Football soccer-tag discovery failed", { offset, message: err.message });
-      break;
-    }
-  }
+      const rows = Array.isArray(data) ? data : (data.markets || data.data || []);
+      marketScanned += rows.length;
 
-  for (const page of pages) {
-    const rows = page.rows || [];
-    for (const event of rows) {
-        if (!event) continue;
+      for (const market of rows) {
+        if (!market || market.active === false || market.closed === true) continue;
+
+        const question = text(market.question || market.title);
+        const hay = JSON.stringify(market).toLowerCase();
+        if (!/(football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league)/i.test(hay)) continue;
+        if (!/(exact score|correct score)/i.test(question)) continue;
+
+        exactScoreFound += 1;
+
+        const outcomes = parseJson(market.outcomes);
+        const prices = parseJson(market.outcomePrices || market.outcome_prices);
+        const outcomeList = Array.isArray(outcomes) ? outcomes : [];
+        const priceList = Array.isArray(prices) ? prices : [];
+        let oneOneIndex = outcomeList.findIndex(v => /^1\\s*[-:]\\s*1$/i.test(text(v)));
+        if (oneOneIndex < 0 && /(?:^|\\s)1\\s*[-:]\\s*1(?:\\s|\\?|$)/i.test(question)) oneOneIndex = 0;
+        if (oneOneIndex < 0) continue;
+
+        const price = Number(priceList[oneOneIndex]);
+        if (!Number.isFinite(price)) continue;
+        oneOneFound += 1;
+
+        let event = null;
+        const eventRefs = Array.isArray(market.events) ? market.events : [];
+        if (eventRefs.length) {
+          event = eventRefs[0];
+        } else {
+          const eventId = text(market.eventId || market.event_id);
+          if (eventId) {
+            try { event = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(eventId)); }
+            catch (err) { log("WARN", "market_event_fetch_failed", "Could not load parent event", { eventId, message: err.message }); }
+          }
+        }
+
+        if (!event) {
+          const m = question.match(/^(.+?)\\s+(?:vs\\.?|v\\.?|versus)\\s+(.+?)\\s*[:?-]?\\s*1\\s*[-:]\\s*1/i);
+          if (!m) continue;
+          event = { id: text(market.eventId || market.event_id), title: m[1] + " vs " + m[2], slug: text(market.eventSlug || market.event_slug) };
+        }
 
         const startValue = event.startDate || event.start_date || event.startTime || null;
         const start = Date.parse(startValue || "");
-        if (Number.isFinite(start) && start > now + PREMATCH_WINDOW_MS) continue;
         if (Number.isFinite(start) && start <= now && now > start + EARLY_WINDOW_MS) continue;
-
-        const id = text(event.id || event.eventId || event.event_id);
-        const slug = text(event.slug);
-        const key = id || slug;
-        if (!key || seen.has(key)) continue;
+        if (!isFootballEvent(event, new Set())) continue;
 
         const [home, away] = extractTeams(event);
         if (!home || !away) continue;
 
-        const markets = Array.isArray(event.markets) ? event.markets.map(m => ({
-          marketId: text(m.id || m.marketId),
-          conditionId: text(m.conditionId || m.condition_id),
-          question: text(m.question || m.title),
-          slug: text(m.slug),
-          active: m.active !== false,
-          closed: m.closed === true,
-          clobTokenIds: parseJson(m.clobTokenIds || m.clob_token_ids),
-          outcomes: parseJson(m.outcomes),
-          outcomePrices: parseJson(m.outcomePrices || m.outcome_prices)
-        })) : [];
+        const eventId = text(event.id || event.eventId || event.event_id || market.eventId || market.event_id);
+        const slug = text(event.slug || market.eventSlug || market.event_slug);
+        const key = eventId || slug || text(market.id);
+        if (!key || seen.has(key)) continue;
 
         const item = {
-          eventId: id,
+          eventId,
           slug,
           url: eventUrl(event),
-          title: text(event.title || event.question),
+          title: text(event.title || event.question || question),
           homeTeam: home,
           awayTeam: away,
           startTime: startValue,
           endTime: event.endDate || event.end_date || event.endTime || null,
-          markets
+          markets: [{
+            marketId: text(market.id || market.marketId),
+            conditionId: text(market.conditionId || market.condition_id),
+            question,
+            slug: text(market.slug),
+            active: market.active !== false,
+            closed: market.closed === true,
+            outcomes: outcomeList,
+            outcomePrices: priceList
+          }]
         };
 
-        // The event is the candidate. The 1:1 market is only the price source.
         seen.add(key);
         candidates.push(item);
+        matchRecognized += 1;
 
-        log("INFO", "match_candidate_found", "Football match candidate for 0:0 strategy", {
-          eventId: id,
-          teams: [home, away],
-          startTime: startValue,
-          marketCount: markets.length,
-          oneOneMarket: Boolean(findOneOneMarket(item))
+        log("INFO", "one_one_market_found", "Exact-score 1:1 market recognized", {
+          eventId, teams: [home, away], startTime: startValue, price,
+          marketId: text(market.id), slug
         });
       }
 
+      await checkpoint("market_page_done", {
+        offset, rows: rows.length, marketScanned, exactScoreFound, oneOneFound, matchRecognized
+      });
+      if (rows.length < 500) break;
+    } catch (err) {
+      log("WARN", "market_page_failed", "Polymarket market discovery failed", { offset, message: err.message });
+      break;
+    }
   }
 
   await checkpoint("match_discovery_done", {
-    candidates: candidates.length,
-    pages: pages.length
+    marketScanned, exactScoreFound, oneOneFound, matchRecognized, candidates: candidates.length
   });
   return candidates;
 }
