@@ -158,8 +158,8 @@ async function discoverPolymarket() {
   // Polymarket exposes sports events through the soccer tag, so query that index
   // directly. Keep a sports-tag fallback as a second source.
   const sources = [
-    { name: "soccer_tag", baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=true" },
-    { name: "sports_tag", baseUrl: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=100&order=startDate&ascending=true" }
+    { name: "soccer_tag", baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=false" },
+    { name: "sports_tag", baseUrl: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=100&order=startDate&ascending=false" }
   ];
 
   // Gamma currently returns 100 rows even when a larger limit is requested.
@@ -292,7 +292,15 @@ async function discoverPolymarket() {
       // incorrectly discarded most live matches, leaving zero candidates even
       // when Polymarket returned football events. Finished events are excluded
       // when a reliable end time is available.
-      if (Number.isFinite(endMs) && endMs < Date.now()) continue;
+      if (Number.isFinite(endMs) && endMs < Date.now()) {
+        log("INFO", "match_finished_filtered", "Football event has already ended", {
+          eventId: text(event.id),
+          title: text(event.title || event.question),
+          startTime,
+          endTime
+        });
+        continue;
+      }
 
       const eventId = text(event.id || event.eventId || event.event_id);
       const slug = text(event.slug);
