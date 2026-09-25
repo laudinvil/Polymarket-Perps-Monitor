@@ -1,0 +1,28 @@
+name: Polymarket Football · Live Discovery
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/polymarket-football-live.yml"
+      - "scripts/polymarket-football-live.js"
+
+concurrency:
+  group: polymarket-football-live
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Discover live Polymarket football
+        run: node scripts/polymarket-football-live.js
