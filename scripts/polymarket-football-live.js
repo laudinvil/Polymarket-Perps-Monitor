@@ -144,15 +144,25 @@ async function activeEventsBySeries(seriesId) {
 async function discoverPolymarket() {
   const candidates = [];
   const seen = new Set();
-  let eventScanned = 0, footballEventFound = 0, oneOneFound = 0;
+  let eventScanned = 0, footballEventFound = 0, candidatesFound = 0;
 
-  await checkpoint("discovery_start", { strategy: "event_first_1_1_v3", pages: 6, pageSize: 500 });
+  await checkpoint("discovery_start", {
+    strategy: "football_match_first_v4",
+    pages: 6,
+    pageSize: 500
+  });
 
   const offsets = Array.from({ length: 6 }, (_, i) => i * 500);
   const results = await Promise.all(offsets.map(async offset => {
     try {
-      const data = await getJson(GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset);
-      return { offset, rows: Array.isArray(data) ? data : (data.events || data.data || []), error: null };
+      const data = await getJson(
+        GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
+      );
+      return {
+        offset,
+        rows: Array.isArray(data) ? data : (data.events || data.data || []),
+        error: null
+      };
     } catch (error) {
       return { offset, rows: [], error };
     }
@@ -160,7 +170,10 @@ async function discoverPolymarket() {
 
   for (const result of results.sort((a, b) => a.offset - b.offset)) {
     if (result.error) {
-      log("WARN", "event_page_failed", "Polymarket event page failed", { offset: result.offset, message: result.error.message });
+      log("WARN", "event_page_failed", "Polymarket event page failed", {
+        offset: result.offset,
+        message: result.error.message
+      });
       continue;
     }
 
@@ -169,52 +182,22 @@ async function discoverPolymarket() {
     for (const event of result.rows) {
       if (!event || event.active === false || event.closed === true) continue;
 
-      const hay = [event.sport, event.sportSlug, event.sport_slug, event.category, event.tags, event.title, event.question]
-        .flat(Infinity).map(text).join(" ");
-      if (!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay)) continue;
-      footballEventFound++;
+      const hay = [
+        event.sport, event.sportSlug, event.sport_slug,
+        event.category, event.tags, event.title, event.question
+      ].flat(Infinity).map(text).join(" ");
 
-      const markets = Array.isArray(event.markets) ? event.markets : [];
-      let oneOneMarket = null;
-
-      for (const market of markets) {
-        if (!market || market.active === false || market.closed === true) continue;
-        const question = text(market.question || market.title);
-        const outcomes = parseJson(market.outcomes);
-        const prices = parseJson(market.outcomePrices || market.outcome_prices);
-        const out = Array.isArray(outcomes) ? outcomes : [];
-        const px = Array.isArray(prices) ? prices : [];
-
-        const questionIsOneOne =
-          /(?:exact score|correct score)/i.test(question) &&
-          /(?:^|\s)1\s*[-:]\s*1(?:\s|\?|$)/i.test(question);
-        const outcomeIndex = out.findIndex(v => /^1\s*[-:]\s*1$/i.test(text(v)));
-        if (!questionIsOneOne && outcomeIndex < 0) continue;
-
-        let index = outcomeIndex;
-        if (index < 0) {
-          index = out.findIndex(v => /^yes$/i.test(text(v)));
-          if (index < 0) index = 0;
-        }
-        const price = Number(px[index]);
-        if (!Number.isFinite(price)) continue;
-
-        oneOneMarket = {
-          marketId: text(market.id || market.marketId),
-          question,
-          outcomes: out,
-          outcomePrices: px,
-          price
-        };
-        break;
+      if (!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay)) {
+        continue;
       }
 
-      if (!oneOneMarket) continue;
+      footballEventFound++;
 
       const [home, away] = extractTeams(event);
       if (!home || !away) {
-        log("INFO", "match_teams_missing", "1:1 event has no recognizable teams", {
-          eventId: text(event.id), title: text(event.title)
+        log("INFO", "match_teams_missing", "Football event has no recognizable teams", {
+          eventId: text(event.id),
+          title: text(event.title)
         });
         continue;
       }
@@ -229,38 +212,62 @@ async function discoverPolymarket() {
       if (!key || seen.has(key)) continue;
 
       seen.add(key);
-      oneOneFound++;
+      candidatesFound++;
+
+      const nestedMarkets = Array.isArray(event.markets)
+        ? event.markets.map(market => ({
+            marketId: text(market?.id || market?.marketId),
+            question: text(market?.question || market?.title),
+            outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
+            outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
+              ? parseJson(market?.outcomePrices || market?.outcome_prices)
+              : [],
+            active: market?.active !== false,
+            closed: market?.closed === true
+          }))
+        : [];
+
       candidates.push({
-        eventId, slug, url: eventUrl(event),
+        eventId,
+        slug,
+        url: eventUrl(event),
         title: text(event.title || event.question),
-        homeTeam: home, awayTeam: away, startTime,
+        homeTeam: home,
+        awayTeam: away,
+        startTime,
         endTime: event.endDate || event.end_date || event.endTime || null,
-        markets: [{
-          marketId: oneOneMarket.marketId,
-          question: oneOneMarket.question,
-          outcomes: oneOneMarket.outcomes,
-          outcomePrices: oneOneMarket.outcomePrices,
-          active: true, closed: false
-        }]
+        markets: nestedMarkets
       });
 
-      log("INFO", "candidate_discovered", "Football 1:1 candidate discovered from event", {
-        eventId, teams: [home, away], startTime, price: oneOneMarket.price,
-        marketId: oneOneMarket.marketId, url: eventUrl(event)
+      log("INFO", "candidate_discovered", "Football match candidate discovered", {
+        eventId,
+        teams: [home, away],
+        startTime,
+        marketCount: nestedMarkets.length,
+        oneOneMarketAvailable: Boolean(findOneOneMarket({ markets: nestedMarkets })),
+        url: eventUrl(event)
       });
     }
 
     await checkpoint("event_page_done", {
-      offset: result.offset, rows: result.rows.length,
-      eventScanned, footballEventFound, oneOneFound
+      offset: result.offset,
+      rows: result.rows.length,
+      eventScanned,
+      footballEventFound,
+      candidatesFound
     });
   }
 
   await checkpoint("discovery_done", {
-    eventScanned, footballEventFound, oneOneFound, candidates: candidates.length
+    eventScanned,
+    footballEventFound,
+    candidatesFound,
+    candidates: candidates.length
   });
+
   return candidates;
 }
+
 function stripHtml(value) {
   return text(value).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
@@ -391,8 +398,10 @@ async function maybeOneOneAlert(match, nutmeg) {
   }
 
   // SELL is a second phase. Convex only allows it when a BUY claim exists.
-  // Only 1:0 or 0:1 is a valid first-goal transition.
-  if ((home === 1 && away === 0) || (home === 0 && away === 1)) {
+  // Normal exit: exactly 1:0 or 0:1 after the first goal.
+  // Recovery exit: 1:1 if polling missed the first-goal state and the
+  // match has already moved on before the SELL alert could be sent.
+  if ((home === 1 && away === 0) || (home === 0 && away === 1) || (home === 1 && away === 1)) {
     const claimKey = key + ":SELL";
     const claimed = await claimTelegramAlert(claimKey);
     if (!claimed) return;
@@ -408,7 +417,10 @@ async function maybeOneOneAlert(match, nutmeg) {
     try {
       if (!await sendTelegram(message)) throw new Error("Telegram not configured");
       log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", {
-        eventId: match.eventId, price: market.price, score: { home, away }
+        eventId: match.eventId,
+        price: market.price,
+        score: { home, away },
+        recovery: home === 1 && away === 1
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
