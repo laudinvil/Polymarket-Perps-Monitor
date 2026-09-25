@@ -5,6 +5,7 @@ const SPORTMONKS_TOKEN = process.env.SPORTMONKS_TOKEN || "";
 const POLL_MS = 15_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
+const ALERT_BUCKET_MS = 60 * 1000;
 
 let stopping = false;
 let timer = null;
@@ -594,37 +595,10 @@ async function maybeAlert(match) {
   const best = bestEdge(match);
   if (!match.url) return;
 
-  const bucket = Math.floor(Date.now() / ALERT_BUCKET_MS);
-  const key = String(match.eventId || match.url);
-  const diagnosticKey = key + ":diagnostic:" + bucket;
-
-  if (!best || best.edge <= 0) {
-    if (alerted.get(key) === diagnosticKey) return;
-
-    const message = [
-      "⚽ FOOTBALL · LIVE DIAGNOSTIC",
-      "",
-      "MATCH: " + (match.homeTeam || "?") + " vs " + (match.awayTeam || "?"),
-      "SCORE: " + (match.live?.score || "?"),
-      "MINUTE: " + (match.live?.minute ?? "?"),
-      "",
-      "EDGE: NO POSITIVE EDGE",
-      "",
-      "➡️ POLYMARKET",
-      match.url
-    ].join("\n");
-
-    await sendTelegram(message);
-    alerted.set(key, diagnosticKey);
-    log("INFO", "telegram_diagnostic_sent", "Football diagnostic Telegram alert sent", {
-      eventId: match.eventId,
-      bestEdge: best?.edge ?? null
-    });
-    return;
-  }
+  if (!best || best.edge <= 0) return;
 
   const key = match.eventId || match.slug;
-  const bucket = Math.floor(Date.now() / 60_000);
+  const bucket = Math.floor(Date.now() / ALERT_BUCKET_MS);
   const alertKey = key + ":" + best.outcome + ":" + bucket;
   if (alerted.get(key) === alertKey) return;
 
