@@ -405,6 +405,12 @@ async function ensureEventMarkets(match) {
   if (Array.isArray(match.markets) && match.markets.length) return true;
   if (!match.eventId) return false;
 
+  const startedAt = Date.now();
+  log("INFO", "event_markets_load_start", "Loading Polymarket event markets", {
+    eventId: match.eventId,
+    teams: [match.homeTeam, match.awayTeam]
+  });
+
   try {
     const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId));
     const event = data?.event || data;
@@ -422,13 +428,15 @@ async function ensureEventMarkets(match) {
     log("INFO", "event_markets_loaded", "Loaded event markets lazily", {
       eventId: match.eventId,
       marketCount: match.markets.length,
-      oneOneMarketAvailable: Boolean(findOneOneMarket(match))
+      oneOneMarketAvailable: Boolean(findOneOneMarket(match)),
+      elapsedMs: Date.now() - startedAt
     });
     return match.markets.length > 0;
   } catch (err) {
     log("WARN", "event_markets_load_failed", "Could not load event markets", {
       eventId: match.eventId,
-      message: err.message
+      message: err.message,
+      elapsedMs: Date.now() - startedAt
     });
     return false;
   }
@@ -589,6 +597,22 @@ async function tick() {
     log("INFO", "stage_start", "Alert evaluation stage started", {
       stage: "evaluation", candidates: matches.length
     });
+
+    // Load missing event markets concurrently before evaluation. The old
+    // per-match lazy loading could serialize up to 10s per candidate and
+    // prevent the monitor from ever reaching the alert decision.
+    const marketLoads = matches.filter(m =>
+      (!Array.isArray(m.markets) || !m.markets.length) && m.eventId
+    );
+    if (marketLoads.length) {
+      log("INFO", "event_markets_batch_start", "Preloading missing Polymarket event markets", {
+        count: marketLoads.length
+      });
+      await Promise.all(marketLoads.map(match => ensureEventMarkets(match)));
+      log("INFO", "event_markets_batch_done", "Finished preloading Polymarket event markets", {
+        count: marketLoads.length
+      });
+    }
 
     for (const match of matches) {
       const startMs = Date.parse(match.startTime || "");
