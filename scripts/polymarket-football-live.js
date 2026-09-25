@@ -165,15 +165,22 @@ async function nutmegRows() {
         const vs = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:vs\.?|v\.?|versus)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
         const upcoming = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:Upcoming|Kicking off soon)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
         const candidate = live || upcoming || vs;
+        let score = null;
+        let minute = null;
         if (candidate) {
           home = candidate[1].trim();
           away = candidate[2].trim();
+          if (live && candidate === live) {
+            score = { home: Number(live[2]), away: Number(live[3]) };
+            minute = Number(live[4]);
+          }
         }
         if (!home || !away) continue;
         out.push({
           home, away,
           homeProb: Number(m[1]) / 100, drawProb: Number(m[2]) / 100,
-          awayProb: Number(m[3]) / 100, bttsProb: NaN
+          awayProb: Number(m[3]) / 100, bttsProb: NaN,
+          live: Boolean(score), score, minute
         });
       }
       successfulPages++;
@@ -468,12 +475,42 @@ async function tick() {
         return;
       }
 
-      // Live phase uses Polymarket as the source of truth.
-      const liveState = await refreshPolymarketLiveState(match);
-      if (!liveState) {
-        log("INFO", "live_state_unavailable", "Polymarket live state unavailable; live alert evaluation skipped", {
+      // Nutmegly live cards are the primary live-score source because the
+      // same matched fixture already supplies the strategy probabilities.
+      // Polymarket is retained only as a fallback if Nutmegly temporarily
+      // has no live score for this fixture.
+      const nmLive = findNutmegMatch(match, nutmeg);
+      let liveState = null;
+      if (nmLive?.row?.live && nmLive.row.score) {
+        liveState = {
+          status: "live",
+          score: nmLive.row.score,
+          minute: Number(nmLive.row.minute || 0)
+        };
+        log("INFO", "live_state_from_nutmeg", "Live score received from Nutmegly", {
           eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam]
+          teams: [match.homeTeam, match.awayTeam],
+          score: liveState.score,
+          minute: liveState.minute,
+          nutmegScore: nmLive.score
+        });
+      } else {
+        liveState = await refreshPolymarketLiveState(match);
+        if (liveState) {
+          log("INFO", "live_state_from_polymarket_fallback", "Nutmegly live score unavailable; used Polymarket fallback", {
+            eventId: match.eventId,
+            teams: [match.homeTeam, match.awayTeam],
+            score: liveState.score,
+            minute: liveState.minute
+          });
+        }
+      }
+      if (!liveState) {
+        log("INFO", "live_state_unavailable", "No live score available from Nutmegly or Polymarket; live alert evaluation skipped", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          nutmegMatched: Boolean(nmLive),
+          nutmegLive: Boolean(nmLive?.row?.live)
         });
         return;
       }
