@@ -11,7 +11,8 @@ const RV_BASELINE_MS = 60_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 
 const RV_Z_THRESHOLD = 2.0;
-const RETURN_Z_THRESHOLD = 6.0;
+const RETURN_CASCADE_COUNT = 3;
+const RETURN_CASCADE_WINDOW_MS = 5000;
 
 let stopping = false;
 let ws = null;
@@ -22,6 +23,7 @@ let lastPrice = null;
 let samples = [];
 let signals = { rv: 0, ret: 0 };
 let startedAt = Date.now();
+let returnSignalTimes = [];
 
 function log(level, event, message, data) {
   console.log(JSON.stringify({ level, event, message, ...(data === undefined ? {} : { data: JSON.stringify(data) }) }));
@@ -115,8 +117,11 @@ function evaluate(now) {
     const sd = std(retBaseline, m);
     const currentReturn = current[current.length - 1].r;
     const z = sd > 0 ? (currentReturn - m) / sd : 0;
-    if (Math.abs(z) >= RETURN_Z_THRESHOLD) {
-      alert("RETURN", "1S RETURN Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+    returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
+    returnSignalTimes.push(now);
+    if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
+      alert("RETURN", "1S RETURN CASCADE: <b>" + returnSignalTimes.length + " signals / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      returnSignalTimes = [];
     }
   }
 }
@@ -160,7 +165,7 @@ function start() {
     rvWindowSec: SIGNAL_WINDOW_MS / 1000,
     baselineMin: 1,
     rvZ: RV_Z_THRESHOLD,
-    returnZ: RETURN_Z_THRESHOLD,
+    returnCascade: RETURN_CASCADE_COUNT + " signals / " + (RETURN_CASCADE_WINDOW_MS / 1000) + "s",
     cooldownSec: 0
   });
 
