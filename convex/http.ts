@@ -18,6 +18,19 @@ http.route({
 });
 
 http.route({
+  path: "/football/release",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
+    if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.releaseTelegramAlert, { monitor, marketSlug });
+    return new Response("released", { status: 200 });
+  }),
+});
+
+http.route({
   path: "/football/status",
   method: "GET",
   handler: httpAction(async (ctx) => {
