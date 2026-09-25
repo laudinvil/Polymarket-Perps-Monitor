@@ -13,6 +13,7 @@ const RUN_MS = 6 * 60 * 60 * 1000;
 const RV_Z_THRESHOLD = 2.0;
 const RETURN_CASCADE_COUNT = 3;
 const RETURN_CASCADE_WINDOW_MS = 5000;
+const RETURN_ALERT_LOCK_MS = 5000;
 
 let stopping = false;
 let ws = null;
@@ -120,6 +121,11 @@ function evaluate(now) {
     const currentReturn = current[current.length - 1].r;
     const z = sd > 0 ? (currentReturn - m) / sd : 0;
     const absZ = Math.abs(z);
+
+    if (now - lastReturnCascadeAlertAt < RETURN_ALERT_LOCK_MS) {
+      return;
+    }
+
     const previous = samples.length >= 2 ? samples[samples.length - 2] : null;
     const previousBaseline = previous ? samples.filter(s => s.t >= baselineCutoff && s.t < previous.t).map(s => s.r) : [];
     let previousZ = 0;
@@ -128,17 +134,17 @@ function evaluate(now) {
       const psd = std(previousBaseline, pm);
       previousZ = psd > 0 ? (previous.r - pm) / psd : 0;
     }
+
     const isNewExtreme = Math.abs(previousZ) > 0 && absZ > Math.abs(previousZ);
     if (isNewExtreme && now !== lastReturnSignalAt) {
       lastReturnSignalAt = now;
       returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
       returnSignalTimes.push(now);
     }
+
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
-      if (now - lastReturnCascadeAlertAt >= RETURN_CASCADE_WINDOW_MS) {
-        alert("RETURN", "LAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
-        lastReturnCascadeAlertAt = now;
-      }
+      alert("RETURN", "LAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      lastReturnCascadeAlertAt = now;
       returnSignalTimes = [];
       lastReturnSignalAt = now;
     }
@@ -185,7 +191,7 @@ function start() {
     baselineMin: 1,
     rvZ: RV_Z_THRESHOLD,
     returnCascade: RETURN_CASCADE_COUNT + " signals / " + (RETURN_CASCADE_WINDOW_MS / 1000) + "s",
-    cooldownSec: 0
+    returnAlertLockSec: RETURN_ALERT_LOCK_MS / 1000
   });
 
   connect();
