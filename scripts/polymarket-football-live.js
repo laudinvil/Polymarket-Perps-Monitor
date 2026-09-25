@@ -99,7 +99,7 @@ function fixtureKey(home,away,startTime){
   return teams+"|"+day;
 }
 function isFootballEvent(event,footballIds){const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tag,event.tags,event.title,event.question,event.series_id,event.seriesId].flat(Infinity).map(text).join(" ").toLowerCase();if(footballIds.size){const ids=[event.series_id,event.seriesId,event.sports_series_id].map(text).filter(Boolean);if(ids.some(id=>footballIds.has(id)))return true;}return /football|soccer|epl|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/.test(hay);}
-async function getJson(url,options={}){const r=await fetch(url,{...options,headers:{accept:"application/json",...(options.headers||{})},signal:AbortSignal.timeout(10_000)});if(!r.ok)throw new Error("HTTP "+r.status+" for "+url);return r.json();}
+async function getJson(url,options={}){const timeoutMs=options.timeoutMs ?? 5_000; const {timeoutMs: _timeoutMs, ...fetchOptions}=options; const r=await fetch(url,{...fetchOptions,headers:{accept:"application/json",...(fetchOptions.headers||{})},signal:AbortSignal.timeout(timeoutMs)});if(!r.ok)throw new Error("HTTP "+r.status+" for "+url);return r.json();}
 async function footballSeriesIds(){try{const data=await getJson(GAMMA_URL+"/sports"),rows=Array.isArray(data)?data:(data.sports||data.data||[]),ids=new Set();for(const row of rows){if(!/football|soccer/.test(JSON.stringify(row).toLowerCase()))continue;for(const key of ["series","series_id","seriesId"]){const id=text(row[key]);if(id)ids.add(id);}}return ids;}catch(err){log("WARN","sports_metadata_failed","Could not load sports metadata; using event text fallback",{message:err.message});return new Set();}}
 async function activeEventsBySeries(seriesId){const data=await getJson(GAMMA_URL+"/events?series_id="+encodeURIComponent(seriesId)+"&active=true&closed=false&limit=500");return Array.isArray(data)?data:(data.events||data.data||[]);}
 
@@ -204,7 +204,7 @@ async function ensureEventMarkets(match) {
   });
 
   try {
-    const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId));
+    const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId), { timeoutMs: 3_000 });
     const event = data?.event || data;
     const markets = Array.isArray(event?.markets) ? event.markets : [];
     match.markets = markets.map(market => ({
@@ -403,7 +403,12 @@ async function tick() {
 
     // The 1:1 market is not a discovery or BUY gate. Do not load hundreds
     // of event-market payloads before reaching the alert decision.
-    for (const match of matches) {
+    // Evaluate fixtures concurrently in bounded batches. A slow Gamma event
+    // endpoint must never serialize hundreds of matches into a multi-minute tick.
+    const EVAL_BATCH = 20;
+    for (let batchStart = 0; batchStart < matches.length; batchStart += EVAL_BATCH) {
+      const batch = matches.slice(batchStart, batchStart + EVAL_BATCH);
+      await Promise.all(batch.map(async match => {
       const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
       const kickoff = Date.parse(match.startTime || "");
       const fixtureDay = slugDate || (Number.isNaN(kickoff) ? null : new Date(kickoff).toISOString().slice(0, 10));
@@ -500,6 +505,7 @@ async function tick() {
       // maybeOneOneAlert sends SELL only for exactly 1:0/0:1,
       // and Convex rejects SELL unless the BUY phase was completed.
       await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
+      }));
     }
 
     log("INFO", "stage_done", "Alert evaluation stage finished", {
