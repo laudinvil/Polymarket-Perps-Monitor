@@ -488,7 +488,7 @@ function nutmegKickoffFromContext(context, sourceDate) {
   const explicit = s.match(/(20\d{2}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*(Z|[+-]\d{2}:?\d{2}|UTC|GMT(?:[+-]\d{1,2})?|CET|CEST|EET|EEST|BST|IST)\b/i);
   if (explicit) return parseTimezoneDate(explicit[1], explicit[2], explicit[3], explicit[4] || "0", explicit[5]);
 
-  const clock = s.match(/(?:^|\\s)(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(Z|[+-]\\d{2}:?\\d{2}|UTC|GMT(?:[+-]\\d{1,2})?|CET|CEST|EET|EEST|BST|IST)?(?=\\s|$)/i);
+  const clock = s.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(Z|[+-]\d{2}:?\d{2}|UTC|GMT(?:[+-]\d{1,2})?|CET|CEST|EET|EEST|BST|IST)?(?=\s|$)/i);
   if (!clock) return null;
   return parseTimezoneDate(sourceDate, clock[1], clock[2], clock[3] || "0", clock[4] || "Asia/Shanghai");
 }
