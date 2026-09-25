@@ -114,28 +114,6 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
 
   const usd = price * amount;
 
-  if (amount <= 0.002) {
-    sendTelegram([
-      "🔎 LIQUIDATION RAW CHECK",
-      "",
-      "EXCHANGE: " + exchange,
-      "SIDE: " + String(side).toUpperCase(),
-      "RAW AMOUNT: " + String(amount),
-      "RAW PRICE: " + String(price),
-      "USD: " + formatUsd(usd),
-      formatUtcPlus3(eventTime)
-    ].join("\n")).catch(err => {
-      log("ERROR", "telegram_raw_check_error", "Raw liquidation diagnostic failed", {
-        message: err.message,
-        exchange,
-        side,
-        price,
-        amount,
-        usd
-      });
-    });
-  }
-
   stats[exchange].alerts += 1;
 
   log("INFO", "liquidation_alert", "BTC liquidation accepted", {
