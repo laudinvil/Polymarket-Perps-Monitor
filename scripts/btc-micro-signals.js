@@ -6,11 +6,9 @@ const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turb
 
 const SAMPLE_MS = 1000;
 const SIGNAL_WINDOW_MS = 5000;
-const RSI_PERIOD = 5;
 const RETURN_BASELINE_MS = 60_000;
 const RV_BASELINE_MS = 60_000;
-const RV_BLOCK_MS = 5000;
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 0;
 const RUN_MS = 6 * 60 * 60 * 1000;
 
 const RV_Z_THRESHOLD = 2.0;
@@ -23,7 +21,6 @@ let sampleTimer = null;
 let latestTradePrice = null;
 let lastPrice = null;
 let samples = [];
-let lastAlert = { rv: 0, ret: 0 };
 let signals = { rv: 0, ret: 0 };
 let startedAt = Date.now();
 
@@ -73,8 +70,6 @@ async function telegram(text) {
 
 function alert(type, body, now) {
   const key = type === "RV" ? "rv" : "ret";
-  if (now - lastAlert[key] < COOLDOWN_MS) return;
-  lastAlert[key] = now;
   signals[key] += 1;
 
   const text = [
@@ -99,9 +94,9 @@ function evaluate(now) {
   const currentReturns = current.map(s => s.r).filter(Number.isFinite);
   if (currentReturns.length < 2) return;
 
-  // 1) 5-second realized-volatility Z-score vs the previous 1 minute.
   const baselineCutoff = now - RV_BASELINE_MS;
   const baseline = samples.filter(s => s.t >= baselineCutoff && s.t < currentCutoff).map(s => s.r);
+
   if (baseline.length >= 60) {
     const blocks = [];
     for (let i = 0; i + 4 < baseline.length; i += 5) blocks.push(rv(baseline.slice(i, i + 5)));
@@ -115,7 +110,6 @@ function evaluate(now) {
     }
   }
 
-  // 2) Return Z-score: current 1-second return vs the previous 1 minute.
   const retBaseline = samples.filter(s => s.t >= baselineCutoff && s.t < currentCutoff).map(s => s.r);
   if (retBaseline.length >= 30) {
     const m = mean(retBaseline);
@@ -168,7 +162,7 @@ function start() {
     baselineMin: 1,
     rvZ: RV_Z_THRESHOLD,
     returnZ: RETURN_Z_THRESHOLD,
-    cooldownSec: COOLDOWN_MS / 1000
+    cooldownSec: 0
   });
 
   connect();
