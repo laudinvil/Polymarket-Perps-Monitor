@@ -194,7 +194,17 @@ async function discoverPolymarket() {
     seen.add(key);
 
     const [home, away] = extractTeams(event);
-    const markets = Array.isArray(event.markets) ? event.markets : [];
+    let markets = Array.isArray(event.markets) ? event.markets : [];
+    if (!markets.some(m => /correct score|exact score|score/i.test(text(m?.question || m?.title)) ||
+      (Array.isArray(parseJson(m?.outcomes)) && parseJson(m?.outcomes).some(v => /^1\\s*[-:]\\s*1$/.test(text(v)))))) {
+      try {
+        const marketData = await getJson(GAMMA_URL + "/markets?event_id=" + encodeURIComponent(id) + "&active=true&closed=false&limit=500");
+        const extraMarkets = Array.isArray(marketData) ? marketData : (marketData.markets || marketData.data || []);
+        if (extraMarkets.length) markets = [...markets, ...extraMarkets];
+      } catch (err) {
+        log("WARN", "exact_score_markets_fetch_failed", "Could not load detailed Polymarket markets for candidate", { eventId: id, message: err.message });
+      }
+    }
 
     const item = {
       eventId: id,
