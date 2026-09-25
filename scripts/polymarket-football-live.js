@@ -190,6 +190,10 @@ async function discoverPolymarket() {
 
   const candidates = [];
   const seen = new Set();
+  log("INFO", "discovery_source_counts", "Football discovery source loaded", {
+    rawEvents: events.length,
+    now: new Date(now).toISOString()
+  });
 
   for (const event of events) {
     if (!event || !isFootballEvent(event, new Set())) continue;
@@ -246,6 +250,15 @@ async function discoverPolymarket() {
       }))
     };
 
+    const oneOne = findOneOneMarket(item);
+    log("INFO", oneOne ? "one_one_market_found" : "one_one_market_missing", "Candidate exact-score market inspection", {
+      eventId: id,
+      teams: [home, away],
+      marketCount: markets.length,
+      oneOnePrice: oneOne?.price ?? null,
+      startTime: item.startTime
+    });
+
     candidates.push(item);
     if (!known.has(key)) {
       known.set(key, now);
@@ -253,6 +266,10 @@ async function discoverPolymarket() {
     }
   }
 
+  log("INFO", "discovery_filter_counts", "Football discovery completed", {
+    rawEvents: events.length,
+    candidates: candidates.length
+  });
   return candidates;
 }
 function stripHtml(value) {
