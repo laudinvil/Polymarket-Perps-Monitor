@@ -440,14 +440,14 @@ async function tick() {
             candidateProvider,
             nutmeg: nm?.row || null
           });
-          continue;
+          return;
         }
 
         await maybeOneOneAlert({
           ...match,
           live: { status: "scheduled", score: { home: 0, away: 0 }, minute: 0 }
         }, nm);
-        continue;
+        return;
       }
 
       // Live phase uses Polymarket as the source of truth.
@@ -494,11 +494,11 @@ async function tick() {
             candidateProvider,
             nutmeg: nm?.row || null
           });
-          continue;
+          return;
         }
 
         await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, nm);
-        continue;
+        return;
       }
 
       // After kickoff and after a goal, do not run BUY filters.
