@@ -134,7 +134,7 @@ function evaluate(now) {
       returnSignalTimes.push(now);
     }
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
-      alert("RETURN", "1S RETURN CASCADE: <b>3 new extremes / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      alert("RETURN", "LAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
       returnSignalTimes = [];
       lastReturnSignalAt = now;
     }
