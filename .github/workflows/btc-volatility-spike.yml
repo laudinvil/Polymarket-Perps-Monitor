@@ -30,4 +30,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/btc-volatility-spike.js
 
-# monitor revision: one-second sampling
+# monitor revision: 5s window, z>=3
