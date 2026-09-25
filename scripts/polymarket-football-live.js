@@ -477,6 +477,18 @@ function normalizeSportScore(match) {
   };
 }
 
+function teamSimilarity(a, b) {
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.includes(y) || y.includes(x)) return 0.85;
+  const xa = new Set(x.split(" "));
+  const ya = new Set(y.split(" "));
+  const overlap = [...xa].filter(token => ya.has(token)).length;
+  return overlap / Math.max(xa.size, ya.size);
+}
+
 function resolveSportScore(match, fixtures) {
   let best = null;
   let bestScore = 0;
@@ -627,7 +639,7 @@ async function tick() {
     await enrichLiveMatches(matches);
     for (const match of matches) {
       if (match.live?.status === "unresolved") {
-        log("INFO", "match_unresolved", "Live Polymarket match has no SportMonks fixture match", {
+        log("INFO", "match_unresolved", "Live Polymarket match has no SportScore fixture match", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam]
         });
@@ -681,8 +693,8 @@ async function start() {
   log("INFO", "monitor_started", "Polymarket football live monitor started", {
     pollSec: POLL_MS / 1000,
     runHours: RUN_MS / 3_600_000,
-    provider: "sportmonks",
-    providerConfigured: Boolean(SPORTSCORE_TOKEN),
+    provider: "sportscore",
+    providerConfigured: true,
     historyMinutes: HISTORY_MS / 60_000
   });
 
