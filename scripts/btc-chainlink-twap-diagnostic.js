@@ -4,7 +4,7 @@ const POLL_MS = 15 * 1000;
 
 const API_KEY = process.env.CHAINLINK_DATA_STREAMS_API_KEY || "";
 const USER_SECRET = process.env.CHAINLINK_DATA_STREAMS_USER_SECRET || "";
-const FEED_ID = process.env.CHAINLINK_DATA_STREAMS_FEED_ID || "";
+const FEED_ID = process.env.CHAINLINK_DATA_STREAMS_FEED_ID || "0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8";
 const CHAINLINK_REST = process.env.CHAINLINK_DATA_STREAMS_REST_URL || "https://api.dataengine.chain.link";
 const CHAINLINK_WS = process.env.CHAINLINK_DATA_STREAMS_WS_URL || "wss://ws.dataengine.chain.link";
 
@@ -82,12 +82,12 @@ function connectRtds() {
 }
 
 async function connectChainlink() {
-  if (!API_KEY || !USER_SECRET || !FEED_ID) {
+  if (!API_KEY || !USER_SECRET) {
     log("WARN", "chainlink_credentials_missing",
-      "Chainlink Data Streams comparison is disabled until API key, user secret and feed ID are configured", {
+      "Chainlink Data Streams comparison is disabled until API key and user secret are configured", {
         apiKey: Boolean(API_KEY),
         userSecret: Boolean(USER_SECRET),
-        feedId: Boolean(FEED_ID),
+        feedId: FEED_ID,
         rest: CHAINLINK_REST,
         websocket: CHAINLINK_WS
       });
