@@ -137,8 +137,9 @@ function stripHtml(value) {
 }
 
 async function nutmegRows() {
-  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
+  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return { rows: nutmegCache.rows, providerUnavailable: nutmegCache.providerUnavailable };
   const rows = [];
+  let successfulPages = 0;
   const pages = [1, 2, 3, 4, 5];
   const statuses = ["upcoming", "live"];
   const jobs = [];
@@ -148,7 +149,7 @@ async function nutmegRows() {
     try {
       const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
       const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
-      if (!r.ok) return [];
+      if (!r.ok) throw new Error("HTTP " + r.status);
       const body = stripHtml(await r.text());
       const out = [];
       const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
@@ -158,6 +159,7 @@ async function nutmegRows() {
         homeProb: Number(m[3]) / 100, drawProb: Number(m[4]) / 100,
         awayProb: Number(m[5]) / 100, bttsProb: NaN
       });
+      successfulPages++;
       return out;
     } catch (err) {
       log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
@@ -165,9 +167,12 @@ async function nutmegRows() {
     }
   }));
   for (const part of results) rows.push(...part);
-  nutmegCache = { at: Date.now(), rows };
-  log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
-  return rows;
+  const providerUnavailable = successfulPages === 0;
+  nutmegCache = { at: Date.now(), rows, providerUnavailable };
+  log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", {
+    rows: rows.length, successfulPages, providerUnavailable
+  });
+  return { rows, providerUnavailable };
 }
 
 function findNutmegMatch(match, rows) {
@@ -187,6 +192,30 @@ function balancedForOneOne(nutmeg) {
   return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF &&
     r.drawProb >= MIN_DRAW_PROB &&
     (!Number.isFinite(r.bttsProb) || r.bttsProb >= MIN_BTTS_PROB);
+}
+
+async function sportscoreFallbackMatches() {
+  try {
+    const fixtures = await sportscoreLatest();
+    log("INFO", "sportscore_fallback_refresh", "SportScore loaded as Nutmegly fallback candidate source", {
+      rows: fixtures.length
+    });
+    return fixtures;
+  } catch (err) {
+    log("WARN", "sportscore_fallback_unavailable", "SportScore fallback unavailable", { message: err.message });
+    return [];
+  }
+}
+
+function sportscoreFallbackMatch(match, fixtures) {
+  let best = null, bestScore = 0;
+  for (const fixture of fixtures) {
+    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
+    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
+    const score = Math.max(direct, swapped);
+    if (score > bestScore) { bestScore = score; best = fixture; }
+  }
+  return best && bestScore >= 1.4 ? { fixture: best, score: bestScore } : null;
 }
 
 async function ensureEventMarkets(match) {
@@ -337,9 +366,14 @@ async function tick() {
 
     const nutmegStartedAt = Date.now();
     log("INFO", "stage_start", "Nutmeg stage started", { stage: "nutmeg" });
-    const nutmeg = await nutmegRows();
+    const nutmegResult = await nutmegRows();
+    const nutmeg = nutmegResult.rows;
+    const candidateFallback = nutmegResult.providerUnavailable;
     log("INFO", "stage_done", "Nutmeg stage finished", {
-      stage: "nutmeg", elapsedMs: Date.now() - nutmegStartedAt, rows: nutmeg.length
+      stage: "nutmeg",
+      elapsedMs: Date.now() - nutmegStartedAt,
+      rows: nutmeg.length,
+      providerUnavailable: candidateFallback
     });
 
     log("INFO", "polymarket_discovery", "Event-first football 1:1 candidates discovered", {
@@ -352,6 +386,7 @@ async function tick() {
       }))
     });
 
+    const fallbackFixtures = candidateFallback ? await sportscoreFallbackMatches() : [];
     const now = Date.now();
     const todayUtc = new Date(now).toISOString().slice(0, 10);
     const fixtureDate = match => {
@@ -381,15 +416,6 @@ async function tick() {
       unknownDate: matches.length - liveCandidates.length - preMatchCandidates.length
     });
 
-    const sportscoreStartedAt = Date.now();
-    log("INFO", "stage_start", "SportScore stage started", {
-      stage: "sportscore", liveCandidates: liveCandidates.length
-    });
-    await enrichLiveMatches(liveCandidates);
-    log("INFO", "stage_done", "SportScore stage finished", {
-      stage: "sportscore", elapsedMs: Date.now() - sportscoreStartedAt, liveCandidates: liveCandidates.length
-    });
-
     const evaluationStartedAt = Date.now();
     log("INFO", "stage_start", "Alert evaluation stage started", {
       stage: "evaluation", candidates: matches.length
@@ -409,19 +435,35 @@ async function tick() {
 
       if (preMatch) {
         const nm = findNutmegMatch(match, nutmeg);
-        log("INFO", "candidate_match_found", "Pre-match 1:1 candidate evaluated", {
+        let candidateProvider = "nutmeg";
+        let candidate = Boolean(nm && balancedForOneOne(nm));
+        if (!candidate && candidateFallback) {
+          const fallback = sportscoreFallbackMatch(match, fallbackFixtures);
+          candidate = Boolean(fallback);
+          candidateProvider = "sportscore_fallback";
+          log("INFO", "candidate_fallback_evaluated", "SportScore used because Nutmegly was unavailable", {
+            eventId: match.eventId,
+            teams: [match.homeTeam, match.awayTeam],
+            matched: Boolean(fallback),
+            score: fallback?.score ?? null
+          });
+        }
+        log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: true,
+          candidateProvider,
           nutmegMatched: Boolean(nm),
           nutmegScore: nm?.score ?? null,
           balanced: balancedForOneOne(nm),
-                  });
+          candidate
+        });
 
-        if (!nm || !balancedForOneOne(nm)) {
-          log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
+        if (!candidate) {
+          log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
+            candidateProvider,
             nutmeg: nm?.row || null
           });
           continue;
@@ -434,18 +476,19 @@ async function tick() {
         continue;
       }
 
-      // Live phase is deliberately split from BUY filtering.
-      // SELL must never depend on Nutmegly or on the BUY filters.
-      if (match.live?.status === "provider_error") continue;
-      if (match.live?.status === "unresolved") {
-        log("INFO", "match_unresolved", "Started candidate has no SportScore fixture match", {
+      // Live phase uses Polymarket as the source of truth.
+      // SportScore is NOT a live-score dependency. It is only a fallback
+      // candidate provider when Nutmegly is unavailable.
+      const liveState = await refreshPolymarketLiveState(match);
+      if (!liveState) {
+        log("INFO", "live_state_unavailable", "Polymarket live state unavailable; live alert evaluation skipped", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam]
         });
         continue;
       }
-
-      const score = match.live?.score || { home: 0, away: 0 };
+      match.live = liveState;
+      const score = match.live.score || { home: 0, away: 0 };
 
       log("INFO", "live_candidate_observed", "Live candidate observed", {
         eventId: match.eventId,
@@ -457,21 +500,37 @@ async function tick() {
       // At 0:0, apply BUY filters.
       if (Number(score.home) === 0 && Number(score.away) === 0) {
         const nm = findNutmegMatch(match, nutmeg);
+        let candidateProvider = "nutmeg";
+        let candidate = Boolean(nm && balancedForOneOne(nm));
+        if (!candidate && candidateFallback) {
+          const fallback = sportscoreFallbackMatch(match, fallbackFixtures);
+          candidate = Boolean(fallback);
+          candidateProvider = "sportscore_fallback";
+          log("INFO", "candidate_fallback_evaluated", "SportScore used because Nutmegly was unavailable", {
+            eventId: match.eventId,
+            teams: [match.homeTeam, match.awayTeam],
+            matched: Boolean(fallback),
+            score: fallback?.score ?? null
+          });
+        }
         log("INFO", "candidate_match_found", "Live 0:0 candidate evaluated for BUY", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: false,
           score,
+          candidateProvider,
           nutmegMatched: Boolean(nm),
           nutmegScore: nm?.score ?? null,
           balanced: balancedForOneOne(nm),
+          candidate,
           price: findOneOneMarket(match)?.price ?? null
         });
 
-        if (!nm || !balancedForOneOne(nm)) {
-          log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
+        if (!candidate) {
+          log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
+            candidateProvider,
             nutmeg: nm?.row || null
           });
           continue;
@@ -575,71 +634,45 @@ function teamSimilarity(a, b) {
   return overlap / Math.max(xa.size, ya.size);
 }
 
-async function enrichLiveMatches(polymarketMatches) {
-  let fixtures = [];
+async function refreshPolymarketLiveState(match) {
   try {
-    fixtures = await sportscoreLatest();
+    const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId));
+    const event = data?.event || data;
+    const score = extractPolymarketScore(event);
+    const liveFlag = event?.live === true || event?.isLive === true || /live|in progress|playing|ongoing/i.test(text(event?.status));
+    if (!score && !liveFlag) return null;
+    return {
+      status: liveFlag ? "live" : "scheduled",
+      score: score || { home: 0, away: 0 },
+      minute: Number(event?.minute ?? event?.liveMinute ?? event?.elapsed ?? 0) || 0
+    };
   } catch (err) {
-    // SportScore is enrichment only. A provider failure must not abort the
-    // discovery/evaluation pipeline; pre-match candidates can still continue.
-    log("WARN", "sportscore_unavailable", "SportScore unavailable; continuing without live enrichment", {
-      message: err.message
+    log("WARN", "polymarket_live_state_failed", "Could not refresh live state from Polymarket", {
+      eventId: match.eventId, message: err.message
     });
-    for (const match of polymarketMatches) {
-      match.live = { status: "provider_unavailable" };
-    }
-    return;
+    return null;
   }
+}
 
-  const candidateFixtures = fixtures.filter(f =>
-    /live|in progress|1st half|2nd half|halftime|playing|started|ongoing|scheduled|upcoming|not started|fixture/i
-      .test(text(f.status) + " " + text(f.status_text))
-  );
-
-  // Resolve and refresh live fixtures concurrently. The old sequential loop
-  // could spend up to 10s per fixture, turning a normal scan into an hours-long
-  // run before the alert logic was reached.
-  const work = polymarketMatches.map(async match => {
-    const key = match.eventId || match.slug;
-    let resolvedMatch = resolved.get(key);
-    if (!resolvedMatch) {
-      const found = resolveSportScore(match, candidateFixtures);
-      if (found) {
-        const slug = sportscoreSlug(found.fixture.url);
-        if (!slug) {
-          log("WARN", "sportscore_slug_missing", "SportScore fixture has no usable slug", { fixture: found.fixture });
-        } else {
-          resolvedMatch = { fixtureId: slug, confidence: found.score };
-          resolved.set(key, resolvedMatch);
-          log("INFO", "match_resolved", "Polymarket match linked to SportScore", {
-            eventId: match.eventId, polymarketTeams: [match.homeTeam, match.awayTeam],
-            sportscoreTeams: [found.fixture.home, found.fixture.away], confidence: found.score, fixture: slug
-          });
-        }
-      }
-    }
-
-    if (!resolvedMatch) {
-      match.live = { status: "unresolved" };
-      return;
-    }
-
-    const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
-      log("WARN", "fixture_failed", "SportScore match refresh failed", { fixture: resolvedMatch.fixtureId, message: err.message });
-      return null;
-    });
-
-    if (!detail) {
-      match.live = { status: "provider_error" };
-      return;
-    }
-
-    match.provider = "sportscore";
-    match.providerFixtureId = resolvedMatch.fixtureId;
-    match.live = normalizeSportScore(detail);
-  });
-
-  await Promise.all(work);
+function extractPolymarketScore(event) {
+  const candidates = [
+    event?.score,
+    event?.scores,
+    event?.liveScore,
+    event?.live_score,
+    event?.currentScore,
+    event?.current_score
+  ];
+  for (const value of candidates) {
+    if (!value) continue;
+    const home = Number(value.home ?? value.homeScore ?? value.home_score);
+    const away = Number(value.away ?? value.awayScore ?? value.away_score);
+    if (Number.isFinite(home) && Number.isFinite(away)) return { home, away };
+  }
+  const home = Number(event?.homeScore ?? event?.home_score);
+  const away = Number(event?.awayScore ?? event?.away_score);
+  if (Number.isFinite(home) && Number.isFinite(away)) return { home, away };
+  return null;
 }
 
 async function claimTelegramAlert(key) {
