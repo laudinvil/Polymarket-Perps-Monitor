@@ -69,7 +69,19 @@ function text(v) {
 }
 
 function norm(v) {
-  return text(v).toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+  // Team names come from different providers and often differ only by
+  // accents, FC/CF/SC suffixes, punctuation, or common club-name aliases.
+  // Normalize those differences before calculating token overlap.
+  return text(v)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss")
+    .replace(/&/g, "and")
+    .replace(/\\b(?:fc|cf|sc|afc|ac|fk|sk|bk|sv|ks|cd|ud|rcd|kv|krc)\\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\\s+/g, " ")
+    .trim();
 }
 
 function parseJson(v) {
@@ -154,7 +166,7 @@ async function discoverPolymarket() {
   let eventScanned = 0, footballEventFound = 0, candidatesFound = 0;
 
   await checkpoint("discovery_start", {
-    strategy: "football_match_first_v5",
+    strategy: "football_match_first_v6",
     source: "tag_slug=soccer",
     note: "Discover football directly from Polymarket sports tag; do not scan generic event pages"
   });
@@ -506,18 +518,27 @@ async function nutmegRows() {
   return rows;
 }
 function findNutmegMatch(match, rows) {
-  let best = null, bestScore = 0;
+  let best = null, bestScore = 0, bestOrientation = null;
   for (const row of rows) {
     const direct = teamSimilarity(match.homeTeam, row.home) + teamSimilarity(match.awayTeam, row.away);
     const swapped = teamSimilarity(match.homeTeam, row.away) + teamSimilarity(match.awayTeam, row.home);
     const score = Math.max(direct, swapped);
-    if (score > bestScore) { bestScore = score; best = row; }
+    if (score > bestScore) {
+      bestScore = score;
+      best = row;
+      bestOrientation = swapped > direct ? "swapped" : "direct";
+    }
   }
-  return best && bestScore >= 1.35 ? { row: best, score: bestScore } : null;
+  return {
+    match: Boolean(best && bestScore >= 1.35),
+    row: best,
+    score: bestScore,
+    orientation: bestOrientation
+  };
 }
 
 function balancedForOneOne(nutmeg) {
-  if (!nutmeg) return false;
+  if (!nutmeg?.match || !nutmeg.row) return false;
   const r = nutmeg.row;
   return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF &&
     r.drawProb >= MIN_DRAW_PROB &&
@@ -676,7 +697,7 @@ async function tick() {
       stage: "nutmeg", elapsedMs: Date.now() - nutmegStartedAt, rows: nutmeg.length
     });
 
-    log("INFO", "polymarket_discovery", "Event-first football 1:1 candidates discovered", {
+    log("INFO", "polymarket_discovery", "Football match candidates discovered", {
       count: matches.length,
       matches: matches.map(m => ({
         eventId: m.eventId,
@@ -744,20 +765,22 @@ async function tick() {
 
       if (preMatch) {
         const nm = findNutmegMatch(match, nutmeg);
-        log("INFO", "candidate_match_found", "Pre-match 1:1 candidate evaluated", {
+        log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: true,
-          nutmegMatched: Boolean(nm),
-          nutmegScore: nm?.score ?? null,
-          balanced: balancedForOneOne(nm),
-                  });
+          nutmegMatched: nm.match,
+          nutmegScore: Number(nm.score.toFixed(3)),
+          nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null,
+          balanced: balancedForOneOne(nm)
+        });
 
-        if (!nm || !balancedForOneOne(nm)) {
+        if (!nm.match || !balancedForOneOne(nm)) {
           log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
-            nutmeg: nm?.row || null
+            nutmegScore: Number(nm.score.toFixed(3)),
+            nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null
           });
           continue;
         }
@@ -797,17 +820,18 @@ async function tick() {
           teams: [match.homeTeam, match.awayTeam],
           preMatch: false,
           score,
-          nutmegMatched: Boolean(nm),
-          nutmegScore: nm?.score ?? null,
-          balanced: balancedForOneOne(nm),
-          price: findOneOneMarket(match)?.price ?? null
+          nutmegMatched: nm.match,
+          nutmegScore: Number(nm.score.toFixed(3)),
+          nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null,
+          balanced: balancedForOneOne(nm)
         });
 
-        if (!nm || !balancedForOneOne(nm)) {
+        if (!nm.match || !balancedForOneOne(nm)) {
           log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
-            nutmeg: nm?.row || null
+            nutmegScore: Number(nm.score.toFixed(3)),
+            nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null
           });
           continue;
         }
