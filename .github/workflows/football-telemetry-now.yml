@@ -6,10 +6,16 @@ on:
     paths:
       - ".github/workflows/football-telemetry-now.yml"
 
+permissions:
+  contents: write
+
 jobs:
   telemetry:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Read Convex football health
         env:
           CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
@@ -20,10 +26,15 @@ jobs:
           curl --fail --silent --show-error --max-time 15 "$CONVEX_SITE_URL/football/health" | tee telemetry/health.json
           echo
           curl --fail --silent --show-error --max-time 20 "$CONVEX_SITE_URL/football/status" | tee telemetry/status.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add telemetry/
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: refresh football telemetry snapshot"
+          git push
       - name: Upload snapshot
         uses: actions/upload-artifact@v4
         with:
           name: football-telemetry-now
           path: telemetry/
           retention-days: 7
-# telemetry refresh
