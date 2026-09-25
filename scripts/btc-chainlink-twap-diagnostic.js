@@ -18,6 +18,9 @@ const CHAINLINK_REST =
 const CHAINLINK_WS =
   process.env.CHAINLINK_DATA_STREAMS_WS_URL || "wss://ws.dataengine.chain.link";
 
+const CONVEX_URL = process.env.CONVEX_URL || "https://brainy-canary-207.eu-west-1.convex.cloud";
+const CONVEX_LOG_PATH = "btc5mState:logBtc5m";
+
 let stopping = false;
 let rtdsWs = null;
 let latestRtds = null;
@@ -30,12 +33,36 @@ const priceHistory = [];
 const alertedPeriods = new Set();
 
 function log(level, event, message, data = undefined) {
-  console.log(JSON.stringify({
+  const payload = {
     level,
     event,
     message,
     ...(data === undefined ? {} : { data: JSON.stringify(data) })
-  }));
+  };
+  console.log(JSON.stringify(payload));
+
+  void fetch(CONVEX_URL + "/api/mutation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      path: CONVEX_LOG_PATH,
+      args: {
+        level,
+        event,
+        message,
+        ...(data === undefined ? {} : { data: JSON.stringify(data) })
+      },
+      format: "json"
+    }),
+    signal: AbortSignal.timeout(5000)
+  }).catch(err => {
+    console.error(JSON.stringify({
+      level: "WARN",
+      event: "convex_log_persist_failed",
+      message: "Convex log persistence failed",
+      data: JSON.stringify({ message: err.message })
+    }));
+  });
 }
 
 function num(v) {
