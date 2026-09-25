@@ -233,8 +233,9 @@ function dataDelta() {
 }
 
 function chainlinkMomentumBps() {
-  if (!latestChainlink?.value || !periodStartPrice || periodStartPrice <= 0) return null;
-  return (latestChainlink.value / periodStartPrice - 1) * 10_000;
+  const current = latestChainlink?.value ?? activePrice();
+  if (!Number.isFinite(current) || !Number.isFinite(periodStartPrice) || periodStartPrice <= 0) return null;
+  return (current / periodStartPrice - 1) * 10_000;
 }
 
 function recentChainlinkMoveBps(windowMs = 60_000) {
@@ -503,6 +504,8 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
   }
 
   const comparison = dataDelta();
+  const moveBps = chainlinkMomentumBps();
+  const rtdsValue = latestRtds?.value ?? null;
   const remaining = Math.max(
     0,
     Math.round((currentPeriodStart + PERIOD_MS - Date.now()) / 1000)
@@ -518,8 +521,8 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
     "",
     "CHAINLINK: $" + activePrice().toFixed(2),
     "START TWAP: $" + periodStartPrice.toFixed(2),
-    "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
-    "RTDS TWAP60: " + (latestRtds ? "$" + latestRtds.value.toFixed(2) : "N/A"),
+    "MOVE: " + (moveBps === null ? "N/A" : (moveBps >= 0 ? "+" : "") + moveBps.toFixed(1) + " bps"),
+    "RTDS TWAP60: " + (rtdsValue === null ? "N/A" : "$" + rtdsValue.toFixed(2)),
     "DS ↔ RTDS: " +
       (comparison
         ? (comparison.deltaUsd >= 0 ? "+" : "") + comparison.deltaUsd.toFixed(2) +
@@ -541,7 +544,10 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
     model: edge.model,
     clob: edge.price,
     edge: edge.edge,
-    url: market.url
+    url: market.url,
+    moveBps,
+    rtdsAvailable: rtdsValue !== null,
+    dsRtdsDeltaBps: comparison?.deltaBps ?? null
   });
 }
 
