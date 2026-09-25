@@ -165,10 +165,27 @@ async function discoverPolymarket() {
       GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=0&order=startDate&ascending=true"
     );
     events = Array.isArray(data) ? data : (data.events || data.data || []);
+    if (!events.length) {
+      log("WARN", "soccer_tag_query_empty", "Soccer tag returned no events; using paginated active-event fallback");
+      for (let offset = 0; offset < 2500; offset += 500) {
+        const page = await getJson(
+          GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
+        );
+        const rows = Array.isArray(page) ? page : (page.events || page.data || []);
+        events.push(...rows);
+        if (rows.length < 500) break;
+      }
+    }
   } catch (err) {
-    log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using active-event fallback", { message: err.message });
-    const data = await getJson(GAMMA_URL + "/events?active=true&closed=false&limit=500");
-    events = Array.isArray(data) ? data : (data.events || data.data || []);
+    log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using paginated active-event fallback", { message: err.message });
+    for (let offset = 0; offset < 2500; offset += 500) {
+      const page = await getJson(
+        GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
+      );
+      const rows = Array.isArray(page) ? page : (page.events || page.data || []);
+      events.push(...rows);
+      if (rows.length < 500) break;
+    }
   }
 
   const candidates = [];
@@ -182,7 +199,6 @@ async function discoverPolymarket() {
     const inWindow =
       Number.isFinite(start) &&
       start <= now + PREMATCH_WINDOW_MS &&
-      (!Number.isFinite(end) || end > now) &&
       (now < start || now <= start + EARLY_WINDOW_MS);
     if (!inWindow) continue;
 
