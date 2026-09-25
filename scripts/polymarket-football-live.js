@@ -398,7 +398,7 @@ async function maybeOneOneAlert(match, nutmeg) {
     return;
   }
 
-  if (total === 0 && !state.first) {
+  if (total === 0 && !state.first && state.lastTotal <= 0) {
     const message = [
       "⚽ 1:1 · BUY",
       "",
@@ -411,13 +411,19 @@ async function maybeOneOneAlert(match, nutmeg) {
     ].join("\n");
     const claimed = await claimTelegramAlert(key + ":BUY");
     if (!claimed) return;
-    await sendTelegram(message);
+    try {
+      const sent = await sendTelegram(message);
+      if (!sent) return;
+    } catch (err) {
+      log("ERROR", "telegram_send_failed", "BUY alert send failed", { eventId: match.eventId, message: err.message });
+      return;
+    }
     state.first = true;
     state.firstPrice = market.price;
     log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", { eventId: match.eventId, price: market.price, nutmeg: nutmeg.row });
   }
 
-  if (total === 1 && state.first && !state.second) {
+  if (total >= 1 && !state.second) {
     const message = [
       "⚽ 1:1 · SELL",
       "",
@@ -430,11 +436,18 @@ async function maybeOneOneAlert(match, nutmeg) {
     ].join("\n");
     const claimed = await claimTelegramAlert(key + ":SELL");
     if (!claimed) return;
-    await sendTelegram(message);
+    try {
+      const sent = await sendTelegram(message);
+      if (!sent) return;
+    } catch (err) {
+      log("ERROR", "telegram_send_failed", "SELL alert send failed", { eventId: match.eventId, message: err.message });
+      return;
+    }
     state.second = true;
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", { eventId: match.eventId, price: market.price, firstPrice: state.firstPrice });
   }
 
+  if (total > 0 && !state.second) state.first = true;
   state.lastTotal = total;
   oneOneState.set(key, state);
 }
