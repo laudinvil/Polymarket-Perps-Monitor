@@ -1,4 +1,5 @@
 name: Polymarket Football · Live Discovery
+# Continuous monitor; push trigger keeps the deployed monitor on the latest strategy.
 
 on:
   workflow_dispatch:
