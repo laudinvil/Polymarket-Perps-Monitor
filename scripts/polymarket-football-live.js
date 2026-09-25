@@ -181,9 +181,16 @@ async function discoverPolymarket() {
   // This lets newly listed pre-match fixtures enter the monitor immediately.
   // live=true remains an additional fast path for in-play matches.
   // Keep the scan bounded because Gamma pages are capped at 100 rows.
-  const pages = 10;
+  // Keep discovery bounded: 3 newest soccer pages + 1 live page + 2 fallback pages.
+  // The previous 10 pages for all 3 sources created 30 concurrent requests and
+  // could keep the whole discovery stage in progress for a long time.
+  const pagePlan = {
+    soccer_newest: 3,
+    soccer_live: 1,
+    sports_newest: 2
+  };
   const sourcePages = sources.flatMap(source =>
-    Array.from({ length: pages }, (_, page) => ({
+    Array.from({ length: pagePlan[source.name] ?? 1 }, (_, page) => ({
       name: source.name,
       url: source.baseUrl + "&offset=" + (page * 100),
       page
