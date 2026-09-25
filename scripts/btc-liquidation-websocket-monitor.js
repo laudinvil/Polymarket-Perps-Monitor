@@ -128,7 +128,7 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
   const text = [
     "🔥 BTC",
     "",
-    String(side).toUpperCase() + " LIQUIDATED",
+    side === "SHORT" ? "<b>⬇️ DOWN</b>" : "<b>⬆️ UP</b>",
     "PRICE: $" + price.toLocaleString("en-US", { maximumFractionDigits: 2 }),
     "SIZE: " + formatUsd(usd),
     formatUtcPlus3(eventTime),
