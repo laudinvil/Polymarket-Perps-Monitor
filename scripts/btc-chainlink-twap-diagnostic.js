@@ -1,5 +1,5 @@
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
-const RUN_MS = 10 * 60 * 1000;
+const RUN_MS = 5 * 60 * 60 * 1000;
 const POLL_MS = 15 * 1000;
 
 const API_KEY = process.env.CHAINLINK_DATA_STREAMS_API_KEY || "";
@@ -48,12 +48,7 @@ function connectRtds() {
     log("INFO", "rtds_connected", "Connected to Polymarket RTDS");
     rtdsWs.send(JSON.stringify({
       action: "subscribe",
-      subscriptions: [
-        {
-          topic: "crypto_prices_twap_sixty",
-          type: "update"
-        }
-      ]
+      subscriptions: [{ topic: "crypto_prices_twap_sixty", type: "update" }]
     }));
   });
 
@@ -124,9 +119,7 @@ async function connectChainlink() {
 
         log("INFO", "chainlink_twap", "Chainlink Data Streams update", latestChainlink);
       } catch (err) {
-        log("WARN", "chainlink_decode_failed", "Could not decode Chainlink Data Streams report", {
-          message: err.message
-        });
+        log("WARN", "chainlink_decode_failed", "Could not decode Chainlink Data Streams report", { message: err.message });
       }
     });
 
@@ -137,9 +130,7 @@ async function connectChainlink() {
     });
 
     await stream.connect();
-    log("INFO", "chainlink_connected", "Connected to Chainlink Data Streams", {
-      feedId: FEED_ID
-    });
+    log("INFO", "chainlink_connected", "Connected to Chainlink Data Streams", { feedId: FEED_ID });
   } catch (err) {
     log("WARN", "chainlink_connect_failed", "Could not connect to Chainlink Data Streams", {
       message: err.message
@@ -151,9 +142,6 @@ function compare() {
   if (!latestRtds || !latestChainlink) return;
 
   const delta = latestRtds.value - latestChainlink.value;
-  const ageRtdsMs = Date.now() - latestRtds.receivedAt;
-  const ageChainlinkMs = Date.now() - latestChainlink.receivedAt;
-
   log("INFO", "twap_comparison", "Chainlink Data Streams vs Polymarket RTDS TWAP60", {
     rtdsTwap60: latestRtds.value,
     chainlinkDataStreams: latestChainlink.value,
@@ -161,8 +149,8 @@ function compare() {
     deltaBps: latestChainlink.value ? delta / latestChainlink.value * 10000 : null,
     rtdsTimestamp: latestRtds.timestamp,
     chainlinkTimestamp: latestChainlink.timestamp,
-    ageRtdsMs,
-    ageChainlinkMs
+    ageRtdsMs: Date.now() - latestRtds.receivedAt,
+    ageChainlinkMs: Date.now() - latestChainlink.receivedAt
   });
 }
 
@@ -175,11 +163,11 @@ function stop() {
 }
 
 async function start() {
-  log("INFO", "monitor_started", "BTC Chainlink TWAP comparison started", {
-    runMinutes: RUN_MS / 60000,
+  log("INFO", "monitor_started", "Continuous BTC Chainlink TWAP comparison started", {
+    runHours: RUN_MS / 3600000,
     compareEverySec: POLL_MS / 1000,
     rtdsTopic: "crypto_prices_twap_sixty",
-    chainlinkFeedConfigured: Boolean(FEED_ID)
+    chainlinkFeed: FEED_ID
   });
 
   connectRtds();
