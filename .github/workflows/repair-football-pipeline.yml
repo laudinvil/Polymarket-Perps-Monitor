@@ -28,12 +28,19 @@ jobs:
           POLL="288809112f4958fca96e65b3b9e04fb77efe1cd6"
 
           git show "$AFCA:$TARGET" > "$TARGET"
+          git add "$TARGET"
+
           git diff "$AFCA" "$GROUP" -- "$TARGET" > /tmp/group.patch
           git apply --3way /tmp/group.patch
+          git add "$TARGET"
+
           git diff "$GROUP" "$CONT" -- "$TARGET" > /tmp/continuous.patch
           git apply --3way /tmp/continuous.patch
+          git add "$TARGET"
+
           git diff "$CONT" "$POLL" -- "$TARGET" > /tmp/poll.patch
           git apply --3way /tmp/poll.patch
+          git add "$TARGET"
 
           node --check "$TARGET"
           grep -q "async function tick" "$TARGET"
@@ -44,7 +51,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$TARGET"
           if git diff --cached --quiet; then
             echo "No repair changes needed"
             exit 0
