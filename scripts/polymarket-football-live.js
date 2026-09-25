@@ -162,24 +162,25 @@ async function discoverPolymarket() {
   // (newest objects first) and constrain the event to something that has not
   // already ended. Also query the dedicated live=true view so an in-play match
   // cannot be buried behind unrelated sports markets.
-  const nowIso = new Date().toISOString();
   const sources = [
+    {
+      name: "soccer_newest",
+      baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=100&order=id&ascending=false"
+    },
     {
       name: "soccer_live",
       baseUrl: GAMMA_URL + "/events?tag_slug=soccer&live=true&active=true&closed=false&limit=100&order=id&ascending=false"
     },
     {
-      name: "soccer_recent",
-      baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&end_date_min=" + encodeURIComponent(nowIso) + "&limit=100&order=id&ascending=false"
-    },
-    {
-      name: "sports_live",
-      baseUrl: GAMMA_URL + "/events?tag_id=100639&live=true&active=true&closed=false&limit=100&order=id&ascending=false"
+      name: "sports_newest",
+      baseUrl: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=100&order=id&ascending=false"
     }
   ];
 
-  // Gamma caps pages at 100 rows. Ten pages per source gives a broad fallback
-  // while the live/recent filters keep the scan focused on current football.
+  // The primary feed is the newest soccer events, not only live events.
+  // This lets newly listed pre-match fixtures enter the monitor immediately.
+  // live=true remains an additional fast path for in-play matches.
+  // Keep the scan bounded because Gamma pages are capped at 100 rows.
   const pages = 10;
   const sourcePages = sources.flatMap(source =>
     Array.from({ length: pages }, (_, page) => ({
@@ -280,10 +281,13 @@ async function discoverPolymarket() {
         event.category, event.tags, event.title, event.question
       ].flat(Infinity).map(text).join(" ");
 
-      // Source selection is authoritative enough for discovery, but retain a
-      // light football sanity check to avoid non-match sports grouped under a
-      // broad sports tag.
-      if (!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay)) {
+      // The soccer-tag feed is already a football index, so do not require
+      // the title to contain "football" or "soccer". Real match titles are
+      // normally just "Team A vs Team B". The generic sports-tag fallback
+      // still needs the text sanity check.
+      const footballSource = result.name === "soccer_newest" || result.name === "soccer_live";
+      if (!footballSource &&
+          !/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay)) {
         continue;
       }
 
