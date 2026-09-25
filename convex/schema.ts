@@ -35,6 +35,8 @@ export default defineSchema({
   footballStats: defineTable({
     monitor: v.string(),
     ticks: v.number(),
+    eventsScanned: v.optional(v.number()),
+    candidateGatePassed: v.optional(v.number()),
     candidates: v.number(),
     evaluations: v.number(),
     balanced: v.number(),
