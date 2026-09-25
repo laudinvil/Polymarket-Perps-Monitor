@@ -457,7 +457,7 @@ async function tick() {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam]
         });
-        continue;
+        return;
       }
       match.live = liveState;
       const score = match.live.score || { home: 0, away: 0 };
