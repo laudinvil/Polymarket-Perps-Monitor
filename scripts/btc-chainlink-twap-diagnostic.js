@@ -238,20 +238,44 @@ function normalCdf(x) {
 }
 
 function resetPeriodIfNeeded() {
-  const start = periodStart();
+  const now = Date.now();
+  const start = periodStart(now);
 
-  if (currentPeriodStart === start) return false;
+  if (currentPeriodStart === null) {
+    // Do not use a mid-period price as the opening price.
+    if (now - start > POLL_MS * 2) {
+      currentPeriodStart = start + PERIOD_MS;
+      periodStartPrice = null;
+      log("INFO", "waiting_for_5m_boundary", "Waiting for the next exact BTC 5M boundary", {
+        nextStart: new Date(currentPeriodStart).toISOString()
+      });
+      return false;
+    }
+  }
 
-  currentPeriodStart = start;
-  periodStartPrice = activePrice();
+  if (currentPeriodStart !== start) {
+    currentPeriodStart = start;
+    periodStartPrice = activePrice();
 
-  log("INFO", "new_5m_period", "Started new BTC 5M period", {
-    start: new Date(start).toISOString(),
-    end: new Date(start + PERIOD_MS).toISOString(),
-    periodStartPrice
-  });
+    log("INFO", "new_5m_period", "Started new BTC 5M period", {
+      start: new Date(start).toISOString(),
+      end: new Date(start + PERIOD_MS).toISOString(),
+      periodStartPrice
+    });
 
-  return true;
+    return true;
+  }
+
+  if (periodStartPrice === null && activePrice() !== null) {
+    periodStartPrice = activePrice();
+    log("INFO", "5m_boundary_captured", "Captured BTC 5M opening price", {
+      start: new Date(start).toISOString(),
+      periodStartPrice
+    });
+    return true;
+  }
+
+  return false;
 }
 
 function settlementProbabilityUp() {
