@@ -168,11 +168,14 @@ async function nutmegRows() {
         let score = null;
         let minute = null;
         if (candidate) {
-          home = candidate[1].trim();
-          away = candidate[2].trim();
           if (live && candidate === live) {
+            home = live[1].trim();
+            away = live[5].trim();
             score = { home: Number(live[2]), away: Number(live[3]) };
-            minute = Number(live[4]);
+            minute = Number(String(live[4]).replace(/[^0-9]/g, ""));
+          } else {
+            home = candidate[1].trim();
+            away = candidate[2].trim();
           }
         }
         if (!home || !away) continue;
