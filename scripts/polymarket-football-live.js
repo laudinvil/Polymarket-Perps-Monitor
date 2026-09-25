@@ -321,7 +321,7 @@ async function discoverPolymarket() {
       const eventTitle = text(event.title || event.question);
       // Gamma exposes child market-events alongside the real fixture.
       // Keep only the parent fixture in the match candidate set.
-      if (/\\s-\\s(?:Total Corners|More Markets|Exact Score|First Team to Score|Second Half Result|Halftime Result|Match Result|Half Time Result)\\s*$/i.test(eventTitle)) {
+      if (/\s-\s(?:Total Corners|More Markets|Exact Score|Correct Score|First Team to Score|Second Half Result|Halftime Result|Half Time Result|Both Teams to Score|Double Chance|Match Result)\s*$/i.test(eventTitle)) {
         log("INFO", "child_market_event_filtered", "Filtered child market-event; parent fixture will be used", {
           eventId: text(event.id),
           title: eventTitle
@@ -685,9 +685,25 @@ async function tick() {
     });
 
     const now = Date.now();
-    const liveCandidates = matches.filter(m => {
-      const startMs = Date.parse(m.startTime || "");
-      return !(Number.isFinite(startMs) && startMs > now);
+    const todayUtc = new Date(now).toISOString().slice(0, 10);
+    const fixtureDate = match => {
+      const m = text(match.slug).match(/(?:^|-)((?:20)\\d{2}-\\d{2}-\\d{2})(?:-|$)/);
+      return m ? m[1] : null;
+    };
+    // Gamma startDate is often the event publication/update timestamp, not
+    // the fixture kickoff. The fixture date in the Polymarket slug is the
+    // reliable date signal for live-vs-future classification.
+    const liveCandidates = matches.filter(m => fixtureDate(m) === todayUtc);
+    const preMatchCandidates = matches.filter(m => {
+      const d = fixtureDate(m);
+      return Boolean(d && d > todayUtc);
+    });
+    log("INFO", "match_timing_classified", "Classified football candidates by fixture date", {
+      todayUtc,
+      total: matches.length,
+      liveToday: liveCandidates.length,
+      preMatchFuture: preMatchCandidates.length,
+      unknownDate: matches.length - liveCandidates.length - preMatchCandidates.length
     });
 
     const sportscoreStartedAt = Date.now();
@@ -721,8 +737,8 @@ async function tick() {
     }
 
     for (const match of matches) {
-      const startMs = Date.parse(match.startTime || "");
-      const preMatch = Number.isFinite(startMs) && startMs > Date.now();
+      const slugDate = text(match.slug).match(/(?:^|-)((?:20)\\d{2}-\\d{2}-\\d{2})(?:-|$)/)?.[1] || null;
+      const preMatch = Boolean(slugDate && slugDate > new Date().toISOString().slice(0, 10));
 
       if (preMatch) {
         const nm = findNutmegMatch(match, nutmeg);
