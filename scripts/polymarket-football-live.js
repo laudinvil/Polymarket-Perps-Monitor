@@ -203,14 +203,26 @@ async function nutmegRows() {
 }
 
 function findNutmegMatch(match, rows) {
-  let best = null, bestScore = 0;
+  let best = null, bestScore = 0, bestSwapped = false;
   for (const row of rows) {
     const direct = teamSimilarity(match.homeTeam, row.home) + teamSimilarity(match.awayTeam, row.away);
     const swapped = teamSimilarity(match.homeTeam, row.away) + teamSimilarity(match.awayTeam, row.home);
-    const score = Math.max(direct, swapped);
-    if (score > bestScore) { bestScore = score; best = row; }
+    const isSwapped = swapped > direct;
+    const score = isSwapped ? swapped : direct;
+    if (score > bestScore) { bestScore = score; best = row; bestSwapped = isSwapped; }
   }
-  return best && bestScore >= 1.35 ? { row: best, score: bestScore } : null;
+  if (!best || bestScore < 1.35) return null;
+  const normalizedRow = bestSwapped
+    ? {
+        ...best,
+        home: match.homeTeam,
+        away: match.awayTeam,
+        homeProb: best.awayProb,
+        awayProb: best.homeProb,
+        score: best.score ? { home: best.score.away, away: best.score.home } : null
+      }
+    : best;
+  return { row: normalizedRow, score: bestScore, swapped: bestSwapped };
 }
 
 function balancedForOneOne(nutmeg) {
@@ -437,17 +449,22 @@ async function tick() {
     for (let batchStart = 0; batchStart < matches.length; batchStart += EVAL_BATCH) {
       const batch = matches.slice(batchStart, batchStart + EVAL_BATCH);
       await Promise.all(batch.map(async match => {
+      // Nutmegly live state takes precedence over Gamma kickoff timestamps.
+      // Gamma startDate can be a publication/update timestamp, so a live card
+      // must never be misclassified as pre-match merely because kickoff metadata
+      // is stale or inaccurate.
+      const nm = findNutmegMatch(match, nutmeg);
+      const nmIsLive = Boolean(nm?.row?.live && nm?.row?.score);
       const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
       const kickoff = Date.parse(match.startTime || "");
       const fixtureDay = slugDate || (Number.isNaN(kickoff) ? null : new Date(kickoff).toISOString().slice(0, 10));
-      const preMatch = Boolean(
+      const preMatch = !nmIsLive && Boolean(
         fixtureDay &&
         (fixtureDay > new Date().toISOString().slice(0, 10) ||
          (fixtureDay === new Date().toISOString().slice(0, 10) && Number.isFinite(kickoff) && kickoff > Date.now()))
       );
 
       if (preMatch) {
-        const nm = findNutmegMatch(match, nutmeg);
         let candidateProvider = "nutmeg";
         let candidate = Boolean(nm && balancedForOneOne(nm));
                 log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
@@ -482,7 +499,7 @@ async function tick() {
       // same matched fixture already supplies the strategy probabilities.
       // Polymarket is retained only as a fallback if Nutmegly temporarily
       // has no live score for this fixture.
-      const nmLive = findNutmegMatch(match, nutmeg);
+      const nmLive = nm;
       let liveState = null;
       if (nmLive?.row?.live && nmLive.row.score) {
         liveState = {
@@ -495,7 +512,8 @@ async function tick() {
           teams: [match.homeTeam, match.awayTeam],
           score: liveState.score,
           minute: liveState.minute,
-          nutmegScore: nmLive.score
+          nutmegScore: nmLive.score,
+          nutmegSwapped: Boolean(nmLive.swapped)
         });
       } else {
         liveState = await refreshPolymarketLiveState(match);
