@@ -157,14 +157,29 @@ async function discoverPolymarket() {
   // sports index and football can sit outside the first 3000 rows.
   // Polymarket exposes sports events through the soccer tag, so query that index
   // directly. Keep a sports-tag fallback as a second source.
+  // Gamma's sports tag feed is not reliably ordered by startDate: the first
+  // pages can contain old total-corners and season markets. Use the event ID
+  // (newest objects first) and constrain the event to something that has not
+  // already ended. Also query the dedicated live=true view so an in-play match
+  // cannot be buried behind unrelated sports markets.
+  const nowIso = new Date().toISOString();
   const sources = [
-    { name: "soccer_tag", baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=false" },
-    { name: "sports_tag", baseUrl: GAMMA_URL + "/events?tag_id=100639&active=true&closed=false&limit=100&order=startDate&ascending=false" }
+    {
+      name: "soccer_live",
+      baseUrl: GAMMA_URL + "/events?tag_slug=soccer&live=true&active=true&closed=false&limit=100&order=id&ascending=false"
+    },
+    {
+      name: "soccer_recent",
+      baseUrl: GAMMA_URL + "/events?tag_slug=soccer&active=true&closed=false&end_date_min=" + encodeURIComponent(nowIso) + "&limit=100&order=id&ascending=false"
+    },
+    {
+      name: "sports_live",
+      baseUrl: GAMMA_URL + "/events?tag_id=100639&live=true&active=true&closed=false&limit=100&order=id&ascending=false"
+    }
   ];
 
-  // Gamma currently returns 100 rows even when a larger limit is requested.
-  // Walk several pages so the first 100 generic/tagged markets cannot hide
-  // the actual live match events behind long-term winner/season markets.
+  // Gamma caps pages at 100 rows. Ten pages per source gives a broad fallback
+  // while the live/recent filters keep the scan focused on current football.
   const pages = 10;
   const sourcePages = sources.flatMap(source =>
     Array.from({ length: pages }, (_, page) => ({
