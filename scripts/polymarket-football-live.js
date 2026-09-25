@@ -20,7 +20,6 @@ const resolved = new Map();
 const history = new Map();
 const oneOneState = new Map();
 let nutmegCache = { at: 0, rows: [] };
-let exactScoreCache = { at: 0, markets: [] };
 const convexLogBuffer = [];
 let convexTickCount = 0;
 
@@ -157,27 +156,9 @@ async function activeEventsBySeries(seriesId) {
   return Array.isArray(data) ? data : (data.events || data.data || []);
 }
 
-async function exactScoreMarkets() {
-  if (Date.now() - exactScoreCache.at < 60_000) return exactScoreCache.markets;
-  try {
-    const data = await getJson(
-      GAMMA_URL + "/markets?active=true&closed=false&tag_slug=soccer&q=" +
-      encodeURIComponent("Exact Score") + "&limit=100&offset=0"
-    );
-    const rows = Array.isArray(data) ? data : (data.markets || data.data || []);
-    exactScoreCache = { at: Date.now(), markets: rows };
-    log("INFO", "exact_score_market_refresh", "Polymarket exact-score market index refreshed", { markets: rows.length });
-    return rows;
-  } catch (err) {
-    log("WARN", "exact_score_market_refresh_failed", "Could not refresh Polymarket exact-score market index", { message: err.message });
-    return exactScoreCache.markets;
-  }
-}
-
 async function discoverPolymarket() {
   const now = Date.now();
   let events = [];
-  const indexedExactScoreMarkets = await exactScoreMarkets();
 
   try {
     const data = await getJson(
@@ -232,30 +213,26 @@ async function discoverPolymarket() {
     seen.add(key);
 
     const [home, away] = extractTeams(event);
-    let markets = Array.isArray(event.markets) ? event.markets : [];
-    const relatedExactScore = indexedExactScoreMarkets.filter(m => {
-      const nestedEvents = Array.isArray(m.events) ? m.events : [];
-      const sameEvent = nestedEvents.some(e => text(e?.id || e?.eventId) === id);
-      const q = text(m.question);
-      const sameTeams = home && away &&
-        (teamSimilarity(home, q) > 0.45 || q.toLowerCase().includes(norm(home))) &&
-        (teamSimilarity(away, q) > 0.45 || q.toLowerCase().includes(norm(away)));
-      return sameEvent || sameTeams;
-    });
-    if (relatedExactScore.length) markets = [...markets, ...relatedExactScore];
-
-    if (!markets.some(m => /correct score|exact score|score/i.test(text(m?.question || m?.title)) ||
-      (Array.isArray(parseJson(m?.outcomes)) && parseJson(m?.outcomes).some(v => /^1\s*[-:]\s*1$/.test(text(v)))))) {
-      try {
-        // Football exact-score markets are submarkets of the event. Fetch the event
-        // record directly instead of relying on /markets?event_id=..., which does
-        // not reliably return the event's submarkets.
-        const eventData = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(id));
-        const extraMarkets = Array.isArray(eventData?.markets) ? eventData.markets : [];
-        if (extraMarkets.length) markets = [...markets, ...extraMarkets];
-      } catch (err) {
-        log("WARN", "exact_score_markets_fetch_failed", "Could not load detailed Polymarket markets for candidate", { eventId: id, message: err.message });
-      }
+    // First find the football match/event. Only after we have the match,
+    // load that event's own submarkets and look for the 1:1 outcome inside it.
+    // Do not globally search for "1:1" markets: that can detach the price
+    // from the actual match we are monitoring.
+    let markets = Array.isArray(event.markets) ? [...event.markets] : [];
+    try {
+      const eventData = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(id));
+      const extraMarkets = Array.isArray(eventData?.markets) ? eventData.markets : [];
+      if (extraMarkets.length) markets = [...markets, ...extraMarkets];
+      log("INFO", "match_markets_loaded", "Loaded markets directly from football match event", {
+        eventId: id,
+        teams: [home, away],
+        markets: markets.length
+      });
+    } catch (err) {
+      log("WARN", "match_markets_fetch_failed", "Could not load markets directly from football match event", {
+        eventId: id,
+        teams: [home, away],
+        message: err.message
+      });
     }
 
     const item = {
