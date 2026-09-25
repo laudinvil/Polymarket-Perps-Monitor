@@ -121,6 +121,20 @@ export const claimTelegramAlert = mutation({
         .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
       if (!buy) return false;
     }
+    if (args.marketSlug.endsWith(":FIRST_GOAL")) {
+      const buyKey = args.marketSlug.slice(0, -11) + ":BUY";
+      const buy = await ctx.db.query("telegramDedupe")
+        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
+      if (!buy) return false;
+    }
+    if (args.marketSlug.endsWith(":SELL_11")) {
+      const baseKey = args.marketSlug.slice(0, -8);
+      const buy = await ctx.db.query("telegramDedupe")
+        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":BUY")).first();
+      const firstGoal = await ctx.db.query("telegramDedupe")
+        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":FIRST_GOAL")).first();
+      if (!buy || !firstGoal) return false;
+    }
     if (existing) await ctx.db.patch(existing._id, { claimedAt: now });
     else await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now });
     return true;
