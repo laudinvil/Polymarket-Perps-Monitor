@@ -20,6 +20,7 @@ const CHAINLINK_WS =
 
 const CONVEX_URL = process.env.CONVEX_URL || "https://brainy-canary-207.eu-west-1.convex.cloud";
 const CONVEX_LOG_PATH = "btc5mState:logBtc5m";
+const CONVEX_DEDUPE_PATH = "btc5mState:claimTelegramMarketV3";
 
 let stopping = false;
 let rtdsWs = null;
@@ -422,6 +423,31 @@ function bestEdge(probabilityUp, prices) {
     .sort((a, b) => b.edge - a.edge)[0] || null;
 }
 
+async function claimAlertUrl(url) {
+  const response = await fetch(CONVEX_URL + "/api/mutation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      path: CONVEX_DEDUPE_PATH,
+      args: { marketSlug: url },
+      format: "json"
+    }),
+    signal: AbortSignal.timeout(5000)
+  });
+
+  if (!response.ok) {
+    throw new Error("Convex dedupe HTTP " + response.status);
+  }
+
+  const body = await response.json();
+  const allowed = body?.value?.allowed ?? body?.result?.allowed;
+  if (typeof allowed !== "boolean") {
+    throw new Error("Convex dedupe returned invalid response");
+  }
+
+  return allowed;
+}
+
 async function sendTelegram(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
   const chatId = process.env.TELEGRAM_CHAT_ID || "";
@@ -456,8 +482,25 @@ async function sendTelegram(message) {
 async function maybeAlert(market, probabilityUp, prices, edge) {
   if (!edge || edge.edge < MIN_EDGE) return;
 
-  const periodKey = currentPeriodStart + ":" + edge.side;
-  if (alertedPeriods.has(periodKey)) return;
+  const alertUrl = market.url;
+
+  if (alertedPeriods.has(alertUrl)) {
+    log("INFO", "duplicate_alert_blocked", "Duplicate alert blocked by identical URL", {
+      url: alertUrl,
+      reason: "local_url_dedupe"
+    });
+    return;
+  }
+
+  const allowed = await claimAlertUrl(alertUrl);
+  if (!allowed) {
+    log("INFO", "duplicate_alert_blocked", "Duplicate alert blocked by identical URL", {
+      url: alertUrl,
+      reason: "convex_url_dedupe"
+    });
+    alertedPeriods.add(alertUrl);
+    return;
+  }
 
   const comparison = dataDelta();
   const remaining = Math.max(
@@ -490,7 +533,7 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
   ].join("\n");
 
   await sendTelegram(message);
-  alertedPeriods.add(periodKey);
+  alertedPeriods.add(alertUrl);
 
   log("INFO", "telegram_alert_sent", "BTC 5M edge alert sent", {
     periodStart: new Date(currentPeriodStart).toISOString(),
