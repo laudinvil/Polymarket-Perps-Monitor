@@ -6,11 +6,8 @@ const MONITOR = "polymarket-football-1-1";
 export const ingest = mutation({
   args: {
     logs: v.array(v.object({
-      level: v.string(),
-      event: v.string(),
-      message: v.string(),
-      data: v.optional(v.string()),
-      createdAt: v.number(),
+      level: v.string(), event: v.string(), message: v.string(),
+      data: v.optional(v.string()), createdAt: v.number(),
     })),
     tickCount: v.optional(v.number()),
   },
@@ -20,21 +17,31 @@ export const ingest = mutation({
     const existing = await ctx.db.query("footballStats")
       .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();
 
-    let eventsScanned = 0, footballEvents = 0, candidateGatePassed = 0;
+    let eventsScanned = 0, discoveryMatchesFound = 0, footballEvents = 0, candidateGatePassed = 0;
     let liveToday = 0, preMatchFuture = 0, unknownDate = 0, childMarketFiltered = 0;
-    let oneOneMarketFound = 0, rejectedBuyFilter = 0;
-    let candidates = 0, evaluations = 0, balanced = 0, marketMissing = 0;
-    let unresolved = 0, buyAlerts = 0, sellAlerts = 0, errors = 0;
+    let oneOneMarketFound = 0, rejectedBuyFilter = 0, candidates = 0, evaluations = 0;
+    let balanced = 0, marketMissing = 0, unresolved = 0, buyAlerts = 0, sellAlerts = 0, errors = 0;
 
     for (const item of args.logs) {
       await ctx.db.insert("footballLogs", {
         monitor: MONITOR, level: item.level, event: item.event,
         message: item.message, data: item.data, createdAt: item.createdAt,
       });
-
-      if (item.event === "event_source_response" && item.data) { try { eventsScanned += Number(JSON.parse(item.data).rowCount ?? 0); } catch {} }
+      if (item.event === "event_source_response" && item.data) {
+        try { eventsScanned += Number(JSON.parse(item.data).rowCount ?? 0); } catch {}
+      }
+      if (item.event === "discovery_done" && item.data) {
+        try { discoveryMatchesFound += Number(JSON.parse(item.data).matchesFound ?? 0); } catch {}
+      }
       footballEvents += item.event === "candidate_gate_passed" ? 1 : 0;
-      if (item.event === "match_timing_classified" && item.data) { try { const d=JSON.parse(item.data); liveToday += Number(d.liveToday ?? 0); preMatchFuture += Number(d.preMatchFuture ?? 0); unknownDate += Number(d.unknownDate ?? 0); } catch {} }
+      if (item.event === "match_timing_classified" && item.data) {
+        try {
+          const d = JSON.parse(item.data);
+          liveToday += Number(d.liveToday ?? 0);
+          preMatchFuture += Number(d.preMatchFuture ?? 0);
+          unknownDate += Number(d.unknownDate ?? 0);
+        } catch {}
+      }
       childMarketFiltered += item.event === "child_market_event_filtered" ? 1 : 0;
       oneOneMarketFound += item.event === "one_one_market_found" ? 1 : 0;
       rejectedBuyFilter += item.event === "candidate_rejected_buy_filter" ? 1 : 0;
@@ -45,12 +52,7 @@ export const ingest = mutation({
       unresolved += item.event === "match_unresolved" ? 1 : 0;
       buyAlerts += item.event === "one_one_buy_alert_sent" ? 1 : 0;
       sellAlerts += item.event === "one_one_sell_alert_sent" ? 1 : 0;
-      errors += [
-        "discovery_failed",
-        "event_source_http_error",
-        "event_source_json_error",
-      ].includes(item.event) ? 1 : 0;
-
+      errors += ["discovery_failed", "event_source_http_error", "event_source_json_error"].includes(item.event) ? 1 : 0;
       if (item.event === "one_one_evaluation" && item.data) {
         try { if (JSON.parse(item.data).balanced === true) balanced += 1; } catch {}
       }
@@ -59,25 +61,18 @@ export const ingest = mutation({
     const patch = {
       ticks: (existing?.ticks ?? 0) + (args.tickCount ?? 0),
       eventsScanned: (existing?.eventsScanned ?? 0) + eventsScanned,
+      discoveryMatchesFound: (existing?.discoveryMatchesFound ?? 0) + discoveryMatchesFound,
       footballEvents: (existing?.footballEvents ?? 0) + footballEvents,
       candidateGatePassed: (existing?.candidateGatePassed ?? 0) + candidateGatePassed,
-      liveToday: (existing?.liveToday ?? 0) + liveToday,
-      preMatchFuture: (existing?.preMatchFuture ?? 0) + preMatchFuture,
-      unknownDate: (existing?.unknownDate ?? 0) + unknownDate,
-      childMarketFiltered: (existing?.childMarketFiltered ?? 0) + childMarketFiltered,
+      liveToday: (existing?.liveToday ?? 0) + liveToday, preMatchFuture: (existing?.preMatchFuture ?? 0) + preMatchFuture,
+      unknownDate: (existing?.unknownDate ?? 0) + unknownDate, childMarketFiltered: (existing?.childMarketFiltered ?? 0) + childMarketFiltered,
       oneOneMarketFound: (existing?.oneOneMarketFound ?? 0) + oneOneMarketFound,
       rejectedBuyFilter: (existing?.rejectedBuyFilter ?? 0) + rejectedBuyFilter,
-      candidates: (existing?.candidates ?? 0) + candidates,
-      evaluations: (existing?.evaluations ?? 0) + evaluations,
-      balanced: (existing?.balanced ?? 0) + balanced,
-      marketMissing: (existing?.marketMissing ?? 0) + marketMissing,
-      unresolved: (existing?.unresolved ?? 0) + unresolved,
-      buyAlerts: (existing?.buyAlerts ?? 0) + buyAlerts,
-      sellAlerts: (existing?.sellAlerts ?? 0) + sellAlerts,
-      errors: (existing?.errors ?? 0) + errors,
-      updatedAt: now,
+      candidates: (existing?.candidates ?? 0) + candidates, evaluations: (existing?.evaluations ?? 0) + evaluations,
+      balanced: (existing?.balanced ?? 0) + balanced, marketMissing: (existing?.marketMissing ?? 0) + marketMissing,
+      unresolved: (existing?.unresolved ?? 0) + unresolved, buyAlerts: (existing?.buyAlerts ?? 0) + buyAlerts,
+      sellAlerts: (existing?.sellAlerts ?? 0) + sellAlerts, errors: (existing?.errors ?? 0) + errors, updatedAt: now,
     };
-
     if (existing) await ctx.db.patch(existing._id, patch);
     else await ctx.db.insert("footballStats", { monitor: MONITOR, ...patch });
     return null;
@@ -86,89 +81,48 @@ export const ingest = mutation({
 
 export const stats = query({
   args: {},
-  returns: v.union(
-    v.object({
-      monitor: v.string(), ticks: v.number(),
-      eventsScanned: v.optional(v.number()),
-      footballEvents: v.optional(v.number()),
-      candidateGatePassed: v.optional(v.number()),
-      liveToday: v.optional(v.number()), preMatchFuture: v.optional(v.number()), unknownDate: v.optional(v.number()),
-      childMarketFiltered: v.optional(v.number()), oneOneMarketFound: v.optional(v.number()), rejectedBuyFilter: v.optional(v.number()),
-      candidates: v.number(), evaluations: v.number(),
-      balanced: v.number(), marketMissing: v.number(),
-      unresolved: v.number(), buyAlerts: v.number(), sellAlerts: v.number(),
-      errors: v.number(), updatedAt: v.number(),
-    }), v.null(),
-  ),
+  returns: v.union(v.object({
+    monitor: v.string(), ticks: v.number(), eventsScanned: v.optional(v.number()),
+    discoveryMatchesFound: v.optional(v.number()), footballEvents: v.optional(v.number()),
+    candidateGatePassed: v.optional(v.number()), liveToday: v.optional(v.number()),
+    preMatchFuture: v.optional(v.number()), unknownDate: v.optional(v.number()),
+    childMarketFiltered: v.optional(v.number()), oneOneMarketFound: v.optional(v.number()),
+    rejectedBuyFilter: v.optional(v.number()), candidates: v.number(), evaluations: v.number(),
+    balanced: v.number(), marketMissing: v.number(), unresolved: v.number(),
+    buyAlerts: v.number(), sellAlerts: v.number(), errors: v.number(), updatedAt: v.number(),
+  }), v.null()),
   handler: async (ctx) => {
     const row = await ctx.db.query("footballStats")
       .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();
     if (!row) return null;
     return {
-      monitor: row.monitor, ticks: row.ticks,
-      eventsScanned: row.eventsScanned ?? 0,
-      footballEvents: row.footballEvents ?? 0,
-      candidateGatePassed: row.candidateGatePassed ?? 0,
-      liveToday: row.liveToday ?? 0, preMatchFuture: row.preMatchFuture ?? 0, unknownDate: row.unknownDate ?? 0,
-      childMarketFiltered: row.childMarketFiltered ?? 0, oneOneMarketFound: row.oneOneMarketFound ?? 0, rejectedBuyFilter: row.rejectedBuyFilter ?? 0,
-      candidates: row.candidates, evaluations: row.evaluations,
-      balanced: row.balanced, marketMissing: row.marketMissing,
-      unresolved: row.unresolved, buyAlerts: row.buyAlerts,
-      sellAlerts: row.sellAlerts, errors: row.errors, updatedAt: row.updatedAt,
+      monitor: row.monitor, ticks: row.ticks, eventsScanned: row.eventsScanned ?? 0,
+      discoveryMatchesFound: row.discoveryMatchesFound ?? 0, footballEvents: row.footballEvents ?? 0,
+      candidateGatePassed: row.candidateGatePassed ?? 0, liveToday: row.liveToday ?? 0,
+      preMatchFuture: row.preMatchFuture ?? 0, unknownDate: row.unknownDate ?? 0,
+      childMarketFiltered: row.childMarketFiltered ?? 0, oneOneMarketFound: row.oneOneMarketFound ?? 0,
+      rejectedBuyFilter: row.rejectedBuyFilter ?? 0, candidates: row.candidates, evaluations: row.evaluations,
+      balanced: row.balanced, marketMissing: row.marketMissing, unresolved: row.unresolved,
+      buyAlerts: row.buyAlerts, sellAlerts: row.sellAlerts, errors: row.errors, updatedAt: row.updatedAt,
     };
   },
 });
 
 export const claimTelegramAlert = mutation({
-  args: { monitor: v.string(), marketSlug: v.string() },
-  returns: v.boolean(),
+  args: { monitor: v.string(), marketSlug: v.string() }, returns: v.boolean(),
   handler: async (ctx, args) => {
     const now = Date.now();
     const existing = await ctx.db.query("telegramDedupe")
-      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
-      .first();
-
+      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug)).first();
     if (existing && now - existing.claimedAt < 5 * 60 * 1000) return false;
-
     if (args.marketSlug.endsWith(":SELL")) {
       const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
       const buy = await ctx.db.query("telegramDedupe")
-        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey))
-        .first();
+        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
       if (!buy) return false;
     }
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { claimedAt: now });
-    } else {
-      await ctx.db.insert("telegramDedupe", {
-        monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now
-      });
-    }
+    if (existing) await ctx.db.patch(existing._id, { claimedAt: now });
+    else await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now });
     return true;
   },
-});
-
-export const releaseTelegramAlert = mutation({
-  args: { monitor: v.string(), marketSlug: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("telegramDedupe")
-      .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
-      .first();
-    if (existing) await ctx.db.delete(existing._id);
-    return null;
-  },
-});
-
-export const recentLogs = query({
-  args: { limit: v.optional(v.number()) },
-  returns: v.array(v.object({
-    _id: v.id("footballLogs"), _creationTime: v.number(),
-    monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
-    data: v.optional(v.string()), createdAt: v.number(),
-  })),
-  handler: async (ctx, args) => await ctx.db.query("footballLogs")
-    .withIndex("by_monitor_time", (q) => q.eq("monitor", MONITOR))
-    .order("desc").take(Math.min(args.limit ?? 500, 1000)),
 });
