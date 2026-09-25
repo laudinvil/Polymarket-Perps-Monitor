@@ -6,10 +6,10 @@ const RUN_MS = 5 * 60 * 60 * 1000;
 const POLL_MS = 15 * 1000;
 const PERIOD_MS = 5 * 60 * 1000;
 const HISTORY_MAX = 240;
-const MIN_EDGE = Number(process.env.BTC_5M_MIN_EDGE ?? "0.02");
-const MIN_ALERT_AGE_MS = 60 * 1000;
-const MIN_MODEL_PROBABILITY = 0.52;
-const MIN_MOVE_BPS = 1;
+const MIN_EDGE = Number(process.env.BTC_5M_MIN_EDGE ?? "0.015");
+const MIN_ALERT_AGE_MS = 45 * 1000;
+const MIN_MODEL_PROBABILITY = 0.515;
+const MIN_MOVE_BPS = 0.5;
 const CONFIRMATION_SAMPLES = 2;
 const CLOB_CONFIRMATION_TICKS = 2;
 
