@@ -25,6 +25,7 @@ let signals = { rv: 0, ret: 0 };
 let startedAt = Date.now();
 let returnSignalTimes = [];
 let lastReturnSignalAt = 0;
+let lastReturnCascadeAlertAt = 0;
 
 function log(level, event, message, data) {
   console.log(JSON.stringify({ level, event, message, ...(data === undefined ? {} : { data: JSON.stringify(data) }) }));
@@ -134,7 +135,10 @@ function evaluate(now) {
       returnSignalTimes.push(now);
     }
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
-      alert("RETURN", "LAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      if (now - lastReturnCascadeAlertAt >= RETURN_CASCADE_WINDOW_MS) {
+        alert("RETURN", "LAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+        lastReturnCascadeAlertAt = now;
+      }
       returnSignalTimes = [];
       lastReturnSignalAt = now;
     }
