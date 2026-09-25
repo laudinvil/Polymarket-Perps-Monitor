@@ -18,6 +18,20 @@ http.route({
 });
 
 http.route({
+  path: "/football/status",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    const stats = await ctx.runQuery(internal.footballLogs.stats, {});
+    const recentLogs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit: 50 });
+    return Response.json({
+      monitor: "polymarket-football-1-1",
+      stats,
+      recentLogs,
+    });
+  }),
+});
+
+http.route({
   path: "/football/claim",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
