@@ -636,21 +636,6 @@ function stop() {
   log("INFO", "monitor_stopped", "Polymarket live football monitor stopped");
 }
 
-async function sendTestAlert() {
-  const message = [
-    "⚽ POLYMARKET · LIVE",
-    "",
-    "TEST ALERT",
-    "",
-    "Telegram delivery test",
-    "",
-    "➡️ OPEN MATCH",
-    "https://polymarket.com"
-  ].join("\n");
-  await sendTelegram(message);
-  log("INFO", "telegram_test_alert_sent", "Test Telegram alert sent");
-}
-
 async function start() {
   log("INFO", "monitor_started", "Polymarket football live monitor started", {
     pollSec: POLL_MS / 1000,
@@ -660,7 +645,6 @@ async function start() {
     historyMinutes: HISTORY_MS / 60_000
   });
 
-  await sendTestAlert();
   await tick();
   timer = setInterval(() => { tick(); }, POLL_MS);
   setTimeout(stop, RUN_MS);
