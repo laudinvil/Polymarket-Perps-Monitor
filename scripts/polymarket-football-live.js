@@ -82,6 +82,15 @@ function eventUrl(event) {
   return slug ? "https://polymarket.com/event/" + slug : "";
 }
 
+function isPrimaryMatchEvent(event) {
+  const title = text(event.title || event.question);
+  // The soccer index also contains separate market events for the same fixture:
+  // "Total Corners", "More Markets", "First Team to Score", "Exact Score", etc.
+  // They are not independent matches and must never become candidates.
+  return !/(?:^|\s)(?:total corners|more markets|first team to score|exact score|correct score|second half result|halftime result|half time result|both teams to score|double chance|match result)\s*$/i.test(title) &&
+    !/\s[-–—:]\s*(?:total corners|more markets|first team to score|exact score|correct score|second half result|halftime result|half time result|both teams to score|double chance|match result)\b/i.test(title);
+}
+
 function extractTeams(event) {
   const title = text(event.title || event.question);
   const candidates = [
@@ -299,6 +308,15 @@ async function discoverPolymarket() {
       }
 
       footballEventFound++;
+
+      if (!isPrimaryMatchEvent(event)) {
+        log("INFO", "non_match_market_filtered", "Football event is a market variant, not the primary fixture", {
+          eventId: text(event.id || event.eventId || event.event_id),
+          title: text(event.title || event.question),
+          source: result.name
+        });
+        continue;
+      }
 
       const [home, away] = extractTeams(event);
       if (!home || !away) {
