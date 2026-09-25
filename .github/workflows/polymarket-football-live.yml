@@ -24,20 +24,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Verify football monitor configuration
-        env:
-          SPORTMONKS_TOKEN: ${{ secrets.SPORTMONKS_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          test -n "$SPORTMONKS_TOKEN" || { echo "ERROR: SPORTMONKS_TOKEN is missing"; exit 1; }
-          test -n "$TELEGRAM_BOT_TOKEN" || { echo "ERROR: TELEGRAM_BOT_TOKEN is missing"; exit 1; }
-          test -n "$TELEGRAM_CHAT_ID" || { echo "ERROR: TELEGRAM_CHAT_ID is missing"; exit 1; }
-          echo "Football monitor credentials are configured"
-
       - name: Discover live Polymarket football
         env:
-          SPORTMONKS_TOKEN: ${{ secrets.SPORTMONKS_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/polymarket-football-live.js
