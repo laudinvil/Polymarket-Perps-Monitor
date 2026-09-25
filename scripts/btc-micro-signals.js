@@ -11,7 +11,7 @@ const RV_BASELINE_MS = 60_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 
 const RV_Z_THRESHOLD = 2.0;
-const RETURN_Z_THRESHOLD = 5.0;
+const RETURN_Z_THRESHOLD = 6.0;
 
 let stopping = false;
 let ws = null;
