@@ -363,6 +363,8 @@ async function maybeOneOneAlert(match, nutmeg) {
       "➡️ OPEN MATCH",
       match.url
     ].join("\n");
+    const claimed = await claimTelegramAlert(key + ":BUY");
+    if (!claimed) return;
     await sendTelegram(message);
     state.first = true;
     state.firstPrice = market.price;
@@ -380,6 +382,8 @@ async function maybeOneOneAlert(match, nutmeg) {
       "➡️ OPEN MATCH",
       match.url
     ].join("\n");
+    const claimed = await claimTelegramAlert(key + ":SELL");
+    if (!claimed) return;
     await sendTelegram(message);
     state.second = true;
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", { eventId: match.eventId, price: market.price, firstPrice: state.firstPrice });
@@ -565,6 +569,23 @@ async function enrichLiveMatches(polymarketMatches) {
     match.provider = "sportscore";
     match.providerFixtureId = resolvedMatch.fixtureId;
     match.live = normalizeSportScore(detail);
+  }
+}
+
+async function claimTelegramAlert(key) {
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  try {
+    const response = await fetch(base.replace(/\/$/, "") + "/football/claim", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 200) return true;
+    if (response.status === 409) return false;
+    throw new Error("Convex claim HTTP " + response.status);
+  } catch (err) {
+    log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
+    return false;
   }
 }
 
