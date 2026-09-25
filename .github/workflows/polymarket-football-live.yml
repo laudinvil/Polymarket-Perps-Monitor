@@ -1,4 +1,5 @@
 name: Polymarket Football · Live Discovery
+run-name: Football monitor · event-first scan
 
 on:
   workflow_dispatch:
