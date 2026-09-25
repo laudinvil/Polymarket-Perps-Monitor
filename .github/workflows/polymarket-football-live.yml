@@ -1,4 +1,5 @@
 name: Polymarket Football · Live Discovery
+# Restored full strategy pipeline; 20s continuous monitor
 run-name: Football monitor · event-first scan
 
 on:
