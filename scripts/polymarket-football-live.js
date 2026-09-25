@@ -2,6 +2,7 @@ const GAMMA_URL = "https://gamma-api.polymarket.com";
 const SPORTScore_URL = "https://sportscore.com/api/widget";
 
 const POLL_MS = 15_000;
+const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
@@ -543,6 +544,10 @@ async function enrichLiveMatches(polymarketMatches) {
       resolvedMatch = resolveSportScore(match, liveFixtures);
       if (resolvedMatch) {
         const slug = sportscoreSlug(resolvedMatch.fixture.url);
+        if (!slug) {
+          log("WARN", "sportscore_slug_missing", "SportScore match matched but fixture URL has no usable slug", { fixture: resolvedMatch.fixture });
+          continue;
+        }
         resolved.set(key, { fixtureId: slug, confidence: resolvedMatch.score });
         log("INFO", "match_resolved", "Polymarket match linked to SportScore fixture", {
           eventId: match.eventId, url: match.url,
@@ -616,7 +621,7 @@ async function maybeAlert(match) {
   const best = bestEdge(match);
   if (!match.url) return;
 
-  if (!best || best.edge <= 0) return;
+  if (!best || best.edge < MIN_EDGE) return;
 
   const key = match.eventId || match.slug;
   const bucket = Math.floor(Date.now() / ALERT_BUCKET_MS);
