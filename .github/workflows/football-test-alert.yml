@@ -1,0 +1,80 @@
+name: Football Polymarket · One-shot discovery test
+
+on:
+  push:
+    paths:
+      - ".github/workflows/football-test-alert.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discover real 1:1 market and send test alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          node <<'NODE'
+          const base = "https://gamma-api.polymarket.com";
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          async function get(url) {
+            const r = await fetch(url, {headers:{accept:"application/json"}});
+            if (!r.ok) throw new Error("HTTP "+r.status+" "+url);
+            return r.json();
+          }
+          const text = v => typeof v === "string" ? v.trim() : "";
+          const parse = v => { if (typeof v !== "string") return v; try { return JSON.parse(v); } catch { return v; } };
+          let found = null;
+          for (let offset = 0; offset < 10000 && !found; offset += 500) {
+            const data = await get(base + "/markets?active=true&closed=false&limit=500&offset="+offset);
+            const rows = Array.isArray(data) ? data : (data.markets || data.data || []);
+            console.log("MARKET_PAGE", offset, rows.length);
+            for (const m of rows) {
+              const q = text(m.question || m.title);
+              const hay = JSON.stringify(m).toLowerCase();
+              if (!/(football|soccer)/i.test(hay)) continue;
+              if (!/(exact score|correct score)/i.test(q)) continue;
+              const outcomes = parse(m.outcomes);
+              const prices = parse(m.outcomePrices || m.outcome_prices);
+              if (!Array.isArray(outcomes) || !Array.isArray(prices)) continue;
+              const idx = outcomes.findIndex(x => /^1\\s*[-:]\\s*1$/i.test(text(x)));
+              if (idx < 0 || !Number.isFinite(Number(prices[idx]))) continue;
+              let event = Array.isArray(m.events) && m.events.length ? m.events[0] : null;
+              const eventId = text(m.eventId || m.event_id || event?.id);
+              if (!event && eventId) {
+                try { event = await get(base+"/events/"+encodeURIComponent(eventId)); } catch {}
+              }
+              if (!event) continue;
+              const slug = text(event.slug || m.eventSlug || m.event_slug);
+              if (!slug) continue;
+              const title = text(event.title || event.question || q);
+              if (!/(\\bvs\\.?\\b|\\bv\\.?\\b|\\bversus\\b)/i.test(title)) continue;
+              found = {title, slug, price:Number(prices[idx]), question:q, marketId:text(m.id)};
+              break;
+            }
+            if (rows.length < 500) break;
+            await sleep(50);
+          }
+          if (!found) throw new Error("No real football Exact Score 1:1 market found");
+          const url = "https://polymarket.com/event/"+found.slug;
+          const msg = [
+            "⚽ 1:1 · BUY · TEST",
+            "",
+            found.title,
+            "SCORE: 0–0",
+            "1:1 PRICE: "+(found.price*100).toFixed(1)+"%",
+            "",
+            "➡️ OPEN MATCH",
+            url
+          ].join("\n");
+          console.log("FOUND", JSON.stringify(found));
+          console.log("ALERT", msg);
+          const resp = await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage", {
+            method:"POST",
+            headers:{"content-type":"application/json"},
+            body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:msg,disable_web_page_preview:false})
+          });
+          const body = await resp.text();
+          if (!resp.ok) throw new Error("Telegram HTTP "+resp.status+" "+body);
+          console.log("TELEGRAM_OK", body);
+          NODE
