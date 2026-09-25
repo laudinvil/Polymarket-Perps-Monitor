@@ -118,14 +118,23 @@ function evaluate(now) {
     const sd = std(retBaseline, m);
     const currentReturn = current[current.length - 1].r;
     const z = sd > 0 ? (currentReturn - m) / sd : 0;
-    const isRealReturnSignal = Math.abs(currentReturn) > 0;
-    if (isRealReturnSignal && now !== lastReturnSignalAt) {
+    const absZ = Math.abs(z);
+    const previous = samples.length >= 2 ? samples[samples.length - 2] : null;
+    const previousBaseline = previous ? samples.filter(s => s.t >= baselineCutoff && s.t < previous.t).map(s => s.r) : [];
+    let previousZ = 0;
+    if (previousBaseline.length >= 30) {
+      const pm = mean(previousBaseline);
+      const psd = std(previousBaseline, pm);
+      previousZ = psd > 0 ? (previous.r - pm) / psd : 0;
+    }
+    const isNewExtreme = Math.abs(previousZ) > 0 && absZ > Math.abs(previousZ);
+    if (isNewExtreme && now !== lastReturnSignalAt) {
       lastReturnSignalAt = now;
       returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
       returnSignalTimes.push(now);
     }
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
-      alert("RETURN", "1S RETURN CASCADE: <b>3 real signals / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
+      alert("RETURN", "1S RETURN CASCADE: <b>3 new extremes / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
       returnSignalTimes = [];
       lastReturnSignalAt = now;
     }
