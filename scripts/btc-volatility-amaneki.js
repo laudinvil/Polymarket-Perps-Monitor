@@ -2,7 +2,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 const AMANEKI_URL = "https://api.amaneki.com/v1/regime/btcusdt";
-const POLL_MS = 5 * 1000;
+const POLL_MS = 2 * 1000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/";
 
@@ -92,17 +92,19 @@ async function poll() {
       computed_at_ms: data.computed_at_ms
     });
 
-    const transitionedToAlertRegime =
-      (regime === "normal" || regime === "high") &&
-      regime !== lastRegime;
+    const transitionedToNewRegime =
+      lastRegime !== null && regime !== lastRegime;
 
     lastRegime = regime;
 
-    if (!transitionedToAlertRegime) return;
+    if (!transitionedToNewRegime) return;
 
     const eventTime = Number(data.computed_at_ms || data.last_update_ms || Date.now());
     const label = regime.toUpperCase();
-    const icon = regime === "high" ? "🔥" : "⚠️";
+    const icon =
+      regime === "high" ? "🔥" :
+      regime === "normal" ? "⚠️" :
+      "🟢";
 
     const text = [
       icon + " <b>BTC VOLATILITY " + label + "</b>",
@@ -115,8 +117,9 @@ async function poll() {
       ""
     ].join("\n");
 
-    log("INFO", "regime_alert", "BTC volatility entered alert regime", {
-      regime,
+    log("INFO", "regime_alert", "BTC volatility regime changed", {
+      from: regime === lastRegime ? null : lastRegime,
+      to: regime,
       z_vol: zVol,
       eventTime
     });
@@ -140,7 +143,8 @@ async function start() {
     source: AMANEKI_URL,
     symbol: "BTCUSDT",
     pollMs: POLL_MS,
-    strategy: "alert_on_transition_to_normal_or_high",
+    strategy: "alert_on_every_regime_change",
+    alertRegimes: ["low", "normal", "high"],
     turboflowUrl: TURBOFLOW_URL
   });
 
