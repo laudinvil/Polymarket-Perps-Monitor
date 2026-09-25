@@ -355,16 +355,23 @@ async function tick() {
     const now = Date.now();
     const todayUtc = new Date(now).toISOString().slice(0, 10);
     const fixtureDate = match => {
-      const m = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/);
-      return m ? m[1] : null;
+      const slugMatch = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/);
+      if (slugMatch) return slugMatch[1];
+      const parsed = Date.parse(match.startTime || "");
+      return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
     };
     // Gamma startDate is often the event publication/update timestamp, not
     // the fixture kickoff. The fixture date in the Polymarket slug is the
     // reliable date signal for live-vs-future classification.
-    const liveCandidates = matches.filter(m => fixtureDate(m) === todayUtc);
+    const liveCandidates = matches.filter(m => {
+      const d = fixtureDate(m);
+      const kickoff = Date.parse(m.startTime || "");
+      return d === todayUtc && (Number.isNaN(kickoff) || kickoff <= now);
+    });
     const preMatchCandidates = matches.filter(m => {
       const d = fixtureDate(m);
-      return Boolean(d && d > todayUtc);
+      const kickoff = Date.parse(m.startTime || "");
+      return Boolean(d && (d > todayUtc || (d === todayUtc && Number.isFinite(kickoff) && kickoff > now)));
     });
     log("INFO", "match_timing_classified", "Classified football candidates by fixture date", {
       todayUtc,
@@ -388,25 +395,17 @@ async function tick() {
       stage: "evaluation", candidates: matches.length
     });
 
-    // Load missing event markets concurrently before evaluation. The old
-    // per-match lazy loading could serialize up to 10s per candidate and
-    // prevent the monitor from ever reaching the alert decision.
-    const marketLoads = matches.filter(m =>
-      (!Array.isArray(m.markets) || !m.markets.length) && m.eventId
-    );
-    if (marketLoads.length) {
-      log("INFO", "event_markets_batch_start", "Preloading missing Polymarket event markets", {
-        count: marketLoads.length
-      });
-      await Promise.all(marketLoads.map(match => ensureEventMarkets(match)));
-      log("INFO", "event_markets_batch_done", "Finished preloading Polymarket event markets", {
-        count: marketLoads.length
-      });
-    }
-
+    // The 1:1 market is not a discovery or BUY gate. Do not load hundreds
+    // of event-market payloads before reaching the alert decision.
     for (const match of matches) {
       const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
-      const preMatch = Boolean(slugDate && slugDate > new Date().toISOString().slice(0, 10));
+      const kickoff = Date.parse(match.startTime || "");
+      const fixtureDay = slugDate || (Number.isNaN(kickoff) ? null : new Date(kickoff).toISOString().slice(0, 10));
+      const preMatch = Boolean(
+        fixtureDay &&
+        (fixtureDay > new Date().toISOString().slice(0, 10) ||
+         (fixtureDay === new Date().toISOString().slice(0, 10) && Number.isFinite(kickoff) && kickoff > Date.now()))
+      );
 
       if (preMatch) {
         const nm = findNutmegMatch(match, nutmeg);
