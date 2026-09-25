@@ -134,7 +134,7 @@ export const recentLogs = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(v.object({
     _id: v.id("footballLogs"), _creationTime: v.number(),
-    level: v.string(), event: v.string(), message: v.string(),
+    monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
     data: v.optional(v.string()), createdAt: v.number(),
   })),
   handler: async (ctx, args) => await ctx.db.query("footballLogs")
