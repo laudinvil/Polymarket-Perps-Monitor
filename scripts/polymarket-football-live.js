@@ -341,6 +341,70 @@ function calculateFeatures(match, snapshot) {
   };
 }
 
+
+function goalProbabilities(snapshot, features) {
+  const minute = Math.max(1, Number(snapshot.minute) || 1);
+  const remaining = Math.max(0, 90 - minute);
+  if (!remaining) return { home: 0, away: 0, none: 1 };
+
+  const baseHomeRate = Number.isFinite(snapshot.xg.home) ? snapshot.xg.home / minute : NaN;
+  const baseAwayRate = Number.isFinite(snapshot.xg.away) ? snapshot.xg.away / minute : NaN;
+  const recentHome = Number.isFinite(features?.xg10m?.home) ? features.xg10m.home / 10 : NaN;
+  const recentAway = Number.isFinite(features?.xg10m?.away) ? features.xg10m.away / 10 : NaN;
+
+  const homeRate = Number.isFinite(recentHome) && Number.isFinite(baseHomeRate) ? 0.6 * recentHome + 0.4 * baseHomeRate : baseHomeRate;
+  const awayRate = Number.isFinite(recentAway) && Number.isFinite(baseAwayRate) ? 0.6 * recentAway + 0.4 * baseAwayRate : baseAwayRate;
+
+  if (!Number.isFinite(homeRate) || !Number.isFinite(awayRate)) return { home: NaN, away: NaN, none: NaN };
+
+  const h = Math.max(0, homeRate * remaining);
+  const a = Math.max(0, awayRate * remaining);
+  const total = h + a;
+  const none = Math.exp(-total);
+  const scored = 1 - none;
+  if (total <= 0) return { home: 0, away: 0, none: 1 };
+
+  return { home: scored * h / total, away: scored * a / total, none };
+}
+
+function outcomeName(value) {
+  return text(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function marketPrices(match, probabilities) {
+  const rows = [];
+  for (const market of match.markets || []) {
+    const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
+    const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
+    for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
+      const name = outcomeName(outcomes[i]);
+      const price = Number(prices[i]);
+      if (!Number.isFinite(price)) continue;
+
+      let model = NaN;
+      if (/home|1st|first/.test(name)) model = probabilities.home;
+      else if (/away|2nd|second/.test(name)) model = probabilities.away;
+      else if (/no goal|none/.test(name)) model = probabilities.none;
+
+      rows.push({
+        marketId: market.marketId,
+        question: market.question,
+        outcome: text(outcomes[i]),
+        price,
+        modelProbability: model,
+        edge: Number.isFinite(model) ? model - price : NaN
+      });
+    }
+  }
+  return rows;
+}
+
+function calculateModel(match, snapshot, features) {
+  const probabilities = goalProbabilities(snapshot, features);
+  const prices = marketPrices(match, probabilities);
+  return { probabilities, prices };
+}
+
 function recordHistory(match, snapshot) {
   const key = match.eventId || match.slug;
   if (!key) return null;
@@ -461,6 +525,7 @@ async function enrichLiveMatches(polymarketMatches) {
       match.providerFixtureId = resolvedMatch.fixtureId;
       match.live = normalizeFixture(fixture);
       match.features = recordHistory(match, match.live);
+      match.model = calculateModel(match, match.live, match.features);
     } else {
       match.live = { status: "provider_error" };
     }
