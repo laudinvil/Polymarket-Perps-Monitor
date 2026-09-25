@@ -49,7 +49,7 @@ async function flushConvexLogs() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ logs: batch, tickCount: ticks }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) throw new Error("Convex HTTP " + response.status);
   } catch (err) {
@@ -88,43 +88,27 @@ function extractTeams(event) {
     event.homeTeam && event.awayTeam ? [event.homeTeam, event.awayTeam] : null,
     event.home_team && event.away_team ? [event.home_team, event.away_team] : null
   ].filter(Boolean);
-
   if (candidates.length) return candidates[0].map(text);
-
   const m = title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
   return m ? [m[1].trim(), m[2].trim()] : ["", ""];
 }
 
 function isFootballEvent(event, footballIds) {
   const hay = [
-    event.sport,
-    event.sportSlug,
-    event.sport_slug,
-    event.category,
-    event.tag,
-    event.tags,
-    event.title,
-    event.question,
-    event.series_id,
-    event.seriesId
+    event.sport, event.sportSlug, event.sport_slug, event.category, event.tag,
+    event.tags, event.title, event.question, event.series_id, event.seriesId
   ].flat(Infinity).map(text).join(" ").toLowerCase();
-
   if (footballIds.size) {
-    const ids = [event.series_id, event.seriesId, event.sports_series_id]
-      .map(text).filter(Boolean);
+    const ids = [event.series_id, event.seriesId, event.sports_series_id].map(text).filter(Boolean);
     if (ids.some(id => footballIds.has(id))) return true;
   }
-
   return /football|soccer|epl|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/.test(hay);
 }
 
 async function getJson(url, options = {}) {
   const r = await fetch(url, {
     ...options,
-    headers: {
-      accept: "application/json",
-      ...(options.headers || {})
-    },
+    headers: { accept: "application/json", ...(options.headers || {}) },
     signal: AbortSignal.timeout(10_000)
   });
   if (!r.ok) throw new Error("HTTP " + r.status + " for " + url);
@@ -136,7 +120,6 @@ async function footballSeriesIds() {
     const data = await getJson(GAMMA_URL + "/sports");
     const rows = Array.isArray(data) ? data : (data.sports || data.data || []);
     const ids = new Set();
-
     for (const row of rows) {
       const hay = JSON.stringify(row).toLowerCase();
       if (!/football|soccer/.test(hay)) continue;
@@ -145,7 +128,6 @@ async function footballSeriesIds() {
         if (id) ids.add(id);
       }
     }
-
     return ids;
   } catch (err) {
     log("WARN", "sports_metadata_failed", "Could not load sports metadata; using event text fallback", { message: err.message });
@@ -154,9 +136,7 @@ async function footballSeriesIds() {
 }
 
 async function activeEventsBySeries(seriesId) {
-  const url = GAMMA_URL +
-    "/events?series_id=" + encodeURIComponent(seriesId) +
-    "&active=true&closed=false&limit=500";
+  const url = GAMMA_URL + "/events?series_id=" + encodeURIComponent(seriesId) + "&active=true&closed=false&limit=500";
   const data = await getJson(url);
   return Array.isArray(data) ? data : (data.events || data.data || []);
 }
@@ -169,17 +149,12 @@ async function discoverPolymarket() {
 
   await checkpoint("match_discovery_start", { strategy: "exact_score_1_1_market_first_v2" });
 
-  // Scan market pages in small parallel batches. The previous sequential
-  // scan could spend ~3+ minutes waiting on 10s HTTP timeouts before the
-  // strategy even reached Nutmegly/SportScore.
   const offsets = Array.from({ length: 20 }, (_, i) => i * 500);
   for (let batchStart = 0; batchStart < offsets.length; batchStart += 4) {
     const batch = offsets.slice(batchStart, batchStart + 4);
     const pageResults = await Promise.all(batch.map(async offset => {
       try {
-        const data = await getJson(
-          GAMMA_URL + "/markets?active=true&closed=false&limit=500&offset=" + offset
-        );
+        const data = await getJson(GAMMA_URL + "/markets?active=true&closed=false&limit=500&offset=" + offset);
         return { offset, data, error: null };
       } catch (err) {
         return { offset, data: null, error: err };
@@ -196,7 +171,6 @@ async function discoverPolymarket() {
 
       for (const market of rows) {
         if (!market || market.active === false || market.closed === true) continue;
-
         const question = text(market.question || market.title);
         const hay = JSON.stringify(market).toLowerCase();
         if (!/(football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league)/i.test(hay)) continue;
@@ -206,7 +180,6 @@ async function discoverPolymarket() {
         const prices = parseJson(market.outcomePrices || market.outcome_prices);
         const outcomeList = Array.isArray(outcomes) ? outcomes : [];
         const priceList = Array.isArray(prices) ? prices : [];
-
         const oneOneIndex = outcomeList.findIndex(v => /^1\s*[-:]\s*1$/i.test(text(v)));
         const questionOneOne = /(?:^|\s)1\s*[-:]\s*1(?:\s|\?|$)/i.test(question);
         if (oneOneIndex < 0 && !questionOneOne) continue;
@@ -247,11 +220,9 @@ async function discoverPolymarket() {
         if (!key || seen.has(key)) continue;
 
         const item = {
-          eventId, slug,
-          url: eventUrl(event),
+          eventId, slug, url: eventUrl(event),
           title: text(event.title || event.question || question),
-          homeTeam: home, awayTeam: away,
-          startTime: startValue,
+          homeTeam: home, awayTeam: away, startTime: startValue,
           endTime: event.endDate || event.end_date || event.endTime || null,
           markets: [{
             marketId: text(market.id || market.marketId),
@@ -278,6 +249,7 @@ async function discoverPolymarket() {
         hasMore: data?.has_more ?? data?.hasMore ?? null
       });
     }
+
     if (pageResults.some(({ data }) => {
       const rows = Array.isArray(data) ? data : (data?.markets || data?.data || []);
       const hasMore = data?.has_more ?? data?.hasMore;
@@ -291,26 +263,20 @@ async function discoverPolymarket() {
   });
   return candidates;
 }
+
 function stripHtml(value) {
-  return text(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text(value).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 }
 
 async function nutmegRows() {
   if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
-
   const rows = [];
   const pages = [1, 2, 3, 4, 5];
   const statuses = ["upcoming", "live"];
-
   const jobs = [];
   for (const status of statuses) for (const page of pages) jobs.push({ status, page });
+
   const results = await Promise.all(jobs.map(async ({ status, page }) => {
     try {
       const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
@@ -332,14 +298,13 @@ async function nutmegRows() {
     }
   }));
   for (const part of results) rows.push(...part);
-
   nutmegCache = { at: Date.now(), rows };
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length });
   return rows;
 }
+
 function findNutmegMatch(match, rows) {
-  let best = null;
-  let bestScore = 0;
+  let best = null, bestScore = 0;
   for (const row of rows) {
     const direct = teamSimilarity(match.homeTeam, row.home) + teamSimilarity(match.awayTeam, row.away);
     const swapped = teamSimilarity(match.homeTeam, row.away) + teamSimilarity(match.awayTeam, row.home);
@@ -361,21 +326,14 @@ function findOneOneMarket(match) {
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
     const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
-
-    // Polymarket exact-score markets are commonly separate Yes/No markets,
-    // with the score embedded in the question, e.g.:
-    // "Exact Score: Home 1 - 1 Away?"
     const question = text(market.question || "");
     if (/(?:exact score|correct score)/i.test(question) &&
         /(?:^|\s)1\s*[-:]\s*1(?:\s|\?|$)/i.test(question)) {
       const yesIndex = outcomes.findIndex(v => /^yes$/i.test(text(v)));
       const index = yesIndex >= 0 ? yesIndex : 0;
       const price = Number(prices[index]);
-      if (Number.isFinite(price)) {
-        return { market, outcome: text(outcomes[index] || "Yes"), price };
-      }
+      if (Number.isFinite(price)) return { market, outcome: text(outcomes[index] || "Yes"), price };
     }
-
     for (let i = 0; i < outcomes.length; i++) {
       if (/^1\s*[-:]\s*1$/.test(text(outcomes[i]))) {
         const price = Number(prices[i]);
@@ -405,25 +363,16 @@ async function maybeOneOneAlert(match, nutmeg) {
   const state = oneOneState.get(key) || { first: false, second: false, lastTotal: -1 };
 
   if (!balancedForOneOne(nutmeg)) {
-    log("INFO", "one_one_rejected_balance", "Match rejected by Nutmegly balance filter", {
-      eventId: match.eventId,
-      teams: [match.homeTeam, match.awayTeam],
-      nutmeg: nutmeg?.row || null
-    });
+    log("INFO", "one_one_rejected_balance", "Match rejected by Nutmegly balance filter", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], nutmeg: nutmeg?.row || null });
     oneOneState.set(key, state);
     return;
   }
 
   if (total === 0 && !state.first && state.lastTotal <= 0) {
     const message = [
-      "⚽ 1:1 · BUY",
-      "",
-      match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: 0–0",
-      "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
-      "",
-      "➡️ OPEN MATCH",
-      match.url
+      "⚽ 1:1 · BUY", "", match.homeTeam + " vs " + match.awayTeam,
+      "SCORE: 0–0", "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
+      "", "➡️ OPEN MATCH", match.url
     ].join("\n");
     const claimed = await claimTelegramAlert(key + ":BUY");
     if (!claimed) return;
@@ -442,14 +391,10 @@ async function maybeOneOneAlert(match, nutmeg) {
 
   if (total === 1 && state.first && !state.second) {
     const message = [
-      "⚽ 1:1 · SELL",
-      "",
-      match.homeTeam + " vs " + match.awayTeam,
+      "⚽ 1:1 · SELL", "", match.homeTeam + " vs " + match.awayTeam,
       "SCORE: " + match.live.score.home + "–" + match.live.score.away,
       "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
-      "",
-      "➡️ OPEN MATCH",
-      match.url
+      "", "➡️ OPEN MATCH", match.url
     ].join("\n");
     const claimed = await claimTelegramAlert(key + ":SELL");
     if (!claimed) return;
@@ -481,17 +426,11 @@ async function tick() {
     log("INFO", "polymarket_discovery", "Polymarket football 1:1 candidates discovered", {
       count: matches.length,
       matches: matches.map(m => ({
-        eventId: m.eventId,
-        teams: [m.homeTeam, m.awayTeam],
-        startTime: m.startTime,
-        url: m.url,
-        marketCount: m.markets.length
+        eventId: m.eventId, teams: [m.homeTeam, m.awayTeam], startTime: m.startTime,
+        url: m.url, marketCount: m.markets.length
       }))
     });
 
-    // Pre-match candidates do not need SportScore: the absence of a started
-    // match is determined directly from Polymarket startTime. SportScore is
-    // only needed once the scheduled start time has passed.
     const now = Date.now();
     const preMatchCandidates = matches.filter(m => {
       const startMs = Date.parse(m.startTime || "");
@@ -503,7 +442,6 @@ async function tick() {
 
     for (const match of matches) {
       if (match.live?.status === "provider_error") continue;
-
       const startMs = Date.parse(match.startTime || "");
       const preMatch = Number.isFinite(startMs) && startMs > Date.now();
 
@@ -514,15 +452,11 @@ async function tick() {
 
       const score = preMatch ? { home: 0, away: 0 } : match.live?.score;
       const minute = preMatch ? 0 : match.live?.minute;
-
       const nm = findNutmegMatch(match, nutmeg);
+
       log("INFO", "candidate_match_found", "1:1 market candidate reached strategy filters", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam],
-        preMatch,
-        score,
-        nutmegMatched: Boolean(nm),
-        nutmegScore: nm?.score ?? null
+        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], preMatch, score,
+        nutmegMatched: Boolean(nm), nutmegScore: nm?.score ?? null
       });
 
       if (!nm) {
@@ -540,13 +474,8 @@ async function tick() {
       }
 
       log("INFO", "one_one_evaluation", "1:1 strategy evaluated", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam],
-        score,
-        minute,
-        preMatch,
-        nutmeg: nm?.row || null,
-        balanced: balancedForOneOne(nm),
+        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score, minute, preMatch,
+        nutmeg: nm?.row || null, balanced: balancedForOneOne(nm),
         oneOneMarket: findOneOneMarket(match)?.price ?? null
       });
 
@@ -571,7 +500,6 @@ async function tick() {
     await flushConvexLogs();
   }
 }
-
 
 function participants(fixture) {
   return Array.isArray(fixture?.participants) ? fixture.participants : [];
@@ -613,9 +541,7 @@ function normalizeSportScore(match) {
   return {
     fixtureId: text(match.url) || home + ":" + away,
     name: home + " vs " + away,
-    homeTeam: home,
-    awayTeam: away,
-    minute: Number.isFinite(minute) ? minute : 0,
+    homeTeam: home, awayTeam: away, minute: Number.isFinite(minute) ? minute : 0,
     score: { home: scoreHome, away: scoreAway },
     startingAt: match.time || match.start_time || null,
     stateId: text(match.status),
@@ -624,8 +550,7 @@ function normalizeSportScore(match) {
 }
 
 function resolveSportScore(match, fixtures) {
-  let best = null;
-  let bestScore = 0;
+  let best = null, bestScore = 0;
   for (const fixture of fixtures) {
     const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
     const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
@@ -637,13 +562,11 @@ function resolveSportScore(match, fixtures) {
 }
 
 function teamSimilarity(a, b) {
-  const x = norm(a);
-  const y = norm(b);
+  const x = norm(a), y = norm(b);
   if (!x || !y) return 0;
   if (x === y) return 1;
   if (x.includes(y) || y.includes(x)) return 0.85;
-  const xa = new Set(x.split(" "));
-  const ya = new Set(y.split(" "));
+  const xa = new Set(x.split(" ")), ya = new Set(y.split(" "));
   const overlap = [...xa].filter(token => ya.has(token)).length;
   return overlap / Math.max(xa.size, ya.size);
 }
@@ -658,7 +581,6 @@ async function enrichLiveMatches(polymarketMatches) {
   for (const match of polymarketMatches) {
     const key = match.eventId || match.slug;
     let resolvedMatch = resolved.get(key);
-
     if (!resolvedMatch) {
       const found = resolveSportScore(match, candidateFixtures);
       if (found) {
@@ -669,11 +591,8 @@ async function enrichLiveMatches(polymarketMatches) {
           resolvedMatch = { fixtureId: slug, confidence: found.score };
           resolved.set(key, resolvedMatch);
           log("INFO", "match_resolved", "Polymarket match linked to SportScore", {
-            eventId: match.eventId,
-            polymarketTeams: [match.homeTeam, match.awayTeam],
-            sportscoreTeams: [found.fixture.home, found.fixture.away],
-            confidence: found.score,
-            fixture: slug
+            eventId: match.eventId, polymarketTeams: [match.homeTeam, match.awayTeam],
+            sportscoreTeams: [found.fixture.home, found.fixture.away], confidence: found.score, fixture: slug
           });
         }
       }
@@ -685,10 +604,7 @@ async function enrichLiveMatches(polymarketMatches) {
     }
 
     const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
-      log("WARN", "fixture_failed", "SportScore match refresh failed", {
-        fixture: resolvedMatch.fixtureId,
-        message: err.message
-      });
+      log("WARN", "fixture_failed", "SportScore match refresh failed", { fixture: resolvedMatch.fixtureId, message: err.message });
       return null;
     });
 
@@ -709,7 +625,7 @@ async function claimTelegramAlert(key) {
     const response = await fetch(base.replace(/\/$/, "") + "/football/claim", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(2_000),
     });
     if (response.status === 200) return true;
     if (response.status === 409) return false;
@@ -726,7 +642,7 @@ async function releaseTelegramAlert(key) {
     const response = await fetch(base.replace(/\/$/, "") + "/football/release", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) throw new Error("Convex release HTTP " + response.status);
   } catch (err) {
@@ -741,19 +657,13 @@ async function sendTelegram(textMessage) {
     log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
     return false;
   }
-
   const url = "https://api.telegram.org/bot" + token + "/sendMessage";
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: textMessage,
-      disable_web_page_preview: false
-    }),
+    body: JSON.stringify({ chat_id: chatId, text: textMessage, disable_web_page_preview: false }),
     signal: AbortSignal.timeout(10_000)
   });
-
   if (!response.ok) throw new Error("Telegram HTTP " + response.status);
   const body = await response.json();
   if (!body.ok) throw new Error("Telegram API rejected message");
@@ -769,12 +679,9 @@ function stop() {
 
 async function start() {
   log("INFO", "monitor_started", "Polymarket football 1:1 monitor started", {
-    pollSec: POLL_MS / 1000,
-    runHours: RUN_MS / 3_600_000,
-    provider: "sportscore",
-    strategy: "exact_score_1_1"
+    pollSec: POLL_MS / 1000, runHours: RUN_MS / 3_600_000,
+    provider: "sportscore", strategy: "exact_score_1_1"
   });
-
   await tick();
   timer = setInterval(() => { tick(); }, POLL_MS);
   setTimeout(stop, RUN_MS);
