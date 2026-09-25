@@ -425,7 +425,6 @@ async function discoverPolymarket() {
         teams: [home, away],
         startTime,
         marketCount: nestedMarkets.length,
-        oneOneMarketAvailable: Boolean(findOneOneMarket({ markets: nestedMarkets })),
         url: eventUrl(event)
       });
     }
@@ -576,25 +575,13 @@ function scoreTotal(match) {
 
 async function maybeOneOneAlert(match, nutmeg) {
   if (!match.url) return;
-  await ensureEventMarkets(match);
-  const market = findOneOneMarket(match);
-  if (!market) {
-    log("INFO", "one_one_market_missing", "No 1:1 exact-score market found", {
-      eventId: match.eventId, teams: [match.homeTeam, match.awayTeam]
-    });
-    return;
-  }
-  log("INFO", "one_one_market_found", "1:1 exact-score market found", {
-    eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], price: market.price
-  });
 
   const key = match.eventId || match.slug;
-  const preMatch = Number.isFinite(Date.parse(match.startTime || "")) &&
-    Date.parse(match.startTime) > Date.now();
+  const preMatch = Boolean(match.preMatch);
   const home = Number(match.live?.score?.home || 0);
   const away = Number(match.live?.score?.away || 0);
 
-  if (!preMatch && (!match.live || match.live.status === "unresolved" || match.live.status === "provider_error")) return;
+  if (!preMatch && (!match.live || match.live.status === "unresolved" || match.live.status === "provider_error" || match.live.status === "provider_unavailable")) return;
 
   if (preMatch || (home === 0 && away === 0)) {
     const claimKey = key + ":BUY";
@@ -605,14 +592,13 @@ async function maybeOneOneAlert(match, nutmeg) {
       "⚽ 1:1 · BUY", "",
       match.homeTeam + " vs " + match.awayTeam,
       "SCORE: 0–0",
-      "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
       "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
     try {
       if (!await sendTelegram(message)) throw new Error("Telegram not configured");
       log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", {
-        eventId: match.eventId, price: market.price, preMatch
+        eventId: match.eventId, preMatch, reason: "balanced_nutmeg_candidate"
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
@@ -624,9 +610,6 @@ async function maybeOneOneAlert(match, nutmeg) {
   }
 
   // SELL is a second phase. Convex only allows it when a BUY claim exists.
-  // Normal exit: exactly 1:0 or 0:1 after the first goal.
-  // Recovery exit: 1:1 if polling missed the first-goal state and the
-  // match has already moved on before the SELL alert could be sent.
   if ((home === 1 && away === 0) || (home === 0 && away === 1) || (home === 1 && away === 1)) {
     const claimKey = key + ":SELL";
     const claimed = await claimTelegramAlert(claimKey);
@@ -636,7 +619,6 @@ async function maybeOneOneAlert(match, nutmeg) {
       "⚽ 1:1 · SELL", "",
       match.homeTeam + " vs " + match.awayTeam,
       "SCORE: " + home + "–" + away,
-      "1:1 PRICE: " + (market.price * 100).toFixed(1) + "%",
       "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
@@ -644,7 +626,6 @@ async function maybeOneOneAlert(match, nutmeg) {
       if (!await sendTelegram(message)) throw new Error("Telegram not configured");
       log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", {
         eventId: match.eventId,
-        price: market.price,
         score: { home, away },
         recovery: home === 1 && away === 1
       });
@@ -752,8 +733,7 @@ async function tick() {
           nutmegMatched: Boolean(nm),
           nutmegScore: nm?.score ?? null,
           balanced: balancedForOneOne(nm),
-          price: findOneOneMarket(match)?.price ?? null
-        });
+                  });
 
         if (!nm || !balancedForOneOne(nm)) {
           log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
@@ -814,14 +794,14 @@ async function tick() {
           continue;
         }
 
-        await maybeOneOneAlert({ ...match, live: { ...match.live, score } }, nm);
+        await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, nm);
         continue;
       }
 
       // After kickoff and after a goal, do not run BUY filters.
       // maybeOneOneAlert will send SELL only for exactly 1:0/0:1,
       // and Convex will reject SELL unless the BUY phase was completed.
-      await maybeOneOneAlert({ ...match, live: { ...match.live, score } }, null);
+      await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
     }
 
     log("INFO", "stage_done", "Alert evaluation stage finished", {
