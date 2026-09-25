@@ -9,6 +9,7 @@ export default defineSchema({
   }).index("by_monitor", ["monitor"]),
   telegramDedupe: defineTable({
     monitor: v.string(), marketSlug: v.string(), claimedAt: v.number(),
+    telegramMessageId: v.optional(v.number()),
   }).index("by_monitor_market", ["monitor", "marketSlug"]),
   btc5mLogs: defineTable({
     monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
