@@ -45,7 +45,7 @@ async function flushConvexLogs() {
   convexTickCount = 0;
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
   try {
-    const response = await fetch(base.replace(/\\/$/, "") + "/football/logs", {
+    const response = await fetch(base.replace(/\/$/, "") + "/football/logs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ logs: batch, tickCount: ticks }),
