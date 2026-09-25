@@ -4,11 +4,13 @@ const SPORTMONKS_TOKEN = process.env.SPORTMONKS_TOKEN || "";
 
 const POLL_MS = 15_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
+const HISTORY_MS = 20 * 60 * 1000;
 
 let stopping = false;
 let timer = null;
 const known = new Map();
 const resolved = new Map();
+const history = new Map();
 
 function log(level, event, message, data = undefined) {
   console.log(JSON.stringify({
@@ -188,9 +190,7 @@ async function discoverPolymarket() {
 }
 
 function sportmonksHeaders() {
-  return {
-    Authorization: "Bearer " + SPORTMONKS_TOKEN
-  };
+  return { Authorization: "Bearer " + SPORTMONKS_TOKEN };
 }
 
 function participants(fixture) {
@@ -201,18 +201,18 @@ function fixtureTeams(fixture) {
   const parts = participants(fixture);
   const home = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
   const away = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
-  return {
-    home: text(home?.name),
-    away: text(away?.name)
-  };
+  return { home: text(home?.name), away: text(away?.name) };
 }
 
 function matchScore(fixture) {
   const scores = Array.isArray(fixture?.scores) ? fixture.scores : [];
   const current = scores.filter(s => s.description === "CURRENT" || s.type?.code === "current");
   const list = current.length ? current : scores;
-  const home = list.find(s => s.participant_id === fixture?.participants?.find(p => p.meta?.location === "home")?.id);
-  const away = list.find(s => s.participant_id === fixture?.participants?.find(p => p.meta?.location === "away")?.id);
+  const parts = participants(fixture);
+  const homeId = parts.find(p => p.meta?.location === "home")?.id;
+  const awayId = parts.find(p => p.meta?.location === "away")?.id;
+  const home = list.find(s => s.participant_id === homeId);
+  const away = list.find(s => s.participant_id === awayId);
   return {
     home: Number(home?.score?.goals ?? home?.goals ?? 0),
     away: Number(away?.score?.goals ?? away?.goals ?? 0)
@@ -236,6 +236,39 @@ function extractXg(fixture) {
   };
 }
 
+function statisticRows(fixture) {
+  return Array.isArray(fixture?.statistics) ? fixture.statistics : [];
+}
+
+function statValue(row) {
+  const value = row?.data?.value ?? row?.value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function extractStats(fixture) {
+  const parts = participants(fixture);
+  const homeId = parts.find(p => p.meta?.location === "home")?.id;
+  const awayId = parts.find(p => p.meta?.location === "away")?.id;
+  const result = {
+    home: { shots: NaN, shotsOnTarget: NaN },
+    away: { shots: NaN, shotsOnTarget: NaN }
+  };
+
+  for (const row of statisticRows(fixture)) {
+    const name = text(row?.type?.name || row?.type?.code).toLowerCase();
+    const value = statValue(row);
+    const participantId = row?.participant_id ?? row?.participant?.id;
+    const side = participantId === homeId ? "home" : participantId === awayId ? "away" : null;
+    if (!side || !Number.isFinite(value)) continue;
+
+    if (/shots on target|shot on target/.test(name)) result[side].shotsOnTarget = value;
+    else if (/shots|total shots/.test(name)) result[side].shots = value;
+  }
+
+  return result;
+}
+
 function normalizeFixture(fixture) {
   const teams = fixtureTeams(fixture);
   return {
@@ -246,6 +279,7 @@ function normalizeFixture(fixture) {
     minute: currentMinute(fixture),
     score: matchScore(fixture),
     xg: extractXg(fixture),
+    stats: extractStats(fixture),
     startingAt: fixture.starting_at || null,
     stateId: fixture.state_id ?? fixture.state?.id ?? null,
     events: Array.isArray(fixture.events) ? fixture.events.map(e => ({
@@ -258,14 +292,83 @@ function normalizeFixture(fixture) {
   };
 }
 
+function snapshotAtOrBefore(rows, cutoff) {
+  let best = null;
+  for (const row of rows) {
+    if (row.timestamp <= cutoff) best = row;
+    else break;
+  }
+  return best;
+}
+
+function delta(current, previous) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return NaN;
+  return Math.max(0, current - previous);
+}
+
+function calculateFeatures(match, snapshot) {
+  const key = match.eventId || match.slug;
+  const rows = history.get(key) || [];
+  const now = Date.now();
+
+  const five = snapshotAtOrBefore(rows, now - 5 * 60 * 1000);
+  const ten = snapshotAtOrBefore(rows, now - 10 * 60 * 1000);
+
+  const xg5Home = five ? delta(snapshot.xg.home, five.xg.home) : NaN;
+  const xg5Away = five ? delta(snapshot.xg.away, five.xg.away) : NaN;
+  const xg10Home = ten ? delta(snapshot.xg.home, ten.xg.home) : NaN;
+  const xg10Away = ten ? delta(snapshot.xg.away, ten.xg.away) : NaN;
+
+  const shots10Home = ten ? delta(snapshot.stats.home.shots, ten.stats.home.shots) : NaN;
+  const shots10Away = ten ? delta(snapshot.stats.away.shots, ten.stats.away.shots) : NaN;
+  const sot10Home = ten ? delta(snapshot.stats.home.shotsOnTarget, ten.stats.home.shotsOnTarget) : NaN;
+  const sot10Away = ten ? delta(snapshot.stats.away.shotsOnTarget, ten.stats.away.shotsOnTarget) : NaN;
+
+  const elapsed = Math.max(1, Number(snapshot.minute) || 1);
+  const expected10Home = Number.isFinite(snapshot.xg.home) ? snapshot.xg.home * 10 / elapsed : NaN;
+  const expected10Away = Number.isFinite(snapshot.xg.away) ? snapshot.xg.away * 10 / elapsed : NaN;
+
+  return {
+    xg5m: { home: xg5Home, away: xg5Away },
+    xg10m: { home: xg10Home, away: xg10Away },
+    shots10m: { home: shots10Home, away: shots10Away },
+    shotsOnTarget10m: { home: sot10Home, away: sot10Away },
+    momentum10m: {
+      home: Number.isFinite(xg10Home) && Number.isFinite(expected10Home) ? xg10Home - expected10Home : NaN,
+      away: Number.isFinite(xg10Away) && Number.isFinite(expected10Away) ? xg10Away - expected10Away : NaN
+    },
+    historyPoints: rows.length
+  };
+}
+
+function recordHistory(match, snapshot) {
+  const key = match.eventId || match.slug;
+  if (!key) return null;
+
+  const rows = history.get(key) || [];
+  const timestamp = Date.now();
+  const row = {
+    timestamp,
+    minute: snapshot.minute,
+    score: snapshot.score,
+    xg: snapshot.xg,
+    stats: snapshot.stats
+  };
+
+  rows.push(row);
+  const cutoff = timestamp - HISTORY_MS;
+  const kept = rows.filter(item => item.timestamp >= cutoff);
+  history.set(key, kept);
+  return calculateFeatures(match, snapshot);
+}
+
 async function sportmonksLatest() {
   if (!SPORTMONKS_TOKEN) {
     log("WARN", "sportmonks_token_missing", "SPORTMONKS_TOKEN is not configured; live provider layer is waiting for a token");
     return [];
   }
 
-  const url = SPORTMONKS_URL +
-    "/livescores/latest?include=scores;participants;events.type;state;periods";
+  const url = SPORTMONKS_URL + "/livescores/latest?include=scores;participants;events.type;state;periods";
   const data = await getJson(url, { headers: sportmonksHeaders() });
   return Array.isArray(data?.data) ? data.data : [];
 }
@@ -357,6 +460,7 @@ async function enrichLiveMatches(polymarketMatches) {
       match.provider = "sportmonks";
       match.providerFixtureId = resolvedMatch.fixtureId;
       match.live = normalizeFixture(fixture);
+      match.features = recordHistory(match, match.live);
     } else {
       match.live = { status: "provider_error" };
     }
@@ -393,7 +497,8 @@ async function start() {
     pollSec: POLL_MS / 1000,
     runHours: RUN_MS / 3_600_000,
     provider: "sportmonks",
-    providerConfigured: Boolean(SPORTMONKS_TOKEN)
+    providerConfigured: Boolean(SPORTMONKS_TOKEN),
+    historyMinutes: HISTORY_MS / 60_000
   });
 
   await tick();
