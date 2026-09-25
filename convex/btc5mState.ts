@@ -182,3 +182,53 @@ export const recentOpenMarketLogs = query({
     }));
   },
 });
+
+
+const BTC5M_MONITOR = "btc-5m-chainlink-edge";
+
+export const logBtc5m = mutation({
+  args: {
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert("btc5mLogs", {
+      monitor: BTC5M_MONITOR,
+      level: args.level,
+      event: args.event,
+      message: args.message,
+      data: args.data,
+      createdAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const recentBtc5mLogs = query({
+  args: {},
+  returns: v.array(v.object({
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+    createdAt: v.number(),
+  })),
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("btc5mLogs")
+      .withIndex("by_monitor_time", (q) => q.eq("monitor", BTC5M_MONITOR))
+      .order("desc")
+      .take(200);
+
+    return rows.map((row) => ({
+      level: row.level,
+      event: row.event,
+      message: row.message,
+      data: row.data,
+      createdAt: row.createdAt,
+    }));
+  },
+});
