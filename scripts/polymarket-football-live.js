@@ -107,7 +107,7 @@ function extractTeams(event) {
     event.homeTeam && event.awayTeam ? [event.homeTeam, event.awayTeam] : null,
     event.home_team && event.away_team ? [event.home_team, event.away_team] : null
   ].filter(Boolean);
-  if (matches.length) return candidates[0].map(text);
+  if (candidates.length) return candidates[0].map(text);
   const m = title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
   return m ? [m[1].trim(), m[2].trim()] : ["", ""];
 }
@@ -429,7 +429,7 @@ async function discoverPolymarket() {
         markets: nestedMarkets
       });
 
-      log("INFO", "candidate_discovered", "Football match candidate discovered from Polymarket sports index", {
+      log("INFO", "match_discovered", "Football match discovered from Polymarket sports index", {
         source: result.name,
         eventId,
         teams: [home, away],
@@ -463,10 +463,37 @@ function stripHtml(value) {
     .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 }
 
+function parseTimezoneDate(date, hh, mm, ss, zone) {
+  const year = Number(date.slice(0, 4)), month = Number(date.slice(5, 7)) - 1, day = Number(date.slice(8, 10));
+  const hour = Number(hh), minute = Number(mm), second = Number(ss || 0);
+  if (![year, month, day, hour, minute, second].every(Number.isFinite) || hour > 23 || minute > 59 || second > 59) return null;
+
+  const z = text(zone).toUpperCase();
+  const namedOffsets = {
+    "UTC": 0, "GMT": 0, "GMT+0": 0, "GMT+1": 60, "GMT+2": 120,
+    "CET": 60, "CEST": 120, "EET": 120, "EEST": 180, "BST": 60,
+    "IST": 330, "ASIA/SHANGHAI": 480, "BEIJING": 480, "CHINA STANDARD TIME": 480
+  };
+  let offsetMinutes = namedOffsets[z];
+  const offsetMatch = z.match(/^([+-])(\\d{2}):?(\\d{2})$/);
+  if (offsetMatch) offsetMinutes = (Number(offsetMatch[2]) * 60 + Number(offsetMatch[3])) * (offsetMatch[1] === "+" ? 1 : -1);
+  if (z === "Z") offsetMinutes = 0;
+  if (!Number.isFinite(offsetMinutes)) return null;
+
+  return new Date(Date.UTC(year, month, day, hour, minute, second) - offsetMinutes * 60_000).toISOString();
+}
+
+function nutmegKickoffFromContext(context, sourceDate) {
+  const s = text(context);
+  const explicit = s.match(/(20\\d{2}-\\d{2}-\\d{2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(Z|[+-]\\d{2}:?\\d{2}|UTC|GMT(?:[+-]\\d{1,2})?|CET|CEST|EET|EEST|BST|IST)\\b/i);
+  if (explicit) return parseTimezoneDate(explicit[1], explicit[2], explicit[3], explicit[4] || "0", explicit[5]);
+
+  const clock = s.match(/(?:^|\\s)(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(Z|[+-]\\d{2}:?\\d{2}|UTC|GMT(?:[+-]\\d{1,2})?|CET|CEST|EET|EEST|BST|IST)?(?=\\s|$)/i);
+  if (!clock) return null;
+  return parseTimezoneDate(sourceDate, clock[1], clock[2], clock[3] || "0", clock[4] || "Asia/Shanghai");
+}
+
 async function nutmegRows() {
-  // Nutmegly now exposes server-rendered daily prediction pages.
-  // The old query-string endpoint returns an app shell, which made the
-  // previous parser silently produce zero rows.
   if (nutmegCache.rows.length && Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return nutmegCache.rows;
 
   const rows = [];
@@ -481,63 +508,84 @@ async function nutmegRows() {
   await Promise.all(dates.map(async date => {
     try {
       const url = "https://nutmegly.com/predictions/" + date;
-      const r = await fetch(url, {
-        headers: { accept: "text/html" },
-        signal: AbortSignal.timeout(8_000)
-      });
+      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
       if (!r.ok) {
         log("WARN", "nutmeg_fetch_failed", "Nutmegly predictions page failed", { date, status: r.status });
         return;
       }
-      const body = stripHtml(await r.text());
-      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
+      const raw = await r.text();
+      const body = stripHtml(raw);
+      const re = /(.{2,100}?)\\s+VS\\s+(.{2,100}?)\\s+Home win\\s*(\\d+(?:\\.\\d+)?)%\\s+Draw\\s*(\\d+(?:\\.\\d+)?)%\\s+Away win\\s*(\\d+(?:\\.\\d+)?)%/gi;
       let m, count = 0;
       while ((m = re.exec(body))) {
+        const prefix = body.slice(Math.max(0, m.index - 220), m.index);
+        const kickoffAt = nutmegKickoffFromContext(prefix, date);
         rows.push({
           home: m[1].trim(),
           away: m[2].trim(),
           homeProb: Number(m[3]) / 100,
           drawProb: Number(m[4]) / 100,
           awayProb: Number(m[5]) / 100,
-          bttsProb: NaN
+          bttsProb: NaN,
+          kickoffAt,
+          sourceDate: date,
+          sourceTimezone: "Asia/Shanghai"
+        });
+        if (!kickoffAt) log("WARN", "nutmeg_time_missing", "Nutmegly match time could not be parsed", {
+          date, home: m[1].trim(), away: m[2].trim()
         });
         count++;
       }
       log("INFO", "nutmeg_page_parsed", "Nutmegly predictions page parsed", { date, rows: count });
     } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly predictions page fetch failed", {
-        date, message: err.message
-      });
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly predictions page fetch failed", { date, message: err.message });
     }
   }));
 
   nutmegCache = { at: Date.now(), rows };
-  log(rows.length ? "INFO" : "WARN", "nutmeg_refresh", "Nutmegly balance data refreshed", {
-    rows: rows.length, dates: dates.length
-  });
+  log(rows.length ? "INFO" : "WARN", "nutmeg_refresh", "Nutmegly balance data refreshed", { rows: rows.length, dates: dates.length });
   return rows;
 }
+
 function findNutmegMatch(match, rows) {
-  let best = null, bestScore = 0, bestOrientation = null;
+  let best = null, bestTeamScore = -1, bestTimeDiffMs = null, bestOrientation = null;
+
   for (const row of rows) {
-    const direct = teamSimilarity(match.homeTeam, row.home) + teamSimilarity(match.awayTeam, row.away);
-    const swapped = teamSimilarity(match.homeTeam, row.away) + teamSimilarity(match.awayTeam, row.home);
-    const score = Math.max(direct, swapped);
-    if (score > bestScore) {
-      bestScore = score;
+    const direct = keywordTeamSimilarity(match.homeTeam, row.home) + keywordTeamSimilarity(match.awayTeam, row.away);
+    const swapped = keywordTeamSimilarity(match.homeTeam, row.away) + keywordTeamSimilarity(match.awayTeam, row.home);
+    const teamScore = Math.max(direct, swapped);
+    const orientation = swapped > direct ? "swapped" : "direct";
+
+    const pmMs = Date.parse(match.kickoffAt || match.startTime || "");
+    const nmMs = Date.parse(row.kickoffAt || "");
+    const timeDiffMs = Number.isFinite(pmMs) && Number.isFinite(nmMs) ? Math.abs(pmMs - nmMs) : null;
+    const compatible = timeDiffMs !== null && timeDiffMs <= 30 * 60 * 1000;
+
+    // Prefer a team-compatible row with the smallest time difference.
+    // Team names such as "CA Platense" vs "Platense" are intentionally
+    // treated as the same club when their kickoff times agree.
+    if (best === null || teamScore > bestTeamScore || (teamScore === bestTeamScore && compatible && (bestTimeDiffMs === null || timeDiffMs < bestTimeDiffMs))) {
       best = row;
-      bestOrientation = swapped > direct ? "swapped" : "direct";
+      bestTeamScore = teamScore;
+      bestTimeDiffMs = timeDiffMs;
+      bestOrientation = orientation;
     }
   }
+
+  const timeCompatible = bestTimeDiffMs !== null && bestTimeDiffMs <= 30 * 60 * 1000;
   return {
-    match: Boolean(best && bestScore >= 1.35),
+    match: Boolean(best && bestTeamScore >= 1.0 && timeCompatible),
     row: best,
-    score: bestScore,
-    orientation: bestOrientation
+    score: bestTeamScore,
+    teamScore: bestTeamScore,
+    timeDiffMs: bestTimeDiffMs,
+    timeDiffMinutes: bestTimeDiffMs === null ? null : Number((bestTimeDiffMs / 60000).toFixed(1)),
+    orientation: bestOrientation,
+    timeCompatible
   };
 }
 
-function balancedForOneOne(nutmeg) {
+function balancedForStrategy(nutmeg) {
   if (!nutmeg?.match || !nutmeg.row) return false;
   const r = nutmeg.row;
   return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF &&
@@ -772,15 +820,23 @@ async function tick() {
           nutmegMatched: nm.match,
           nutmegScore: Number(nm.score.toFixed(3)),
           nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null,
-          balanced: balancedForOneOne(nm)
+          nutmegTeamScore: Number(nm.teamScore.toFixed(3)),
+          nutmegTimeDiffMinutes: nm.timeDiffMinutes,
+          nutmegTimeCompatible: nm.timeCompatible,
+          nutmegOrientation: nm.orientation,
+          balanced: balancedForStrategy(nm)
         });
 
-        if (!nm.match || !balancedForOneOne(nm)) {
+        if (!nm.match || !balancedForStrategy(nm)) {
           log("INFO", "match_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
             nutmegScore: Number(nm.score.toFixed(3)),
-            nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null
+            nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null,
+            nutmegTeamScore: Number(nm.teamScore.toFixed(3)),
+            nutmegTimeDiffMinutes: nm.timeDiffMinutes,
+            nutmegTimeCompatible: nm.timeCompatible,
+            nutmegOrientation: nm.orientation
           });
           continue;
         }
@@ -823,10 +879,10 @@ async function tick() {
           nutmegMatched: nm.match,
           nutmegScore: Number(nm.score.toFixed(3)),
           nutmegBest: nm.row ? [nm.row.home, nm.row.away] : null,
-          balanced: balancedForOneOne(nm)
+          balanced: balancedForStrategy(nm)
         });
 
-        if (!nm.match || !balancedForOneOne(nm)) {
+        if (!nm.match || !balancedForStrategy(nm)) {
           log("INFO", "match_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
@@ -905,7 +961,8 @@ function normalizeSportScore(match) {
     name: home + " vs " + away,
     homeTeam: home, awayTeam: away, minute: Number.isFinite(minute) ? minute : 0,
     score: { home: scoreHome, away: scoreAway },
-    startingAt: match.time || match.start_time || null,
+    startingAt: match.time || match.start_time || match.startingAt || null,
+    kickoffAt: match.time || match.start_time || match.startingAt || null,
     stateId: text(match.status),
     events: Array.isArray(match.incidents) ? match.incidents : []
   };
@@ -921,6 +978,17 @@ function resolveSportScore(match, fixtures) {
   }
   if (!best || bestScore < 1.4) return null;
   return { fixture: best, score: bestScore };
+}
+
+function teamKeywords(v) {
+  const stop = new Set(["de", "la", "el", "los", "las", "del", "da", "do", "di", "and", "the"]);
+  return [...new Set(norm(v).split(" ").filter(token => token.length >= 3 && !stop.has(token)))];
+}
+
+function keywordTeamSimilarity(a, b) {
+  const x = teamKeywords(a), y = teamKeywords(b);
+  if (!x.length || !y.length) return 0;
+  return x.filter(token => y.includes(token)).length / Math.max(x.length, y.length);
 }
 
 function teamSimilarity(a, b) {
@@ -995,6 +1063,7 @@ async function enrichLiveMatches(polymarketMatches) {
     match.provider = "sportscore";
     match.providerFixtureId = resolvedMatch.fixtureId;
     match.live = normalizeSportScore(detail);
+    match.kickoffAt = match.live.kickoffAt || match.startTime || null;
   });
 
   await Promise.all(work);
