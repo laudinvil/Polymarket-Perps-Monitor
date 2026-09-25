@@ -279,7 +279,14 @@ async function discoverPolymarket() {
 
       const startTime = event.startDate || event.start_date || event.startTime || null;
       const startMs = Date.parse(startTime || "");
-      if (Number.isFinite(startMs) && startMs + EARLY_WINDOW_MS < Date.now()) continue;
+      const endTime = event.endDate || event.end_date || event.endTime || null;
+      const endMs = Date.parse(endTime || "");
+
+      // Keep active in-play football matches. The previous 45-minute cutoff
+      // incorrectly discarded most live matches, leaving zero candidates even
+      // when Polymarket returned football events. Finished events are excluded
+      // when a reliable end time is available.
+      if (Number.isFinite(endMs) && endMs < Date.now()) continue;
 
       const eventId = text(event.id || event.eventId || event.event_id);
       const slug = text(event.slug);
