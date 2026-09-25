@@ -7,7 +7,11 @@ const POLL_MS = 15 * 1000;
 const PERIOD_MS = 5 * 60 * 1000;
 const HISTORY_MAX = 240;
 const MIN_EDGE = Number(process.env.BTC_5M_MIN_EDGE ?? "0.00");
-const MIN_ALERT_AGE_MS = 60 * 1000;
+const MIN_ALERT_AGE_MS = 90 * 1000;
+const MIN_MODEL_PROBABILITY = 0.55;
+const MIN_MOVE_BPS = 3;
+const CONFIRMATION_SAMPLES = 3;
+const CLOB_CONFIRMATION_TICKS = 2;
 
 const API_KEY = process.env.CHAINLINK_DATA_STREAMS_API_KEY || "";
 const USER_SECRET = process.env.CHAINLINK_DATA_STREAMS_USER_SECRET || "";
@@ -32,6 +36,7 @@ let currentPeriodStart = null;
 let periodStartPrice = null;
 let latestMarket = null;
 const priceHistory = [];
+const signalHistory = [];
 const alertedPeriods = new Set();
 
 function log(level, event, message, data = undefined) {
@@ -231,6 +236,18 @@ function dataDelta() {
     chainlinkAgeMs: Date.now() - latestChainlink.receivedAt,
     rtdsAgeMs: Date.now() - latestRtds.receivedAt
   };
+}
+
+function directionalConfirmation(side) {
+  const recent = signalHistory.slice(-CONFIRMATION_SAMPLES);
+  if (recent.length < CONFIRMATION_SAMPLES) return false;
+  return recent.every((s) => s.side === side && s.edge >= MIN_EDGE && s.model >= MIN_MODEL_PROBABILITY);
+}
+
+function clobConfirmation(side) {
+  const recent = signalHistory.slice(-CLOB_CONFIRMATION_TICKS);
+  if (recent.length < CLOB_CONFIRMATION_TICKS) return false;
+  return recent.every((s) => s.side === side && Number.isFinite(s.price));
 }
 
 function chainlinkMomentumBps() {
@@ -493,6 +510,27 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
   }
 
   if (!edge || edge.edge < MIN_EDGE) return;
+  const moveBps = chainlinkMomentumBps();
+  if (edge.model < MIN_MODEL_PROBABILITY) return;
+  if (moveBps === null || Math.abs(moveBps) < MIN_MOVE_BPS) return;
+
+  signalHistory.push({
+    side: edge.side,
+    model: edge.model,
+    edge: edge.edge,
+    price: edge.price,
+    at: Date.now()
+  });
+  if (signalHistory.length > 20) signalHistory.shift();
+
+  if (!directionalConfirmation(edge.side)) {
+    log("INFO", "confirmation_pending", "Waiting for three consecutive model/edge confirmations", { side: edge.side });
+    return;
+  }
+  if (!clobConfirmation(edge.side)) {
+    log("INFO", "clob_confirmation_pending", "Waiting for two consecutive CLOB observations", { side: edge.side });
+    return;
+  }
 
   const alertUrl = market.url;
 
