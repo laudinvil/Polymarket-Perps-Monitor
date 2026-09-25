@@ -49,3 +49,5 @@ jobs:
         run: node scripts/polymarket-football-live.js
 
 # Trigger corrected 0:0 match discovery strategy.
+
+# Test deployment checkpoint: verify live 1:1 discovery.
