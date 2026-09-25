@@ -532,12 +532,91 @@ async function enrichLiveMatches(polymarketMatches) {
   }
 }
 
+
+function telegramConfigured() {
+  return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
+}
+
+async function sendTelegram(textMessage) {
+  const token = process.env.TELEGRAM_BOT_TOKEN || "";
+  const chatId = process.env.TELEGRAM_CHAT_ID || "";
+  if (!token || !chatId) {
+    log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
+    return false;
+  }
+
+  const url = "https://api.telegram.org/bot" + token + "/sendMessage";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: textMessage,
+      disable_web_page_preview: false
+    }),
+    signal: AbortSignal.timeout(10_000)
+  });
+
+  if (!response.ok) {
+    throw new Error("Telegram HTTP " + response.status);
+  }
+  const body = await response.json();
+  if (!body.ok) throw new Error("Telegram API rejected message");
+  return true;
+}
+
+const alerted = new Map();
+
+function bestEdge(match) {
+  const prices = match.model?.prices || [];
+  return prices
+    .filter(row => Number.isFinite(row.edge) && Number.isFinite(row.modelProbability) && Number.isFinite(row.price))
+    .sort((a, b) => b.edge - a.edge)[0] || null;
+}
+
+async function maybeAlert(match) {
+  const best = bestEdge(match);
+  if (!best || best.edge <= 0 || !match.url) return;
+
+  const key = match.eventId || match.slug;
+  const bucket = Math.floor(Date.now() / 60_000);
+  const alertKey = key + ":" + best.outcome + ":" + bucket;
+  if (alerted.get(key) === alertKey) return;
+
+  const p = match.model.probabilities;
+  const message = [
+    "⚽ POLYMARKET · LIVE",
+    "",
+    match.homeTeam + " vs " + match.awayTeam,
+    "SCORE: " + match.live.score.home + "–" + match.live.score.away,
+    "TIME: " + match.live.minute + "'",
+    "",
+    "SIGNAL: " + best.outcome,
+    "MODEL: " + (best.modelProbability * 100).toFixed(1) + "%",
+    "POLYMARKET: " + (best.price * 100).toFixed(1) + "%",
+    "EDGE: +" + (best.edge * 100).toFixed(1) + "%",
+    "",
+    "➡️ OPEN MATCH",
+    match.url
+  ].join("\n");
+
+  await sendTelegram(message);
+  alerted.set(key, alertKey);
+  log("INFO", "telegram_alert_sent", "Positive-edge Polymarket football alert sent", {
+    eventId: match.eventId,
+    url: match.url,
+    outcome: best.outcome,
+    edge: best.edge
+  });
+}
+
 async function tick() {
   if (stopping) return;
 
   try {
     const matches = await discoverPolymarket();
     await enrichLiveMatches(matches);
+    for (const match of matches) await maybeAlert(match);
 
     log("INFO", "live_snapshot", "Polymarket football matches with live provider data", {
       count: matches.length,
