@@ -24,8 +24,17 @@ jobs:
         with:
           node-version: 24
 
+      - name: Install dependencies
+        run: npm install
+
+      - name: Deploy Convex telemetry
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy
+
       - name: Discover live Polymarket football
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
         run: node scripts/polymarket-football-live.js
