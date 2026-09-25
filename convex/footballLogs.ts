@@ -75,8 +75,7 @@ export const stats = query({
       errors: v.number(), updatedAt: v.number(),
     }), v.null(),
   ),
-  handler: async (ctx) => await ctx.db.query("footballStats")
-    .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first(),
+  handler: async (ctx) => {\n    const row = await ctx.db.query("footballStats")\n      .withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();\n    if (!row) return null;\n    return {\n      monitor: row.monitor, ticks: row.ticks, candidates: row.candidates,\n      evaluations: row.evaluations, balanced: row.balanced, marketMissing: row.marketMissing,\n      unresolved: row.unresolved, buyAlerts: row.buyAlerts, sellAlerts: row.sellAlerts,\n      errors: row.errors, updatedAt: row.updatedAt,\n    };\n  },
 });
 
 export const claimTelegramAlert = mutation({
