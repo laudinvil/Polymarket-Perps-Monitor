@@ -135,7 +135,7 @@ async function footballSeriesIds() {
     for (const row of rows) {
       const hay = JSON.stringify(row).toLowerCase();
       if (!/football|soccer/.test(hay)) continue;
-      for (const key of ["series_id", "seriesId", "id"]) {
+      for (const key of ["series", "series_id", "seriesId"]) {
         const id = text(row[key]);
         if (id) ids.add(id);
       }
@@ -160,33 +160,41 @@ async function discoverPolymarket() {
   const now = Date.now();
   let events = [];
   let sourceIsSoccerTag = false;
+  let sourceSeriesCount = 0;
 
   try {
-    const data = await getJson(
-      GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=0&order=startDate&ascending=true"
-    );
-    events = Array.isArray(data) ? data : (data.events || data.data || []);
-    sourceIsSoccerTag = events.length > 0;
-    if (!events.length) {
-      log("WARN", "soccer_tag_query_empty", "Soccer tag returned no events; using paginated active-event fallback");
-      for (let offset = 0; offset < 2500; offset += 500) {
-        const page = await getJson(
-          GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
-        );
-        const rows = Array.isArray(page) ? page : (page.events || page.data || []);
-        events.push(...rows);
-        if (rows.length < 500) break;
-      }
-    }
-  } catch (err) {
-    log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using paginated active-event fallback", { message: err.message });
-    for (let offset = 0; offset < 2500; offset += 500) {
-      const page = await getJson(
-        GAMMA_URL + "/events?active=true&closed=false&limit=500&offset=" + offset
+    // Pull the soccer-tagged feed with pagination.
+    for (let offset = 0; offset < 5000; offset += 500) {
+      const data = await getJson(
+        GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=" + offset + "&order=startDate&ascending=true"
       );
-      const rows = Array.isArray(page) ? page : (page.events || page.data || []);
+      const rows = Array.isArray(data) ? data : (data.events || data.data || []);
+      if (rows.length) sourceIsSoccerTag = true;
       events.push(...rows);
       if (rows.length < 500) break;
+    }
+  } catch (err) {
+    log("WARN", "soccer_tag_query_failed", "Direct soccer event query failed; using football-series discovery", { message: err.message });
+  }
+
+  const footballIds = await footballSeriesIds();
+  if (footballIds.size) {
+    const seriesResults = await Promise.all(
+      [...footballIds].map(async (seriesId) => {
+        try {
+          return await activeEventsBySeries(seriesId);
+        } catch (err) {
+          log("WARN", "series_events_failed", "Could not load football series events", {
+            seriesId,
+            message: err.message
+          });
+          return [];
+        }
+      })
+    );
+    for (const rows of seriesResults) {
+      events.push(...rows);
+      if (rows.length) sourceSeriesCount += 1;
     }
   }
 
@@ -195,17 +203,15 @@ async function discoverPolymarket() {
   log("INFO", "discovery_source_counts", "Football discovery source loaded", {
     rawEvents: events.length,
     sourceIsSoccerTag,
+    footballSeries: footballIds.size,
+    sourceSeriesCount,
     now: new Date(now).toISOString()
   });
 
   for (const event of events) {
-    // The direct tag_slug=soccer query is already authoritative about sport.
-    // Do not re-filter those rows by free-text fields: many Polymarket
-    // football events do not contain the word "soccer" in their event payload.
-    if (!event || (!sourceIsSoccerTag && !isFootballEvent(event, new Set()))) continue;
+    if (!event || (!sourceIsSoccerTag && !isFootballEvent(event, footballIds))) continue;
 
     const start = Date.parse(event.startDate || event.start_date || event.startTime || "");
-    const end = Date.parse(event.endDate || event.end_date || event.endTime || "");
     const inWindow =
       Number.isFinite(start) &&
       start <= now + PREMATCH_WINDOW_MS &&
@@ -219,10 +225,6 @@ async function discoverPolymarket() {
     seen.add(key);
 
     const [home, away] = extractTeams(event);
-    // First find the football match/event. Only after we have the match,
-    // load that event's own submarkets and look for the 1:1 outcome inside it.
-    // Do not globally search for "1:1" markets: that can detach the price
-    // from the actual match we are monitoring.
     let markets = Array.isArray(event.markets) ? [...event.markets] : [];
     try {
       const eventData = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(id));
@@ -282,10 +284,13 @@ async function discoverPolymarket() {
   log("INFO", "discovery_filter_counts", "Football discovery completed", {
     rawEvents: events.length,
     sourceIsSoccerTag,
+    footballSeries: footballIds.size,
+    sourceSeriesCount,
     candidates: candidates.length
   });
   return candidates;
 }
+
 function stripHtml(value) {
   return text(value)
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
