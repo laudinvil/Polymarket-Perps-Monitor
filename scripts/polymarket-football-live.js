@@ -739,7 +739,10 @@ async function enrichLiveMatches(polymarketMatches) {
       .test(text(f.status) + " " + text(f.status_text))
   );
 
-  for (const match of polymarketMatches) {
+  // Resolve and refresh live fixtures concurrently. The old sequential loop
+  // could spend up to 10s per fixture, turning a normal scan into an hours-long
+  // run before the alert logic was reached.
+  const work = polymarketMatches.map(async match => {
     const key = match.eventId || match.slug;
     let resolvedMatch = resolved.get(key);
     if (!resolvedMatch) {
@@ -761,7 +764,7 @@ async function enrichLiveMatches(polymarketMatches) {
 
     if (!resolvedMatch) {
       match.live = { status: "unresolved" };
-      continue;
+      return;
     }
 
     const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
@@ -771,13 +774,15 @@ async function enrichLiveMatches(polymarketMatches) {
 
     if (!detail) {
       match.live = { status: "provider_error" };
-      continue;
+      return;
     }
 
     match.provider = "sportscore";
     match.providerFixtureId = resolvedMatch.fixtureId;
     match.live = normalizeSportScore(detail);
-  }
+  });
+
+  await Promise.all(work);
 }
 
 async function claimTelegramAlert(key) {
