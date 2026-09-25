@@ -1,4 +1,5 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 const WS_URL = "wss://fstream.binance.com/market/ws/btcusdt@aggTrade";
@@ -8,7 +9,7 @@ const SAMPLE_MS = 1000;
 const CURRENT_WINDOW_MS = 5_000;
 const BASELINE_WINDOW_MS = 5 * 60_000;
 const BLOCK_MS = 5_000;
-const SPIKE_Z = 2.0;
+const SPIKE_Z = 1.5;
 const RESET_Z = 1.0;
 const COOLDOWN_MS = 30_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
