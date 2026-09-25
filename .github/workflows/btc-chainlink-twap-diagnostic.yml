@@ -1,0 +1,37 @@
+name: BTC 5M · Chainlink TWAP Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/btc-chainlink-twap-diagnostic.js"
+      - ".github/workflows/btc-chainlink-twap-diagnostic.yml"
+  schedule:
+    - cron: "*/15 * * * *"
+
+concurrency:
+  group: btc-chainlink-twap-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Chainlink SDK
+        run: npm install --no-save @chainlink/data-streams-sdk
+
+      - name: Compare TWAP sources
+        env:
+          CHAINLINK_DATA_STREAMS_API_KEY: ${{ secrets.CHAINLINK_DATA_STREAMS_API_KEY }}
+          CHAINLINK_DATA_STREAMS_USER_SECRET: ${{ secrets.CHAINLINK_DATA_STREAMS_USER_SECRET }}
+          CHAINLINK_DATA_STREAMS_FEED_ID: ${{ secrets.CHAINLINK_DATA_STREAMS_FEED_ID }}
+        run: node scripts/btc-chainlink-twap-diagnostic.js
