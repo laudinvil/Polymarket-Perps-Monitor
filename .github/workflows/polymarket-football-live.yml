@@ -47,3 +47,5 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
         run: node scripts/polymarket-football-live.js
+
+# Trigger corrected 0:0 match discovery strategy.
