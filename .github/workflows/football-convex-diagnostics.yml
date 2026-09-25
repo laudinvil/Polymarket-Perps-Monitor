@@ -1,0 +1,36 @@
+name: Football monitor · Convex diagnostics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read Convex football health
+        run: |
+          set -e
+          mkdir -p diagnostics
+          curl --fail --silent --show-error --max-time 15 \
+            "https://brainy-canary-207.eu-west-1.convex.site/football/health" \
+            -o diagnostics/football-health.json
+          curl --fail --silent --show-error --max-time 20 \
+            "https://brainy-canary-207.eu-west-1.convex.site/football/status" \
+            -o diagnostics/football-status.json
+          echo "Health:"
+          cat diagnostics/football-health.json
+          echo
+          echo "Status:"
+          cat diagnostics/football-status.json
+
+      - name: Upload Convex diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-convex-diagnostics-${{ github.run_id }}
+          path: diagnostics/
+          retention-days: 7
