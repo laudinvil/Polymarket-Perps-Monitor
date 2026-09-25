@@ -51,7 +51,7 @@ export const ingest = mutation({
       rejectedBuyFilter += item.event === "candidate_rejected_buy_filter" ? 1 : 0;
       candidateGatePassed += item.event === "candidate_match_found" ? 1 : 0;
       candidates += item.event === "candidate_match_found" ? 1 : 0;
-      evaluations += ["preMatch_candidate_evaluated", "live_candidate_observed", "candidate_match_found"].includes(item.event) ? 1 : 0;
+      evaluations += item.event === "candidate_match_found" ? 1 : 0;
       marketMissing += item.event === "one_one_market_missing" ? 1 : 0;
       unresolved += item.event === "match_unresolved" ? 1 : 0;
       buyAlerts += item.event === "one_one_buy_alert_sent" ? 1 : 0;
@@ -61,7 +61,7 @@ export const ingest = mutation({
         "event_source_json_error", "nutmeg_fetch_failed", "polymarket_live_state_failed",
         "telegram_send_failed", "telegram_claim_failed"
       ].includes(item.event) ? 1 : 0;
-      if (["candidate_match_found", "preMatch_candidate_evaluated", "live_candidate_observed"].includes(item.event) && item.data) {
+      if (item.event === "candidate_match_found" && item.data) {
         try { if (JSON.parse(item.data).balanced === true) balanced += 1; } catch {}
       }
     }
