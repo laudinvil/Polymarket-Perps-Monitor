@@ -159,12 +159,14 @@ async function activeEventsBySeries(seriesId) {
 async function discoverPolymarket() {
   const now = Date.now();
   let events = [];
+  let sourceIsSoccerTag = false;
 
   try {
     const data = await getJson(
       GAMMA_URL + "/events?active=true&closed=false&tag_slug=soccer&limit=500&offset=0&order=startDate&ascending=true"
     );
     events = Array.isArray(data) ? data : (data.events || data.data || []);
+    sourceIsSoccerTag = events.length > 0;
     if (!events.length) {
       log("WARN", "soccer_tag_query_empty", "Soccer tag returned no events; using paginated active-event fallback");
       for (let offset = 0; offset < 2500; offset += 500) {
@@ -192,11 +194,15 @@ async function discoverPolymarket() {
   const seen = new Set();
   log("INFO", "discovery_source_counts", "Football discovery source loaded", {
     rawEvents: events.length,
+    sourceIsSoccerTag,
     now: new Date(now).toISOString()
   });
 
   for (const event of events) {
-    if (!event || !isFootballEvent(event, new Set())) continue;
+    // The direct tag_slug=soccer query is already authoritative about sport.
+    // Do not re-filter those rows by free-text fields: many Polymarket
+    // football events do not contain the word "soccer" in their event payload.
+    if (!event || (!sourceIsSoccerTag && !isFootballEvent(event, new Set()))) continue;
 
     const start = Date.parse(event.startDate || event.start_date || event.startTime || "");
     const end = Date.parse(event.endDate || event.end_date || event.endTime || "");
@@ -275,6 +281,7 @@ async function discoverPolymarket() {
 
   log("INFO", "discovery_filter_counts", "Football discovery completed", {
     rawEvents: events.length,
+    sourceIsSoccerTag,
     candidates: candidates.length
   });
   return candidates;
