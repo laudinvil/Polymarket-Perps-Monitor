@@ -326,6 +326,39 @@ function balancedForOneOne(nutmeg) {
     (!Number.isFinite(r.bttsProb) || r.bttsProb >= MIN_BTTS_PROB);
 }
 
+async function ensureEventMarkets(match) {
+  if (Array.isArray(match.markets) && match.markets.length) return true;
+  if (!match.eventId) return false;
+
+  try {
+    const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId));
+    const event = data?.event || data;
+    const markets = Array.isArray(event?.markets) ? event.markets : [];
+    match.markets = markets.map(market => ({
+      marketId: text(market?.id || market?.marketId),
+      question: text(market?.question || market?.title),
+      outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
+      outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
+        ? parseJson(market?.outcomePrices || market?.outcome_prices)
+        : [],
+      active: market?.active !== false,
+      closed: market?.closed === true
+    }));
+    log("INFO", "event_markets_loaded", "Loaded event markets lazily", {
+      eventId: match.eventId,
+      marketCount: match.markets.length,
+      oneOneMarketAvailable: Boolean(findOneOneMarket(match))
+    });
+    return match.markets.length > 0;
+  } catch (err) {
+    log("WARN", "event_markets_load_failed", "Could not load event markets", {
+      eventId: match.eventId,
+      message: err.message
+    });
+    return false;
+  }
+}
+
 function findOneOneMarket(match) {
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
@@ -354,6 +387,7 @@ function scoreTotal(match) {
 
 async function maybeOneOneAlert(match, nutmeg) {
   if (!match.url) return;
+  await ensureEventMarkets(match);
   const market = findOneOneMarket(match);
   if (!market) {
     log("INFO", "one_one_market_missing", "No 1:1 exact-score market found", {
