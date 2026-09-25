@@ -1,0 +1,25 @@
+name: Telegram Test Alert
+on:
+  push:
+    paths:
+      - ".github/workflows/telegram-test.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram test
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -e
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_CHAT_ID"
+          curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "content-type: application/json" \
+            --data "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --arg text "FOOTBALL MONITOR · TEST\n\nTelegram connection is working." '{chat_id:$chat,text:$text}')" \
+            | tee telegram-response.json
+          jq -e '.ok == true' telegram-response.json
