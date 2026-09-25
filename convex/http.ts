@@ -17,4 +17,17 @@ http.route({
   }),
 });
 
+http.route({
+  path: "/football/claim",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
+    if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
+    const claimed = await ctx.runMutation(internal.footballLogs.claimTelegramAlert, { monitor, marketSlug });
+    return new Response(claimed ? "claimed" : "already_claimed", { status: claimed ? 200 : 409 });
+  }),
+});
+
 export default http;
