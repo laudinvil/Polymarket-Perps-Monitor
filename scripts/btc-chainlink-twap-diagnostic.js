@@ -474,7 +474,6 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
     "CHAINLINK: $" + activePrice().toFixed(2),
     "START TWAP: $" + periodStartPrice.toFixed(2),
     "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
-    "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
     "RTDS TWAP60: " + (latestRtds ? "$" + latestRtds.value.toFixed(2) : "N/A"),
     "DS ↔ RTDS: " +
       (comparison
