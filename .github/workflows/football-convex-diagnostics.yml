@@ -3,7 +3,7 @@ name: Football monitor · Convex diagnostics
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/2 * * * *"
   push:
     paths:
       - ".github/workflows/football-convex-diagnostics.yml"
@@ -16,26 +16,39 @@ permissions:
 jobs:
   diagnostics:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
-      - name: Read Convex football health
+      - name: Read Convex football health and status
         run: |
-          set +e
+          set -euo pipefail
           mkdir -p diagnostics
-          curl --silent --show-error --max-time 15 -w "\nHTTP_STATUS:%{http_code}\n" \
-            "https://brainy-canary-207.eu-west-1.convex.site/football/health" \
-            -o diagnostics/football-health.json
-          health_rc=$?
-          curl --silent --show-error --max-time 20 -w "\nHTTP_STATUS:%{http_code}\n" \
-            "https://brainy-canary-207.eu-west-1.convex.site/football/status" \
-            -o diagnostics/football-status.json
-          status_rc=$?
-          echo "Health curl exit: $health_rc"
-          echo "Status curl exit: $status_rc"
-          echo "Health:"
-          cat diagnostics/football-health.json || true
+          curl -fsS --max-time 15             "https://brainy-canary-207.eu-west-1.convex.site/football/health"             -o diagnostics/football-health.json
+          curl -fsS --max-time 20             "https://brainy-canary-207.eu-west-1.convex.site/football/status"             -o diagnostics/football-status.json
+
+          node - <<'NODE'
+          const fs = require("fs");
+          const health = JSON.parse(fs.readFileSync("diagnostics/football-health.json", "utf8"));
+          const status = JSON.parse(fs.readFileSync("diagnostics/football-status.json", "utf8"));
+          const logs = Array.isArray(status.recentLogs) ? status.recentLogs : [];
+          const latest = logs.slice().sort((a,b) => Number(b.createdAt||0) - Number(a.createdAt||0)).slice(0, 50);
+          const summaries = latest.filter(x => x.event === "cycle_summary");
+          const refreshes = latest.filter(x => x.event === "nutmeg_refresh");
+          const out = {
+            fetchedAt: new Date().toISOString(),
+            health,
+            stats: status.stats || null,
+            latestCycleSummary: summaries[0] || null,
+            latestNutmegRefresh: refreshes[0] || null,
+            latestLogs: latest
+          };
+          fs.writeFileSync("diagnostics/football-diagnostics.json", JSON.stringify(out, null, 2));
+          NODE
+
+          echo "=== HEALTH ==="
+          cat diagnostics/football-health.json
           echo
-          echo "Status:"
-          cat diagnostics/football-status.json || true
+          echo "=== LATEST CYCLE / NUTMEG ==="
+          node -e 'const x=require("./diagnostics/football-diagnostics.json"); console.log(JSON.stringify({latestCycleSummary:x.latestCycleSummary,latestNutmegRefresh:x.latestNutmegRefresh},null,2))'
 
       - name: Upload Convex diagnostics
         if: always()
