@@ -384,6 +384,7 @@ async function tick() {
     const tickStartedAt = Date.now();
     log("INFO", "stage_start", "Discovery stage started", { stage: "polymarket_discovery" });
     const matches = await discoverPolymarket();
+    const cycle = { matches: matches.length, nutmegMatched: 0, preMatch: 0, live: 0, liveZeroZero: 0, evaluations: 0, buyPassed: 0, buyRejected: 0, sellEvaluated: 0, liveStateUnavailable: 0, buySent: 0, sellSent: 0 };
     log("INFO", "stage_done", "Discovery stage finished", {
       stage: "polymarket_discovery", elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
     });
@@ -470,7 +471,7 @@ async function tick() {
       if (preMatch) {
         let candidateProvider = "nutmeg";
         let candidate = Boolean(nm && balancedForOneOne(nm));
-                log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
+                log("INFO", "candidate_evaluation", "Pre-match BUY filter evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: true,
@@ -553,7 +554,7 @@ async function tick() {
         const nm = findNutmegMatch(match, nutmeg);
         const candidateProvider = "nutmeg";
         const candidate = Boolean(nm && balancedForOneOne(nm));
-        log("INFO", "candidate_match_found", "Live 0:0 candidate evaluated for BUY", {
+        log("INFO", "candidate_evaluation", "Live 0:0 BUY filter evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: false,
@@ -583,12 +584,18 @@ async function tick() {
       // After kickoff and after a goal, do not run BUY filters.
       // maybeOneOneAlert sends SELL only for exactly 1:0/0:1,
       // and Convex rejects SELL unless the BUY phase was completed.
-      await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
+      cycle.sellEvaluated += 1;
+       await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
       }));
     }
 
     log("INFO", "stage_done", "Alert evaluation stage finished", {
       stage: "evaluation", elapsedMs: Date.now() - evaluationStartedAt, candidates: matches.length
+    });
+    log("INFO", "cycle_summary", "Football monitor cycle summary", {
+      elapsedMs: Date.now() - tickStartedAt,
+      ...cycle,
+      note: "BUY candidate = only matches that passed Nutmegly balance filter; 1:1 market is not a discovery gate"
     });
     log("INFO", "tick_done", "Football monitor tick completed", {
       elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
