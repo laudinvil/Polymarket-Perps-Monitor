@@ -35,11 +35,34 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx) => {
     const stats = await ctx.runQuery(internal.footballLogs.stats, {});
-    const recentLogs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit: 50 });
+    const recentLogs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit: 500 });
     return Response.json({
       monitor: "polymarket-football-1-1",
+      status: "ok",
       stats,
       recentLogs,
+    });
+  }),
+});
+
+http.route({
+  path: "/football/health",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    const stats = await ctx.runQuery(internal.footballLogs.stats, {});
+    return Response.json({
+      status: "ok",
+      monitor: "polymarket-football-1-1",
+      updatedAt: stats?.updatedAt ?? null,
+      ticks: stats?.ticks ?? 0,
+      candidates: stats?.candidates ?? 0,
+      evaluations: stats?.evaluations ?? 0,
+      balanced: stats?.balanced ?? 0,
+      marketMissing: stats?.marketMissing ?? 0,
+      unresolved: stats?.unresolved ?? 0,
+      buyAlerts: stats?.buyAlerts ?? 0,
+      sellAlerts: stats?.sellAlerts ?? 0,
+      errors: stats?.errors ?? 0,
     });
   }),
 });
