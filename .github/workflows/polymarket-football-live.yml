@@ -49,3 +49,5 @@ jobs:
         run: node scripts/polymarket-football-live.js
 
 # trigger: BUY-first strategy correction
+
+# trigger: restore runCycle
