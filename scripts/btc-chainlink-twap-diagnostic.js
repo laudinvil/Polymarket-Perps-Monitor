@@ -270,7 +270,6 @@ function resetPeriodIfNeeded() {
   const start = periodStart(now);
 
   if (currentPeriodStart === null) {
-    // Do not use a mid-period price as the opening price.
     if (now - start > POLL_MS * 2) {
       currentPeriodStart = start + PERIOD_MS;
       periodStartPrice = null;
@@ -308,8 +307,6 @@ function resetPeriodIfNeeded() {
 
 function settlementProbabilityUp() {
   const price = activePrice();
-  if (price === null || periodStartPrice ==function settlementProbabilityUp() {
-  const price = activePrice();
   if (price === null || periodStartPrice === null || periodStartPrice <= 0) return null;
 
   const periodMoveBps = (price / periodStartPrice - 1) * 10_000;
@@ -323,7 +320,10 @@ function settlementProbabilityUp() {
   return clamp(0.5 + 0.20 * Math.tanh(score), 0.30, 0.70);
 }
 
-for (const market of markets) {
+function marketOutcomeTokens(event) {
+  const markets = Array.isArray(event?.markets) ? event.markets : [];
+
+  for (const market of markets) {
     const outcomes = parseJson(market.outcomes);
     const tokenIds = parseJson(market.clobTokenIds);
 
@@ -339,11 +339,7 @@ for (const market of markets) {
     const down = rows.find(x => /^down$/i.test(x.outcome));
 
     if (up && down) {
-      return {
-        market,
-        up,
-        down
-      };
+      return { market, up, down };
     }
   }
 
@@ -477,6 +473,7 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
     "",
     "CHAINLINK: $" + activePrice().toFixed(2),
     "START TWAP: $" + periodStartPrice.toFixed(2),
+    "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
     "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
     "RTDS TWAP60: " + (latestRtds ? "$" + latestRtds.value.toFixed(2) : "N/A"),
     "DS ↔ RTDS: " +
