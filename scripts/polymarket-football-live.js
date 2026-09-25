@@ -493,6 +493,7 @@ async function tick() {
     log("INFO", "tick_done", "Football monitor tick completed", {
       elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
     });
+    return matches.length;
   } catch (err) {
     log("ERROR", "discovery_failed", "Football 1:1 monitor tick failed; monitoring continues", {
       message: err.message
