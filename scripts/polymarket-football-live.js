@@ -107,7 +107,7 @@ function extractTeams(event) {
     event.homeTeam && event.awayTeam ? [event.homeTeam, event.awayTeam] : null,
     event.home_team && event.away_team ? [event.home_team, event.away_team] : null
   ].filter(Boolean);
-  if (candidates.length) return candidates[0].map(text);
+  if (matches.length) return candidates[0].map(text);
   const m = title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
   return m ? [m[1].trim(), m[2].trim()] : ["", ""];
 }
@@ -161,9 +161,9 @@ async function activeEventsBySeries(seriesId) {
 }
 
 async function discoverPolymarket() {
-  const candidates = [];
+  const matches = [];
   const seen = new Set();
-  let eventScanned = 0, footballEventFound = 0, candidatesFound = 0;
+  let eventScanned = 0, footballEventFound = 0, matchesFound = 0;
 
   await checkpoint("discovery_start", {
     strategy: "football_match_first_v6",
@@ -392,9 +392,9 @@ async function discoverPolymarket() {
       }
 
       seen.add(key);
-      candidatesFound++;
+      matchesFound++;
 
-      log("INFO", "candidate_gate_passed", "Football match passed discovery gates", {
+      log("INFO", "match_discovery_passed", "Football match passed technical discovery filters", {
         source: result.name,
         eventId,
         slug,
@@ -417,7 +417,7 @@ async function discoverPolymarket() {
           }))
         : [];
 
-      candidates.push({
+      matches.push({
         eventId,
         slug,
         url: eventUrl(event),
@@ -444,18 +444,18 @@ async function discoverPolymarket() {
       rows: result.rows.length,
       eventScanned,
       footballEventFound,
-      candidatesFound
+      matchesFound
     });
   }
 
   await checkpoint("discovery_done", {
     eventScanned,
     footballEventFound,
-    candidatesFound,
-    candidates: candidates.length
+    matchesFound,
+    matches: matches.length
   });
 
-  return candidates;
+  return matches;
 }
 
 function stripHtml(value) {
@@ -687,17 +687,17 @@ async function tick() {
     log("INFO", "stage_start", "Discovery stage started", { stage: "polymarket_discovery" });
     const matches = await discoverPolymarket();
     log("INFO", "stage_done", "Discovery stage finished", {
-      stage: "polymarket_discovery", elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
+      stage: "polymarket_discovery", elapsedMs: Date.now() - tickStartedAt, matches: matches.length
     });
 
     const nutmegStartedAt = Date.now();
     log("INFO", "stage_start", "Nutmeg stage started", { stage: "nutmeg" });
     const nutmeg = await nutmegRows();
     log("INFO", "stage_done", "Nutmeg stage finished", {
-      stage: "nutmeg", elapsedMs: Date.now() - nutmegStartedAt, rows: nutmeg.length
+      stage: "nutmeg", elapsedMs: Date.now() - nutmegStartedAt, rows: nutmeg.length, matchesSentToNutmeg: matches.length
     });
 
-    log("INFO", "polymarket_discovery", "Football match candidates discovered", {
+    log("INFO", "polymarket_discovery", "Football matches discovered; all will be evaluated against Nutmegly", {
       count: matches.length,
       matches: matches.map(m => ({
         eventId: m.eventId,
@@ -740,7 +740,7 @@ async function tick() {
 
     const evaluationStartedAt = Date.now();
     log("INFO", "stage_start", "Alert evaluation stage started", {
-      stage: "evaluation", candidates: matches.length
+      stage: "evaluation", matches: matches.length
     });
 
     // Load missing event markets concurrently before evaluation. The old
@@ -765,7 +765,7 @@ async function tick() {
 
       if (preMatch) {
         const nm = findNutmegMatch(match, nutmeg);
-        log("INFO", "candidate_match_found", "Pre-match candidate evaluated", {
+        log("INFO", "match_strategy_evaluation", "Pre-match candidate evaluated", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: true,
@@ -776,7 +776,7 @@ async function tick() {
         });
 
         if (!nm.match || !balancedForOneOne(nm)) {
-          log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
+          log("INFO", "match_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
             nutmegScore: Number(nm.score.toFixed(3)),
@@ -815,7 +815,7 @@ async function tick() {
       // At 0:0, apply BUY filters.
       if (Number(score.home) === 0 && Number(score.away) === 0) {
         const nm = findNutmegMatch(match, nutmeg);
-        log("INFO", "candidate_match_found", "Live 0:0 candidate evaluated for BUY", {
+        log("INFO", "match_strategy_evaluation", "Live 0:0 candidate evaluated for BUY", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           preMatch: false,
@@ -827,7 +827,7 @@ async function tick() {
         });
 
         if (!nm.match || !balancedForOneOne(nm)) {
-          log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
+          log("INFO", "match_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
             nutmegScore: Number(nm.score.toFixed(3)),
@@ -847,10 +847,10 @@ async function tick() {
     }
 
     log("INFO", "stage_done", "Alert evaluation stage finished", {
-      stage: "evaluation", elapsedMs: Date.now() - evaluationStartedAt, candidates: matches.length
+      stage: "evaluation", elapsedMs: Date.now() - evaluationStartedAt, matches: matches.length
     });
     log("INFO", "tick_done", "Football monitor tick completed", {
-      elapsedMs: Date.now() - tickStartedAt, candidates: matches.length
+      elapsedMs: Date.now() - tickStartedAt, matches: matches.length
     });
   } catch (err) {
     log("ERROR", "discovery_failed", "Football 1:1 monitor tick failed; monitoring continues", {
