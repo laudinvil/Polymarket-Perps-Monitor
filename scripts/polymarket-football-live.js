@@ -342,16 +342,27 @@ function balancedForOneOne(nutmeg) {
 function findOneOneMarket(match) {
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
-    for (let i = 0; i < outcomes.length; i++) {
-      if (/^1\s*[-:]\s*1$/.test(text(outcomes[i]))) {
-        const price = Number((market.outcomePrices || [])[i]);
-        if (Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
+    const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
+
+    // Polymarket exact-score markets are commonly separate Yes/No markets,
+    // with the score embedded in the question, e.g.:
+    // "Exact Score: Home 1 - 1 Away?"
+    const question = text(market.question || "");
+    if (/(?:exact score|correct score)/i.test(question) &&
+        /(?:^|\s)1\s*[-:]\s*1(?:\s|\?|$)/i.test(question)) {
+      const yesIndex = outcomes.findIndex(v => /^yes$/i.test(text(v)));
+      const index = yesIndex >= 0 ? yesIndex : 0;
+      const price = Number(prices[index]);
+      if (Number.isFinite(price)) {
+        return { market, outcome: text(outcomes[index] || "Yes"), price };
       }
     }
-    if (/correct score|exact score|score/i.test(market.question || "")) {
-      const i = outcomes.findIndex(v => /^1\s*[-:]\s*1$/.test(text(v)));
-      const price = Number((market.outcomePrices || [])[i]);
-      if (i >= 0 && Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
+
+    for (let i = 0; i < outcomes.length; i++) {
+      if (/^1\s*[-:]\s*1$/.test(text(outcomes[i]))) {
+        const price = Number(prices[i]);
+        if (Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
+      }
     }
   }
   return null;
