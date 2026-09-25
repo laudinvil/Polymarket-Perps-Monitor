@@ -169,11 +169,70 @@ async function discoverPolymarket() {
   ];
 
   const results = await Promise.all(sources.map(async source => {
+    const startedAt = Date.now();
     try {
-      const data = await getJson(source.url);
+      const response = await fetch(source.url, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(10_000)
+      });
+      const contentType = text(response.headers.get("content-type"));
+      const body = await response.text();
+      const elapsedMs = Date.now() - startedAt;
+
+      if (!response.ok) {
+        log("ERROR", "event_source_http_error", "Polymarket football source returned non-2xx", {
+          source: source.name,
+          status: response.status,
+          statusText: response.statusText,
+          contentType,
+          bodyPreview: body.slice(0, 500),
+          elapsedMs
+        });
+        throw new Error("HTTP " + response.status + " for " + source.url);
+      }
+
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch (error) {
+        log("ERROR", "event_source_json_error", "Polymarket football source returned invalid JSON", {
+          source: source.name,
+          status: response.status,
+          contentType,
+          bodyPreview: body.slice(0, 500),
+          elapsedMs,
+          message: error.message
+        });
+        throw error;
+      }
+
+      const rows = Array.isArray(data) ? data : (data?.events || data?.data || []);
+      const sample = rows.slice(0, 5).map(event => ({
+        id: text(event?.id || event?.eventId || event?.event_id),
+        slug: text(event?.slug),
+        title: text(event?.title || event?.question),
+        sport: text(event?.sport || event?.sportSlug || event?.sport_slug),
+        category: text(event?.category),
+        active: event?.active,
+        closed: event?.closed,
+        startDate: text(event?.startDate || event?.start_date || event?.startTime)
+      }));
+
+      log("INFO", "event_source_response", "Raw Polymarket football source response captured", {
+        source: source.name,
+        status: response.status,
+        contentType,
+        bodyBytes: Buffer.byteLength(body, "utf8"),
+        elapsedMs,
+        payloadType: Array.isArray(data) ? "array" : typeof data,
+        rowCount: rows.length,
+        topLevelKeys: data && !Array.isArray(data) && typeof data === "object" ? Object.keys(data).slice(0, 30) : [],
+        sample
+      });
+
       return {
         name: source.name,
-        rows: Array.isArray(data) ? data : (data.events || data.data || []),
+        rows,
         error: null
       };
     } catch (error) {
