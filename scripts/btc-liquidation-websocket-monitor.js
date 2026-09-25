@@ -6,7 +6,7 @@ const BYBIT_PING_MS = 20000;
 const BYBIT_WS_URL = "wss://stream.bybit.com/v5/public/linear";
 
 const RUN_MS = 6 * 60 * 60 * 1000;
-const COOLDOWN_MS = 30 * 1000;
+const COOLDOWN_MS = 40 * 1000;
 const RECONNECT_MS = 3000;
 const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/";
 
@@ -96,7 +96,7 @@ function acceptLiquidation({ exchange, side, price, amount, eventTime }) {
 
   if (now < cooldownUntil) {
     stats[exchange].ignoredCooldown += 1;
-    log("INFO", "liquidation_ignored_cooldown", "Liquidation ignored during 30 second cooldown", {
+    log("INFO", "liquidation_ignored_cooldown", "Liquidation ignored during 40 second cooldown", {
       exchange,
       side,
       price,
