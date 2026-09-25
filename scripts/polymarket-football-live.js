@@ -201,6 +201,8 @@ async function nutmegRows() {
         const upcoming = upcomingMatches.at(-1) || null;
         const vs = vsMatches.at(-1) || null;
         const candidate = live || upcoming || vs;
+        const prefixWindow = prefix.slice(Math.max(0, prefix.length - 900));
+        const nutmegLiveMarker = /\bLIVE\b/i.test(prefixWindow);
         if (!candidate) continue;
 
         let home = "";
@@ -227,7 +229,8 @@ async function nutmegRows() {
           drawProb: Number(m[2]) / 100,
           awayProb: Number(m[3]) / 100,
           bttsProb: NaN,
-          live: Boolean(score),
+          live: Boolean(score) && nutmegLiveMarker,
+          finished: Boolean(score) && !nutmegLiveMarker && minute == null,
           score,
           minute
         });
@@ -280,7 +283,8 @@ function findNutmegMatch(match, rows) {
         away: match.awayTeam,
         homeProb: best.awayProb,
         awayProb: best.homeProb,
-        score: best.score ? { home: best.score.away, away: best.score.home } : null
+        score: best.score ? { home: best.score.away, away: best.score.home } : null,
+        finished: Boolean(best.finished)
       }
     : best;
   return { row: normalizedRow, score: bestScore, swapped: bestSwapped };
@@ -393,6 +397,35 @@ async function maybeOneOneAlert(match, nutmeg) {
     } catch (err) {
       await releaseTelegramAlert(claimKey);
       log("ERROR", "telegram_send_failed", "BUY alert send failed; claim released", {
+        eventId: match.eventId, message: err.message
+      });
+    }
+    return;
+  }
+
+  // A BUY that remains 0:0 through full time is a LOSS. Nutmegly is
+  // the authoritative score source for this final-state check.
+  if (match.live?.finished && home === 0 && away === 0) {
+    const claimKey = key + ":LOSS";
+    const claim = await claimTelegramAlert(claimKey);
+    if (!claim.claimed) return;
+
+    const message = [
+      "⚽ 1:1 · LOSS", "",
+      match.homeTeam + " vs " + match.awayTeam,
+      "SCORE: 0–0",
+      "", "➡️ OPEN MATCH", match.url
+    ].join("\n");
+
+    try {
+      const sent = await sendTelegram(message, claim.replyToMessageId);
+      if (!sent.ok) throw new Error("Telegram not configured");
+      log("INFO", "one_one_loss_alert_sent", "1:1 loss alert sent as Telegram reply to BUY", {
+        eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId
+      });
+    } catch (err) {
+      await releaseTelegramAlert(claimKey);
+      log("ERROR", "telegram_send_failed", "LOSS alert send failed; claim released", {
         eventId: match.eventId, message: err.message
       });
     }
@@ -570,7 +603,8 @@ async function tick() {
         liveState = {
           status: "live",
           score: nmLive.row.score,
-          minute: Number(nmLive.row.minute || 0)
+          minute: Number(nmLive.row.minute || 0),
+          finished: Boolean(nmLive.row.finished)
         };
         log("INFO", "live_state_from_nutmeg", "Live score received from Nutmegly", {
           eventId: match.eventId,
@@ -646,7 +680,7 @@ async function tick() {
       // maybeOneOneAlert sends SELL only for exactly 1:0/0:1,
       // and Convex rejects SELL unless the BUY phase was completed.
       cycle.sellEvaluated += 1;
-       await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
+       await maybeOneOneAlert({ ...match, live: { ...match.live, score, finished: Boolean(match.live?.finished) }, preMatch: false }, nmLive);
       }));
     }
 
