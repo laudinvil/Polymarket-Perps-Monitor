@@ -75,12 +75,12 @@ function norm(v) {
   return text(v)
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss")
     .replace(/&/g, "and")
-    .replace(/\\b(?:fc|cf|sc|afc|ac|fk|sk|bk|sv|ks|cd|ud|rcd|kv|krc)\\b/g, " ")
+    .replace(/\b(?:fc|cf|sc|afc|ac|fk|sk|bk|sv|ks|cd|ud|rcd|kv|krc)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -475,7 +475,7 @@ function parseTimezoneDate(date, hh, mm, ss, zone) {
     "IST": 330, "ASIA/SHANGHAI": 480, "BEIJING": 480, "CHINA STANDARD TIME": 480
   };
   let offsetMinutes = namedOffsets[z];
-  const offsetMatch = z.match(/^([+-])(\\d{2}):?(\\d{2})$/);
+  const offsetMatch = z.match(/^([+-])(\d{2}):?(\d{2})$/);
   if (offsetMatch) offsetMinutes = (Number(offsetMatch[2]) * 60 + Number(offsetMatch[3])) * (offsetMatch[1] === "+" ? 1 : -1);
   if (z === "Z") offsetMinutes = 0;
   if (!Number.isFinite(offsetMinutes)) return null;
@@ -485,7 +485,7 @@ function parseTimezoneDate(date, hh, mm, ss, zone) {
 
 function nutmegKickoffFromContext(context, sourceDate) {
   const s = text(context);
-  const explicit = s.match(/(20\\d{2}-\\d{2}-\\d{2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(Z|[+-]\\d{2}:?\\d{2}|UTC|GMT(?:[+-]\\d{1,2})?|CET|CEST|EET|EEST|BST|IST)\\b/i);
+  const explicit = s.match(/(20\d{2}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*(Z|[+-]\d{2}:?\d{2}|UTC|GMT(?:[+-]\d{1,2})?|CET|CEST|EET|EEST|BST|IST)\b/i);
   if (explicit) return parseTimezoneDate(explicit[1], explicit[2], explicit[3], explicit[4] || "0", explicit[5]);
 
   const clock = s.match(/(?:^|\\s)(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(Z|[+-]\\d{2}:?\\d{2}|UTC|GMT(?:[+-]\\d{1,2})?|CET|CEST|EET|EEST|BST|IST)?(?=\\s|$)/i);
@@ -515,7 +515,7 @@ async function nutmegRows() {
       }
       const raw = await r.text();
       const body = stripHtml(raw);
-      const re = /(.{2,100}?)\\s+VS\\s+(.{2,100}?)\\s+Home win\\s*(\\d+(?:\\.\\d+)?)%\\s+Draw\\s*(\\d+(?:\\.\\d+)?)%\\s+Away win\\s*(\\d+(?:\\.\\d+)?)%/gi;
+      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
       let m, count = 0;
       while ((m = re.exec(body))) {
         const prefix = body.slice(Math.max(0, m.index - 220), m.index);
