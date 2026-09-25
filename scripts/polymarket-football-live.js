@@ -455,15 +455,26 @@ async function tick() {
       }))
     });
 
-    await enrichLiveMatches(matches);
+    // Pre-match candidates do not need SportScore: the absence of a started
+    // match is determined directly from Polymarket startTime. SportScore is
+    // only needed once the scheduled start time has passed.
+    const now = Date.now();
+    const preMatchCandidates = matches.filter(m => {
+      const startMs = Date.parse(m.startTime || "");
+      return Number.isFinite(startMs) && startMs > now;
+    });
+    const liveCandidates = matches.filter(m => !preMatchCandidates.includes(m));
+
+    await enrichLiveMatches(liveCandidates);
 
     for (const match of matches) {
       if (match.live?.status === "provider_error") continue;
 
       const startMs = Date.parse(match.startTime || "");
       const preMatch = Number.isFinite(startMs) && startMs > Date.now();
-      if (match.live?.status === "unresolved" && !preMatch) {
-        log("INFO", "match_unresolved", "Candidate has no SportScore fixture match", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
+
+      if (!preMatch && match.live?.status === "unresolved") {
+        log("INFO", "match_unresolved", "Started candidate has no SportScore fixture match", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
         continue;
       }
 
