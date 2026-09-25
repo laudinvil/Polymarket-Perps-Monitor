@@ -28,13 +28,19 @@ export const ingest = mutation({
         monitor: MONITOR, level: item.level, event: item.event,
         message: item.message, data: item.data, createdAt: item.createdAt,
       });
-      candidates += item.event === "candidate_match_found" ? 1 : 0;
+
+      candidates += ["candidate_match_found", "candidate_discovered"].includes(item.event) ? 1 : 0;
       evaluations += item.event === "one_one_evaluation" ? 1 : 0;
       marketMissing += item.event === "one_one_market_missing" ? 1 : 0;
       unresolved += item.event === "match_unresolved" ? 1 : 0;
       buyAlerts += item.event === "one_one_buy_alert_sent" ? 1 : 0;
       sellAlerts += item.event === "one_one_sell_alert_sent" ? 1 : 0;
-      errors += item.event === "discovery_failed" ? 1 : 0;
+      errors += [
+        "discovery_failed",
+        "event_source_http_error",
+        "event_source_json_error",
+      ].includes(item.event) ? 1 : 0;
+
       if (item.event === "one_one_evaluation" && item.data) {
         try { if (JSON.parse(item.data).balanced === true) balanced += 1; } catch {}
       }
@@ -82,12 +88,8 @@ export const claimTelegramAlert = mutation({
       .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
       .first();
 
-    // A stale claim must not permanently suppress an alert after a Telegram
-    // failure or runner restart. Five minutes is longer than one polling gap
-    // but short enough to recover automatically.
     if (existing && now - existing.claimedAt < 5 * 60 * 1000) return false;
 
-    // SELL is only legal after this monitor has successfully reserved a BUY.
     if (args.marketSlug.endsWith(":SELL")) {
       const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
       const buy = await ctx.db.query("telegramDedupe")
@@ -128,5 +130,5 @@ export const recentLogs = query({
   })),
   handler: async (ctx, args) => await ctx.db.query("footballLogs")
     .withIndex("by_monitor_time", (q) => q.eq("monitor", MONITOR))
-    .order("desc").take(Math.min(args.limit ?? 100, 500)),
+    .order("desc").take(Math.min(args.limit ?? 500, 1000)),
 });
