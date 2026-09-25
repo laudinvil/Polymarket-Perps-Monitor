@@ -169,11 +169,28 @@ async function discoverPolymarket() {
 
   await checkpoint("match_discovery_start", { strategy: "exact_score_1_1_market_first_v2" });
 
-  for (let offset = 0; offset < 10000; offset += 500) {
-    try {
-      const data = await getJson(
-        GAMMA_URL + "/markets?active=true&closed=false&limit=500&offset=" + offset
-      );
+  // Scan market pages in small parallel batches. The previous sequential
+  // scan could spend ~3+ minutes waiting on 10s HTTP timeouts before the
+  // strategy even reached Nutmegly/SportScore.
+  const offsets = Array.from({ length: 20 }, (_, i) => i * 500);
+  for (let batchStart = 0; batchStart < offsets.length; batchStart += 4) {
+    const batch = offsets.slice(batchStart, batchStart + 4);
+    const pageResults = await Promise.all(batch.map(async offset => {
+      try {
+        const data = await getJson(
+          GAMMA_URL + "/markets?active=true&closed=false&limit=500&offset=" + offset
+        );
+        return { offset, data, error: null };
+      } catch (err) {
+        return { offset, data: null, error: err };
+      }
+    }));
+
+    for (const { offset, data, error } of pageResults) {
+      if (error) {
+        log("WARN", "market_page_failed", "Polymarket market discovery failed", { offset, message: error.message });
+        continue;
+      }
       const rows = Array.isArray(data) ? data : (data.markets || data.data || []);
       marketScanned += rows.length;
 
@@ -260,13 +277,12 @@ async function discoverPolymarket() {
         exactScoreFound, oneOneFound, matchRecognized,
         hasMore: data?.has_more ?? data?.hasMore ?? null
       });
-
-      const hasMore = data?.has_more ?? data?.hasMore;
-      if (hasMore === false || rows.length === 0) break;
-    } catch (err) {
-      log("WARN", "market_page_failed", "Polymarket market discovery failed", { offset, message: err.message });
-      break;
     }
+    if (pageResults.some(({ data }) => {
+      const rows = Array.isArray(data) ? data : (data?.markets || data?.data || []);
+      const hasMore = data?.has_more ?? data?.hasMore;
+      return hasMore === false || rows.length === 0;
+    })) break;
   }
 
   await checkpoint("match_discovery_done", {
