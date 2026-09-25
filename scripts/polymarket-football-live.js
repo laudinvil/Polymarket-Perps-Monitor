@@ -318,6 +318,17 @@ async function discoverPolymarket() {
         continue;
       }
 
+      const eventTitle = text(event.title || event.question);
+      // Gamma exposes child market-events alongside the real fixture.
+      // Keep only the parent fixture in the match candidate set.
+      if (/\\s-\\s(?:Total Corners|More Markets|Exact Score|First Team to Score|Second Half Result|Halftime Result|Match Result|Half Time Result)\\s*$/i.test(eventTitle)) {
+        log("INFO", "child_market_event_filtered", "Filtered child market-event; parent fixture will be used", {
+          eventId: text(event.id),
+          title: eventTitle
+        });
+        continue;
+      }
+
       const [home, away] = extractTeams(event);
       if (!home || !away) {
         log("INFO", "match_teams_missing", "Football event has no recognizable teams", {
