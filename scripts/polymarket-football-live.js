@@ -1,6 +1,5 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
-const SPORTMONKS_URL = "https://api.sportmonks.com/v3/football";
-const SPORTMONKS_TOKEN = process.env.SPORTMONKS_TOKEN || "";
+const SPORTScore_URL = "https://sportscore.com/api/widget";
 
 const POLL_MS = 15_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
@@ -190,9 +189,6 @@ async function discoverPolymarket() {
   return live;
 }
 
-function sportmonksHeaders() {
-  return { Authorization: "Bearer " + SPORTMONKS_TOKEN };
-}
 
 function participants(fixture) {
   return Array.isArray(fixture?.participants) ? fixture.participants : [];
@@ -443,112 +439,95 @@ function recordHistory(match, snapshot) {
   return calculateFeatures(match, snapshot);
 }
 
-async function sportmonksLatest() {
-  if (!SPORTMONKS_TOKEN) {
-    log("WARN", "sportmonks_token_missing", "SPORTMONKS_TOKEN is not configured; live provider layer is waiting for a token");
-    return [];
-  }
-
-  const url = SPORTMONKS_URL + "/livescores/latest?include=scores;participants;events.type;state;periods";
-  const data = await getJson(url, { headers: sportmonksHeaders() });
-  return Array.isArray(data?.data) ? data.data : [];
+async function sportscoreLatest() {
+  const url = SPORTScore_URL + "/matches/?sport=football&limit=50";
+  const data = await getJson(url);
+  return Array.isArray(data?.matches) ? data.matches : [];
 }
 
-async function sportmonksFixture(fixtureId) {
-  const url = SPORTMONKS_URL +
-    "/fixtures/" + encodeURIComponent(fixtureId) +
-    "?include=scores;state;participants;events.type;periods;xGFixture;statistics.type";
-  const data = await getJson(url, { headers: sportmonksHeaders() });
-  return data?.data || null;
+async function sportscoreMatch(slug) {
+  const url = SPORTScore_URL + "/match/?sport=football&slug=" + encodeURIComponent(slug);
+  const data = await getJson(url);
+  return data?.match || null;
 }
 
-function teamSimilarity(a, b) {
-  const x = norm(a);
-  const y = norm(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.includes(y) || y.includes(x)) return 0.85;
-  const ax = new Set(x.split(" "));
-  const by = new Set(y.split(" "));
-  const overlap = [...ax].filter(v => by.has(v)).length;
-  return overlap / Math.max(ax.size, by.size);
+function sportscoreSlug(url) {
+  const m = text(url).match(/\/football\/match\/([^/?#]+)\/?$/i);
+  return m ? m[1] : "";
 }
 
-function resolveFixture(match, fixtures) {
+function normalizeSportScore(match) {
+  const home = text(match.home);
+  const away = text(match.away);
+  const scoreHome = Number(match.home_score ?? 0);
+  const scoreAway = Number(match.away_score ?? 0);
+  const minute = Number(match.live_minute);
+  return {
+    fixtureId: text(match.url) || home + ":" + away,
+    name: home + " vs " + away,
+    homeTeam: home,
+    awayTeam: away,
+    minute: Number.isFinite(minute) ? minute : 0,
+    score: { home: scoreHome, away: scoreAway },
+    xg: { home: NaN, away: NaN },
+    stats: { home: { shots: NaN, shotsOnTarget: NaN }, away: { shots: NaN, shotsOnTarget: NaN } },
+    startingAt: match.time || null,
+    stateId: match.status || null,
+    events: Array.isArray(match.incidents) ? match.incidents : []
+  };
+}
+
+function resolveSportScore(match, fixtures) {
   let best = null;
   let bestScore = 0;
-
   for (const fixture of fixtures) {
-    const teams = fixtureTeams(fixture);
-    const direct =
-      teamSimilarity(match.homeTeam, teams.home) +
-      teamSimilarity(match.awayTeam, teams.away);
-    const swapped =
-      teamSimilarity(match.homeTeam, teams.away) +
-      teamSimilarity(match.awayTeam, teams.home);
-
+    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
+    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
     const score = Math.max(direct, swapped);
-    if (score > bestScore) {
-      bestScore = score;
-      best = fixture;
-    }
+    if (score > bestScore) { bestScore = score; best = fixture; }
   }
-
   if (!best || bestScore < 1.4) return null;
   return { fixture: best, score: bestScore };
 }
 
 async function enrichLiveMatches(polymarketMatches) {
-  const fixtures = await sportmonksLatest();
+  const fixtures = await sportscoreLatest();
+  const liveFixtures = fixtures.filter(f => /live|in progress|1st half|2nd half|halftime/i.test(text(f.status) + " " + text(f.status_text)));
 
   for (const match of polymarketMatches) {
     const key = match.eventId || match.slug;
-    const resolvedExisting = resolved.get(key);
-
-    let resolvedMatch = resolvedExisting;
+    let resolvedMatch = resolved.get(key);
     if (!resolvedMatch) {
-      resolvedMatch = resolveFixture(match, fixtures);
+      resolvedMatch = resolveSportScore(match, liveFixtures);
       if (resolvedMatch) {
-        resolved.set(key, {
-          fixtureId: String(resolvedMatch.fixture.id),
-          confidence: resolvedMatch.score
-        });
-        log("INFO", "match_resolved", "Polymarket match linked to SportMonks fixture", {
-          eventId: match.eventId,
-          url: match.url,
+        const slug = sportscoreSlug(resolvedMatch.fixture.url);
+        resolved.set(key, { fixtureId: slug, confidence: resolvedMatch.score });
+        log("INFO", "match_resolved", "Polymarket match linked to SportScore fixture", {
+          eventId: match.eventId, url: match.url,
           polymarketTeams: [match.homeTeam, match.awayTeam],
-          fixtureId: String(resolvedMatch.fixture.id),
-          sportmonksName: resolvedMatch.fixture.name,
+          sportscoreTeams: [resolvedMatch.fixture.home, resolvedMatch.fixture.away],
           confidence: resolvedMatch.score
         });
       }
     }
-
     if (!resolvedMatch) {
       match.live = { status: "unresolved" };
       continue;
     }
 
-    const fixture = await sportmonksFixture(resolvedMatch.fixtureId).catch(err => {
-      log("WARN", "fixture_failed", "SportMonks fixture refresh failed", {
-        fixtureId: resolvedMatch.fixtureId,
-        message: err.message
-      });
+    const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
+      log("WARN", "fixture_failed", "SportScore match refresh failed", { fixture: resolvedMatch.fixtureId, message: err.message });
       return null;
     });
+    if (!detail) { match.live = { status: "provider_error" }; continue; }
 
-    if (fixture) {
-      match.provider = "sportmonks";
-      match.providerFixtureId = resolvedMatch.fixtureId;
-      match.live = normalizeFixture(fixture);
-      match.features = recordHistory(match, match.live);
-      match.model = calculateModel(match, match.live, match.features);
-    } else {
-      match.live = { status: "provider_error" };
-    }
+    match.provider = "sportscore";
+    match.providerFixtureId = resolvedMatch.fixtureId;
+    match.live = normalizeSportScore(detail);
+    match.features = recordHistory(match, match.live);
+    match.model = calculateModel(match, match.live, match.features);
   }
 }
-
 
 function telegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
@@ -703,7 +682,7 @@ async function start() {
     pollSec: POLL_MS / 1000,
     runHours: RUN_MS / 3_600_000,
     provider: "sportmonks",
-    providerConfigured: Boolean(SPORTMONKS_TOKEN),
+    providerConfigured: Boolean(SPORTSCORE_TOKEN),
     historyMinutes: HISTORY_MS / 60_000
   });
 
