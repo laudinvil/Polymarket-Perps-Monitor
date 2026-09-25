@@ -428,83 +428,118 @@ async function tick() {
     const matches = await discoverPolymarket();
     const nutmeg = await nutmegRows();
 
-    log("INFO", "polymarket_discovery", "Polymarket football 1:1 candidates discovered", {
+    log("INFO", "polymarket_discovery", "Event-first football 1:1 candidates discovered", {
       count: matches.length,
       matches: matches.map(m => ({
-        eventId: m.eventId, teams: [m.homeTeam, m.awayTeam], startTime: m.startTime,
-        url: m.url, marketCount: m.markets.length
+        eventId: m.eventId,
+        teams: [m.homeTeam, m.awayTeam],
+        startTime: m.startTime,
+        url: m.url
       }))
     });
 
     const now = Date.now();
-    const preMatchCandidates = matches.filter(m => {
+    const liveCandidates = matches.filter(m => {
       const startMs = Date.parse(m.startTime || "");
-      return Number.isFinite(startMs) && startMs > now;
+      return !(Number.isFinite(startMs) && startMs > now);
     });
-    const liveCandidates = matches.filter(m => !preMatchCandidates.includes(m));
 
     await enrichLiveMatches(liveCandidates);
 
     for (const match of matches) {
-      if (match.live?.status === "provider_error") continue;
       const startMs = Date.parse(match.startTime || "");
       const preMatch = Number.isFinite(startMs) && startMs > Date.now();
 
-      if (!preMatch && match.live?.status === "unresolved") {
-        log("INFO", "match_unresolved", "Started candidate has no SportScore fixture match", { eventId: match.eventId, teams: [match.homeTeam, match.awayTeam] });
+      if (preMatch) {
+        const nm = findNutmegMatch(match, nutmeg);
+        log("INFO", "candidate_match_found", "Pre-match 1:1 candidate evaluated", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          preMatch: true,
+          nutmegMatched: Boolean(nm),
+          nutmegScore: nm?.score ?? null,
+          balanced: balancedForOneOne(nm),
+          price: findOneOneMarket(match)?.price ?? null
+        });
+
+        if (!nm || !balancedForOneOne(nm)) {
+          log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected by Nutmegly", {
+            eventId: match.eventId,
+            teams: [match.homeTeam, match.awayTeam],
+            nutmeg: nm?.row || null
+          });
+          continue;
+        }
+
+        await maybeOneOneAlert({
+          ...match,
+          live: { status: "scheduled", score: { home: 0, away: 0 }, minute: 0 }
+        }, nm);
         continue;
       }
 
-      const score = preMatch ? { home: 0, away: 0 } : match.live?.score;
-      const minute = preMatch ? 0 : match.live?.minute;
-      const nm = findNutmegMatch(match, nutmeg);
-
-      log("INFO", "candidate_match_found", "1:1 market candidate reached strategy filters", {
-        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], preMatch, score,
-        nutmegMatched: Boolean(nm), nutmegScore: nm?.score ?? null
-      });
-
-      if (!nm) {
-        log("INFO", "candidate_rejected_no_nutmeg", "Candidate rejected: no Nutmegly fixture match", {
-          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam]
+      // Live phase is deliberately split from BUY filtering.
+      // SELL must never depend on Nutmegly or on the BUY filters.
+      if (match.live?.status === "provider_error") continue;
+      if (match.live?.status === "unresolved") {
+        log("INFO", "match_unresolved", "Started candidate has no SportScore fixture match", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam]
         });
         continue;
       }
 
-      if (!preMatch && (Number(score?.home) !== 0 || Number(score?.away) !== 0)) {
-        log("INFO", "candidate_rejected_not_0_0", "Candidate rejected for BUY: match is no longer 0:0", {
-          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score
+      const score = match.live?.score || { home: 0, away: 0 };
+
+      log("INFO", "live_candidate_observed", "Live candidate observed", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        score,
+        minute: match.live?.minute ?? 0
+      });
+
+      // At 0:0, apply BUY filters.
+      if (Number(score.home) === 0 && Number(score.away) === 0) {
+        const nm = findNutmegMatch(match, nutmeg);
+        log("INFO", "candidate_match_found", "Live 0:0 candidate evaluated for BUY", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          preMatch: false,
+          score,
+          nutmegMatched: Boolean(nm),
+          nutmegScore: nm?.score ?? null,
+          balanced: balancedForOneOne(nm),
+          price: findOneOneMarket(match)?.price ?? null
         });
+
+        if (!nm || !balancedForOneOne(nm)) {
+          log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected by Nutmegly", {
+            eventId: match.eventId,
+            teams: [match.homeTeam, match.awayTeam],
+            nutmeg: nm?.row || null
+          });
+          continue;
+        }
+
+        await maybeOneOneAlert({ ...match, live: { ...match.live, score } }, nm);
         continue;
       }
 
-      log("INFO", "one_one_evaluation", "1:1 strategy evaluated", {
-        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score, minute, preMatch,
-        nutmeg: nm?.row || null, balanced: balancedForOneOne(nm),
-        oneOneMarket: findOneOneMarket(match)?.price ?? null
-      });
-
-      if (!balancedForOneOne(nm)) {
-        log("INFO", "candidate_rejected_unbalanced", "Candidate rejected by Nutmegly balance filter", {
-          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], nutmeg: nm.row
-        });
-        continue;
-      }
-
-      log("INFO", "buy_candidate_ready", "Candidate passed BUY filters", {
-        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score, preMatch,
-        price: findOneOneMarket(match)?.price ?? null
-      });
-
-      await maybeOneOneAlert({ ...match, live: { ...(match.live || {}), score, minute, status: preMatch ? "scheduled" : match.live?.status } }, nm);
+      // After kickoff and after a goal, do not run BUY filters.
+      // maybeOneOneAlert will send SELL only for exactly 1:0/0:1,
+      // and Convex will reject SELL unless the BUY phase was completed.
+      await maybeOneOneAlert({ ...match, live: { ...match.live, score } }, null);
     }
   } catch (err) {
-    log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
+    log("ERROR", "discovery_failed", "Football 1:1 monitor tick failed; monitoring continues", {
+      message: err.message
+    });
   } finally {
     tick.running = false;
     await flushConvexLogs();
   }
 }
+
 
 function participants(fixture) {
   return Array.isArray(fixture?.participants) ? fixture.participants : [];
