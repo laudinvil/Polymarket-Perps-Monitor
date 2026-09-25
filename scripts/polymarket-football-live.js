@@ -59,7 +59,12 @@ async function flushConvexLogs() {
   }
 }
 
-async function checkpoint(event, data = {}) {\n  log("INFO", event, "football monitor checkpoint", data);\n  await flushConvexLogs();\n}\n\nfunction text(v) {
+async function checkpoint(event, data = {}) {
+  log("INFO", event, "football monitor checkpoint", data);
+  await flushConvexLogs();
+}
+
+function text(v) {
   return typeof v === "string" ? v.trim() : "";
 }
 
