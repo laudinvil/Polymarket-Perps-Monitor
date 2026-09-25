@@ -22,6 +22,7 @@ const oneOneState = new Map();
 let nutmegCache = { at: 0, rows: [] };
 const convexLogBuffer = [];
 let convexTickCount = 0;
+let tickRunning = false;
 
 function log(level, event, message, data = undefined) {
   const entry = {
@@ -454,7 +455,11 @@ async function maybeOneOneAlert(match, nutmeg) {
 }
 
 async function tick() {
-  if (stopping) return;
+  if (stopping || tickRunning) {
+    if (tickRunning) log("WARN", "tick_overlap_skipped", "Previous monitoring tick is still running; skipping overlapping tick");
+    return;
+  }
+  tickRunning = true;
   convexTickCount += 1;
 
   try {
@@ -504,6 +509,7 @@ async function tick() {
   } catch (err) {
     log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
   } finally {
+    tickRunning = false;
     await flushConvexLogs();
   }
 }
