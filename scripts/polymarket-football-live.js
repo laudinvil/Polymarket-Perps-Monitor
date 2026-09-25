@@ -139,14 +139,17 @@ async function nutmegRows() {
   if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return { rows: nutmegCache.rows, providerUnavailable: nutmegCache.providerUnavailable };
   const rows = [];
   let successfulPages = 0;
-  const pages = [1, 2, 3, 4, 5];
-  const statuses = ["upcoming", "live"];
-  const jobs = [];
-  for (const status of statuses) for (const page of pages) jobs.push({ status, page });
+  // Nutmegly currently serves the all-status fixture list with 40 fixtures
+  // per page. The old status+page combination is not a stable pagination API:
+  // several live pages return 404 and made the monitor see only one fixture.
+  // Read the normal paginated fixture list instead, then let the live-card
+  // parser identify score/minute when a fixture is live.
+  const pages = [1, 2, 3, 4, 5, 6];
+  const jobs = pages.map(page => ({ page }));
 
-  const results = await Promise.all(jobs.map(async ({ status, page }) => {
+  const results = await Promise.all(jobs.map(async ({ page }) => {
     try {
-      const url = "https://nutmegly.com/?competition=all&page=" + page + "&status=" + status + "&tz=UTC";
+      const url = "https://nutmegly.com/?competition=all&page=" + page + "&tz=UTC";
       const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const body = stripHtml(await r.text());
@@ -189,7 +192,7 @@ async function nutmegRows() {
       successfulPages++;
       return out;
     } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { status, page, message: err.message });
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
       return [];
     }
   }));
