@@ -92,8 +92,9 @@ async function poll() {
       computed_at_ms: data.computed_at_ms
     });
 
+    const previousRegime = lastRegime;
     const transitionedToNewRegime =
-      lastRegime !== null && regime !== lastRegime;
+      previousRegime !== null && regime !== previousRegime;
 
     lastRegime = regime;
 
@@ -118,7 +119,7 @@ async function poll() {
     ].join("\n");
 
     log("INFO", "regime_alert", "BTC volatility regime changed", {
-      from: regime === lastRegime ? null : lastRegime,
+      from: previousRegime,
       to: regime,
       z_vol: zVol,
       eventTime
@@ -127,7 +128,8 @@ async function poll() {
     sendTelegram(text).catch(err => {
       log("ERROR", "telegram_error", "Telegram alert failed", {
         message: err.message,
-        regime,
+        from: previousRegime,
+        to: regime,
         z_vol: zVol
       });
     });
