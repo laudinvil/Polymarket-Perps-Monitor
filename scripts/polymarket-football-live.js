@@ -459,9 +459,36 @@ function sportscoreSlug(url) {
 function normalizeSportScore(match) {
   const home = text(match.home);
   const away = text(match.away);
-  const scoreHome = Number(match.home_score ?? 0);
-  const scoreAway = Number(match.away_score ?? 0);
-  const minute = Number(match.live_minute);
+  const scoreHome = Number(match.home_score ?? match.score?.home ?? 0);
+  const scoreAway = Number(match.away_score ?? match.score?.away ?? 0);
+  const minute = Number(match.live_minute ?? match.minute ?? 0);
+
+  const incidents = Array.isArray(match.incidents) ? match.incidents : [];
+  const stats = match.stats && typeof match.stats === "object" ? match.stats : {};
+
+  const pickStat = (side, names) => {
+    const bucket = stats[side] || {};
+    for (const name of names) {
+      const value = Number(bucket[name]);
+      if (Number.isFinite(value)) return value;
+    }
+    return NaN;
+  };
+
+  const shotsHome = pickStat("home", ["shots", "total_shots", "totalShots"]);
+  const shotsAway = pickStat("away", ["shots", "total_shots", "totalShots"]);
+  const sotHome = pickStat("home", ["shots_on_target", "shotsOnTarget", "on_target"]);
+  const sotAway = pickStat("away", ["shots_on_target", "shotsOnTarget", "on_target"]);
+
+  const proxyXg = (shots, sot) => {
+    if (Number.isFinite(sot) || Number.isFinite(shots)) {
+      const s = Number.isFinite(shots) ? Math.max(0, shots) : 0;
+      const on = Number.isFinite(sot) ? Math.max(0, sot) : 0;
+      return Math.max(0.01, on * 0.12 + Math.max(0, s - on) * 0.035);
+    }
+    return NaN;
+  };
+
   return {
     fixtureId: text(match.url) || home + ":" + away,
     name: home + " vs " + away,
@@ -469,11 +496,14 @@ function normalizeSportScore(match) {
     awayTeam: away,
     minute: Number.isFinite(minute) ? minute : 0,
     score: { home: scoreHome, away: scoreAway },
-    xg: { home: NaN, away: NaN },
-    stats: { home: { shots: NaN, shotsOnTarget: NaN }, away: { shots: NaN, shotsOnTarget: NaN } },
-    startingAt: match.time || null,
-    stateId: match.status || null,
-    events: Array.isArray(match.incidents) ? match.incidents : []
+    xg: { home: proxyXg(shotsHome, sotHome), away: proxyXg(shotsAway, sotAway) },
+    stats: {
+      home: { shots: shotsHome, shotsOnTarget: sotHome },
+      away: { shots: shotsAway, shotsOnTarget: sotAway }
+    },
+    startingAt: match.time || match.start_time || null,
+    stateId: text(match.status),
+    events: incidents
   };
 }
 
@@ -504,7 +534,7 @@ function resolveSportScore(match, fixtures) {
 
 async function enrichLiveMatches(polymarketMatches) {
   const fixtures = await sportscoreLatest();
-  const liveFixtures = fixtures.filter(f => /live|in progress|1st half|2nd half|halftime/i.test(text(f.status) + " " + text(f.status_text)));
+  const liveFixtures = fixtures.filter(f => /live|in progress|1st half|2nd half|halftime|playing|started|ongoing/i.test(text(f.status) + " " + text(f.status_text)));
 
   for (const match of polymarketMatches) {
     const key = match.eventId || match.slug;
