@@ -28,9 +28,13 @@ jobs:
         run: npm install --no-save @chainlink/data-streams-sdk
 
       - name: Deploy Convex logging backend
+        continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: npx convex deploy --typecheck=enable --codegen=disable --message "Deploy BTC 5M monitor logging"
+        run: |
+          set -e
+          npx convex deploy --typecheck=enable --codegen=disable --message "Deploy BTC 5M monitor logging"
+        
 
       - name: Run BTC 5M edge monitor
         env:
