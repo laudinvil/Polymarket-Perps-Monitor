@@ -231,29 +231,25 @@ function dataDelta() {
   };
 }
 
-function volatilityPerSqrtSecond() {
-  if (priceHistory.length < 20) return null;
+function chainlinkMomentumBps() {
+  if (!latestChainlink?.value || !periodStartPrice || periodStartPrice <= 0) return null;
+  return (latestChainlink.value / periodStartPrice - 1) * 10_000;
+}
 
-  const returns = [];
-  for (let i = 1; i < priceHistory.length; i++) {
-    const a = priceHistory[i - 1];
-    const b = priceHistory[i];
-    const dt = (b.timestamp - a.timestamp) / 1000;
-    if (dt <= 0 || a.value <= 0 || b.value <= 0) continue;
-    returns.push({
-      r: Math.log(b.value / a.value),
-      dt
-    });
+function recentChainlinkMoveBps(windowMs = 60_000) {
+  if (!latestChainlink?.value || latestChainlink.value <= 0) return null;
+  const cutoff = Date.now() - windowMs;
+  let anchor = null;
+  for (const row of priceHistory) {
+    if (row.timestamp <= cutoff) anchor = row;
+    else break;
   }
+  if (!anchor || !anchor.value || anchor.value <= 0) return null;
+  return (latestChainlink.value / anchor.value - 1) * 10_000;
+}
 
-  if (returns.length < 20) return null;
-
-  const mean = returns.reduce((s, x) => s + x.r, 0) / returns.length;
-  const variance = returns.reduce((s, x) => s + (x.r - mean) ** 2, 0) / Math.max(1, returns.length - 1);
-  const avgDt = returns.reduce((s, x) => s + x.dt, 0) / returns.length;
-  if (!Number.isFinite(variance) || avgDt <= 0) return null;
-
-  return Math.sqrt(variance / avgDt);
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
 }
 
 function normalCdf(x) {
@@ -312,26 +308,22 @@ function resetPeriodIfNeeded() {
 
 function settlementProbabilityUp() {
   const price = activePrice();
-  if (price === null || periodStartPrice === null) return null;
+  if (price === null || periodStartPrice ==function settlementProbabilityUp() {
+  const price = activePrice();
+  if (price === null || periodStartPrice === null || periodStartPrice <= 0) return null;
 
-  const remainingMs = currentPeriodStart + PERIOD_MS - Date.now();
-  if (remainingMs <= 0) return null;
+  const periodMoveBps = (price / periodStartPrice - 1) * 10_000;
+  const recentMoveBps = recentChainlinkMoveBps();
+  const momentumBps = recentMoveBps === null
+    ? periodMoveBps
+    : periodMoveBps * 0.75 + recentMoveBps * 0.25;
 
-  const sigma = volatilityPerSqrtSecond();
-  if (!sigma || sigma <= 0) return null;
-
-  const horizon = remainingMs / 1000;
-  const denominator = sigma * Math.sqrt(horizon);
-  if (denominator <= 0) return null;
-
-  const logMove = Math.log(price / periodStartPrice);
-  return normalCdf(logMove / denominator);
+  // Chainlink-only directional model; no volatility warm-up is required.
+  const score = momentumBps / 20;
+  return clamp(0.5 + 0.20 * Math.tanh(score), 0.30, 0.70);
 }
 
-function marketOutcomeTokens(event) {
-  const markets = Array.isArray(event?.markets) ? event.markets : [];
-
-  for (const market of markets) {
+for (const market of markets) {
     const outcomes = parseJson(market.outcomes);
     const tokenIds = parseJson(market.clobTokenIds);
 
@@ -485,6 +477,7 @@ async function maybeAlert(market, probabilityUp, prices, edge) {
     "",
     "CHAINLINK: $" + activePrice().toFixed(2),
     "START TWAP: $" + periodStartPrice.toFixed(2),
+    "MOVE: " + (chainlinkMomentumBps() === null ? "N/A" : (chainlinkMomentumBps() >= 0 ? "+" : "") + chainlinkMomentumBps().toFixed(1) + " bps"),
     "RTDS TWAP60: " + (latestRtds ? "$" + latestRtds.value.toFixed(2) : "N/A"),
     "DS ↔ RTDS: " +
       (comparison
