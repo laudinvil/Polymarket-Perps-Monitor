@@ -15,8 +15,6 @@ const RUN_MS = 6 * 60 * 60 * 1000;
 
 const RV_Z_THRESHOLD = 2.0;
 const RETURN_Z_THRESHOLD = 2.0;
-const RSI_HIGH = 90;
-const RSI_LOW = 10;
 
 let stopping = false;
 let ws = null;
@@ -25,8 +23,8 @@ let sampleTimer = null;
 let latestTradePrice = null;
 let lastPrice = null;
 let samples = [];
-let lastAlert = { rv: 0, rsi: 0, ret: 0 };
-let signals = { rv: 0, rsi: 0, ret: 0 };
+let lastAlert = { rv: 0, ret: 0 };
+let signals = { rv: 0, ret: 0 };
 let startedAt = Date.now();
 
 function log(level, event, message, data) {
@@ -74,7 +72,7 @@ async function telegram(text) {
 }
 
 function alert(type, body, now) {
-  const key = type === "RV" ? "rv" : type === "RSI" ? "rsi" : "ret";
+  const key = type === "RV" ? "rv" : "ret";
   if (now - lastAlert[key] < COOLDOWN_MS) return;
   lastAlert[key] = now;
   signals[key] += 1;
@@ -96,10 +94,10 @@ function alert(type, body, now) {
 function evaluate(now) {
   const currentCutoff = now - SIGNAL_WINDOW_MS;
   const current = samples.filter(s => s.t >= currentCutoff);
-  if (current.length < RSI_PERIOD + 1) return;
+  if (current.length < 2) return;
 
   const currentReturns = current.map(s => s.r).filter(Number.isFinite);
-  if (currentReturns.length < RSI_PERIOD + 1) return;
+  if (currentReturns.length < 2) return;
 
   // 1) 5-second realized-volatility Z-score vs the previous 1 minute.
   const baselineCutoff = now - RV_BASELINE_MS;
@@ -117,18 +115,7 @@ function evaluate(now) {
     }
   }
 
-  // 2) RSI(5) on one-second returns.
-  const changes = samples.slice(-RSI_PERIOD - 1).map(s => s.r).filter(Number.isFinite);
-  const gains = changes.slice(1).filter(x => x > 0);
-  const losses = changes.slice(1).filter(x => x < 0).map(x => -x);
-  const avgGain = mean(gains);
-  const avgLoss = mean(losses);
-  const rsi = avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss));
-  if (rsi >= RSI_HIGH || rsi <= RSI_LOW) {
-    alert("RSI", "RSI(5S): <b>" + fmt(rsi, 1) + "</b>", now);
-  }
-
-  // 3) Current 5-second return Z-score vs the previous 1 minute of 1-second returns.
+  // 2) Return Z-score: current 1-second return vs the previous 1 minute.
   const retBaseline = samples.filter(s => s.t >= baselineCutoff && s.t < currentCutoff).map(s => s.r);
   if (retBaseline.length >= 30) {
     const m = mean(retBaseline);
@@ -178,12 +165,9 @@ function start() {
   log("INFO", "monitor_started", "BTC micro-signal monitor started", {
     source: WS_URL,
     rvWindowSec: SIGNAL_WINDOW_MS / 1000,
-    rsiPeriodSec: RSI_PERIOD,
     baselineMin: 1,
     rvZ: RV_Z_THRESHOLD,
     returnZ: RETURN_Z_THRESHOLD,
-    rsiHigh: RSI_HIGH,
-    rsiLow: RSI_LOW,
     cooldownSec: COOLDOWN_MS / 1000
   });
 
