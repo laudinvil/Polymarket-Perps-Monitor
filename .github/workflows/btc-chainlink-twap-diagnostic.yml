@@ -1,4 +1,4 @@
-name: BTC 5M · Chainlink TWAP Diagnostic
+name: BTC 5M · Chainlink TWAP Edge Monitor
 
 on:
   workflow_dispatch:
@@ -27,11 +27,14 @@ jobs:
       - name: Install Chainlink SDK
         run: npm install --no-save @chainlink/data-streams-sdk
 
-      - name: Compare TWAP sources
+      - name: Run BTC 5M edge monitor
         env:
           CHAINLINK_DATA_STREAMS_API_KEY: ${{ secrets.CHAINLINK_DATA_STREAMS_API_KEY }}
           CHAINLINK_DATA_STREAMS_USER_SECRET: ${{ secrets.CHAINLINK_DATA_STREAMS_USER_SECRET }}
           CHAINLINK_DATA_STREAMS_FEED_ID: ${{ secrets.CHAINLINK_DATA_STREAMS_FEED_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BTC_5M_MIN_EDGE: "0.00"
         run: node scripts/btc-chainlink-twap-diagnostic.js
 
       - name: Restart monitor session
@@ -49,4 +52,4 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/laudinvil/Polymarket-Perps-Monitor/actions/workflows/btc-chainlink-twap-diagnostic.yml/dispatches \
             -d '{"ref":"main"}'
-          echo "Next diagnostic session dispatched."
+          echo "Next BTC 5M monitor session dispatched."
