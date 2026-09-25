@@ -23,6 +23,29 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_monitor_time", ["monitor", "createdAt"]),
 
+  footballLogs: defineTable({
+    monitor: v.string(),
+    level: v.string(),
+    event: v.string(),
+    message: v.string(),
+    data: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_monitor_time", ["monitor", "createdAt"]),
+
+  footballStats: defineTable({
+    monitor: v.string(),
+    ticks: v.number(),
+    candidates: v.number(),
+    evaluations: v.number(),
+    balanced: v.number(),
+    marketMissing: v.number(),
+    unresolved: v.number(),
+    buyAlerts: v.number(),
+    sellAlerts: v.number(),
+    errors: v.number(),
+    updatedAt: v.number(),
+  }).index("by_monitor", ["monitor"]),
+
   openMarketLogs: defineTable({
     monitor: v.string(),
     level: v.string(),
