@@ -515,24 +515,31 @@ async function nutmegRows() {
       }
       const raw = await r.text();
       const body = stripHtml(raw);
-      const re = /(.{2,100}?)\s+VS\s+(.{2,100}?)\s+Home win\s*(\d+(?:\.\d+)?)%\s+Draw\s*(\d+(?:\.\d+)?)%\s+Away win\s*(\d+(?:\.\d+)?)%/gi;
+      // Nutmegly renders each fixture as:
+      //   MM-DD HH:MM Home Team VS Away Team ... total goals ... Home winX% DrawY% Away winZ%
+      // Anchor the match on its own displayed date/time. The previous regex
+      // searched backwards through arbitrary page text, which could capture
+      // headings such as "Next 24h window" as the home team.
+      const re = /(\\d{2}-\\d{2})\\s+(\\d{1,2}):(\\d{2})\\s+(.{2,100}?)\\s+VS\\s+(.{2,100}?)\\s+\\d+[\\u2013-]\\d+\\s+total goals[\\s\\S]*?Home win\\s*(\\d+(?:\\.\\d+)?)%\\s+Draw\\s*(\\d+(?:\\.\\d+)?)%\\s+Away win\\s*(\\d+(?:\\.\\d+)?)%/gi;
       let m, count = 0;
       while ((m = re.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 220), m.index);
-        const kickoffAt = nutmegKickoffFromContext(prefix, date);
+        const kickoffAt = parseTimezoneDate(
+          date,
+          m[2],
+          m[3],
+          "0",
+          "Asia/Shanghai"
+        );
         rows.push({
-          home: m[1].trim(),
-          away: m[2].trim(),
-          homeProb: Number(m[3]) / 100,
-          drawProb: Number(m[4]) / 100,
-          awayProb: Number(m[5]) / 100,
+          home: m[4].trim(),
+          away: m[5].trim(),
+          homeProb: Number(m[6]) / 100,
+          drawProb: Number(m[7]) / 100,
+          awayProb: Number(m[8]) / 100,
           bttsProb: NaN,
           kickoffAt,
           sourceDate: date,
           sourceTimezone: "Asia/Shanghai"
-        });
-        if (!kickoffAt) log("WARN", "nutmeg_time_missing", "Nutmegly match time could not be parsed", {
-          date, home: m[1].trim(), away: m[2].trim()
         });
         count++;
       }
@@ -998,144 +1005,3 @@ function teamSimilarity(a, b) {
   if (x.includes(y) || y.includes(x)) return 0.85;
   const xa = new Set(x.split(" ")), ya = new Set(y.split(" "));
   const overlap = [...xa].filter(token => ya.has(token)).length;
-  return overlap / Math.max(xa.size, ya.size);
-}
-
-async function enrichLiveMatches(polymarketMatches) {
-  let fixtures = [];
-  try {
-    fixtures = await sportscoreLatest();
-  } catch (err) {
-    // SportScore is enrichment only. A provider failure must not abort the
-    // discovery/evaluation pipeline; pre-match candidates can still continue.
-    log("WARN", "sportscore_unavailable", "SportScore unavailable; continuing without live enrichment", {
-      message: err.message
-    });
-    for (const match of polymarketMatches) {
-      match.live = { status: "provider_unavailable" };
-    }
-    return;
-  }
-
-  const candidateFixtures = fixtures.filter(f =>
-    /live|in progress|1st half|2nd half|halftime|playing|started|ongoing|scheduled|upcoming|not started|fixture/i
-      .test(text(f.status) + " " + text(f.status_text))
-  );
-
-  // Resolve and refresh live fixtures concurrently. The old sequential loop
-  // could spend up to 10s per fixture, turning a normal scan into an hours-long
-  // run before the alert logic was reached.
-  const work = polymarketMatches.map(async match => {
-    const key = match.eventId || match.slug;
-    let resolvedMatch = resolved.get(key);
-    if (!resolvedMatch) {
-      const found = resolveSportScore(match, candidateFixtures);
-      if (found) {
-        const slug = sportscoreSlug(found.fixture.url);
-        if (!slug) {
-          log("WARN", "sportscore_slug_missing", "SportScore fixture has no usable slug", { fixture: found.fixture });
-        } else {
-          resolvedMatch = { fixtureId: slug, confidence: found.score };
-          resolved.set(key, resolvedMatch);
-          log("INFO", "match_resolved", "Polymarket match linked to SportScore", {
-            eventId: match.eventId, polymarketTeams: [match.homeTeam, match.awayTeam],
-            sportscoreTeams: [found.fixture.home, found.fixture.away], confidence: found.score, fixture: slug
-          });
-        }
-      }
-    }
-
-    if (!resolvedMatch) {
-      match.live = { status: "unresolved" };
-      return;
-    }
-
-    const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
-      log("WARN", "fixture_failed", "SportScore match refresh failed", { fixture: resolvedMatch.fixtureId, message: err.message });
-      return null;
-    });
-
-    if (!detail) {
-      match.live = { status: "provider_error" };
-      return;
-    }
-
-    match.provider = "sportscore";
-    match.providerFixtureId = resolvedMatch.fixtureId;
-    match.live = normalizeSportScore(detail);
-    match.kickoffAt = match.live.kickoffAt || match.startTime || null;
-  });
-
-  await Promise.all(work);
-}
-
-async function claimTelegramAlert(key) {
-  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
-  try {
-    const response = await fetch(base.replace(/\/$/, "") + "/football/claim", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
-      signal: AbortSignal.timeout(2_000),
-    });
-    if (response.status === 200) return true;
-    if (response.status === 409) return false;
-    throw new Error("Convex claim HTTP " + response.status);
-  } catch (err) {
-    log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
-    return false;
-  }
-}
-
-async function releaseTelegramAlert(key) {
-  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
-  try {
-    const response = await fetch(base.replace(/\/$/, "") + "/football/release", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
-      signal: AbortSignal.timeout(2_000),
-    });
-    if (!response.ok) throw new Error("Convex release HTTP " + response.status);
-  } catch (err) {
-    log("WARN", "telegram_release_failed", "Could not release Telegram claim", { key, message: err.message });
-  }
-}
-
-async function sendTelegram(textMessage) {
-  const token = process.env.TELEGRAM_BOT_TOKEN || "";
-  const chatId = process.env.TELEGRAM_CHAT_ID || "";
-  if (!token || !chatId) {
-    log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
-    return false;
-  }
-  const url = "https://api.telegram.org/bot" + token + "/sendMessage";
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: textMessage, disable_web_page_preview: false }),
-    signal: AbortSignal.timeout(10_000)
-  });
-  if (!response.ok) throw new Error("Telegram HTTP " + response.status);
-  const body = await response.json();
-  if (!body.ok) throw new Error("Telegram API rejected message");
-  return true;
-}
-
-function stop() {
-  if (stopping) return;
-  stopping = true;
-  if (timer) clearInterval(timer);
-  log("INFO", "monitor_stopped", "Polymarket football 1:1 monitor stopped");
-}
-
-async function start() {
-  log("INFO", "monitor_started", "Polymarket football 1:1 monitor started", {
-    pollSec: POLL_MS / 1000, runHours: RUN_MS / 3_600_000,
-    provider: "sportscore", strategy: "exact_score_1_1"
-  });
-  await tick();
-  timer = setInterval(() => { tick(); }, POLL_MS);
-  setTimeout(stop, RUN_MS);
-}
-
-process.on("SIGTERM", () => { stop(); process.exit(0); });
-start();
