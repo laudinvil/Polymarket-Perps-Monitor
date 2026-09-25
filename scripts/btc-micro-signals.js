@@ -24,6 +24,7 @@ let samples = [];
 let signals = { rv: 0, ret: 0 };
 let startedAt = Date.now();
 let returnSignalTimes = [];
+let lastReturnSignalAt = 0;
 
 function log(level, event, message, data) {
   console.log(JSON.stringify({ level, event, message, ...(data === undefined ? {} : { data: JSON.stringify(data) }) }));
@@ -117,15 +118,16 @@ function evaluate(now) {
     const sd = std(retBaseline, m);
     const currentReturn = current[current.length - 1].r;
     const z = sd > 0 ? (currentReturn - m) / sd : 0;
-    if (Math.abs(z) > 0) {
+    const isRealReturnSignal = Math.abs(currentReturn) > 0;
+    if (isRealReturnSignal && now !== lastReturnSignalAt) {
+      lastReturnSignalAt = now;
       returnSignalTimes = returnSignalTimes.filter(t => now - t <= RETURN_CASCADE_WINDOW_MS);
-      if (!returnSignalTimes.length || now - returnSignalTimes[returnSignalTimes.length - 1] >= SAMPLE_MS) {
-        returnSignalTimes.push(now);
-      }
+      returnSignalTimes.push(now);
     }
     if (returnSignalTimes.length >= RETURN_CASCADE_COUNT) {
       alert("RETURN", "1S RETURN CASCADE: <b>3 real signals / 5S</b>\nLAST Z-SCORE: <b>" + fmt(z, 2) + "</b>\nRETURN: " + fmt(currentReturn * 100, 4) + "%", now);
       returnSignalTimes = [];
+      lastReturnSignalAt = now;
     }
   }
 }
