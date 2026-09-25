@@ -164,9 +164,15 @@ async function nutmegRows() {
       while ((m = probabilityRe.exec(body))) {
         const prefix = body.slice(Math.max(0, m.index - 320), m.index).replace(/\s+/g, " ").trim();
         let home = "", away = "";
-        const live = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+\d+\s*-\s*\d+\s+\d{1,3}'\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/);
-        const vs = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:vs\.?|v\.?|versus)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
-        const upcoming = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:Upcoming|Kicking off soon)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
+        // Current Nutmegly cards put the score/minute between the team names
+        // (e.g. "Serbia 1 - 0 21' Greece") and upcoming cards put the kickoff
+        // before "Kicking off soon" (e.g. "Iceland 09-27 00:00 Kicking off soon Estonia").
+        // Keep the captures explicit; the previous live regex had only two
+        // capture groups but the code read five, so live rows were discarded.
+        const team = "[\\p{L}\\p{N}.'’&()\\- ]{2,70}";
+        const live = prefix.match(new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})'\\s+(" + team + ")$", "u"));
+        const vs = prefix.match(new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")$", "iu"));
+        const upcoming = prefix.match(new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking off soon\\s+(" + team + ")$", "iu"));
         const candidate = live || upcoming || vs;
         let score = null;
         let minute = null;
