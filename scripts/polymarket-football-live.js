@@ -1,7 +1,7 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
 const SPORTScore_URL = "https://sportscore.com/api/widget";
 
-const POLL_MS = 10_000;
+const POLL_MS = 20_000;
 const MIN_EDGE = 0.01;
 const RUN_MS = 6 * 60 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
