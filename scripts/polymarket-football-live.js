@@ -864,7 +864,21 @@ function teamSimilarity(a, b) {
 }
 
 async function enrichLiveMatches(polymarketMatches) {
-  const fixtures = await sportscoreLatest();
+  let fixtures = [];
+  try {
+    fixtures = await sportscoreLatest();
+  } catch (err) {
+    // SportScore is enrichment only. A provider failure must not abort the
+    // discovery/evaluation pipeline; pre-match candidates can still continue.
+    log("WARN", "sportscore_unavailable", "SportScore unavailable; continuing without live enrichment", {
+      message: err.message
+    });
+    for (const match of polymarketMatches) {
+      match.live = { status: "provider_unavailable" };
+    }
+    return;
+  }
+
   const candidateFixtures = fixtures.filter(f =>
     /live|in progress|1st half|2nd half|halftime|playing|started|ongoing|scheduled|upcoming|not started|fixture/i
       .test(text(f.status) + " " + text(f.status_text))
