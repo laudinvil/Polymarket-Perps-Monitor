@@ -73,7 +73,7 @@ function extractRtds(message) {
   if (!message || message.topic !== "crypto_prices_twap_sixty") return null;
   const p = message.payload || {};
   const symbol = text(p.symbol ?? p.pair ?? p.feed);
-  if (symbol && !/^btc\\/usd$/i.test(symbol) && !/^btc-usd$/i.test(symbol) && !/^btcusd$/i.test(symbol)) {
+  if (symbol && !/^btc\/usd$/i.test(symbol) && !/^btc-usd$/i.test(symbol) && !/^btcusd$/i.test(symbol)) {
     return null;
   }
 
