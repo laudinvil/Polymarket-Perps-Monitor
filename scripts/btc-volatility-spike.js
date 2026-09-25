@@ -5,11 +5,11 @@ const WS_URL = "wss://fstream.binance.com/market/ws/btcusdt@aggTrade";
 const TURBOFLOW_URL = "https://laudinvil.github.io/Polymarket-Perps-Monitor/turboflow/";
 
 const SAMPLE_MS = 1000;
-const CURRENT_WINDOW_MS = 30_000;
+const CURRENT_WINDOW_MS = 5_000;
 const BASELINE_WINDOW_MS = 10 * 60_000;
-const SPIKE_Z = 2.0;
-const RESET_Z = 0.75;
-const COOLDOWN_MS = 60_000;
+const SPIKE_Z = 3.0;
+const RESET_Z = 1.0;
+const COOLDOWN_MS = 30_000;
 const RUN_MS = 6 * 60 * 60 * 1000;
 
 let stopping = false;
@@ -88,13 +88,14 @@ function computeMetrics(now) {
   const current = samples.filter(s => s.t >= currentCutoff);
   const baseline = samples.filter(s => s.t >= baselineCutoff && s.t < currentCutoff);
 
-  if (current.length < 10 || baseline.length < 120) return null;
+  if (current.length < 3 || baseline.length < 120) return null;
 
   const currentReturns = current.map(s => s.r).filter(Number.isFinite);
   const baselineReturns = baseline.map(s => s.r).filter(Number.isFinite);
-  if (currentReturns.length < 10 || baselineReturns.length < 120) return null;
+  if (currentReturns.length < 3 || baselineReturns.length < 120) return null;
 
   const currentRv = Math.sqrt(currentReturns.reduce((sum, r) => sum + r * r, 0));
+
   const chunks = [];
   for (let i = 0; i + 29 < baselineReturns.length; i += 30) {
     const chunk = baselineReturns.slice(i, i + 30);
@@ -138,9 +139,9 @@ function evaluate(now) {
       "🔥 <b>BTC VOLATILITY SPIKE</b>",
       "",
       "Z-SCORE: <b>" + formatNumber(metrics.z, 2) + "</b>",
-      "30S RV: " + formatNumber(metrics.currentRv * 100, 3) + "%",
+      "5S RV: " + formatNumber(metrics.currentRv * 100, 3) + "%",
       "10M BASELINE: " + formatNumber(metrics.baselineMean * 100, 3) + "%",
-      "30S RANGE: " + formatNumber(metrics.rangePct, 3) + "%",
+      "5S RANGE: " + formatNumber(metrics.rangePct, 3) + "%",
       "PRICE: $" + formatNumber(metrics.price, 2),
       "TIME: " + formatUtcPlus3(now),
       "",
@@ -249,7 +250,7 @@ async function start() {
     spikeZ: SPIKE_Z,
     resetZ: RESET_Z,
     cooldownSec: COOLDOWN_MS / 1000,
-    strategy: "30s_realized_vol_vs_10m_rolling_baseline"
+    strategy: "5s_realized_vol_vs_10m_rolling_baseline"
   });
 
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
