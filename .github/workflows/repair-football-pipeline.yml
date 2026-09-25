@@ -1,0 +1,53 @@
+name: Repair football monitor pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/repair-football-pipeline.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebuild football monitor from working strategy + discovery commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="scripts/polymarket-football-live.js"
+          AFCA="afca899383ed51e98b6c527c613446a10d1e08e8"
+          GROUP="b5c6371ae20cbd4a3d77fd37c67aedfe53ac589a"
+          CONT="05f4c465996fa75eaf0a1d3ad1431ede7029e65c"
+          POLL="288809112f4958fca96e65b3b9e04fb77efe1cd6"
+
+          git show "$AFCA:$TARGET" > "$TARGET"
+          git diff "$AFCA" "$GROUP" -- "$TARGET" > /tmp/group.patch
+          git apply --3way /tmp/group.patch
+          git diff "$GROUP" "$CONT" -- "$TARGET" > /tmp/continuous.patch
+          git apply --3way /tmp/continuous.patch
+          git diff "$CONT" "$POLL" -- "$TARGET" > /tmp/poll.patch
+          git apply --3way /tmp/poll.patch
+
+          node --check "$TARGET"
+          grep -q "async function tick" "$TARGET"
+          grep -q "function enrichLiveMatches" "$TARGET"
+          grep -q "function sendTelegram" "$TARGET"
+          grep -q "const POLL_MS = 20_000" "$TARGET"
+          grep -q "monitor_cycle_complete" "$TARGET"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$TARGET"
+          if git diff --cached --quiet; then
+            echo "No repair changes needed"
+            exit 0
+          fi
+          git commit -m "Restore football strategy pipeline with continuous 20s monitor"
+          git push origin HEAD:main
