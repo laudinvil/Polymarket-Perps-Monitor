@@ -174,7 +174,7 @@ function handleBinanceMessage(raw) {
 
   acceptLiquidation({
     exchange: "BINANCE",
-    side: String(order.S || "").toUpperCase(),
+    side: order.S === "SELL" ? "LONG" : order.S === "BUY" ? "SHORT" : String(order.S || "").toUpperCase(),
     price: Number(order.ap),
     amount: Number(order.z || order.q),
     eventTime: Number(order.T || msg.E)
@@ -232,7 +232,7 @@ function handleBybitMessage(raw) {
     });
     acceptLiquidation({
       exchange: "BYBIT",
-      side: String(item.S || "").toUpperCase(),
+      side: item.S === "BUY" ? "LONG" : item.S === "SELL" ? "SHORT" : String(item.S || "").toUpperCase(),
       price: Number(item.p),
       amount: Number(item.v),
       eventTime: Number(item.T || msg.ts)
@@ -273,7 +273,7 @@ log("INFO", "monitor_started", "BTC liquidation monitor started via Binance and 
   sources: ["BINANCE", "BYBIT"],
   symbol: "BTCUSDT",
   cooldownMs: COOLDOWN_MS,
-  directionMode: "raw_exchange_side",
+  directionMode: "normalized_position_side",
   turboflowUrl: TURBOFLOW_URL
 });
 
