@@ -293,7 +293,7 @@ async function maybeOneOneAlert(match, nutmeg) {
   }
 
   // SELL is a second phase. Convex only allows it when a BUY claim exists.
-  if ((home === 1 && away === 0) || (home === 0 && away === 1) || (home === 1 && away === 1)) {
+  if ((home === 1 && away === 0) || (home === 0 && away === 1)) {
     const claimKey = key + ":SELL";
     const claimed = await claimTelegramAlert(claimKey);
     if (!claimed) return;
@@ -482,8 +482,8 @@ async function tick() {
       }
 
       // After kickoff and after a goal, do not run BUY filters.
-      // maybeOneOneAlert will send SELL only for exactly 1:0/0:1,
-      // and Convex will reject SELL unless the BUY phase was completed.
+      // maybeOneOneAlert sends SELL only for exactly 1:0/0:1,
+      // and Convex rejects SELL unless the BUY phase was completed.
       await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, null);
     }
 
