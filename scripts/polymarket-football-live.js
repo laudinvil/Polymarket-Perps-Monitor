@@ -140,84 +140,126 @@ function stripHtml(value) {
 }
 
 async function nutmegRows() {
-  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) return { rows: nutmegCache.rows, providerUnavailable: nutmegCache.providerUnavailable };
+  if (Date.now() - nutmegCache.at < NUTMEG_CACHE_MS) {
+    return { rows: nutmegCache.rows, providerUnavailable: nutmegCache.providerUnavailable };
+  }
+
   const rows = [];
   let successfulPages = 0;
-  // Nutmegly currently serves the all-status fixture list with 40 fixtures
-  // per page. The old status+page combination is not a stable pagination API:
-  // several live pages return 404 and made the monitor see only one fixture.
-  // Read the normal paginated fixture list instead, then let the live-card
-  // parser identify score/minute when a fixture is live.
   const pages = [1, 2, 3, 4, 5, 6];
-  const jobs = pages.map(page => ({ page }));
 
-  const results = await Promise.all(jobs.map(async ({ page }) => {
+  const results = await Promise.all(pages.map(async page => {
     try {
       const url = "https://nutmegly.com/?competition=all&page=" + page + "&tz=UTC";
-      const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(8_000) });
+      const r = await fetch(url, {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128 Safari/537.36"
+        },
+        signal: AbortSignal.timeout(8_000)
+      });
       if (!r.ok) throw new Error("HTTP " + r.status);
-      const body = stripHtml(await r.text());
+
+      const raw = await r.text();
+      const body = stripHtml(raw)
+        .replace(/\u00a0/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n+/g, " ")
+        .trim();
+
       const out = [];
-      // Nutmegly renders upcoming and live cards differently. The old parser
-      // required "HOME VS AWAY Home win...", but live cards insert the score
-      // and minute between the two team names, and upcoming cards insert
-      // kickoff/competition metadata. Parse the probability block first, then
-      // recover the two teams from the immediately preceding fixture text.
-      const probabilityRe = /Home win\s*(\d+(?:\.\d+)?)%\s*Draw\s*(\d+(?:\.\d+)?)%\s*Away win\s*(\d+(?:\.\d+)?)%/gi;
+
+      // Nutmegly's public fixture pages have changed their rendered spacing
+      // several times. Keep the probability parser independent of exact spaces
+      // and recover teams from the fixture text immediately before each block.
+      const probabilityRe =
+        /Home\s*win\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*(\d+(?:\.\d+)?)\s*%/gi;
+
       let m;
       while ((m = probabilityRe.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 1000), m.index).replace(/\s+/g, " ").trim();
-        let home = "", away = "";
-        // Current Nutmegly cards put the score/minute between the team names
-        // (e.g. "Serbia 1 - 0 21' Greece") and upcoming cards put the kickoff
-        // before "Kicking off soon" (e.g. "Iceland 09-27 00:00 Kicking off soon Estonia").
-        // Keep the captures explicit; the previous live regex had only two
-        // capture groups but the code read five, so live rows were discarded.
-        const team = "[\\p{L}\\p{N}.'’&()\\- ]{2,70}";
-        const liveRe = new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})'\\s+(" + team + ")", "gu");
-        const vsRe = new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")", "giu");
-        const upcomingRe = new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking off soon\\s+(" + team + ")", "giu");
-        const liveMatches = [...prefix.matchAll(liveRe)];
-        const vsMatches = [...prefix.matchAll(vsRe)];
-        const upcomingMatches = [...prefix.matchAll(upcomingRe)];
+        const prefix = body.slice(Math.max(0, m.index - 1800), m.index);
+        const team = "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \\t]+[\\p{L}\\p{N}.'’&()\\-]+){0,10}";
+
+        // Match from the end of the prefix so navigation/previous cards do not
+        // become the selected fixture.
+        const liveMatches = [...prefix.matchAll(new RegExp(
+          "(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(" + team + ")\\s*$",
+          "giu"
+        ))];
+
+        const upcomingMatches = [...prefix.matchAll(new RegExp(
+          "(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")\\s*$",
+          "giu"
+        ))];
+
+        const vsMatches = [...prefix.matchAll(new RegExp(
+          "(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")\\s*$",
+          "giu"
+        ))];
+
         const live = liveMatches.at(-1) || null;
         const upcoming = upcomingMatches.at(-1) || null;
         const vs = vsMatches.at(-1) || null;
         const candidate = live || upcoming || vs;
+        if (!candidate) continue;
+
+        let home = "";
+        let away = "";
         let score = null;
         let minute = null;
-        if (candidate) {
-          if (live && candidate === live) {
-            home = live[1].trim();
-            away = live[5].trim();
-            score = { home: Number(live[2]), away: Number(live[3]) };
-            minute = Number(String(live[4]).replace(/[^0-9]/g, ""));
-          } else {
-            home = candidate[1].trim();
-            away = candidate[2].trim();
-          }
+
+        if (candidate === live) {
+          home = live[1].trim();
+          away = live[5].trim();
+          score = { home: Number(live[2]), away: Number(live[3]) };
+          minute = Number(String(live[4]).replace(/[^0-9]/g, ""));
+        } else {
+          home = candidate[1].trim();
+          away = candidate[2].trim();
         }
+
         if (!home || !away) continue;
+
         out.push({
-          home, away,
-          homeProb: Number(m[1]) / 100, drawProb: Number(m[2]) / 100,
-          awayProb: Number(m[3]) / 100, bttsProb: NaN,
-          live: Boolean(score), score, minute
+          home,
+          away,
+          homeProb: Number(m[1]) / 100,
+          drawProb: Number(m[2]) / 100,
+          awayProb: Number(m[3]) / 100,
+          bttsProb: NaN,
+          live: Boolean(score),
+          score,
+          minute
         });
       }
+
       successfulPages++;
       return out;
     } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", {
+        page, message: err.message
+      });
       return [];
     }
   }));
+
   for (const part of results) rows.push(...part);
+
   const providerUnavailable = successfulPages === 0;
   nutmegCache = { at: Date.now(), rows, providerUnavailable };
+
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", {
-    rows: rows.length, successfulPages, providerUnavailable
+    rows: rows.length,
+    successfulPages,
+    providerUnavailable
   });
+
+  if (rows.length === 0 && successfulPages > 0) {
+    log("WARN", "nutmeg_parse_zero", "Nutmegly pages loaded but no probability blocks were parsed", {
+      pages: successfulPages
+    });
+  }
+
   return { rows, providerUnavailable };
 }
 
