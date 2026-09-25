@@ -156,14 +156,14 @@ async function nutmegRows() {
       // and minute between the two team names, and upcoming cards insert
       // kickoff/competition metadata. Parse the probability block first, then
       // recover the two teams from the immediately preceding fixture text.
-      const probabilityRe = /Home win\\s*(\\d+(?:\\.\\d+)?)%\\s*Draw\\s*(\\d+(?:\\.\\d+)?)%\\s*Away win\\s*(\\d+(?:\\.\\d+)?)%/gi;
+      const probabilityRe = /Home win\s*(\d+(?:\.\d+)?)%\s*Draw\s*(\d+(?:\.\d+)?)%\s*Away win\s*(\d+(?:\.\d+)?)%/gi;
       let m;
       while ((m = probabilityRe.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 320), m.index).replace(/\\s+/g, " ").trim();
+        const prefix = body.slice(Math.max(0, m.index - 320), m.index).replace(/\s+/g, " ").trim();
         let home = "", away = "";
-        const live = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})\\s+\\d+\\s*-\\s*\\d+\\s+\\d{1,3}'\\s+([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})$/);
-        const vs = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})\\s+(?:vs\\.?|v\\.?|versus)\\s+([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})$/i);
-        const upcoming = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})\\s+(?:Upcoming|Kicking off soon)\\s+([A-Za-zÀ-ÿ0-9.'’&()\\- ]{2,70})$/i);
+        const live = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+\d+\s*-\s*\d+\s+\d{1,3}'\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/);
+        const vs = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:vs\.?|v\.?|versus)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
+        const upcoming = prefix.match(/([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})\s+(?:Upcoming|Kicking off soon)\s+([A-Za-zÀ-ÿ0-9.'’&()\- ]{2,70})$/i);
         const candidate = live || upcoming || vs;
         if (candidate) {
           home = candidate[1].trim();
