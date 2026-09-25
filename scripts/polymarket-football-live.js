@@ -20,14 +20,43 @@ const resolved = new Map();
 const history = new Map();
 const oneOneState = new Map();
 let nutmegCache = { at: 0, rows: [] };
+const convexLogBuffer = [];
+let convexTickCount = 0;
 
 function log(level, event, message, data = undefined) {
+  const entry = {
+    level, event, message,
+    ...(data === undefined ? {} : { data: JSON.stringify(data) }),
+    createdAt: Date.now(),
+  };
+  convexLogBuffer.push(entry);
   console.log(JSON.stringify({
     level,
     event,
     message,
     ...(data === undefined ? {} : { data: JSON.stringify(data) })
   }));
+}
+
+async function flushConvexLogs() {
+  if (!convexLogBuffer.length && !convexTickCount) return;
+  const batch = convexLogBuffer.splice(0, 100);
+  const ticks = convexTickCount;
+  convexTickCount = 0;
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  try {
+    const response = await fetch(base.replace(/\\/$/, "") + "/football/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ logs: batch, tickCount: ticks }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("Convex HTTP " + response.status);
+  } catch (err) {
+    convexLogBuffer.unshift(...batch);
+    convexTickCount += ticks;
+    console.log(JSON.stringify({ level: "WARN", event: "convex_log_failed", message: err.message }));
+  }
 }
 
 function text(v) {
@@ -348,6 +377,7 @@ async function maybeOneOneAlert(match, nutmeg) {
 
 async function tick() {
   if (stopping) return;
+  convexTickCount += 1;
 
   try {
     const matches = await discoverPolymarket();
@@ -388,6 +418,8 @@ async function tick() {
     }
   } catch (err) {
     log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
+  } finally {
+    await flushConvexLogs();
   }
 }
 
