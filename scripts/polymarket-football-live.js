@@ -500,6 +500,29 @@ async function tick() {
       const minute = preMatch ? 0 : match.live?.minute;
 
       const nm = findNutmegMatch(match, nutmeg);
+      log("INFO", "candidate_match_found", "1:1 market candidate reached strategy filters", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        preMatch,
+        score,
+        nutmegMatched: Boolean(nm),
+        nutmegScore: nm?.score ?? null
+      });
+
+      if (!nm) {
+        log("INFO", "candidate_rejected_no_nutmeg", "Candidate rejected: no Nutmegly fixture match", {
+          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam]
+        });
+        continue;
+      }
+
+      if (!preMatch && (Number(score?.home) !== 0 || Number(score?.away) !== 0)) {
+        log("INFO", "candidate_rejected_not_0_0", "Candidate rejected for BUY: match is no longer 0:0", {
+          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score
+        });
+        continue;
+      }
+
       log("INFO", "one_one_evaluation", "1:1 strategy evaluated", {
         eventId: match.eventId,
         teams: [match.homeTeam, match.awayTeam],
@@ -509,6 +532,18 @@ async function tick() {
         nutmeg: nm?.row || null,
         balanced: balancedForOneOne(nm),
         oneOneMarket: findOneOneMarket(match)?.price ?? null
+      });
+
+      if (!balancedForOneOne(nm)) {
+        log("INFO", "candidate_rejected_unbalanced", "Candidate rejected by Nutmegly balance filter", {
+          eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], nutmeg: nm.row
+        });
+        continue;
+      }
+
+      log("INFO", "buy_candidate_ready", "Candidate passed BUY filters", {
+        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], score, preMatch,
+        price: findOneOneMarket(match)?.price ?? null
       });
 
       await maybeOneOneAlert({ ...match, live: { ...(match.live || {}), score, minute, status: preMatch ? "scheduled" : match.live?.status } }, nm);
