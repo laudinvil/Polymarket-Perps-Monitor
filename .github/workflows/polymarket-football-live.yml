@@ -4,7 +4,7 @@ name: Polymarket Football · Live Discovery
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2 */6 * * *"
   push:
     paths:
       - ".github/workflows/polymarket-football-live.yml"
