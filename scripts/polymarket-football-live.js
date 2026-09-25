@@ -307,27 +307,57 @@ async function discoverPolymarket() {
       const endTime = event.endDate || event.end_date || event.endTime || null;
       const endMs = Date.parse(endTime || "");
 
-      // Keep active in-play football matches. The previous 45-minute cutoff
-      // incorrectly discarded most live matches, leaving zero candidates even
-      // when Polymarket returned football events. Finished events are excluded
-      // when a reliable end time is available.
+      // Do not use event.endDate as a hard discovery filter. Gamma can expose
+      // active sports events whose event-level end timestamp is stale or tied
+      // to the market lifecycle rather than the fixture itself. active/closed
+      // are the authoritative lifecycle flags here; SportScore resolves the
+      // actual live/pre-match state later.
       if (Number.isFinite(endMs) && endMs < Date.now()) {
-        log("INFO", "match_finished_filtered", "Football event has already ended", {
+        log("INFO", "event_enddate_observed_not_filtered", "Active football event has a past endDate; keeping it for fixture resolution", {
           eventId: text(event.id),
           title: text(event.title || event.question),
           startTime,
-          endTime
+          endTime,
+          active: event.active,
+          closed: event.closed
         });
-        continue;
       }
 
       const eventId = text(event.id || event.eventId || event.event_id);
       const slug = text(event.slug);
       const key = eventId || slug;
-      if (!key || seen.has(key)) continue;
+
+      if (!key) {
+        log("WARN", "match_identity_missing", "Football match has teams but no event id/slug", {
+          title: text(event.title || event.question),
+          home,
+          away
+        });
+        continue;
+      }
+
+      if (seen.has(key)) {
+        log("INFO", "match_duplicate_filtered", "Football match already discovered from another source/page", {
+          eventId,
+          slug,
+          teams: [home, away]
+        });
+        continue;
+      }
 
       seen.add(key);
       candidatesFound++;
+
+      log("INFO", "candidate_gate_passed", "Football match passed discovery gates", {
+        source: result.name,
+        eventId,
+        slug,
+        teams: [home, away],
+        startTime,
+        endTime,
+        active: event.active,
+        closed: event.closed
+      });
 
       const nestedMarkets = Array.isArray(event.markets)
         ? event.markets.map(market => ({
