@@ -1,5 +1,4 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
-const SPORTScore_URL = "https://sportscore.com/api/widget";
 
 const POLL_MS = 20_000;
 const MIN_EDGE = 0.01;
@@ -297,34 +296,40 @@ async function maybeOneOneAlert(match, nutmeg) {
     return;
   }
 
-  // SELL is a second phase. First exit at 0:1 or 1:0; once that
-  // transition has happened, 1:1 is also a valid later SELL state.
-  if ((home === 1 && away === 0) || (home === 0 && away === 1) || (home === 1 && away === 1)) {
-    const claimKey = key + ":SELL";
-    const claimed = await claimTelegramAlert(claimKey);
-    if (!claimed) return;
+  // SELL requires a BUY first. The first SELL is only at 0:1 or 1:0.
+  // A later 1:1 SELL is allowed only after that first-goal state was observed.
+  const firstGoal = (home === 1 && away === 0) || (home === 0 && away === 1);
+  const recovery = home === 1 && away === 1;
+  if (!firstGoal && !recovery) return;
 
-    const message = [
-      "⚽ 1:1 · SELL", "",
-      match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: " + home + "–" + away,
-      "", "➡️ OPEN MATCH", match.url
-    ].join("\n");
-
-    try {
-      if (!await sendTelegram(message)) throw new Error("Telegram not configured");
-      log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", {
-        eventId: match.eventId,
-        score: { home, away },
-        recovery: home === 1 && away === 1
-      });
-    } catch (err) {
-      await releaseTelegramAlert(claimKey);
-      log("ERROR", "telegram_send_failed", "SELL alert send failed; claim released", {
-        eventId: match.eventId, message: err.message
-      });
-    }
+  if (firstGoal) {
+    const firstGoalKey = key + ":FIRST_GOAL";
+    await claimTelegramAlert(firstGoalKey);
   }
+
+  const claimKey = key + (recovery ? ":SELL_11" : ":SELL");
+  const claimed = await claimTelegramAlert(claimKey);
+  if (!claimed) return;
+
+  const message = [
+    "⚽ 1:1 · SELL", "",
+    match.homeTeam + " vs " + match.awayTeam,
+    "SCORE: " + home + "–" + away,
+    "", "➡️ OPEN MATCH", match.url
+  ].join("\n");
+
+  try {
+    if (!await sendTelegram(message)) throw new Error("Telegram not configured");
+    log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after valid post-BUY score transition", {
+      eventId: match.eventId, score: { home, away }, recovery
+    });
+  } catch (err) {
+    await releaseTelegramAlert(claimKey);
+    log("ERROR", "telegram_send_failed", "SELL alert send failed; claim released", {
+      eventId: match.eventId, message: err.message
+    });
+  }
+
 }
 
 async function tick() {
@@ -441,8 +446,6 @@ async function tick() {
       }
 
       // Live phase uses Polymarket as the source of truth.
-      // SportScore is NOT a live-score dependency. It is only a fallback
-      // candidate provider when Nutmegly is unavailable.
       const liveState = await refreshPolymarketLiveState(match);
       if (!liveState) {
         log("INFO", "live_state_unavailable", "Polymarket live state unavailable; live alert evaluation skipped", {
@@ -516,66 +519,6 @@ async function tick() {
   }
 }
 
-
-function participants(fixture) {
-  return Array.isArray(fixture?.participants) ? fixture.participants : [];
-}
-
-function fixtureTeams(fixture) {
-  const parts = participants(fixture);
-  const home = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
-  const away = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
-  return { home: text(home?.name), away: text(away?.name) };
-}
-
-function sportscoreSlug(url) {
-  const m = text(url).match(/\/football\/match\/([^/?#]+)\/?$/i);
-  return m ? m[1] : "";
-}
-
-async function sportscoreLatest() {
-  const url = SPORTScore_URL + "/matches/?sport=football&limit=50";
-  const data = await getJson(url);
-  return Array.isArray(data?.matches) ? data.matches : [];
-}
-
-async function sportscoreMatch(slug) {
-  const url = SPORTScore_URL + "/match/?sport=football&slug=" + encodeURIComponent(slug);
-  const data = await getJson(url);
-  return data?.match || null;
-}
-
-function normalizeSportScore(match) {
-  const parts = participants(match);
-  const partHome = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
-  const partAway = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
-  const home = text(match.home || match.homeTeam || partHome?.name);
-  const away = text(match.away || match.awayTeam || partAway?.name);
-  const scoreHome = Number(match.home_score ?? match.score?.home ?? match.scores?.home ?? 0);
-  const scoreAway = Number(match.away_score ?? match.score?.away ?? match.scores?.away ?? 0);
-  const minute = Number(match.live_minute ?? match.minute ?? 0);
-  return {
-    fixtureId: text(match.url) || home + ":" + away,
-    name: home + " vs " + away,
-    homeTeam: home, awayTeam: away, minute: Number.isFinite(minute) ? minute : 0,
-    score: { home: scoreHome, away: scoreAway },
-    startingAt: match.time || match.start_time || null,
-    stateId: text(match.status),
-    events: Array.isArray(match.incidents) ? match.incidents : []
-  };
-}
-
-function resolveSportScore(match, fixtures) {
-  let best = null, bestScore = 0;
-  for (const fixture of fixtures) {
-    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
-    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
-    const score = Math.max(direct, swapped);
-    if (score > bestScore) { bestScore = score; best = fixture; }
-  }
-  if (!best || bestScore < 1.4) return null;
-  return { fixture: best, score: bestScore };
-}
 
 function teamSimilarity(a, b) {
   const x = norm(a), y = norm(b);
