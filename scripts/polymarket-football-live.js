@@ -295,7 +295,7 @@ async function discoverPolymarket() {
             question: text(market?.question || market?.title),
             outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
             outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
-              ? parseJson(market.outcomes) : [],
+              ? parseJson(market?.outcomePrices || market?.outcome_prices) : [],
             active: market?.active !== false,
             closed: market?.closed === true
           }))
