@@ -77,11 +77,32 @@ export const claimTelegramAlert = mutation({
   args: { monitor: v.string(), marketSlug: v.string() },
   returns: v.boolean(),
   handler: async (ctx, args) => {
+    const now = Date.now();
     const existing = await ctx.db.query("telegramDedupe")
       .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
       .first();
-    if (existing) return false;
-    await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: Date.now() });
+
+    // A stale claim must not permanently suppress an alert after a Telegram
+    // failure or runner restart. Five minutes is longer than one polling gap
+    // but short enough to recover automatically.
+    if (existing && now - existing.claimedAt < 5 * 60 * 1000) return false;
+
+    // SELL is only legal after this monitor has successfully reserved a BUY.
+    if (args.marketSlug.endsWith(":SELL")) {
+      const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
+      const buy = await ctx.db.query("telegramDedupe")
+        .withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey))
+        .first();
+      if (!buy) return false;
+    }
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { claimedAt: now });
+    } else {
+      await ctx.db.insert("telegramDedupe", {
+        monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now
+      });
+    }
     return true;
   },
 });
