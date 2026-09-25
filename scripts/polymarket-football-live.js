@@ -18,6 +18,8 @@ let timer = null;
 const known = new Map();
 const resolved = new Map();
 const history = new Map();
+const oneOneState = new Map();
+let nutmegCache = { at: 0, rows: [] };
 
 function log(level, event, message, data = undefined) {
   console.log(JSON.stringify({
@@ -202,12 +204,12 @@ async function discoverPolymarket() {
 
 function stripHtml(value) {
   return text(value)
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -222,7 +224,7 @@ async function nutmegRows() {
       const r = await fetch(url, { headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
       if (!r.ok) continue;
       const body = stripHtml(await r.text());
-      const re = /([^|]{2,80})\\s+VS\\s+([^|]{2,80})\\s+(?:Home win|Home)\\s*(\\d+)%\\s*(?:Draw)\\s*(\\d+)%\\s*(?:Away win|Away)\\s*(\\d+)%/gi;
+      const re = /([^|]{2,80})\s+VS\s+([^|]{2,80})\s+(?:Home win|Home)\s*(\d+)%\s*(?:Draw)\s*(\d+)%\s*(?:Away win|Away)\s*(\d+)%/gi;
       let m;
       while ((m = re.exec(body))) {
         rows.push({
@@ -268,13 +270,13 @@ function findOneOneMarket(match) {
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
     for (let i = 0; i < outcomes.length; i++) {
-      if (/^1\\s*[-:]\\s*1$/.test(text(outcomes[i]))) {
+      if (/^1\s*[-:]\s*1$/.test(text(outcomes[i]))) {
         const price = Number((market.outcomePrices || [])[i]);
         if (Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
       }
     }
     if (/correct score|exact score|score/i.test(market.question || "")) {
-      const i = outcomes.findIndex(v => /^1\\s*[-:]\\s*1$/.test(text(v)));
+      const i = outcomes.findIndex(v => /^1\s*[-:]\s*1$/.test(text(v)));
       const price = Number((market.outcomePrices || [])[i]);
       if (i >= 0 && Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
     }
@@ -318,7 +320,7 @@ async function maybeOneOneAlert(match, nutmeg) {
       "",
       "➡️ OPEN MATCH",
       match.url
-    ].join("\\n");
+    ].join("\n");
     await sendTelegram(message);
     state.first = true;
     state.firstPrice = market.price;
@@ -335,7 +337,7 @@ async function maybeOneOneAlert(match, nutmeg) {
       "",
       "➡️ OPEN MATCH",
       match.url
-    ].join("\\n");
+    ].join("\n");
     await sendTelegram(message);
     state.second = true;
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent after first goal", { eventId: match.eventId, price: market.price, firstPrice: state.firstPrice });
@@ -389,3 +391,180 @@ async function tick() {
     log("ERROR", "discovery_failed", "1:1 football monitoring failed; monitoring continues", { message: err.message });
   }
 }
+
+
+function participants(fixture) {
+  return Array.isArray(fixture?.participants) ? fixture.participants : [];
+}
+
+function fixtureTeams(fixture) {
+  const parts = participants(fixture);
+  const home = parts.find(p => p.meta?.location === "home") || parts.find(p => p.location === "home");
+  const away = parts.find(p => p.meta?.location === "away") || parts.find(p => p.location === "away");
+  return { home: text(home?.name), away: text(away?.name) };
+}
+
+function sportscoreSlug(url) {
+  const m = text(url).match(/\/football\/match\/([^/?#]+)\/?$/i);
+  return m ? m[1] : "";
+}
+
+async function sportscoreLatest() {
+  const url = SPORTScore_URL + "/matches/?sport=football&limit=200";
+  const data = await getJson(url);
+  return Array.isArray(data?.matches) ? data.matches : [];
+}
+
+async function sportscoreMatch(slug) {
+  const url = SPORTScore_URL + "/match/?sport=football&slug=" + encodeURIComponent(slug);
+  const data = await getJson(url);
+  return data?.match || null;
+}
+
+function normalizeSportScore(match) {
+  const home = text(match.home);
+  const away = text(match.away);
+  const scoreHome = Number(match.home_score ?? match.score?.home ?? 0);
+  const scoreAway = Number(match.away_score ?? match.score?.away ?? 0);
+  const minute = Number(match.live_minute ?? match.minute ?? 0);
+  return {
+    fixtureId: text(match.url) || home + ":" + away,
+    name: home + " vs " + away,
+    homeTeam: home,
+    awayTeam: away,
+    minute: Number.isFinite(minute) ? minute : 0,
+    score: { home: scoreHome, away: scoreAway },
+    startingAt: match.time || match.start_time || null,
+    stateId: text(match.status),
+    events: Array.isArray(match.incidents) ? match.incidents : []
+  };
+}
+
+function resolveSportScore(match, fixtures) {
+  let best = null;
+  let bestScore = 0;
+  for (const fixture of fixtures) {
+    const direct = teamSimilarity(match.homeTeam, fixture.home) + teamSimilarity(match.awayTeam, fixture.away);
+    const swapped = teamSimilarity(match.homeTeam, fixture.away) + teamSimilarity(match.awayTeam, fixture.home);
+    const score = Math.max(direct, swapped);
+    if (score > bestScore) { bestScore = score; best = fixture; }
+  }
+  if (!best || bestScore < 1.4) return null;
+  return { fixture: best, score: bestScore };
+}
+
+function teamSimilarity(a, b) {
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.includes(y) || y.includes(x)) return 0.85;
+  const xa = new Set(x.split(" "));
+  const ya = new Set(y.split(" "));
+  const overlap = [...xa].filter(token => ya.has(token)).length;
+  return overlap / Math.max(xa.size, ya.size);
+}
+
+async function enrichLiveMatches(polymarketMatches) {
+  const fixtures = await sportscoreLatest();
+  const candidateFixtures = fixtures.filter(f =>
+    /live|in progress|1st half|2nd half|halftime|playing|started|ongoing|scheduled|upcoming|not started|fixture/i
+      .test(text(f.status) + " " + text(f.status_text))
+  );
+
+  for (const match of polymarketMatches) {
+    const key = match.eventId || match.slug;
+    let resolvedMatch = resolved.get(key);
+
+    if (!resolvedMatch) {
+      const found = resolveSportScore(match, candidateFixtures);
+      if (found) {
+        const slug = sportscoreSlug(found.fixture.url);
+        if (!slug) {
+          log("WARN", "sportscore_slug_missing", "SportScore fixture has no usable slug", { fixture: found.fixture });
+        } else {
+          resolvedMatch = { fixtureId: slug, confidence: found.score };
+          resolved.set(key, resolvedMatch);
+          log("INFO", "match_resolved", "Polymarket match linked to SportScore", {
+            eventId: match.eventId,
+            polymarketTeams: [match.homeTeam, match.awayTeam],
+            sportscoreTeams: [found.fixture.home, found.fixture.away],
+            confidence: found.score,
+            fixture: slug
+          });
+        }
+      }
+    }
+
+    if (!resolvedMatch) {
+      match.live = { status: "unresolved" };
+      continue;
+    }
+
+    const detail = await sportscoreMatch(resolvedMatch.fixtureId).catch(err => {
+      log("WARN", "fixture_failed", "SportScore match refresh failed", {
+        fixture: resolvedMatch.fixtureId,
+        message: err.message
+      });
+      return null;
+    });
+
+    if (!detail) {
+      match.live = { status: "provider_error" };
+      continue;
+    }
+
+    match.provider = "sportscore";
+    match.providerFixtureId = resolvedMatch.fixtureId;
+    match.live = normalizeSportScore(detail);
+  }
+}
+
+async function sendTelegram(textMessage) {
+  const token = process.env.TELEGRAM_BOT_TOKEN || "";
+  const chatId = process.env.TELEGRAM_CHAT_ID || "";
+  if (!token || !chatId) {
+    log("WARN", "telegram_not_configured", "Telegram credentials are not configured");
+    return false;
+  }
+
+  const url = "https://api.telegram.org/bot" + token + "/sendMessage";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: textMessage,
+      disable_web_page_preview: false
+    }),
+    signal: AbortSignal.timeout(10_000)
+  });
+
+  if (!response.ok) throw new Error("Telegram HTTP " + response.status);
+  const body = await response.json();
+  if (!body.ok) throw new Error("Telegram API rejected message");
+  return true;
+}
+
+function stop() {
+  if (stopping) return;
+  stopping = true;
+  if (timer) clearInterval(timer);
+  log("INFO", "monitor_stopped", "Polymarket football 1:1 monitor stopped");
+}
+
+async function start() {
+  log("INFO", "monitor_started", "Polymarket football 1:1 monitor started", {
+    pollSec: POLL_MS / 1000,
+    runHours: RUN_MS / 3_600_000,
+    provider: "sportscore",
+    strategy: "exact_score_1_1"
+  });
+
+  await tick();
+  timer = setInterval(() => { tick(); }, POLL_MS);
+  setTimeout(stop, RUN_MS);
+}
+
+process.on("SIGTERM", () => { stop(); process.exit(0); });
+start();
