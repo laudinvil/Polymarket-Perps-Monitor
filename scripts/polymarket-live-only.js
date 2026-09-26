@@ -381,7 +381,11 @@ async function discoverLiveZeroZero(){
 async function sendLiveFound(home,away,minute,score,sofa,pm){
   const polyId=t(pm?.id||pm?.eventId),key="LIVE_FOUND:"+polyId;
   const c=await claim(key);
-  if(!c.claimed)return false;
+  if(!c.claimed){
+    log(JSON.stringify({event:"live_found_claim_blocked",type:"LIVE_FOUND",key,teams:[home,away],polyId,reason:"convex_dedupe"}));
+    return false;
+  }
+  log(JSON.stringify({event:"live_found_claimed",type:"LIVE_FOUND",key,teams:[home,away],polyId}));
   const href=polyEventUrl(pm);
   const one=sofa.one?formatOne(sofa.one):"—";
   const exact=sofa.exact!=null?pct(sofa.exact):"—";
