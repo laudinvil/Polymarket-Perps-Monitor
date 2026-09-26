@@ -311,6 +311,7 @@ async function discoverLiveZeroZero(){
         log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute}));
         continue;
       }
+      await sendLiveFound(home,away,minute,score,sofa,pm);
       if(!sofa.one||sofa.exact==null){
         log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
         if(sofa.one&&sofa.exact==null)await sendDataCheck(home,away,minute,sofa,pm);
@@ -352,6 +353,25 @@ async function discoverLiveZeroZero(){
   return found;
 }
 
+async function sendLiveFound(home,away,minute,score,sofa,pm){
+  const polyId=t(pm?.id||pm?.eventId),key="LIVE_FOUND:"+polyId;
+  const c=await claim(key);
+  if(!c.claimed)return false;
+  const href=polyEventUrl(pm);
+  const one=sofa.one?formatOne(sofa.one):"—";
+  const exact=sofa.exact!=null?pct(sofa.exact):"—";
+  const message=["🔎 LIVE FOUND","",home+" vs "+away,"LIVE · "+minute+"′","SCORE: "+score.home+"–"+score.away,"1X2: "+one,"1:1 YES: "+exact,"➡️ OPEN MATCH","https://polymarket.com"+href].join("\n");
+  try{
+    const sent=await telegram(message,c.replyToMessageId??null);
+    await saveId(key,sent.message_id);
+    log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE_FOUND",key,teams:[home,away],messageId:sent.message_id}));
+    return true;
+  }catch(err){
+    await release(key);
+    log(JSON.stringify({event:"telegram_alert_failed",type:"LIVE_FOUND",key,message:err.message}));
+    return false;
+  }
+}
 async function sendDataCheck(home,away,minute,sofa,pm){
   const polyId=t(pm?.id||pm?.eventId),key="DATA_CHECK:"+polyId;
   const c=await claim(key);
