@@ -86,7 +86,8 @@ function eventUrl(event){
   // (for example "-total-corners"). Alerts must always open the parent
   // fixture event, not a child market such as corners/goals/cards.
   slug=slug
-    .replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|second-half-result|1st-half-result|2nd-half-result|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");
+    .replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|half-time|second-half-result|second-half|1st-half-result|1st-half|2nd-half-result|2nd-half|full-time-result|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-(?:home|away|draw))?(?:-.*)?$/i,"")
+    .replace(/-starting-eleven-(?:home|away)(?:-.*)?$/i,"");
   return "https://polymarket.com/event/"+slug;
 }
 
