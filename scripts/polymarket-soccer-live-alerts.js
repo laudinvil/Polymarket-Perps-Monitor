@@ -99,8 +99,12 @@ async function fetchPage(url){
 }
 
 function gameTeams(g){
-  const home=t(g.homeTeam?.name||g.homeTeam?.teamName||g.homeTeam?.title||g.home_team?.name||g.home_team?.teamName||g.home?.name||g.home?.teamName||g.home?.title||g.homeTeam||g.home_team||g.homeTeamName||g.home_team_name);
-  const away=t(g.awayTeam?.name||g.awayTeam?.teamName||g.awayTeam?.title||g.away_team?.name||g.away_team?.teamName||g.away?.name||g.away?.teamName||g.away?.title||g.awayTeam||g.away_team||g.awayTeamName||g.away_team_name);
+  const sources=[g,g?.game,g?.match,g?.result,g?.data].filter(x=>x&&typeof x==="object");
+  let home="",away="";
+  for(const x of sources){
+    if(!home)home=t(x.homeTeam?.name||x.homeTeam?.teamName||x.homeTeam?.title||x.home_team?.name||x.home_team?.teamName||x.home_team?.title||x.home?.name||x.home?.teamName||x.home?.title||x.homeTeam||x.home_team||x.homeTeamName||x.home_team_name);
+    if(!away)away=t(x.awayTeam?.name||x.awayTeam?.teamName||x.awayTeam?.title||x.away_team?.name||x.away_team?.teamName||x.away_team?.title||x.away?.name||x.away?.teamName||x.away?.title||x.awayTeam||x.away_team||x.awayTeamName||x.away_team_name);
+  }
   return [home,away];
 }
 function wsSoccerConfirmed(sg){
