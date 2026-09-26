@@ -59,11 +59,13 @@ function matchGame(x,g){
   return (gh&&ga&&((nh===nx&&na===ny)||(nh===ny&&na===nx))) || t(g.eventId||g.event_id)===x.eventId || t(g.eventSlug||g.event_slug||g.slug)===x.slug;
 }
 
-function eventStarted(event){
+function eventLiveWindow(event){
+  const now=Date.now();
   const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
-  if(/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
-  const d=Date.parse(event.startDate||event.start_date||event.startTime||"");
-  return Number.isFinite(d)&&d<=Date.now();
+  if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
+  const start=Date.parse(event.startDate||event.start_date||event.startTime||event.gameStartTime||"");
+  const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
+  return Number.isFinite(start)&&start<=now&&Number.isFinite(end)&&end>=now;
 }
 
 async function discover(){
@@ -74,20 +76,25 @@ async function discover(){
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
 
-  async function addEvent(event,href){
+  async function addEvent(event,href,liveConfirmed=false){
     if(!event||!event.id)return;
     const [home,away]=teams(event);
-    const now=Date.now();
-    const end=Date.parse(event.endDate||event.end_date||"");
-    if(!home||!away||!isFixtureTitle(event.title||event.question)||!eventStarted(event))return;
-    if(Number.isFinite(end)&&end<now)return;
+    const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
+    if(!home||!away||!isFixtureTitle(event.title||event.question))return;
+    if(!liveConfirmed&&!eventLiveWindow(event))return;
+    if(Number.isFinite(end)&&end<Date.now())return;
     const slug=t(event.slug)||fixtureSlug(href||"");
     if(!slug||seen.has(slug))return;
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
     const game=games.find(g=>matchGame(item,g));
-    if(!game)return;
-    attachGame(item,game); candidates.push(item);
+    if(game)attachGame(item,game);
+    else {
+      item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
+      const sc=gameScore(event); if(sc)item.score=sc;
+      item.minute=gameMinute(event);
+    }
+    candidates.push(item);
   }
 
   // Primary gate: matches visible on Polymarket's live page and confirmed on soccer page.
@@ -96,7 +103,7 @@ async function discover(){
     if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug)))continue;
     try{
       const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
-      await addEvent(Array.isArray(raw)?raw[0]:raw,href);
+      await addEvent(Array.isArray(raw)?raw[0]:raw,href,true);
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
   }
 
