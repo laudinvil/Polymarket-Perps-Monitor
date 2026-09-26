@@ -210,12 +210,8 @@ async function fetchLiveSports(){
         const raw=typeof ev.data==="string"?ev.data:"";
         if(raw==="ping"){
           try{ws.send("pong")}catch{}
-          clearTimeout(timer);
-          timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
           return;
         }
-        clearTimeout(timer);
-        timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
         let m; try{m=JSON.parse(raw)}catch{return;}
         const type=t(m?.type||m?.event_type);
         const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
@@ -234,8 +230,7 @@ async function fetchLiveSports(){
         if(live.length<3) console.log(JSON.stringify({level:"DEBUG",event:"sports_ws_payload",type,league,status,keys:Object.keys(p||{}),gameId:p?.gameId||p?.id||null,slug:p?.slug||null,home:p?.homeTeam||p?.home_team||p?.home||null,away:p?.awayTeam||p?.away_team||p?.away||null,score:p?.score||p?.scores||p?.scoreboard||null,period:p?.period||null,elapsed:p?.elapsed||null,live:p?.live??null,isLive:p?.isLive??null}));
         const gameId=t(p?.gameId||p?.id);
         const slug=t(p?.slug);
-        const home=t(p?.homeTeam||p?.home_team||p?.home);
-        const away=t(p?.awayTeam||p?.away_team||p?.away);
+        const [home,away]=gameTeams(p);
         if(!gameId&&!slug||!home||!away)return;
         const key=gameId||slug;
         let score=null;
