@@ -199,11 +199,15 @@ async function discoverLivePageFixtures() {
     const html = await response.text();
     if (!response.ok) throw new Error("HTTP " + response.status + " for " + url);
     const hrefs = new Set();
-    const re = /href=["\'](\/sports\/[^"\']+)["\']/gi;
+    // The live page links directly to /event/<slug>; /sports/soccer/... is
+    // the category navigation, not the individual live fixture URL.
+    const re = /href=["\'](\/event\/[^"\']+)["\']/gi;
     let m;
     while ((m = re.exec(html))) hrefs.add(m[1]);
-    const soccerHrefs = Array.from(hrefs).filter(href => /\/sports\/soccer(?:\/|$)/i.test(href));
-    const slugs = soccerHrefs.map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
+    const eventHrefs = Array.from(hrefs);
+    const slugs = eventHrefs
+      .map(href => href.split("/").filter(Boolean).pop())
+      .filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
     const rows = [];
     for (const slug of slugs.slice(0, 40)) {
       try {
@@ -211,7 +215,7 @@ async function discoverLivePageFixtures() {
         if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push(event);
       } catch (err) { log("WARN","live_page_event_load_failed","Could not load live-page football event from Gamma",{slug,message:err.message}); }
     }
-    log("INFO","sports_live_page_discovery","Polymarket /sports/live is the sole football discovery source",{url,hrefCount:hrefs.size,soccerHrefCount:soccerHrefs.length,footballSlugCount:slugs.length,eventCount:rows.length});
+    log("INFO","sports_live_page_discovery","Polymarket /sports/live is the sole football discovery source",{url,hrefCount:hrefs.size,eventHrefCount:eventHrefs.length,footballSlugCount:slugs.length,eventCount:rows.length});
     return rows;
   } catch (err) { log("WARN","sports_live_page_discovery_failed","Could not discover football fixtures from Polymarket live sports page",{url,message:err.message}); return []; }
 }
