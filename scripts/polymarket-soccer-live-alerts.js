@@ -427,9 +427,15 @@ async function discover(){
     // stale future kickoff field. Future events without those live facts remain blocked.
     let authoritativeLive=false;
     if(liveConfirmed){
+      // LIVE-confirmed Gamma events may already carry the score/clock. Do not
+      // require a second identity match before accepting those authoritative facts.
+      const eventScore=gameScore(event);
+      const eventMinute=gameMinute(event);
       const auth=liveEvents.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g))||
                  sportsLive.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g));
-      authoritativeLive=!!auth&&validScore(gameScore(auth))&&validMinute(gameMinute(auth));
+      authoritativeLive=
+        (validScore(eventScore)&&validMinute(eventMinute)) ||
+        (!!auth&&validScore(gameScore(auth))&&validMinute(gameMinute(auth)));
     }
     if(!eventLiveWindow(event)&&!authoritativeLive){
       console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.gameStartTime||event.startDate,end:event.gameEndTime||event.endDate,status:event.status,liveConfirmed,authoritativeLive}));
@@ -441,6 +447,10 @@ async function discover(){
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
+    const eventScore=gameScore(event);
+    const eventMinute=gameMinute(event);
+    if(validScore(eventScore))item.score=eventScore;
+    if(validMinute(eventMinute))item.minute=eventMinute;
     // If this candidate came from the authoritative live source, carry its
     // score/clock immediately. This prevents the later Gamma refresh from
     // becoming the first place where live facts are attached.
