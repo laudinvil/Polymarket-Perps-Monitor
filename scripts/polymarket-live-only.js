@@ -636,7 +636,10 @@ async function discoverLiveZeroZero(){
 }
 
 async function sendLiveFound(home,away,minute,score,sofa,pm){
-  const polyId=t(pm?.id||pm?.eventId),key="LIVE_FOUND:"+polyId;
+  // pm is the canonical fixture passed by discoverLiveZeroZero().
+  // Use the fixture identity for dedupe so exact-score/live child events
+  // cannot poison or duplicate the same fixture's LIVE alert.
+  const polyId=t(pm?.id||pm?.eventId||pm?.slug),key="LIVE_FOUND:"+polyId;
   if(!polyId)return false;
 
   // One LIVE_FOUND per canonical fixture. Never send a new Telegram message
