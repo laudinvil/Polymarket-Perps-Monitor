@@ -84,8 +84,8 @@ function gameMinute(g){
 }
 function pageGameSnapshot(html, home, away, startValue){
   const raw=decode(html)
-    .replace(/<script[\s\S]*?<\\/script>/gi," ")
-    .replace(/<style[\s\S]*?<\\/style>/gi," ")
+    .replace(/<script[\s\S]*?<\/script>/gi," ")
+    .replace(/<style[\s\S]*?<\/style>/gi," ")
     .replace(/<[^>]+>/g," ")
     .replace(/\s+/g," ")
     .trim();
@@ -418,8 +418,8 @@ function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleStri
 function marketText(r){
   const title=(r.question||r.group||"Market")
     .replace(/^Will\s+/i,"")
-    .replace(/\s+on\s+\d{4}-\d{2}-\d{2}\\??$/i,"")
-    .replace(/\s+end\s+in\s+a\s+draw\\??$/i," — Draw");
+    .replace(/\s+on\s+\d{4}-\d{2}-\d{2}\??$/i,"")
+    .replace(/\s+end\s+in\s+a\s+draw\??$/i," — Draw");
   const vals=r.outcomes.map((o,i)=>{
     const p=Number.isFinite(r.prices[i])?pct(r.prices[i]):"—";
     return o+": "+p;
@@ -446,10 +446,11 @@ function buildAlertPages(x){
   const eventLiquidity=Number(e.liquidityNum??e.liquidity??0);
   const totalVolume=rows.reduce((a,r)=>a+r.volume,0);
   const totalLiquidity=rows.reduce((a,r)=>a+r.liquidity,0);
-  const header=["⚽ LIVE FOUND","",x.home+" vs "+x.away,status?"STATUS: "+status:"STATUS: LIVE",
-    x.minute?"MINUTE: "+x.minute:"MINUTE: —",
-    sh!=null&&sa!=null?"SCORE: "+sh+"–"+sa:"SCORE: —",
-    start?"START: "+start:"START: —",
+  const header=["⚽ LIVE FOUND","",x.home+" vs "+x.away,
+    "STATUS: "+(status||"LIVE"),
+    "START: "+(start||"—"),
+    "MINUTE: "+(x.minute||"—"),
+    "SCORE: "+(sh!=null&&sa!=null?sh+"–"+sa:"—"),
     "EVENT VOLUME: "+money(eventVolume||totalVolume),
     "EVENT LIQUIDITY: "+money(eventLiquidity||totalLiquidity),
     "",
