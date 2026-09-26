@@ -91,17 +91,42 @@ function sofascoreMinute(e){
 function scoreZeroZero(e){const h=Number(e?.homeScore?.current),a=Number(e?.awayScore?.current);return Number.isFinite(h)&&Number.isFinite(a)&&h===0&&a===0;}
 function teamMatch(a,b){const x=norm(a),y=norm(b);return x===y||x.includes(y)||y.includes(x);}
 function sameMatch(e,home,away){const [h,a]=teamsFromEvent(e);return (teamMatch(h,home)&&teamMatch(a,away))||(teamMatch(h,away)&&teamMatch(a,home));}
+function oddsDecimal(x){
+  const d=Number(x?.decimalValue);
+  if(Number.isFinite(d)&&d>1)return d;
+  const f=t(x?.fractionalValue||x?.initialFractionalValue);
+  const m=f.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+  if(m){
+    const a=Number(m[1]),b=Number(m[2]);
+    if(Number.isFinite(a)&&Number.isFinite(b)&&b>0)return 1+a/b;
+  }
+  return NaN;
+}
 async function sofascoreOdds(id){
   const data=await json("https://api.sofascore.com/api/v1/event/"+id+"/odds/1/all",5000),markets=arr(data?.markets);
-  let one=null,exact=null;
+  let one=null,exact=null,oneMarket=null,exactMarket=null;
   for(const m of markets){
-    const name=t(m?.name||m?.group).toLowerCase(),choices=arr(m?.choices);
+    const name=t(m?.marketName||m?.name||m?.groupItemTitle||m?.group).toLowerCase(),choices=arr(m?.choices);
     if(!one&&/(1x2|full time|match result)/.test(name)){
-      const p={}; for(const x of choices){const n=t(x?.name).toUpperCase(),d=Number(x?.decimalValue);if(d>1&&(n==="1"||n==="HOME"))p.h=1/d;if(d>1&&(n==="X"||n==="DRAW"))p.d=1/d;if(d>1&&(n==="2"||n==="AWAY"))p.a=1/d;}
-      if(p.h&&p.d&&p.a){const s=p.h+p.d+p.a;one={home:p.h/s,draw:p.d/s,away:p.a/s};}
+      const p={};
+      for(const x of choices){
+        const n=t(x?.name).toUpperCase(),d=oddsDecimal(x);
+        if(d>1&&(n==="1"||n==="HOME"))p.h=1/d;
+        if(d>1&&(n==="X"||n==="DRAW"))p.d=1/d;
+        if(d>1&&(n==="2"||n==="AWAY"))p.a=1/d;
+      }
+      if(p.h&&p.d&&p.a){const s=p.h+p.d+p.a;one={home:p.h/s,draw:p.d/s,away:p.a/s};oneMarket=name;}
     }
-    if(/correct score|exact score/.test(name))for(const x of choices){if(/^1[:\-]1$/.test(t(x?.name))){const d=Number(x?.decimalValue);if(d>1)exact=1/d;}}
+    if(/correct score|exact score/.test(name)){
+      for(const x of choices){
+        if(/^1[:\-–]1$/.test(t(x?.name))){
+          const d=oddsDecimal(x);
+          if(d>1){exact=1/d;exactMarket=name;}
+        }
+      }
+    }
   }
+  log(JSON.stringify({event:"sofascore_odds_parsed",sofaId:String(id),marketCount:markets.length,oneFound:!!one,exact11Found:exact!=null,oneMarket,exactMarket}));
   return {one,exact};
 }
 function parsePolyOneXTwo(e,home,away){
