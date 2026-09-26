@@ -7,6 +7,48 @@ const CONVEX = (process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-wes
 
 let stopped = false;
 const tracked = new Map();
+const telemetry = [];
+let telemetryFlushPromise = null;
+
+function log(value){
+  const line = typeof value === "string" ? value : JSON.stringify(value);
+  console.log(line);
+  try{
+    const parsed = JSON.parse(line);
+    if(parsed && parsed.event){
+      telemetry.push({
+        level: String(parsed.event).includes("failed") || String(parsed.event).includes("error") ? "ERROR" : "INFO",
+        event: String(parsed.event),
+        message: String(parsed.message || parsed.event),
+        data: JSON.stringify(parsed),
+        createdAt: Date.now()
+      });
+    }
+  }catch{}
+}
+
+async function flushConvexLogs(tickCount=0){
+  if(telemetryFlushPromise)return telemetryFlushPromise;
+  if(!telemetry.length && !tickCount)return;
+  const batch = telemetry.splice(0, 100);
+  telemetryFlushPromise = (async()=>{
+    try{
+      const r=await fetch(CONVEX+"/football/logs",{
+        method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({logs:batch,tickCount}),
+        signal:AbortSignal.timeout(3000)
+      });
+      if(!r.ok)throw new Error("Convex logs HTTP "+r.status);
+    }catch(err){
+      telemetry.unshift(...batch);
+      console.error(JSON.stringify({event:"convex_logs_flush_failed",message:err.message}));
+    }finally{
+      telemetryFlushPromise=null;
+    }
+  })();
+  return telemetryFlushPromise;
+}
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
 function norm(v){
@@ -118,7 +160,7 @@ function exactScore11Yes(e){
 async function exactScore11(e){
   const direct=exactScore11Yes(e);
   if(direct!==null){
-    console.log(JSON.stringify({event:"exact_score_11_source",source:"event.markets",price:pct(direct)}));
+    log(JSON.stringify({event:"exact_score_11_source",source:"event.markets",price:pct(direct)}));
     return direct;
   }
   const id=t(e?.id||e?.eventId);
@@ -127,10 +169,10 @@ async function exactScore11(e){
     const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",3500);
     const markets=Array.isArray(data)?data:arr(data?.markets);
     const value=exactScore11Yes({markets});
-    if(value!==null)console.log(JSON.stringify({event:"exact_score_11_source",source:"Gamma /markets",eventId:id,price:pct(value),markets:markets.length}));
+    if(value!==null)log(JSON.stringify({event:"exact_score_11_source",source:"Gamma /markets",eventId:id,price:pct(value),markets:markets.length}));
     return value;
   }catch(err){
-    console.log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
+    log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
     return null;
   }
 }
@@ -196,22 +238,22 @@ async function discoverUpcoming(page){
     const slug=item.path.split("/").filter(Boolean).pop();if(!slug)continue;
     let e;
     try{e=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),3500);}
-    catch(err){console.log(JSON.stringify({event:"gamma_event_failed",slug,message:err.message}));continue;}
+    catch(err){log(JSON.stringify({event:"gamma_event_failed",slug,message:err.message}));continue;}
     if(!e||e.active===false||e.closed===true||!eventIsFixture(e))continue;
     const start=startMs(e);
     if(!Number.isFinite(start)||start<=now||start>now+SOON_MS)continue;
     const teams=teamsFromEvent(e),home=teams[0],away=teams[1],key=t(e.id||e.eventId||e.slug);
     const odds=oneXTwo(e,home,away);
     if(!key||!odds){
-      console.log(JSON.stringify({event:"starting_soon_waiting_1x2",key,teams:[home,away],startMs:start,odds:odds||"MISSING"}));
+      log(JSON.stringify({event:"starting_soon_waiting_1x2",key,teams:[home,away],startMs:start,odds:odds||"MISSING"}));
       continue;
     }
     const exact11=await exactScore11(e);
     if(exact11===null){
-      console.log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));
+      log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));
       continue;
     }
-    console.log(JSON.stringify({event:"exact_score_11_found",key,teams:[home,away],startMs:start,exact11:pct(exact11)}));
+    log(JSON.stringify({event:"exact_score_11_found",key,teams:[home,away],startMs:start,exact11:pct(exact11)}));
     const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
     found.push(row);tracked.set(key,row);
   }
@@ -223,10 +265,10 @@ async function sendNext(row,score){
   const message=["⚽ NEXT","",row.home+" vs "+row.away,"1:1 YES: "+pct(row.exact11First),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);row.nextMessageId=sent.message_id;
-    console.log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
+    log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
-    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"NEXT",key:row.key,message:err.message}));return false;
+    await release(alertKey);log(JSON.stringify({event:"telegram_alert_failed",type:"NEXT",key:row.key,message:err.message}));return false;
   }
 }
 async function sendLoss(row,score){
@@ -235,10 +277,10 @@ async function sendLoss(row,score){
   const message=["⚽ LOSS","",row.home+" vs "+row.away,"SCORE: 0–0","",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
-    console.log(JSON.stringify({event:"telegram_alert_sent",type:"LOSS",key:row.key,score,messageId:sent.message_id}));
+    log(JSON.stringify({event:"telegram_alert_sent",type:"LOSS",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
-    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"LOSS",key:row.key,message:err.message}));return false;
+    await release(alertKey);log(JSON.stringify({event:"telegram_alert_failed",type:"LOSS",key:row.key,message:err.message}));return false;
   }
 }
 async function sendLive(row,score){
@@ -247,10 +289,10 @@ async function sendLive(row,score){
   const message=["⚽ LIVE","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
-    console.log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE",key:row.key,score,messageId:sent.message_id}));
+    log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
-    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"LIVE",key:row.key,message:err.message}));return false;
+    await release(alertKey);log(JSON.stringify({event:"telegram_alert_failed",type:"LIVE",key:row.key,message:err.message}));return false;
   }
 }
 async function sendSell(row,score){
@@ -260,20 +302,20 @@ async function sendSell(row,score){
   const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"1:1 YES: "+exactDelta(row.exact11First,current),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
-    console.log(JSON.stringify({event:"telegram_alert_sent",type:"SELL",key:row.key,score,messageId:sent.message_id}));
+    log(JSON.stringify({event:"telegram_alert_sent",type:"SELL",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
-    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"SELL",key:row.key,message:err.message}));return false;
+    await release(alertKey);log(JSON.stringify({event:"telegram_alert_failed",type:"SELL",key:row.key,message:err.message}));return false;
   }
 }
 async function scan(){
   const page=await soccerGamesPage(),clean=cleanHtml(page);
   const discovered=await discoverUpcoming(page);
-  console.log(JSON.stringify({event:"soccer_starting_soon_snapshot",discovered:discovered.length,tracked:tracked.size}));
+  log(JSON.stringify({event:"soccer_starting_soon_snapshot",discovered:discovered.length,tracked:tracked.size}));
   for(const [key,row] of [...tracked]){
     let e;
     try{e=await json(GAMMA+"/events/slug/"+encodeURIComponent(row.slug),3500);}
-    catch(err){console.log(JSON.stringify({event:"tracked_event_failed",key,message:err.message}));continue;}
+    catch(err){log(JSON.stringify({event:"tracked_event_failed",key,message:err.message}));continue;}
     const detectedScore=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away));
     const score=detectedScore||{home:0,away:0};
     const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
@@ -305,9 +347,11 @@ async function scan(){
 async function main(){
   const end=Date.now()+RUN_MS;
   while(!stopped&&Date.now()<end){
-    try{await scan();}catch(err){console.log(JSON.stringify({event:"scan_failed",message:err.message}));}
+    try{await scan();}catch(err){log(JSON.stringify({event:"scan_failed",message:err.message}));}
+    await flushConvexLogs(1);
     if(Date.now()+POLL_MS>=end)break;
     await new Promise(r=>setTimeout(r,POLL_MS));
   }
+  await flushConvexLogs(0);
 }
 main().catch(err=>{console.error(err);process.exitCode=1;});
