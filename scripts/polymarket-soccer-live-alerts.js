@@ -455,21 +455,30 @@ async function refreshEvent(x){
     fresh=Array.isArray(fresh)?fresh[0]:fresh;
   }catch{}
   if(!fresh){
-    const byId=await json(GAMMA+"/events/"+encodeURIComponent(x.eventId),{timeout:5000});
-    fresh=byId?.event||byId;
+    try{
+      const byId=await json(GAMMA+"/events/"+encodeURIComponent(x.eventId),{timeout:5000});
+      fresh=byId?.event||byId;
+    }catch{}
   }
   if(fresh)x.event=fresh;
-  try{
-    const all=[];
-    for(let offset=0;offset<1000;offset+=100){
-      const ms=await json(GAMMA+"/markets?event_id="+encodeURIComponent(x.eventId)+"&active=true&closed=false&limit=100&offset="+offset,{timeout:7000});
-      const batch=Array.isArray(ms)?ms:(ms?.data||[]);
-      if(!Array.isArray(batch)||batch.length===0)break;
-      all.push(...batch);
-      if(batch.length<100)break;
-    }
-    if(all.length)x.event.markets=all;
-  }catch(e){console.log(JSON.stringify({level:"WARN",event:"markets_load_failed",eventId:x.eventId,slug:x.slug,message:e.message}));}
+  if(!x.event)return null;
+
+  // Never query /markets globally here: some Gamma deployments ignore event_id
+  // and can return unrelated markets. Use only markets embedded in this event,
+  // then keep soccer match-result / 1X2 markets.
+  const embedded=Array.isArray(x.event.markets)?x.event.markets:[];
+  const relevant=embedded.filter(m=>{
+    const q=t(m?.question||m?.title||m?.groupItemTitle).toLowerCase();
+    const outs=parse(m?.outcomes);
+    const outcomeText=Array.isArray(outs)?outs.map(t).join(" ").toLowerCase():"";
+    return /1x2|match result|moneyline|winner|draw|win|result/.test(q+" "+outcomeText);
+  });
+  x.event.markets=relevant;
+  console.log(JSON.stringify({
+    level:"INFO",event:"MARKETS_FILTERED",eventId:x.eventId,slug:x.slug,
+    embeddedMarkets:embedded.length,relevantMarkets:relevant.length,
+    questions:relevant.slice(0,10).map(m=>t(m?.question||m?.title||m?.groupItemTitle))
+  }));
   return x.event;
 }
 async function cycle(){
