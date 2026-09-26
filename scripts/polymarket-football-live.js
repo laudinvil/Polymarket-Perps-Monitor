@@ -751,15 +751,60 @@ function extractLiveCardData(page, match) {
   return null;
 }
 
+async function loadSportScoreLive() {
+  const url = "https://sportscore.com/api/v1/fixtures/?sport=football&status=live&limit=200";
+  try {
+    const data = await getJson(url, { timeoutMs: 5_000 });
+    const rows = Array.isArray(data) ? data : (Array.isArray(data?.matches) ? data.matches : (Array.isArray(data?.data) ? data.data : []));
+    log("INFO","sportscore_live_loaded","SportScore structured LIVE feed loaded",{rows:rows.length});
+    return rows;
+  } catch (err) {
+    log("WARN","sportscore_live_failed","SportScore LIVE feed failed",{message:err.message});
+    return [];
+  }
+}
+
+function extractSportScoreMinute(row) {
+  const values=[row?.minute,row?.minutes,row?.status_text,row?.statusText,row?.clock,row?.time_elapsed];
+  for(const v of values){
+    if(v===null||v===undefined)continue;
+    const m=String(v).match(/(?:^|\\s)(\\d{1,3})\\s*(?:['′]|min(?:ute)?s?|$)/i);
+    if(m){const n=Number(m[1]);if(Number.isInteger(n)&&n>=0&&n<=130)return n;}
+  }
+  return null;
+}
+
+function findSportScoreLive(rows, match) {
+  let best=null;
+  for(const row of rows){
+    const rh=text(row?.home), ra=text(row?.away);
+    if(!rh||!ra)continue;
+    const direct=teamSimilarity(rh,match.homeTeam)>=0.8&&teamSimilarity(ra,match.awayTeam)>=0.8;
+    const reversed=teamSimilarity(rh,match.awayTeam)>=0.8&&teamSimilarity(ra,match.homeTeam)>=0.8;
+    if(!direct&&!reversed)continue;
+    const hs=finiteScore(row?.home_score), as=finiteScore(row?.away_score), minute=extractSportScoreMinute(row);
+    if(hs===null||as===null||minute===null)continue;
+    const score=reversed?{home:as,away:hs}:{home:hs,away:as};
+    best={status:"live",score,minute,scoreSource:"sportscore",minuteSource:"sportscore"};
+    log("INFO","sportscore_live_match_found","Exact fixture matched in structured SportScore LIVE feed",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],sourceTeams:[rh,ra],score,minute});
+    return best;
+  }
+  return best;
+}
+
 async function refreshPolymarketLiveState(match) {
   try {
-    if (!livePagePromise) livePagePromise = loadPolymarketLivePage();
-    const page = await livePagePromise;
-    const live = page ? extractLiveCardData(page, match) : null;
-    if (!live) { log("INFO","live_card_not_complete","LIVE alert blocked: real score AND minute were not found",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],scoreSource:null,minuteSource:null}); return null; }
-    log("INFO","live_card_complete","Real score and minute extracted from matched LIVE fixture card",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score:live.score,minute:live.minute,scoreSource:live.scoreSource,minuteSource:live.minuteSource});
+    const rows = await loadSportScoreLive();
+    const live = findSportScoreLive(rows, match);
+    if (!live) {
+      log("INFO","live_structured_match_not_found","No exact LIVE fixture with trusted score and minute",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam]});
+      return null;
+    }
     return live;
-  } catch (err) { log("WARN","live_state_failed","Could not read score and minute from matched LIVE fixture card",{eventId:match.eventId,message:err.message}); return null; }
+  } catch (err) {
+    log("WARN","live_state_failed","Structured LIVE source failed",{eventId:match.eventId,message:err.message});
+    return null;
+  }
 }
 async function claimTelegramAlert(key) {
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
