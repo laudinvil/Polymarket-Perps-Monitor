@@ -754,7 +754,7 @@ function scoreAfterTeam(page, team) {
   const normalizedPage = norm(page);
   const normalizedTeam = norm(team);
   if (!normalizedPage || !normalizedTeam) return null;
-  const escaped = normalizedTeam.replace(/[.*+?^${}()|[\\]\\]/g, "\\const escaped = normalizedTeam.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&");");
+  const escaped = normalizedTeam.replace(/[.*+?^\$\{\}()|[\]\\]/g, "\\$&");
   const re = new RegExp(escaped + "\\s+(\\d{1,2})-(\\d{1,2})(?=\\s|$)", "i");
   const m = normalizedPage.match(re);
   if (!m) return null;
@@ -769,9 +769,6 @@ function findLivePageMatch(page, match) {
   const awayTeam = norm(match.awayTeam);
   if (!normalizedPage || !homeTeam || !awayTeam) return null;
 
-  // A team can occur several times on /sports/live. Do not use the first
-  // occurrence globally: walk every home/away pair and select the pair whose
-  // local card actually contains a LIVE status.
   let from = 0;
   while (from < normalizedPage.length) {
     const hi = normalizedPage.indexOf(homeTeam, from);
@@ -785,7 +782,7 @@ function findLivePageMatch(page, match) {
     const cardStart = Math.max(0, hi - 220);
     const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 260);
     const card = normalizedPage.slice(cardStart, cardEnd);
-    const liveStatus = /\\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\\b/i.test(card);
+    const liveStatus = /\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
 
     if (liveStatus) {
       const homeScore = scoreAfterTeam(normalizedPage.slice(hi, cardEnd), match.homeTeam);
