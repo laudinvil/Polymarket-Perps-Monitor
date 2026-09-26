@@ -5,6 +5,9 @@ name: Polymarket Football · Live Discovery
 run-name: Football monitor · event-first scan
 
 on:
+  push:
+    paths:
+      - 'scripts/polymarket-football-live.js'
   workflow_dispatch:
   schedule:
     - cron: "2 */6 * * *"
