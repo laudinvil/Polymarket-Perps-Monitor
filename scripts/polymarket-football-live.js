@@ -348,12 +348,15 @@ async function ensureEventMarkets(match) {
         elapsedMs: Date.now() - startedAt
       });
 
-      if (oneXTwo) return true;
+      const exactScoreOneOne = findOneOneMarket(match);
+      if (oneXTwo && exactScoreOneOne) return true;
 
-      log("WARN", "one_x_two_retry", "Current Polymarket event has not yielded a complete 1X2 yet; retrying before BUY", {
+      log("WARN", "alert_markets_retry", "Current Polymarket event has not yielded both 1X2 and Exact Score 1:1; retrying before alert", {
         eventId: match.eventId,
         attempt,
-        maxAttempts: attempts
+        maxAttempts: attempts,
+        oneXTwoAvailable: Boolean(oneXTwo),
+        exactScoreOneOneAvailable: Boolean(exactScoreOneOne)
       });
     } catch (err) {
       log("WARN", "event_markets_load_failed", "Could not load current Polymarket event markets; retrying", {
