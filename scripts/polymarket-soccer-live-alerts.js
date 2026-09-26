@@ -262,6 +262,7 @@ async function discover(){
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
   const sportsLive=await fetchLiveSports();
+  console.log(JSON.stringify({level:"INFO",event:"DISCOVERY_RAW_SOURCES",livePageLinks:liveLinks.length,soccerPageLinks:soccerLinks.length,gammaLiveEvents:liveEvents.length,sportsWsGames:sportsLive.length}));
   console.log(JSON.stringify({level:"INFO",event:"sports_ws_snapshot",count:sportsLive.length,matches:sportsLive.map(x=>({gameId:x.gameId,slug:x.slug,teams:[x.home,x.away],status:x.status,period:x.period,elapsed:x.elapsed,score:x.score}))}));
   console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveEvents:liveEvents.length}));
   const soccerHrefs=new Set(soccerLinks);
@@ -411,6 +412,7 @@ async function discover(){
   }
 
   console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away,minute:x.minute,score:x.score,status:x.gameStatus,hasGame:!!x.game,source:x.game?"gamma_games":"gamma_event"}))}));
+  console.log(JSON.stringify({level:"INFO",event:"ALERT_PIPELINE_READY",candidates:candidates.length,telegramConfigured:!!process.env.TELEGRAM_BOT_TOKEN&&!!process.env.TELEGRAM_CHAT_ID}));
   if(candidates.length>0)console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATES_READY",count:candidates.length,matches:candidates.map(x=>({slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null}))}));
   if(candidates.length===0){
     console.log(JSON.stringify({level:"ERROR",event:"NO_LIVE_CANDIDATES",diagnostic:"No soccer candidate survived discovery. Check gamma_active_events_scan, sports_ws_snapshot and candidate_reject records above."}));
