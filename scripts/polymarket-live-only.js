@@ -206,7 +206,7 @@ function oneXTwo(e,home,away){
     });
     const titleLooks1X2=/(1x2|1 x 2|match result|full time result|result|winner|moneyline)/.test(q);
     const labelsLook1X2=hi>=0&&di>=0&&ai>=0;
-    if((titleLooks1X2||labelsLook1X2)&&hi>=0&&di>=0&&ai>=0&&ps[hi]>=0&&ps[di]>=0&&ps[ai]>=0){
+    if((titleLooks1X2||labelsLook1X2)&&hi>=0&&di>=0&&ai>=0&&ps[hi]>0&&ps[di]>0&&ps[ai]>0){
       return "1: "+Math.round(ps[hi]*100)+"% · X: "+Math.round(ps[di]*100)+"% · 2: "+Math.round(ps[ai]*100)+"%";
     }
   }
