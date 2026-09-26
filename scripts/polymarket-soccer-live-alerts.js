@@ -2,7 +2,6 @@
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
-const GAMES = GAMMA + "/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
 const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
@@ -25,10 +24,17 @@ function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
   if(/\/sports\/soccer\//i.test(h))return true;
   const values=[];
-  for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug"])values.push(event?.[k]);
+  for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug","seriesSlug","series_slug","eventType","event_type","gameType","game_type"])values.push(event?.[k]);
   const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
   if(Array.isArray(tags))for(const z of tags)values.push(typeof z==="string"?z:(z?.slug||z?.label||z?.name));
-  return values.filter(Boolean).some(v=>/soccer|football/i.test(String(v)));
+  if(values.filter(Boolean).some(v=>/soccer|football/i.test(String(v))))return true;
+  const slug=t(event?.slug||event?.eventSlug||event?.event_slug).toLowerCase();
+  if(/(^|[-_])(soccer|football)([-_]|$)/.test(slug))return true;
+  const title=t(event?.title||event?.question);
+  if(!/\s(?:vs\.?|v\.?|versus)\s/i.test(title))return false;
+  const markets=Array.isArray(event?.markets)?event.markets:[];
+  const text=markets.map(m=>t(m?.question||m?.title||m?.groupItemTitle)).join(" ").toLowerCase();
+  return /\b1x2\b|\bdraw\b|both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance/.test(text);
 }
 function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
@@ -110,9 +116,7 @@ async function fetchLiveSports(){
   });
 }
 
-async function fetchLiveGames(){
-  // Gamma /games query shapes are currently returning HTTP 422.
-  // Use active Gamma events and filter soccer/live locally.
+async function fetchLiveEvents(){
   const all=[];
   for(let offset=0;offset<2000;offset+=500){
     try{
@@ -127,17 +131,23 @@ async function fetchLiveGames(){
     }
   }
   const seen=new Set();
-  return all.filter(e=>{
+  const live=[];
+  for(const e of all){
     const id=t(e.id||e.slug);
-    if(!id||seen.has(id)||!isSoccerEvent(e,""))return false;
+    if(!id||seen.has(id)||!isSoccerEvent(e,""))continue;
     seen.add(id);
-    return eventLiveWindow(e);
-  }).map(e=>({
-    id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
-    homeTeam:teams(e)[0],awayTeam:teams(e)[1],
-    status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
-    live:true,event:e
-  }));
+    if(!eventLiveWindow(e))continue;
+    const [home,away]=teams(e);
+    if(!home||!away)continue;
+    live.push({
+      id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
+      homeTeam:home,awayTeam:away,
+      status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
+      live:true,event:e
+    });
+  }
+  console.log(JSON.stringify({level:"INFO",event:"gamma_active_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
+  return live;
 }
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
@@ -160,12 +170,12 @@ function eventLiveWindow(event){
 }
 
 async function discover(){
-  const [liveHtml,soccerHtml,games]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE),fetchLiveGames()]);
+  const [liveHtml,soccerHtml,liveEvents]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE),fetchLiveEvents()]);
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
   const sportsLive=await fetchLiveSports();
   console.log(JSON.stringify({level:"INFO",event:"sports_ws_snapshot",count:sportsLive.length,matches:sportsLive.map(x=>({gameId:x.gameId,slug:x.slug,teams:[x.home,x.away],status:x.status,period:x.period,elapsed:x.elapsed,score:x.score}))}));
-  console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveGames:games.length}));
+  console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveEvents:liveEvents.length}));
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
@@ -184,7 +194,7 @@ async function discover(){
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
-    const game=games.find(g=>matchGame(item,g));
+    const game=liveEvents.find(g=>matchGame(item,g));
     if(game)attachGame(item,game);
     else {
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
@@ -243,9 +253,9 @@ async function discover(){
     }
   }
 
-  // Secondary authoritative source: Gamma /games. It is accepted only when it explicitly
-  // reports the game as live. This source is used to survive WS snapshots that miss a game.
-  for(const g of games){
+  // Secondary authoritative source: active Gamma /events. It is accepted only after
+  // local soccer classification and the actual fixture LIVE-window check.
+  for(const g of liveEvents){
     try{
       const gameSlug=t(g.slug||g.eventSlug||g.event_slug);
       const gameId=t(g.gameId||g.game_id||g.id);
@@ -257,12 +267,12 @@ async function discover(){
         await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item)attachGame(item,g);
-        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_GAME",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question}));
+        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_EVENT",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question}));
       } else {
-        console.log(JSON.stringify({level:"WARN",event:"LIVE_GAME_EVENT_LOOKUP_FAILED",gameId:gameId,slug:gameSlug,teams:gameTeams(g)}));
+        console.log(JSON.stringify({level:"WARN",event:"LIVE_EVENT_LOOKUP_FAILED",gameId:gameId,slug:gameSlug,teams:gameTeams(g)}));
       }
     }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"live_game_candidate_failed",gameId:t(g.gameId||g.game_id||g.id),message:e.message}));
+      console.log(JSON.stringify({level:"WARN",event:"live_event_candidate_failed",gameId:t(g.gameId||g.game_id||g.id),message:e.message}));
     }
   }
 
@@ -284,7 +294,7 @@ async function discover(){
   console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away,minute:x.minute,score:x.score,status:x.gameStatus,hasGame:!!x.game,source:x.game?"gamma_games":"gamma_event"}))}));
   if(candidates.length>0)console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATES_READY",count:candidates.length,matches:candidates.map(x=>({slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null}))}));
   if(candidates.length===0){
-    console.log(JSON.stringify({level:"ERROR",event:"NO_LIVE_CANDIDATES",diagnostic:"No soccer candidate survived discovery. Check source_scan, gamma_soccer_fallback_scan and candidate_reject records above."}));
+    console.log(JSON.stringify({level:"ERROR",event:"NO_LIVE_CANDIDATES",diagnostic:"No soccer candidate survived discovery. Check gamma_active_events_scan, sports_ws_snapshot and candidate_reject records above."}));
   }
   return candidates;
 }
@@ -447,7 +457,7 @@ async function cycle(){
   }
 }
 async function main(){
-  console.log(JSON.stringify({event:"monitor_start",mode:DIAGNOSTIC_MODE?"diagnostic":"monitor",sourceLive:LIVE_PAGE,sourceSoccer:SOCCER_PAGE,pollMs:POLL_MS,runMs:RUN_MS,maxCycles:Number.isFinite(MAX_CYCLES)?MAX_CYCLES:null}));
+  console.log(JSON.stringify({event:"monitor_start",mode:DIAGNOSTIC_MODE?"diagnostic":"monitor",sourceLive:LIVE_PAGE,sourceEvents:GAMMA+"/events?active=true&closed=false",sourceSoccerPage:SOCCER_PAGE,pollMs:POLL_MS,runMs:RUN_MS,maxCycles:Number.isFinite(MAX_CYCLES)?MAX_CYCLES:null}));
   const deadline=Date.now()+RUN_MS; let cycles=0;
   while(!stopping&&Date.now()<deadline&&cycles<MAX_CYCLES){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}cycles++;console.log(JSON.stringify({event:"cycle_complete",cycle:cycles,elapsedMs:Date.now()-started}));if(cycles>=MAX_CYCLES)break;await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));}
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
