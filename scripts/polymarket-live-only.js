@@ -152,7 +152,7 @@ async function discoverUpcoming(page){
 async function sendLive(row,score){
   const alertKey=row.key+":LIVE",c=await claim(alertKey);
   if(!c.claimed)return false;
-  const message=["⚽ LIVE","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const message=["⚽ LIVE","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
     console.log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE",key:row.key,score,messageId:sent.message_id}));
