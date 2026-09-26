@@ -111,10 +111,33 @@ async function fetchLiveSports(){
 }
 
 async function fetchLiveGames(){
-  const urls=[GAMES+"?live=true",GAMES+"?status=live",GAMES+"?active=true&sport=soccer"];
+  // Gamma /games query shapes are currently returning HTTP 422.
+  // Use active Gamma events and filter soccer/live locally.
   const all=[];
-  for(const u of urls){try{const raw=await json(u,{timeout:5000});const a=Array.isArray(raw)?raw:(raw?.games||raw?.data||[]);if(Array.isArray(a))all.push(...a);}catch(e){console.log(JSON.stringify({level:"WARN",event:"games_load_failed",message:e.message}));}}
-  const seen=new Set(); return all.filter(g=>{const id=t(g.id||g.gameId||g.game_id||g.slug);if(!id||seen.has(id))return false;seen.add(id);return gameLive(g);});
+  for(let offset=0;offset<2000;offset+=500){
+    try{
+      const raw=await json(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset,{timeout:8000});
+      const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
+      if(!Array.isArray(batch)||batch.length===0)break;
+      all.push(...batch);
+      if(batch.length<500)break;
+    }catch(e){
+      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",offset,message:e.message}));
+      break;
+    }
+  }
+  const seen=new Set();
+  return all.filter(e=>{
+    const id=t(e.id||e.slug);
+    if(!id||seen.has(id)||!isSoccerEvent(e,""))return false;
+    seen.add(id);
+    return eventLiveWindow(e);
+  }).map(e=>({
+    id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
+    homeTeam:teams(e)[0],awayTeam:teams(e)[1],
+    status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
+    live:true,event:e
+  }));
 }
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
@@ -252,8 +275,8 @@ async function discover(){
   // They must never become LIVE candidates: this prevents prematch/future alerts.
   if(candidates.length===0){
     try{
-      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&order=end_date&ascending=true&limit=500",{timeout:8000});
-      const events=Array.isArray(raw)?raw:[];
+      const raw=await json(GAMMA+"/events?active=true&closed=false&limit=500",{timeout:8000});
+      const events=(Array.isArray(raw)?raw:(raw?.events||raw?.data||[])).filter(e=>isSoccerEvent(e,""));
       console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,liveCandidatesAdded:0,diagnostic:"Gamma-only events are not eligible for LIVE alerts without Sports WS or live game confirmation."}));
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"gamma_soccer_fallback_failed",message:e.message}));}
   }
