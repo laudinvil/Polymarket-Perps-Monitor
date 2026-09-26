@@ -326,6 +326,40 @@ function balancedForOneOne(nutmeg) {
   return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF;
 }
 
+function findMatchResultMarket(match) {
+  const home = norm(match.homeTeam);
+  const away = norm(match.awayTeam);
+  for (const market of match.markets || []) {
+    if (!market || market.active === false || market.closed === true) continue;
+    const question = text(market.question || "");
+    if (!/(match result|moneyline|winner|win|draw)/i.test(question)) continue;
+    const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map(text) : [];
+    const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices.map(Number) : [];
+    if (outcomes.length !== prices.length || outcomes.length < 3) continue;
+    let homeIndex = -1, awayIndex = -1, drawIndex = -1;
+    for (let i = 0; i < outcomes.length; i++) {
+      const o = norm(outcomes[i]);
+      if (o === "draw" || o === "tie" || o === "x") drawIndex = i;
+      else if (o === home || o.includes(home) || home.includes(o)) homeIndex = i;
+      else if (o === away || o.includes(away) || away.includes(o)) awayIndex = i;
+    }
+    if (homeIndex >= 0 && awayIndex >= 0 && drawIndex >= 0 &&
+        [homeIndex, awayIndex, drawIndex].every(i => Number.isFinite(prices[i]))) {
+      return { market, homeProb: prices[homeIndex], drawProb: prices[drawIndex], awayProb: prices[awayIndex] };
+    }
+  }
+  return null;
+}
+
+function balancedFromPolymarket(market) {
+  return Boolean(
+    market &&
+    Number.isFinite(market.homeProb) &&
+    Number.isFinite(market.awayProb) &&
+    Math.abs(market.homeProb - market.awayProb) <= BALANCE_MAX_DIFF
+  );
+}
+
 function isStrictPrematch(match, nutmeg, liveState) {
   if (liveState?.status === "live" || nutmeg?.row?.live) return false;
   if (nutmeg?.row?.finished) return false;
@@ -587,13 +621,36 @@ async function tick() {
         // PRE-MATCH is strictly a future kickoff. A missing/stale live flag
         // cannot turn an already-started 0:0 fixture into a BUY candidate.
         if (isPrematch) {
-          const candidate = Boolean(nm && balancedForOneOne(nm));
+          let nativeMarket = null;
+          let nativeBalanced = false;
+
+          // Polymarket-native fallback: do not make Nutmegly a hard
+          // dependency for generating a PRE-MATCH BUY alert.
+          if (!(nm && balancedForOneOne(nm))) {
+            await ensureEventMarkets(match);
+            nativeMarket = findMatchResultMarket(match);
+            nativeBalanced = balancedFromPolymarket(nativeMarket);
+            log("INFO", "polymarket_native_evaluation", "Polymarket-native 1X2 fallback evaluated", {
+              eventId: match.eventId,
+              teams: [match.homeTeam, match.awayTeam],
+              marketFound: Boolean(nativeMarket),
+              homeProb: nativeMarket?.homeProb ?? null,
+              drawProb: nativeMarket?.drawProb ?? null,
+              awayProb: nativeMarket?.awayProb ?? null,
+              balanced: nativeBalanced
+            });
+          }
+
+          const nutmegBalanced = Boolean(nm && balancedForOneOne(nm));
+          const candidate = nutmegBalanced || nativeBalanced;
           log("INFO", "prematch_evaluation", "Pre-match fixture evaluated for BUY", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
             nutmegMatched: Boolean(nm),
             nutmegScore: nm?.score ?? null,
-            balanced: balancedForOneOne(nm),
+            nutmegBalanced,
+            nativeMarketFound: Boolean(nativeMarket),
+            nativeBalanced,
             candidate
           });
 
@@ -601,7 +658,7 @@ async function tick() {
             log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected", {
               eventId: match.eventId,
               teams: [match.homeTeam, match.awayTeam],
-              reason: nm ? "not_balanced" : "nutmeg_match_missing"
+              reason: nm ? "not_balanced" : "no_probability_source"
             });
             return;
           }
