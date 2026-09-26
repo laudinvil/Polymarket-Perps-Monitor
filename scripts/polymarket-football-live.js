@@ -203,7 +203,32 @@ async function discoverLivePageFixtures() {
       const slug = href.split("/").filter(Boolean).pop();
       try {
         const event = await getJson(GAMMA_URL + "/events/slug/" + encodeURIComponent(slug), {timeoutMs:3_000});
-        if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push({...event, _liveSportsHref: href});
+        const league = href.split("/").filter(Boolean)[1] || "";
+        const nonSoccerLeague = /^(cfb|nfl|mlb|nba|nhl|wnba|atp|wta|ufc|mma|boxing|cricket|rugby|golf|darts|volleyball|handball|table-tennis|motorsports|formula-1|nascar|esports|chess|poker)$/i.test(league);
+        const soccerByMetadata = isFootballEvent(event,new Set());
+        const soccerByLiveUrl = !nonSoccerLeague;
+        if (event && event.active !== false && event.closed !== true && (soccerByMetadata || soccerByLiveUrl) && isPrimaryMatchEvent(event)) {
+          rows.push({...event, _liveSportsHref: href});
+          log("INFO","live_page_fixture_accepted","Accepted current Polymarket /sports/live fixture for Soccer monitoring",{
+            slug,
+            href,
+            league,
+            soccerByMetadata,
+            soccerByLiveUrl,
+            title:text(event.title||event.question)
+          });
+        } else {
+          log("INFO","live_page_fixture_rejected","Rejected /sports/live card before monitoring",{
+            slug,
+            href,
+            league,
+            soccerByMetadata,
+            soccerByLiveUrl,
+            active:event?.active,
+            closed:event?.closed,
+            title:text(event?.title||event?.question)
+          });
+        }
       } catch (err) { log("WARN","live_page_event_load_failed","Could not load live-page football event from Gamma",{slug,message:err.message}); }
     }
     log("INFO","sports_live_page_discovery","Polymarket /sports/live is the sole football discovery source",{url,hrefCount:hrefs.size,eventHrefCount:eventHrefs.length,footballSlugCount:slugs.length,eventCount:rows.length});
