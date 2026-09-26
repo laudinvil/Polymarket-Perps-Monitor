@@ -2,7 +2,7 @@
   "name": "polymarket-perps-monitor",
   "private": true,
   "scripts": {
-    "start": "node scripts/polymarket-soccer-live-alerts.js"
+    "start": "node scripts/deplexo-start.js"
   },
   "engines": {
     "node": ">=22"
