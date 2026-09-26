@@ -499,19 +499,44 @@ async function convexMutation(path,args){
   return r.json();
 }
 
-// Football dedupe is local because the deployed Convex function is not guaranteed
-// to be present in every deployment. Workflow concurrency is cancel-in-progress,
-// so only one active monitor instance is allowed to claim/send a match.
-const footballClaims=new Set();
-
-async function claimFootballMatch(slug){
-  if(footballClaims.has(slug))return false;
-  footballClaims.add(slug);
-  return true;
+// Persistent dedupe: the exact Polymarket event URL is the identity.
+// Once a URL is successfully claimed, every later cycle/run is blocked,
+// regardless of score, minute, alert phase, or slug changes.
+async function claimFootballMatch(eventUrl){
+  const key=t(eventUrl).replace(/\\/$/,"");
+  if(!key) return false;
+  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
+  try{
+    const r=await fetch(siteUrl+"/football/claim",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({monitor:"polymarket-soccer-live",marketSlug:key}),
+      signal:AbortSignal.timeout(8000)
+    });
+    if(r.status===409)return false;
+    if(!r.ok)throw new Error("Convex claim HTTP "+r.status);
+    const body=await r.json().catch(()=>({}));
+    return body?.claimed===true;
+  }catch(err){
+    console.log(JSON.stringify({level:"ERROR",event:"telegram_claim_failed",message:err.message,eventUrl:key}));
+    return false;
+  }
 }
 
-async function releaseFootballMatch(slug){
-  footballClaims.delete(slug);
+async function releaseFootballMatch(eventUrl){
+  const key=t(eventUrl).replace(/\\/$/,"");
+  if(!key)return;
+  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
+  try{
+    await fetch(siteUrl+"/football/release",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({monitor:"polymarket-soccer-live",marketSlug:key}),
+      signal:AbortSignal.timeout(8000)
+    });
+  }catch(err){
+    console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",message:err.message,eventUrl:key}));
+  }
 }
 
 const alerted=new Set();
@@ -549,7 +574,7 @@ async function cycle(){
   console.log(JSON.stringify({level:"INFO",event:"CYCLE_CANDIDATES",count:candidates.length}));
   for(const x of candidates){
     if(stopping)break;
-    const id=x.slug||x.eventId;if(alerted.has(id)||alerting.has(id))continue;
+    const id=t(x.url).replace(/\\/$/,"");if(!id||alerted.has(id)||alerting.has(id))continue;
     alerting.add(id);
     try{
       await refreshEvent(x);
