@@ -321,9 +321,13 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   const key = match.eventId || match.slug;
   const home = Number(match.live?.score?.home || 0);
   const away = Number(match.live?.score?.away || 0);
+  if (!Array.isArray(match.markets) || !match.markets.length) await ensureEventMarkets(match);
+  const oneXTwo = findMatchResultMarket(match);
+  const oneXTwoLine = oneXTwo
+    ? `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`
+    : "1X2: —";
 
-  // BUY is created only while the fixture is still pre-match.
-  // A match discovered for the first time already live is never a BUY candidate.
+  // BUY is allowed only for fixtures starting now or already live.
   if (phase === "prematch" || phase === "live_entry") {
     oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
@@ -363,7 +367,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
       await markCandidateBuySent(key);
-      log("INFO", "one_one_buy_alert_sent", "1:1 pre-match entry alert sent", {
+      log("INFO", "one_one_buy_alert_sent", "BUY entry alert sent", {
         eventId: match.eventId, reason: "balanced_polymarket_1x2_prematch", telegramMessageId: sent.messageId
       });
     } catch (err) {
@@ -389,7 +393,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       "⚽ MATCH STARTED", "",
       match.homeTeam + " vs " + match.awayTeam,
       "SCORE: " + home + "–" + away,
-      "", "➡️ OPEN MATCH", match.url
+      oneXTwoLine, "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
     try {
@@ -429,7 +433,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     const sent = await sendTelegram(message, claim.replyToMessageId);
     if (!sent.ok) throw new Error("Telegram not configured");
     await markCandidateSellSent(key);
-    log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent as Telegram reply to BUY", {
+    log("INFO", "one_one_sell_alert_sent", "SELL alert sent as Telegram reply to BUY", {
       eventId: match.eventId, score: { home, away }, goalDetected: hasGoal, replyToMessageId: claim.replyToMessageId
     });
   } catch (err) {
