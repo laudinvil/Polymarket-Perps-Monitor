@@ -610,7 +610,8 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     question: exactScoreOneOne?.market?.question ?? null
   });
 
-  const claimKey = key + ":SELL";
+  const scoreKey = home + "-" + away;
+  const claimKey = key + ":SELL:" + scoreKey;
   const claim = await claimTelegramAlert(claimKey);
   if (!claim.claimed) return;
 
@@ -667,8 +668,9 @@ async function tick() {
     const cycle={discovered:discovered.length,retainedCandidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
     log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
+    livePagePromise = loadPolymarketLivePage();
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"only LIVE or starting-now football fixtures can alert; 1X2 is included in every alert",evaluationCandidates:evaluationCandidates.length,deferredCandidates});
+    log("INFO","stage_start","Polymarket live-page alert evaluation started",{stage:"evaluation",rule:"only LIVE or starting-now football fixtures can alert; 1X2 is included in every alert",evaluationCandidates:evaluationCandidates.length,deferredCandidates});
     const BATCH=20;
     for(let i=0;i<evaluationCandidates.length;i+=BATCH){
       await Promise.all(evaluationCandidates.slice(i,i+BATCH).map(async match=>{
@@ -723,7 +725,7 @@ async function tick() {
     return matches.length;
   }catch(err){
     log("ERROR","discovery_failed","Football Polymarket-only tick failed; monitoring continues",{message:err.message});
-  }finally{tick.running=false;await flushConvexLogs();}
+  }finally{livePagePromise=null;tick.running=false;await flushConvexLogs();}
 }
 
 function teamSimilarity(a, b) {
@@ -736,7 +738,18 @@ function teamSimilarity(a, b) {
   return overlap / Math.max(xa.size, ya.size);
 }
 
-async function refreshPolymarketLiveState(match) {
+
+let livePagePromise = null;
+function decodeHtml(value) {
+  return text(value).replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#x2013;/gi,"–").replace(/&#x2014;/gi,"—");
+}
+function visiblePolymarketText(html) {
+  const s=html.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<noscript[\s\S]*?<\/noscript>/gi," ");
+  return decodeHtml(s.replace(/<[^>]+>/g," ").replace(/\s+/g," "));
+}
+function nearestScoreBeforeTeam(page, team) {
+  const t=text(team); if(!t)return null;
+  const escaped=t.replace(/[.*+?^()|[\]\\]/g,"\\async function refreshPolymarketLiveState(match) {
   try {
     const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId));
     const event = data?.event || data;
@@ -775,6 +788,47 @@ function extractPolymarketScore(event) {
   const away = Number(event?.awayScore ?? event?.away_score);
   if (Number.isFinite(home) && Number.isFinite(away)) return { home, away };
   return null;
+}
+
+async function candidateRequest");
+  const m=page.match(new RegExp("(\\d{1,2})\\s+(?:Image:\\s+[^\\s]+\\s+)?"+escaped+"\\b","i"));
+  if(!m)return null; const n=Number(m[1]); return Number.isInteger(n)&&n>=0&&n<=20?n:null;
+}
+function findLivePageMatch(page, match) {
+  const h=norm(match.homeTeam), a=norm(match.awayTeam), p=norm(page);
+  if(!h||!a)return null;
+  const hi=p.indexOf(h), ai=p.indexOf(a,Math.max(hi+h.length,0));
+  if(hi<0||ai<0||ai-hi>700)return null;
+  const card=p.slice(Math.max(0,hi-180),Math.min(p.length,ai+a.length+180));
+  if(!/\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card))return null;
+  const hs=nearestScoreBeforeTeam(page,match.homeTeam), as=nearestScoreBeforeTeam(page,match.awayTeam);
+  if(hs===null||as===null)return null;
+  return {status:"live",score:{home:hs,away:as},minute:0};
+}
+async function loadPolymarketLivePage() {
+  const url="https://polymarket.com/ru/sports/live";
+  try {
+    const r=await fetch(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketFootballMonitor/1.0)"},signal:AbortSignal.timeout(6000)});
+    if(!r.ok)throw new Error("HTTP "+r.status+" for "+url);
+    const html=await r.text(), page=visiblePolymarketText(html);
+    log("INFO","polymarket_live_page_loaded","Polymarket live sports page refreshed",{url,bodyBytes:Buffer.byteLength(html,"utf8"),textBytes:Buffer.byteLength(page,"utf8")});
+    return page;
+  } catch(err) {
+    log("WARN","polymarket_live_page_failed","Could not refresh Polymarket /sports/live page",{url,message:err.message});
+    return null;
+  }
+}
+async function refreshPolymarketLiveState(match) {
+  try {
+    if(!livePagePromise)livePagePromise=loadPolymarketLivePage();
+    const page=await livePagePromise; if(!page)return null;
+    const live=findLivePageMatch(page,match); if(!live)return null;
+    log("INFO","polymarket_live_match_found","Previously admitted football candidate found on Polymarket live page",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score:live.score,source:"https://polymarket.com/ru/sports/live"});
+    return live;
+  } catch(err) {
+    log("WARN","polymarket_live_state_failed","Could not determine live state from Polymarket /sports/live",{eventId:match.eventId,message:err.message});
+    return null;
+  }
 }
 
 async function candidateRequest(path, body = null) {
