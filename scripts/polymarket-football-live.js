@@ -304,9 +304,9 @@ function findNutmegMatch(match, rows) {
 function balancedForOneOne(nutmeg) {
   if (!nutmeg) return false;
   const r = nutmeg.row;
-  return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF &&
-    r.drawProb >= MIN_DRAW_PROB &&
-    (!Number.isFinite(r.bttsProb) || r.bttsProb >= MIN_BTTS_PROB);
+  // Balanced means the two win probabilities are close. Draw/BTTS are
+  // descriptive Nutmegly fields, not additional BUY gates.
+  return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF;
 }
 
 async function ensureEventMarkets(match) {
