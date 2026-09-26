@@ -106,7 +106,7 @@ function gameMinute(g){
   const raw=g?.minute??g?.matchMinute??g?.elapsed??g?.clock?.minute??g?.periodTime??g?.matchClock??g?.liveClock;
   if(typeof raw==="number" && Number.isFinite(raw) && raw>=0 && raw<=130)return Math.floor(raw)+"'";
   const s=t(raw);
-  const m=s.match(/^(\d{1,3})(?:[:.]\\d{1,2})?(?:\s*min)?(?:ute)?(?:[′']|$)/i);
+  const m=s.match(/^(\d{1,3})(?:[:.]\d{1,2})?(?:\s*min)?(?:ute)?(?:[′']|$)/i);
   if(m){const n=Number(m[1]);if(n>=0&&n<=130)return n+"'";}
   return "";
 }
