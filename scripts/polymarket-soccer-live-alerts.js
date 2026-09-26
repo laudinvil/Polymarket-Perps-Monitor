@@ -366,6 +366,11 @@ async function discover(){
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
+  console.log(JSON.stringify({
+    level:"INFO",
+    event:"LIVE_DATA_CAPABILITY",
+    message:"Polymarket live page + Gamma live events + Sports WS are processed; score/minute are reconciled before alert"
+  }));
 
   async function addEvent(event,href,liveConfirmed=false,sourceConfirmed=false){
     const rawTitle=t(event?.title||event?.question);
@@ -374,7 +379,13 @@ async function discover(){
     if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const ended=event.ended===true||event.finished===true||event.final===true;
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
-    if(!isFixtureTitle(rawTitle)&&!(event.homeTeam&&event.awayTeam)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
+    // Team fields can be nested/structured; the parsed fixture pair above is
+    // sufficient. Do not reject a real Gamma event merely because homeTeam/awayTeam
+    // are not flat strings or the title is not formatted as "A vs B".
+    if(!isFixtureTitle(rawTitle)&&!(home&&away)){
+      console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle,teams:[home,away]}));
+      return;
+    }
     // LIVE confirmation never overrides a future kickoff timestamp.
     // This blocks stale Sports WS/Gamma data from creating prematch alerts.
     if(!eventLiveWindow(event)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.startDate,end:event.endDate,status:event.status,liveConfirmed}));return;}
