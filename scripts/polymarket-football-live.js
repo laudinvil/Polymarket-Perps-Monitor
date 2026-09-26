@@ -118,7 +118,6 @@ async function activeEventsBySeries(seriesId){const data=await getJson(GAMMA_URL
 async function discoverPolymarket(){
   const groups=new Map();let eventScanned=0,footballEventFound=0,childMarketEventsGrouped=0;
   await checkpoint("discovery_start",{strategy:"football_fixture_first_v9",source:"soccer_tag",note:"Polymarket-only football fixture discovery; no external source matching"});
-  const sources=[
   const nowIso = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
   const futureIso = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
   const sources=[
