@@ -1,16 +1,37 @@
 // DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
 // Diagnostic probe: verify soccer-only classification and Telegram rate limiting end-to-end.
+const http = require("node:http");
+
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
 const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
-const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : 4 * 60 * 60 * 1000;
+const RENDER_MODE = process.env.RENDER === "true" || process.env.RENDER === "1";
+const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : (RENDER_MODE ? Number.POSITIVE_INFINITY : 4 * 60 * 60 * 1000);
 const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
 const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
 const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
 let stopping = false;
+
+function startHealthServer(){
+  const port=Number(process.env.PORT||10000);
+  const server=http.createServer((req,res)=>{
+    if(req.url==="/health"||req.url==="/"){
+      res.writeHead(200,{"content-type":"application/json; charset=utf-8"});
+      res.end(JSON.stringify({ok:true,service:"polymarket-soccer-live-monitor",mode:RENDER_MODE?"render":"monitor",time:new Date().toISOString()}));
+      return;
+    }
+    res.writeHead(404,{"content-type":"application/json; charset=utf-8"});
+    res.end(JSON.stringify({ok:false,error:"not_found"}));
+  });
+  server.listen(port,"0.0.0.0",()=>console.log(JSON.stringify({level:"INFO",event:"health_server_listening",port,health:"/health",render:RENDER_MODE})));
+  server.on("error",err=>console.log(JSON.stringify({level:"ERROR",event:"health_server_error",message:err.message})));
+  return server;
+}
+
+const healthServer=startHealthServer();
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
 function norm(v){return t(v).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/&/g,"and").replace(/\b(fc|cf|sc|afc|ac|cd|club|football club)\b/g," ").replace(/[^a-z0-9]+/g," ").trim();}
@@ -603,6 +624,7 @@ async function main(){
   const deadline=Date.now()+RUN_MS; let cycles=0;
   while(!stopping&&Date.now()<deadline&&cycles<MAX_CYCLES){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}cycles++;console.log(JSON.stringify({event:"cycle_complete",cycle:cycles,elapsedMs:Date.now()-started}));if(cycles>=MAX_CYCLES)break;await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));}
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
+  try{healthServer.close()}catch{}
 }
 process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
 
