@@ -469,6 +469,15 @@ async function discoverLiveZeroZero(){
     }
 
     try{
+      // The canonical fixture id is the dedupe identity. Exact-score child
+      // markets must never create a second alert for the same match.
+      const canonicalId=t(fixture?.id||fixture?.eventId||fixture?.slug);
+      if(!canonicalId){
+        log(JSON.stringify({event:"live_candidate_rejected_no_canonical_id",sourceSlug:pm?.slug,teams:[phome,paway]}));
+        continue;
+      }
+      fixture.id=fixture.id||canonicalId;
+
       const sofaEvent=sofaLive.find(s=>{
         const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
         return sameMatch({homeTeam:home,awayTeam:away},phome,paway);
@@ -575,6 +584,10 @@ async function discoverLiveZeroZero(){
 
 async function sendLiveFound(home,away,minute,score,sofa,pm){
   const polyId=t(pm?.id||pm?.eventId),key="LIVE_FOUND:"+polyId;
+  if(!polyId)return false;
+
+  // One LIVE_FOUND per canonical fixture. Never send a new Telegram message
+  // merely because the poll cycle saw the same match again.
   const c=await claim(key);
   if(!c.claimed){
     log(JSON.stringify({event:"live_found_claim_blocked",type:"LIVE_FOUND",key,teams:[home,away],polyId,reason:"convex_dedupe"}));
