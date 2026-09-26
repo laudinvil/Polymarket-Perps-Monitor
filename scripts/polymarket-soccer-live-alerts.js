@@ -470,3 +470,4 @@ process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);m
 
 // DIAGNOSTIC_RUN_TRIGGER
 // DIAGNOSTIC_RUN
+// DIAGNOSTIC_TRIGGER_2
