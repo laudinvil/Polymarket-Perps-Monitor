@@ -514,7 +514,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       exactScoreOneOneLine,
       "",
       match.homeTeam + " vs " + match.awayTeam,
-      "LIVE / STARTING",
+      "STARTING",
       "", oneXTwoLine, "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
@@ -541,29 +541,51 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 
   if (phase === "started") {
     const state = oneOneState.get(key);
-    if (!state?.prematchSeen) return;
+    if (!state?.prematchSeen || state?.startedSent) return;
+
+    // Refresh current markets so the LIVE reply carries the current 1X2
+    // and Exact Score 1:1 price. The reply is linked to the original BUY.
+    const marketsLoadedForLive = await ensureEventMarkets(match);
+    const liveOneXTwo = findMatchResultMarket(match);
+    if (!marketsLoadedForLive || !liveOneXTwo) {
+      log("WARN", "live_waiting_for_1x2", "Fixture started but current 1X2 is not available yet; LIVE reply will be retried", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam]
+      });
+      return;
+    }
+
+    const liveOneXTwoLine = `1: ${Math.round(liveOneXTwo.homeProb * 100)}% · X: ${Math.round(liveOneXTwo.drawProb * 100)}% · 2: ${Math.round(liveOneXTwo.awayProb * 100)}%`;
+    const exactScoreOneOne = findOneOneMarket(match);
+    const exactScoreOneOneLine = exactScoreOneOne
+      ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
+      : "1:1 YES: —";
 
     const claimKey = key + ":STARTED";
     const claim = await claimTelegramAlert(claimKey);
     if (!claim.claimed) return;
 
     const message = [
-      "⚽ MATCH STARTED", "",
+      "⚽ LIVE",
+      exactScoreOneOneLine,
+      "",
       match.homeTeam + " vs " + match.awayTeam,
       "SCORE: " + home + "–" + away,
-      oneXTwoLine, "", "➡️ OPEN MATCH", match.url
+      "", liveOneXTwoLine, "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
     try {
       const sent = await sendTelegram(message, claim.replyToMessageId);
       if (!sent.ok) throw new Error("Telegram not configured");
+      await saveTelegramMessageId(key + ":LIVE", sent.messageId);
+      oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
       await markCandidateStartedSent(key);
-      log("INFO", "match_started_alert_sent", "Pre-match fixture transitioned to live", {
-        eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId
+      log("INFO", "match_started_alert_sent", "LIVE reply sent to original BUY alert", {
+        eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId, telegramMessageId: sent.messageId
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
-      log("ERROR", "telegram_send_failed", "MATCH STARTED alert send failed; claim released", {
+      log("ERROR", "telegram_send_failed", "LIVE reply send failed; claim released", {
         eventId: match.eventId, message: err.message
       });
     }
@@ -671,15 +693,21 @@ async function tick() {
           });
           return;
         }
-        if((isLive && !state?.prematchSeen) || (isPrematch && startingNow)){
+        if(isPrematch && startingNow && !state?.prematchSeen){
           cycle.buyPassed++;
-          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
-          await maybeOneOneAlert({...match,live:{status:isLive?"live":"scheduled",score,minute:liveState?.minute||0}},null,isLive?"live_entry":"prematch");
+          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase:"starting",teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
+          await maybeOneOneAlert({...match,live:{status:"scheduled",score,minute:liveState?.minute||0}},null,"prematch");
           return;
         }
 
-        if(state?.prematchSeen && isLive && (Number(score.home)+Number(score.away))===0){
-          log("INFO","live_candidate_already_bought","Live candidate already has BUY state",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
+        if(isLive && state?.prematchSeen && !state?.startedSent){
+          log("INFO","candidate_ready_for_live_reply","Football BUY candidate transitioned to LIVE",{eventId:match.eventId,phase:"live",teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
+          await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"started");
+          return;
+        }
+
+        if(isLive && state?.prematchSeen && state?.startedSent && (Number(score.home)+Number(score.away))===0){
+          log("INFO","live_candidate_started_already","Football candidate already has LIVE reply and no goal yet",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
           return;
         }
 
