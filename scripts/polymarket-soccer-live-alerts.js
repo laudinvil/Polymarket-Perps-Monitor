@@ -118,8 +118,10 @@ function marketRows(event){
   return (Array.isArray(event.markets)?event.markets:[]).filter(m=>m&&m.active!==false&&m.closed!==true).map(m=>{
     const outcomes=parse(m.outcomes),prices=parse(m.outcomePrices||m.outcome_prices);
     if(!Array.isArray(outcomes))return null;
-    const ps=Array.isArray(prices)?prices.map(Number):[];
-    const normalizedOutcomes=outcomes.map(t);
+    const tokenOutcomes=Array.isArray(m.tokens)?m.tokens.map(z=>t(z.outcome||z.name||z.title)):[];
+    const tokenPrices=Array.isArray(m.tokens)?m.tokens.map(z=>Number(z.price??z.outcomePrice)):[];
+    const normalizedOutcomes=(outcomes.length?outcomes:tokenOutcomes).map(t);
+    const ps=(Array.isArray(prices)&&prices.length?prices:tokenPrices).map(Number);
     const volume=Number(m.volumeNum??m.volume??m.volume24hr??0);
     const liquidity=Number(m.liquidityNum??m.liquidity??0);
     return{
@@ -162,14 +164,16 @@ function buildAlertPages(x){
   const start=t(e.startDate||e.start_date||e.startTime);
   const eventVolume=Number(e.volumeNum??e.volume??e.volume24hr??0);
   const eventLiquidity=Number(e.liquidityNum??e.liquidity??0);
+  const totalVolume=rows.reduce((a,r)=>a+r.volume,0);
+  const totalLiquidity=rows.reduce((a,r)=>a+r.liquidity,0);
   const header=["⚽ LIVE FOUND","",x.home+" vs "+x.away,status?"STATUS: "+status:"STATUS: LIVE",
     x.minute?"MINUTE: "+x.minute:"MINUTE: —",
     sh!=null&&sa!=null?"SCORE: "+sh+"–"+sa:"SCORE: —",
     start?"START: "+start:"START: —",
-    "EVENT VOLUME: "+money(eventVolume),
-    "EVENT LIQUIDITY: "+money(eventLiquidity),
+    "EVENT VOLUME: "+money(eventVolume||totalVolume),
+    "EVENT LIQUIDITY: "+money(eventLiquidity||totalLiquidity),
     "",
-    "ALL ACTIVE MARKETS ("+rows.length+")"].join("\\n");
+    "ALL ACTIVE MARKETS ("+rows.length+")"].join("\n");
   return splitPages(header,rows);
 }
 async function sendTelegram(message,replyMarkup){
