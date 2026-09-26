@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Resolve markets and send Telegram
+      - name: Resolve exact score and 1X2, then send Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -25,9 +25,9 @@ jobs:
             const r=await fetch(url,{headers:{accept:'application/json'},signal:AbortSignal.timeout(10000)});
             const body=await r.text();
             if(!r.ok) throw new Error('HTTP '+r.status+' '+url+' '+body.slice(0,300));
-            try{return JSON.parse(body)}catch{throw new Error('Invalid JSON from '+url+': '+body.slice(0,300))}
+            return JSON.parse(body);
           };
-          const asArray=v=>{
+          const arr=v=>{
             if(Array.isArray(v)) return v;
             if(typeof v==='string'){try{const x=JSON.parse(v);return Array.isArray(x)?x:[]}catch{return []}}
             if(v&&typeof v==='object'){
@@ -35,82 +35,76 @@ jobs:
             }
             return [];
           };
-          const text=v=>String(v??'').replace(/\s+/g,' ').trim().toLowerCase();
-          const priceArray=v=>asArray(v).map(Number);
-          const parseMarketRows=(event)=>{
-            const direct=asArray(event.markets);
-            const id=event.id??event.eventId;
-            return {direct,id};
-          };
-          const exact11From=markets=>{
+          const norm=v=>String(v??'').replace(/\s+/g,' ').trim().toLowerCase();
+          const prices=v=>arr(v).map(Number);
+          const slug='unl-slv-sco-2026-09-26';
+          const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
+          const home='slovenia',away='scotland';
+
+          function exact11(markets){
             for(const m of markets){
               if(m?.active===false||m?.closed===true) continue;
-              const q=text(m.question??m.title??m.slug);
-              const g=text(m.groupItemTitle??m.group_item_title??m.marketGroup??m.market_group??m.category??m.section);
-              if(!/(exact score|correct score|точн|exact-score|correct-score)/.test(q+' '+g)) continue;
-              const os=asArray(m.outcomes);
-              const ps=priceArray(m.outcomePrices??m.outcome_prices);
-              if(os.length!==ps.length) continue;
-              const q11=/(^|\s)(1\s*[-:–]\s*1)(\s|$)/.test(q);
+              const q=norm(m.question??m.title??m.slug);
+              const g=norm(m.groupItemTitle??m.group_item_title??m.marketGroup??m.market_group??m.category??m.section);
+              const os=arr(m.outcomes),ps=prices(m.outcomePrices??m.outcome_prices);
+              if(os.length!==ps.length||!os.length) continue;
+              const labels=os.map(norm);
+              const scoreLabels=labels.filter(x=>/^\\d{1,2}\\s*[-:–]\\s*\\d{1,2}$/.test(x));
+              const exactSection=/(exact score|correct score|точн)/.test(q+' '+g);
+              const scoreMarket=scoreLabels.length>=4 && labels.some(x=>/^1\\s*[-:–]\\s*1$/.test(x));
+              if(!exactSection&&!scoreMarket) continue;
               for(let i=0;i<os.length;i++){
-                const o=text(os[i]);
-                if((q11&&o==='yes')||/^1\s*[-:–]\s*1$/.test(o)){
-                  if(Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
-                }
+                if(/^1\\s*[-:–]\\s*1$/.test(labels[i]) && Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
+                if(exactSection && /1\\s*[-:–]\\s*1/.test(q) && labels[i]==='yes' && Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
               }
             }
             return null;
-          };
-          const oneXTwoFrom=markets=>{
+          }
+
+          function oneXTwo(markets){
             for(const m of markets){
               if(m?.active===false||m?.closed===true) continue;
-              const os=asArray(m.outcomes),ps=priceArray(m.outcomePrices??m.outcome_prices);
-              if(os.length!==ps.length||os.length<3) continue;
-              const q=text(m.question??m.title??m.slug);
-              if(!/(1x2|1 x 2|match result|full time result|result|winner)/.test(q)) continue;
-              let a=-1,d=-1,h=-1;
-              os.forEach((v,i)=>{const o=text(v);if(o==='1'||o==='home')h=i;else if(o==='x'||o==='draw'||o==='tie')d=i;else if(o==='2'||o==='away')a=i});
-              if(h>=0&&d>=0&&a>=0&&[h,d,a].every(i=>ps[i]>0&&ps[i]<=1))
-                return [ps[h],ps[d],ps[a]];
+              const os=arr(m.outcomes),ps=prices(m.outcomePrices??m.outcome_prices);
+              if(os.length!==3||ps.length!==3||ps.some(x=>!(x>0&&x<=1))) continue;
+              const labels=os.map(norm);
+              let hi=labels.findIndex(x=>x===home||x.includes(home));
+              let ai=labels.findIndex(x=>x===away||x.includes(away));
+              let di=labels.findIndex(x=>x==='x'||x==='draw'||x==='tie'||x.includes('draw'));
+              const q=norm(m.question??m.title??m.slug);
+              const titleOK=/(1x2|1 x 2|match result|full time result|winner|moneyline|result)/.test(q);
+              if(hi<0) hi=labels.findIndex(x=>x==='1');
+              if(ai<0) ai=labels.findIndex(x=>x==='2');
+              if(di<0) di=labels.findIndex(x=>x==='x');
+              if(hi>=0&&ai>=0&&di>=0 && (titleOK || labels.some(x=>x.includes(home)))){
+                return [ps[hi],ps[di],ps[ai]];
+              }
             }
             return null;
-          };
-          const slug='unl-slv-sco-2026-09-26';
-          const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
+          }
+
           let exact=null,odds=null,last='';
-          for(let attempt=1;attempt<=12 && (exact===null||odds===null);attempt++){
+          for(let attempt=1;attempt<=12&&(exact===null||odds===null);attempt++){
             try{
               const e=await get('https://gamma-api.polymarket.com/events/slug/'+slug);
-              const {direct,id}=parseMarketRows(e);
+              const direct=arr(e.markets),id=e.id??e.eventId;
               let markets=direct;
               if(id){
                 const extra=await get('https://gamma-api.polymarket.com/markets?event_id='+encodeURIComponent(id)+'&limit=500');
-                const remote=asArray(extra);
-                markets=[...direct,...remote];
+                markets=[...direct,...arr(extra)];
               }
-              exact=exact11From(markets);
-              odds=oneXTwoFrom(markets);
+              exact=exact11(markets);
+              odds=oneXTwo(markets);
               last=JSON.stringify({attempt,eventId:id,direct:direct.length,total:markets.length,exact,odds});
               console.log(last);
             }catch(err){last=String(err.message);console.log(JSON.stringify({attempt,error:last}))}
             if(exact===null||odds===null) await sleep(5000);
           }
-          if(exact===null) throw new Error('Exact Score 1:1 YES not resolved after retries: '+last);
-          if(!odds) throw new Error('1X2 not resolved after retries: '+last);
+          if(exact===null||odds===null) throw new Error('Market data not resolved: '+last);
+
           const pct=x=>Math.round(x*100)+'%';
-          const msg=[
-            '⚽ NEXT','',
-            'Slovenia vs Scotland',
-            '1:1 YES: '+pct(exact),
-            '',
-            '1: '+pct(odds[0])+' · X: '+pct(odds[1])+' · 2: '+pct(odds[2]),
-            '',
-            '➡️ OPEN MATCH',
-            eventUrl
-          ].join('\\n');
+          const msg=['⚽ NEXT','', 'Slovenia vs Scotland','1:1 YES: '+pct(exact),'','1: '+pct(odds[0])+' · X: '+pct(odds[1])+' · 2: '+pct(odds[2]),'','➡️ OPEN MATCH',eventUrl].join('\\n');
           const tg=await fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/sendMessage',{
-            method:'POST',
-            headers:{'content-type':'application/json'},
+            method:'POST',headers:{'content-type':'application/json'},
             body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:msg,disable_web_page_preview:false}),
             signal:AbortSignal.timeout(10000)
           });
