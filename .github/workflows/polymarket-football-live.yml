@@ -18,6 +18,10 @@ concurrency:
   group: polymarket-football-live
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
