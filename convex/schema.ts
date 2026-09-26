@@ -24,6 +24,7 @@ export default defineSchema({
     buySent: v.boolean(),
     startedSent: v.optional(v.boolean()),
     sellSent: v.optional(v.boolean()),
+    buyOneOnePrice: v.optional(v.number()),
   }).index("by_monitor_key", ["monitor", "key"]).index("by_monitor", ["monitor"]),
   footballLogs: defineTable({
     monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
