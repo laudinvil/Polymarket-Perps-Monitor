@@ -4,12 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - '.github/workflows/polymarket-soccer-live-alerts.yml'
   schedule:
     - cron: '0 */4 * * *'
 
 concurrency:
   group: polymarket-soccer-live-alerts
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
