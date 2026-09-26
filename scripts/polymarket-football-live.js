@@ -5,7 +5,7 @@ const MIN_EDGE = 0.01;
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
+const PREMATCH_WINDOW_MS = 15 * 60 * 1000;
 const EARLY_WINDOW_MS = 45 * 60 * 1000;
 const BALANCE_MAX_DIFF = 0.25; // Wider balanced window so valid near-even matches can reach BUY.
 const MIN_DRAW_PROB = 0.22;
@@ -128,7 +128,7 @@ async function discoverPolymarket(){
   const groups=new Map();let eventScanned=0,footballEventFound=0,childMarketEventsGrouped=0;
   await checkpoint("discovery_start",{strategy:"football_fixture_first_v9",source:"soccer_tag",note:"Polymarket-only football fixture discovery; no external source matching"});
   const nowIso = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-  const futureIso = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+  const futureIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const sources=[
     {name:"soccer_window",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&start_date_min="+encodeURIComponent(nowIso)+"&start_date_max="+encodeURIComponent(futureIso)+"&limit=100&order=startDate&ascending=true"},
     {name:"soccer_live_window",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&start_date_min="+encodeURIComponent(new Date(Date.now()-6*60*60*1000).toISOString())+"&start_date_max="+encodeURIComponent(new Date().toISOString())+"&limit=100&order=startDate&ascending=true"},
@@ -350,8 +350,8 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     const message = [
       "⚽ BUY", "",
       match.homeTeam + " vs " + match.awayTeam,
-      phase === "live_entry" ? "LIVE" : "PRE-MATCH",
-      "", "➡️ OPEN MATCH", match.url
+      "LIVE / STARTING",
+      "", oneXTwoLine, "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
     try {
@@ -457,7 +457,7 @@ async function tick() {
     log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"active PRE-MATCH or active LIVE football fixture = BUY; no 1:1 market gate"});
+    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"only LIVE or starting-now football fixtures can alert; 1X2 is included in every alert"});
     const BATCH=20;
     for(let i=0;i<matches.length;i+=BATCH){
       await Promise.all(matches.slice(i,i+BATCH).map(async match=>{
@@ -472,7 +472,7 @@ async function tick() {
         if(isLive&&score.home===0&&score.away===0)cycle.liveZeroZero++;
         if(!liveState)cycle.liveStateUnavailable++;
 
-        if(isPrematch || (isLive && score.home===0 && score.away===0 && !state?.prematchSeen)){
+        const kickoffMs = Date.parse(match.startTime || "");\n        const startingNow = Number.isFinite(kickoffMs) && kickoffMs <= Date.now() + PREMATCH_WINDOW_MS && kickoffMs >= Date.now() - 6 * 60 * 60 * 1000 && match.active !== false && match.closed !== true;\n        if((isPrematch && startingNow) || (isLive && score.home===0 && score.away===0 && !state?.prematchSeen)){
           cycle.buyPassed++;
           log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime});
           await maybeOneOneAlert({...match,live:{status:isLive?"live":"scheduled",score,minute:liveState?.minute||0}},null,isLive?"live_entry":"prematch");
