@@ -80,39 +80,22 @@ function gameScore(g){
   return h!=null&&a!=null?[h,a]:null;
 }
 function gameMinute(g){
-  return t(g.minute||g.matchMinute||g.elapsed||g.clock||g.time||g.gameTime||g.periodTime||g.matchClock||g.liveClock||g.clock?.display||g.clock?.minute||g.period?.minute);
+  const raw=g?.minute??g?.matchMinute??g?.elapsed??g?.clock?.minute??g?.periodTime??g?.matchClock??g?.liveClock;
+  if(typeof raw==="number" && Number.isFinite(raw) && raw>=0 && raw<=130)return Math.floor(raw)+"'";
+  const s=t(raw);
+  const m=s.match(/^(\\d{1,3})(?:[:.]\\d{1,2})?(?:\\s*min)?(?:ute)?(?:[′']|$)/i);
+  if(m){const n=Number(m[1]);if(n>=0&&n<=130)return n+"'";}
+  return "";
 }
-function pageGameSnapshot(html, home, away, startValue){
-  const raw=decode(html)
-    .replace(/<script[\s\S]*?<\/script>/gi," ")
-    .replace(/<style[\s\S]*?<\/style>/gi," ")
-    .replace(/<[^>]+>/g," ")
-    .replace(/\s+/g," ")
-    .trim();
-  const h=t(home),a=t(away);
-  const hi=raw.toLowerCase().indexOf(h.toLowerCase());
-  if(hi<0)return null;
-  const window=raw.slice(Math.max(0,hi-500),Math.min(raw.length,hi+1200));
-  const ai=window.toLowerCase().indexOf(a.toLowerCase());
-  if(ai<0)return null;
-  const between=window.slice(0,ai+h.length);
-  const scoreMatches=[...between.matchAll(/(?:^|\s)(\d{1,3})\s*[-–:]\s*(\d{1,3})(?:\s|$)/g)];
-  const score=scoreMatches.length? [Number(scoreMatches.at(-1)[1]),Number(scoreMatches.at(-1)[2])] : null;
-  const minuteMatch=window.match(/(?:^|\s)(\d{1,3})[′']/);
-  let minute=minuteMatch?minuteMatch[1]+"'" :"";
-  if(!minute){
-    const start=Date.parse(startValue||"");
-    if(Number.isFinite(start)&&start<=Date.now()){
-      const mins=Math.floor((Date.now()-start)/60000);
-      if(mins>=0&&mins<=130)minute=Math.min(mins,120)+"'";
-    }
-  }
-  return {score,minute};
-}
+function pageGameSnapshot(){ return null; }
 function attachGame(x,g){
   x.game=g;
-  const sc=gameScore(g); if(sc)x.score=sc;
-  x.minute=gameMinute(g);
+  const sc=gameScore(g);
+  if(validScore(sc)){
+    x.score=orientGame(x,g)==="reversed"?[Number(sc[1]),Number(sc[0])]:[Number(sc[0]),Number(sc[1])];
+  }
+  const minute=gameMinute(g);
+  if(validMinute(minute))x.minute=minute;
   x.gameStatus=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period);
 }
 async function fetchLiveSports(){
@@ -146,17 +129,25 @@ async function fetchLiveSports(){
         const away=t(p?.awayTeam||p?.away_team||p?.away);
         if(!gameId&&!slug||!home||!away)return;
         const key=gameId||slug;
-        if(seen.has(key))return;
-        seen.add(key);
         let score=null;
-        const s=p?.score;
+        const s=p?.score??p?.scores??p?.scoreboard;
         if(typeof s==="string"){
           const mm=s.match(/^(\d+)\s*[-–:]\s*(\d+)/); if(mm)score=[Number(mm[1]),Number(mm[2])];
         } else if(s&&typeof s==="object"){
           const h=s.home??s.homeScore??s.home_score, a=s.away??s.awayScore??s.away_score;
           if(h!=null&&a!=null)score=[h,a];
         }
-        live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),score});
+        const minute=gameMinute(p);
+        const existing=live.find(x=>(x.gameId&&gameId&&x.gameId===gameId)||(x.slug&&slug&&x.slug===slug));
+        if(existing){
+          existing.status=p?.status||existing.status||"InProgress";
+          existing.period=t(p?.period)||existing.period;
+          existing.elapsed=t(p?.elapsed)||existing.elapsed;
+          if(score)existing.score=score;
+          if(minute)existing.minute=minute;
+        }else{
+          live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),minute,score});
+        }
       };
     }catch(e){
       clearTimeout(timer); console.log(JSON.stringify({level:"WARN",event:"sports_ws_init_failed",message:e.message}));resolve(live);
@@ -200,6 +191,16 @@ async function fetchLiveEvents(){
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
   return (gh&&ga&&((nh===nx&&na===ny)||(nh===ny&&na===nx))) || t(g.eventId||g.event_id)===x.eventId || t(g.eventSlug||g.event_slug||g.slug)===x.slug;
+}
+function orientGame(x,g){
+  const [gh,ga]=gameTeams(g);
+  return norm(gh)===norm(x.away)&&norm(ga)===norm(x.home)?"reversed":"direct";
+}
+function validScore(score){
+  return Array.isArray(score)&&score.length===2&&score.every(v=>Number.isInteger(Number(v))&&Number(v)>=0&&Number(v)<=99);
+}
+function validMinute(minute){
+  return /^\\d{1,3}'$/.test(t(minute))&&Number(t(minute).slice(0,-1))>=0&&Number(t(minute).slice(0,-1))<=130;
 }
 
 function eventLiveWindow(event){
@@ -250,12 +251,6 @@ async function discover(){
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
       const sc=gameScore(event); if(sc)item.score=sc;
       item.minute=gameMinute(event);
-      const pageSnap=pageGameSnapshot(liveHtml,home,away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
-      if(pageSnap){
-        if(pageSnap.score)item.score=pageSnap.score;
-        if(pageSnap.minute)item.minute=pageSnap.minute;
-        item.pageGameSnapshot=pageSnap;
-      }
     }
     candidates.push(item);
     console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATE",slug:item.slug,eventId:item.eventId,teams:[item.home,item.away],status:item.gameStatus,minute:item.minute??null,score:item.score??null,source:sourceConfirmed?"sports_ws":"page_or_gamma"}));
@@ -282,7 +277,7 @@ async function discover(){
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item){
           item.gameStatus=sg.status||"InProgress";
-          item.minute=sg.elapsed||sg.period||item.minute;
+          if(validMinute(sg.minute)) item.minute=sg.minute;
           if(sg.score)item.score=sg.score;
           item.sportsGame=sg;
         }
@@ -298,7 +293,7 @@ async function discover(){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
               await addEvent(event2,null,true,true);
               const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
-              if(item){item.gameStatus=sg.status||"InProgress";item.minute=sg.elapsed||sg.period||item.minute;if(sg.score)item.score=sg.score;item.sportsGame=sg;}
+              if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
             }
           }
         }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_game_id_lookup_failed",gameId:sg.gameId,message:e.message}));}
@@ -356,14 +351,6 @@ async function discover(){
       const before=candidates.length;
       await addEvent(event,href,true,false);
       const pageItem=candidates.find(x=>x.slug===slug||x.eventId===t(event.id));
-      if(pageItem){
-        const snap=pageGameSnapshot(liveHtml,pageItem.home,pageItem.away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
-        if(snap){
-          if(snap.score)pageItem.score=snap.score;
-          if(snap.minute)pageItem.minute=snap.minute;
-          pageItem.pageGameSnapshot=snap;
-        }
-      }
       if(candidates.length>before){
         pageLiveResolved++;
         console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_CANDIDATE",href,slug,eventId:event.id,title:event.title||event.question}));
@@ -579,6 +566,10 @@ async function cycle(){
     try{
       await refreshEvent(x);
       console.log(JSON.stringify({level:"INFO",event:"CANDIDATE_BEFORE_CLAIM",slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null,markets:Array.isArray(x.event?.markets)?x.event.markets.length:0}));
+      if(!validScore(x.score)||!validMinute(x.minute)){
+        console.log(JSON.stringify({level:"WARN",event:"candidate_rejected_untrusted_live_data",eventId:id,slug:x.slug,minute:x.minute??null,score:x.score??null}));
+        continue;
+      }
       const claimAllowed=await claimFootballMatch(id);
       console.log(JSON.stringify({level:"INFO",event:claimAllowed?"CLAIM_ALLOWED":"CLAIM_BLOCKED",eventId:id,slug:x.slug}));
       if(!claimAllowed){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
