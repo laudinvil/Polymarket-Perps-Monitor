@@ -3,6 +3,7 @@ const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const GAMES = GAMMA + "/games";
 const POLL_MS = 5000;
+const TELEGRAM_MAX = 3900;
 const RUN_MS = 4 * 60 * 60 * 1000;
 let stopping = false;
 
@@ -143,12 +144,12 @@ function marketText(r){
   const meta=["VOL "+money(r.volume),"LIQ "+money(r.liquidity)].join(" · ");
   return "• "+(r.question||r.group||"Market")+"\\n  "+vals+"\\n  "+meta;
 }
-function splitPages(header,rows,maxLen=3600){
+function splitPages(header,rows,maxLen=TELEGRAM_MAX){
   const pages=[];let current=header;
   for(const row of rows){
     const block=marketText(row);
     if(current.length+2+block.length>maxLen&&current!==header){pages.push(current);current=header+"\\n\\n"+block;}
-    else current+= "\\n\\n"+block;
+    else current+="\\n\\n"+block;
   }
   if(current!==header||pages.length===0)pages.push(current);
   return pages;
