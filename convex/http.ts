@@ -57,6 +57,20 @@ http.route({
   }),
 });
 
+
+http.route({
+  path: "/football/status",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const limitRaw = Number(url.searchParams.get("limit") || "50");
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 100) : 50;
+    const stats = await ctx.runQuery(internal.footballLogs.stats, {});
+    const logs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit });
+    return Response.json({ stats, logs });
+  }),
+});
+
 export default http;
 
 // trigger: run monitor after candidate persistence route fix
