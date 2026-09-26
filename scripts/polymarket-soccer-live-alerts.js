@@ -33,7 +33,7 @@ function startHealthServer(){
   return server;
 }
 
-const healthServer=startHealthServer();
+const healthServer=process.env.DEPLEXO_WRAPPER === "1" ? null : startHealthServer();
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
 function norm(v){return t(v).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/&/g,"and").replace(/\b(fc|cf|sc|afc|ac|cd|club|football club)\b/g," ").replace(/[^a-z0-9]+/g," ").trim();}
@@ -607,7 +607,7 @@ async function main(){
   const deadline=Date.now()+RUN_MS; let cycles=0;
   while(!stopping&&Date.now()<deadline&&cycles<MAX_CYCLES){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}cycles++;console.log(JSON.stringify({event:"cycle_complete",cycle:cycles,elapsedMs:Date.now()-started}));if(cycles>=MAX_CYCLES)break;await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));}
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
-  try{healthServer.close()}catch{}
+  try{healthServer?.close()}catch{}
 }
 process.on("SIGTERM",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGTERM"}));stopping=true});
 process.on("SIGINT",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGINT"}));stopping=true});
