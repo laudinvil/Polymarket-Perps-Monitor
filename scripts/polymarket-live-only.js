@@ -355,12 +355,21 @@ async function polymarketSportsLive(){
     const name=t(s?.sport||s?.name||s?.slug).toLowerCase();
     return /soccer|football/.test(name);
   });
-  // NEVER use a generic/hard-coded sports tag here: it can return esports and other sports.
-  // Only tags explicitly belonging to Polymarket's soccer/football sport definitions are allowed.
+
+  // Build the candidate set only from soccer/football sport definitions.
+  // Do not use a generic hard-coded tag and do not use related tags.
   const tagIds=new Set();
   for(const s of soccerSports){
-    const raw=Array.isArray(s?.tags) ? s.tags.join(",") : t(s?.tags||s?.tagIds||s?.tag_ids);
-    for(const id of raw.split(/[,\\s]+/).map(x=>x.trim()).filter(Boolean))tagIds.add(id);
+    const values=[];
+    for(const key of ["tags","tagIds","tag_ids"]){
+      const v=s?.[key];
+      if(Array.isArray(v))values.push(...v);
+      else if(typeof v==="string")values.push(...v.split(/[,\\s]+/));
+    }
+    for(const v of values){
+      const id=typeof v==="object" ? t(v?.id||v?.tagId||v?.tag_id) : t(v);
+      if(id)tagIds.add(id);
+    }
   }
 
   const merged=new Map();
@@ -378,26 +387,17 @@ async function polymarketSportsLive(){
 
   const all=[...merged.values()];
   const liveStatuses=new Set(["live","inprogress","in progress","halftime","paused","suspended","interrupted"]);
-  const footballWord=/soccer|football|premier league|champions league|europa league|conference league|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/i;
 
-  const isFootballEvent=e=>{
-    const fields=[
-      e?.sport,e?.sportName,e?.sport_name,e?.sportSlug,e?.sport_slug,
-      e?.league,e?.leagueName,e?.league_name,e?.leagueSlug,e?.league_slug,
-      e?.category,e?.categoryName,e?.category_name,e?.series,e?.seriesName,e?.series_name
-    ].map(t).join(" ");
-    const tags=Array.isArray(e?.tags)?e.tags.map(x=>typeof x==="string"?x:(x?.name||x?.slug||x?.label||"")).join(" "):t(e?.tags);
-    return footballWord.test(fields+" "+tags);
-  };
-
+  // A live event is accepted only when it belongs to a soccer-derived tag
+  // AND has a live state. No generic sports fallback is allowed.
   const live=all.filter(e=>{
     const status=t(e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
-    return isFootballEvent(e) &&
-      (e?.live===true||e?.isLive===true||liveStatuses.has(status));
+    return e?.live===true||e?.isLive===true||liveStatuses.has(status);
   });
+
   log(JSON.stringify({
     event:"polymarket_live_snapshot",
-    sports:soccerSports.map(s=>({sport:s?.sport,name:s?.name,tags:s?.tags})),
+    sports:soccerSports.map(s=>({sport:s?.sport,name:s?.name,slug:s?.slug,tags:s?.tags,tagIds:s?.tagIds||s?.tag_ids})),
     tagIds:[...tagIds],
     total:all.length,
     live:live.length,
