@@ -1,4 +1,4 @@
-// DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
+// PRODUCTION LIVE MONITOR: continuous LIVE-only soccer alerts.
 // Diagnostic probe: verify soccer-only classification and Telegram rate limiting end-to-end.
 const http = require("node:http");
 const fs = require("node:fs");
@@ -9,12 +9,12 @@ const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
-const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
+const DIAGNOSTIC_MODE = false; // Production monitor: never stop after diagnostic cycles.
 const RENDER_MODE = process.env.RENDER === "true" || process.env.RENDER === "1";
-const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : Number.POSITIVE_INFINITY;
-const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
-const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
-const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
+const RUN_MS = Number.POSITIVE_INFINITY;
+const MAX_CYCLES = Number.POSITIVE_INFINITY;
+const SPORTS_WS_TIMEOUT_MS = 12000;
+const MAX_SPORTS_WS_LOOKUPS = Number.POSITIVE_INFINITY;
 let stopping = false;
 
 function startHealthServer(){
@@ -616,8 +616,3 @@ process.on("unhandledRejection",e=>console.log(JSON.stringify({level:"ERROR",eve
 console.log(JSON.stringify({level:"INFO",event:"startup_bootstrap",node:process.version,pid:process.pid,port:Number(process.env.PORT||3000)}));
 main().catch(e=>console.log(JSON.stringify({level:"ERROR",event:"main_failed",name:e?.name,message:e?.message,stack:e?.stack})));
 
-// DIAGNOSTIC_RUN_TRIGGER
-// FORCE_DIAGNOSTIC_TRIGGER_2026_09_26
-// DIAGNOSTIC_RUN
-// DIAGNOSTIC_TRIGGER_2
-// DIAGNOSTIC_RUN
