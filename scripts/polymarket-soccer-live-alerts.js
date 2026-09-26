@@ -212,10 +212,16 @@ async function fetchLiveSports(){
           try{ws.send("pong")}catch{}
           return;
         }
-        let m; try{m=JSON.parse(raw)}catch{return;}
-        const type=t(m?.type||m?.event_type);
-        const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
-        const p={...m,...p0};
+        let parsed; try{parsed=JSON.parse(raw)}catch{return;}
+        // Sports WS may deliver one result, a batch, or a wrapper around data.
+        const messages=Array.isArray(parsed)?parsed:
+          (Array.isArray(parsed?.data)?parsed.data:
+           Array.isArray(parsed?.results)?parsed.results:[parsed]);
+        for(const m0 of messages){
+          const m=(m0&&typeof m0==="object")?m0:{};
+          const type=t(m?.type||m?.event_type);
+          const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
+          const p={...m,...p0};
         const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
         const period=t(p?.period).toUpperCase();
@@ -251,6 +257,7 @@ async function fetchLiveSports(){
           if(minute)existing.minute=minute;
         }else{
           live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),minute,score});
+        }
         }
       };
     }catch(e){
