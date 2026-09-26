@@ -279,12 +279,23 @@ function polyEventUrl(e){return t(e?.slug)?"/event/"+e.slug:"";}
 async function fixtureParentEvent(e){
   const slug=t(e?.slug);
   if(!slug)return e;
-  const base=slug.replace(/-exact-score$/i,"");
+  // Sports live-state can point at a child event such as
+  // "-player-props" or "-exact-score".  That child is NOT the canonical
+  // match page and normally has no live score/minute. Resolve all known
+  // football submarket suffixes back to the parent fixture.
+  const base=slug
+    .replace(/-(?:player-props|player-props-live|exact-score|match-result|moneyline|1x2|game-lines|game-line)$/i,"");
   if(base===slug)return e;
   try{
     const page=await json(GAMMA+"/events?slug="+encodeURIComponent(base),3500);
     const events=arr(page?.events||page);
-    return events.find(x=>t(x?.slug)===base)||e;
+    const hit=events.find(x=>t(x?.slug)===base);
+    if(hit){
+      log(JSON.stringify({event:"fixture_parent_resolved",sourceSlug:slug,parentSlug:hit.slug,parentId:hit.id}));
+      return hit;
+    }
+    log(JSON.stringify({event:"fixture_parent_not_found",sourceSlug:slug,base}));
+    return e;
   }catch(err){
     log(JSON.stringify({event:"fixture_parent_fetch_failed",slug,base,message:err.message}));
     return e;
