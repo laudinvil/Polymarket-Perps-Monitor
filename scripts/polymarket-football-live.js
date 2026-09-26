@@ -750,14 +750,15 @@ function visiblePolymarketText(html) {
   const s=html.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<noscript[\s\S]*?<\/noscript>/gi," ");
   return decodeHtml(s.replace(/<[^>]+>/g," ").replace(/\s+/g," "));
 }
-function nearestScoreBeforeTeam(page, team) {
+function scoreAfterTeam(page, team) {
   const t=text(team);
   if(!t)return null;
   const escaped=t.replace(/[.*+?^()|[\]\\]/g,"\\$&");
-  const m=page.match(new RegExp("(\\d{1,2})\\s+(?:Image:\\s+[^\\s]+\\s+)?"+escaped+"\\b","i"));
+  const m=page.match(new RegExp(escaped+"\\s+(\\d{1,2})-(\\d{1,2})(?:\\s|$)","i"));
   if(!m)return null;
-  const n=Number(m[1]);
-  return Number.isInteger(n)&&n>=0&&n<=20?n:null;
+  const home=Number(m[1]), away=Number(m[2]);
+  if(!Number.isInteger(home)||!Number.isInteger(away)||home<0||away<0||home>20||away>20)return null;
+  return {home,away};
 }
 function findLivePageMatch(page, match) {
   const h=norm(match.homeTeam), a=norm(match.awayTeam), p=norm(page);
@@ -765,10 +766,12 @@ function findLivePageMatch(page, match) {
   const hi=p.indexOf(h), ai=p.indexOf(a,Math.max(hi+h.length,0));
   if(hi<0||ai<0||ai-hi>700)return null;
   const card=p.slice(Math.max(0,hi-180),Math.min(p.length,ai+a.length+180));
-  if(!/\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card))return null;
-  const hs=nearestScoreBeforeTeam(page,match.homeTeam), as=nearestScoreBeforeTeam(page,match.awayTeam);
-  if(hs===null||as===null)return null;
-  return {status:"live",score:{home:hs,away:as},minute:0};
+  const liveStatus=/\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
+  if(!liveStatus)return null;
+  const homeScore=scoreAfterTeam(page,match.homeTeam);
+  const awayScore=scoreAfterTeam(page,match.awayTeam);
+  if(!homeScore||!awayScore)return null;
+  return {status:"live",score:{home:homeScore.home,away:awayScore.home},minute:0};
 }
 async function loadPolymarketLivePage() {
   const url="https://polymarket.com/ru/sports/live";
