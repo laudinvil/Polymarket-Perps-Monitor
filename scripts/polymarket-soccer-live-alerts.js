@@ -154,6 +154,7 @@ async function fetchLiveSports(){
         if(!soccerPayload)return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
         if(!liveFlag)return;
+        if(live.length<3) console.log(JSON.stringify({level:"DEBUG",event:"sports_ws_payload",type,league,status,keys:Object.keys(p||{}),gameId:p?.gameId||p?.id||null,slug:p?.slug||null,home:p?.homeTeam||p?.home_team||p?.home||null,away:p?.awayTeam||p?.away_team||p?.away||null,score:p?.score||p?.scores||p?.scoreboard||null,period:p?.period||null,elapsed:p?.elapsed||null,live:p?.live??null,isLive:p?.isLive??null}));
         const gameId=t(p?.gameId||p?.id);
         const slug=t(p?.slug);
         const home=t(p?.homeTeam||p?.home_team||p?.home);
