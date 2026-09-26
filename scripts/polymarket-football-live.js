@@ -190,7 +190,6 @@ function isStrictPrematch(match, liveState) {
 }
 
 async function ensureEventMarkets(match) {
-  if (Array.isArray(match.markets) && match.markets.length) return true;
   if (!match.eventId) return false;
 
   const startedAt = Date.now();
@@ -213,7 +212,7 @@ async function ensureEventMarkets(match) {
       active: market?.active !== false,
       closed: market?.closed === true
     }));
-    log("INFO", "event_markets_loaded", "Loaded event markets lazily", {
+    log("INFO", "event_markets_loaded", "Refreshed Polymarket event markets for active candidate", {
       eventId: match.eventId,
       marketCount: match.markets.length,
       oneXTwoMarketAvailable: Boolean(findMatchResultMarket(match)),
@@ -316,6 +315,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     try {
       const sent = await sendTelegram(message, claim.replyToMessageId);
       if (!sent.ok) throw new Error("Telegram not configured");
+      await markCandidateStartedSent(key);
       log("INFO", "match_started_alert_sent", "Pre-match fixture transitioned to live", {
         eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId
       });
@@ -348,6 +348,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   try {
     const sent = await sendTelegram(message, claim.replyToMessageId);
     if (!sent.ok) throw new Error("Telegram not configured");
+    await markCandidateSellSent(key);
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent as Telegram reply to BUY", {
       eventId: match.eventId, score: { home, away }, goalDetected: hasGoal, replyToMessageId: claim.replyToMessageId
     });
@@ -493,7 +494,9 @@ async function loadPersistedCandidates() {
         if (!match?.eventId && !match?.slug) continue;
         const key = row.key || match.eventId || match.slug;
         prematchCandidates.set(key, match);
-        if (row.buySent) oneOneState.set(key, { prematchSeen: true });
+        if (row.buySent || row.startedSent || row.sellSent) oneOneState.set(key, { prematchSeen: true });
+        if (row.startedSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
+        if (row.sellSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), sellSent: true });
         restored++;
       } catch {}
     }
@@ -521,6 +524,16 @@ async function persistPrematchCandidates(discovered) {
     }
   }
   return admitted;
+}
+
+async function markCandidateStartedSent(key) {
+  try { await candidateRequest("/football/candidates/mark-started", { key }); }
+  catch (err) { log("WARN", "candidate_started_state_failed", "Could not persist STARTED state", { key, message: err.message }); }
+}
+
+async function markCandidateSellSent(key) {
+  try { await candidateRequest("/football/candidates/mark-sell", { key }); }
+  catch (err) { log("WARN", "candidate_sell_state_failed", "Could not persist SELL state", { key, message: err.message }); }
 }
 
 async function markCandidateBuySent(key) {
