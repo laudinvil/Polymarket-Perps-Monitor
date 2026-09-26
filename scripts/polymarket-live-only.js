@@ -105,7 +105,39 @@ async function sofascoreLive(){
   throw last||new Error("Sofascore live events unavailable");
 }
 async function polymarketSearch(home,away){
-  return arr((await json(POLY_SEARCH_URL+"?q="+encodeURIComponent(home+" "+away)+"&limit_per_type=20&keep_closed_markets=0",5000))?.events);
+  const direct=arr((await json(POLY_SEARCH_URL+"?q="+encodeURIComponent(home+" "+away)+"&limit_per_type=50&keep_closed_markets=0",5000))?.events);
+  if(direct.some(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away)))return direct;
+  const variants=[home+" "+away,home,away];
+  const merged=[...direct];
+  for(const q of variants.slice(1)){
+    try{
+      const extra=arr((await json(POLY_SEARCH_URL+"?q="+encodeURIComponent(q)+"&limit_per_type=50&keep_closed_markets=0",5000))?.events);
+      for(const e of extra){
+        const id=t(e?.id||e?.eventId||e?.slug);
+        if(id&&!merged.some(x=>t(x?.id||x?.eventId||x?.slug)===id))merged.push(e);
+      }
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_search_variant_failed",teams:[home,away],query:q,message:err.message}));
+    }
+  }
+  if(merged.some(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away)))return merged;
+  // Last-resort active-event scan: the search endpoint can omit live sports events.
+  for(let offset=0;offset<1000;offset+=200){
+    try{
+      const page=await json(GAMMA+"/events?active=true&closed=false&limit=200&offset="+offset,5000);
+      const events=arr(page?.events||page);
+      if(!events.length)break;
+      for(const e of events){
+        const id=t(e?.id||e?.eventId||e?.slug);
+        if(id&&!merged.some(x=>t(x?.id||x?.eventId||x?.slug)===id))merged.push(e);
+      }
+      if(events.length<200)break;
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_active_events_scan_failed",teams:[home,away],offset,message:err.message}));
+      break;
+    }
+  }
+  return merged;
 }
 function sofascoreMinute(e){
   const ts=Number(e?.time?.currentPeriodStartTimestamp||e?.time?.period1StartTimestamp||0);
@@ -319,8 +351,9 @@ async function saveId(key,id){
 }
 async function discoverLiveZeroZero(){
   const live=await sofascoreLive(),events=arr(live?.events);
-  const inprogress=events.filter(e=>e?.status?.type==="inprogress");
-  log(JSON.stringify({event:"sofascore_live_snapshot",total:events.length,inprogress:inprogress.length}));
+  const liveTypes=new Set(["inprogress","halftime","paused","suspended","interrupted"]);
+  const inprogress=events.filter(e=>liveTypes.has(t(e?.status?.type).toLowerCase()));
+  log(JSON.stringify({event:"sofascore_live_snapshot",total:events.length,inprogress:inprogress.length,liveTypes:[...new Set(events.map(e=>t(e?.status?.type).toLowerCase()).filter(Boolean))]}));
   const found=[];
   for(const s of inprogress){
     const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
