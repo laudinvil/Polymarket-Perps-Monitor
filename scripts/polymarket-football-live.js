@@ -186,12 +186,15 @@ async function discoverLivePageFixtures() {
     const html = await response.text();
     if (!response.ok) throw new Error("HTTP " + response.status + " for " + url);
     const hrefs = new Set();
-    // The live page links directly to /event/<slug>; /sports/soccer/... is
-    // the category navigation, not the individual live fixture URL.
-    const re = /href=["\'](\/event\/[^"\']+)["\']/gi;
+    // Live soccer cards use /sports/<league>/<event-slug> links.
+    // /event/<slug> is not the canonical sports URL used by this page.
+    const re = /href=["\'](\/sports\/[^"\']+)["\']/gi;
     let m;
     while ((m = re.exec(html))) hrefs.add(m[1]);
-    const eventHrefs = Array.from(hrefs);
+    const eventHrefs = Array.from(hrefs).filter(href => {
+      const parts = href.split("/").filter(Boolean);
+      return parts.length >= 3 && parts[0] === "sports" && parts[1] !== "live" && /-\d{4}-\d{2}-\d{2}$/i.test(parts[parts.length - 1]);
+    });
     const slugs = eventHrefs
       .map(href => href.split("/").filter(Boolean).pop())
       .filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
