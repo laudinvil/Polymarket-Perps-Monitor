@@ -200,35 +200,45 @@ async function fetchLiveSports(){
 
 async function fetchLiveEvents(){
   const all=[];
-  for(let offset=0;offset<2000;offset+=500){
+  const seenRaw=new Set();
+  async function load(url){
     try{
-      const raw=await json(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset,{timeout:8000});
+      const raw=await json(url,{timeout:8000});
       const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
-      if(!Array.isArray(batch)||batch.length===0)break;
-      all.push(...batch);
-      if(batch.length<500)break;
+      if(Array.isArray(batch))all.push(...batch);
+      return batch.length;
     }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",offset,message:e.message}));
-      break;
+      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",url,message:e.message}));
+      return 0;
     }
   }
-  const seen=new Set();
+
+  // Gamma exposes a dedicated live filter. Use it as the authoritative
+  // discovery gate instead of inferring LIVE from startDate/status fields.
+  await load(GAMMA+"/events?live=true&active=true&closed=false&limit=500");
+  if(all.length===0){
+    for(let offset=0;offset<2000;offset+=500){
+      const n=await load(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset);
+      if(n<500)break;
+    }
+  }
+
   const live=[];
   for(const e of all){
     const id=t(e.id||e.slug);
-    if(!id||seen.has(id)||!isSoccerEvent(e,""))continue;
-    seen.add(id);
-    if(!eventLiveWindow(e))continue;
+    if(!id||seenRaw.has(id)||!isSoccerEvent(e,""))continue;
+    seenRaw.add(id);
+    if(e.ended===true||e.finished===true||e.final===true)continue;
     const [home,away]=teams(e);
     if(!home||!away)continue;
     live.push({
-      id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
-      homeTeam:home,awayTeam:away,
+      id:t(e.id),gameId:t(e.gameId||e.game_id),
+      slug:t(e.slug),homeTeam:home,awayTeam:away,
       status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
       live:true,event:e
     });
   }
-  console.log(JSON.stringify({level:"INFO",event:"gamma_active_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
+  console.log(JSON.stringify({level:"INFO",event:"gamma_live_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
   return live;
 }
 function matchGame(x,g){
