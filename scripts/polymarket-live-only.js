@@ -698,7 +698,7 @@ async function discoverLiveZeroZero(){
     return {events:[]};
   });
   const sofaEvents=arr(sofaPayload?.events);
-  const liveTypes=new Set(["inprogress","halftime","paused","suspended","interrupted"]);
+  const liveTypes=new Set(["live","inprogress","halftime","break","paused","suspended","interrupted"]);
   const sofaLive=sofaEvents.filter(e=>liveTypes.has(t(e?.status?.type).toLowerCase()));
   log(JSON.stringify({
     event:"sofascore_live_snapshot",
@@ -731,7 +731,7 @@ async function discoverLiveZeroZero(){
     const effectiveStartMs=Number.isFinite(fixtureStarted)?fixtureStarted:sourceStarted;
     const fixtureStatus=t(fixture?.gameStatus||fixture?.game_status||fixture?.status||fixture?.state).toLowerCase();
     const sourceStatus=t(pm?.gameStatus||pm?.game_status||pm?.status||pm?.state).toLowerCase();
-    const sourceLive=pm?.live===true||pm?.isLive===true||liveTypes.has(sourceStatus);
+    const ws=pm?.__sportsWs||null;\n    const wsStatus=t(ws?.status).toLowerCase();\n    const sourceLive=pm?.live===true||pm?.isLive===true||liveTypes.has(sourceStatus)||\n      ws?.live===true||ws?.live==="true"||ws?.live===1||ws?.live==="1"||liveTypes.has(wsStatus);
     const canonicalLive=fixture?.live===true||fixture?.isLive===true||liveTypes.has(fixtureStatus);
     const fixtureLive=Number.isFinite(effectiveStartMs)&&effectiveStartMs<=Date.now()&&(sourceLive||canonicalLive);
     if(!fixtureLive){
