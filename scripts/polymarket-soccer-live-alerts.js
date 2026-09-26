@@ -113,6 +113,7 @@ async function sendTelegram(message){
   if(!r.ok)throw new Error("Telegram HTTP "+r.status);const b=await r.json();if(!b.ok)throw new Error("Telegram rejected message");
 }
 const alerted=new Set();
+const alerting=new Set();
 async function refreshEvent(x){
   let fresh=null;
   try{
@@ -136,12 +137,14 @@ async function cycle(){
   const candidates=await discover();
   for(const x of candidates){
     if(stopping)break;
-    const id=x.eventId||x.slug;if(alerted.has(id))continue;
+    const id=x.slug||x.eventId;if(alerted.has(id)||alerting.has(id))continue;
+    alerting.add(id);
     try{
       await refreshEvent(x);
       await sendTelegram(buildAlert(x));alerted.add(id);
       console.log(JSON.stringify({level:"INFO",event:"alert_sent",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
     }catch(e){console.log(JSON.stringify({level:"ERROR",event:"alert_failed",eventId:id,slug:x.slug,message:e.message}));}
+    finally{alerting.delete(id);}
   }
 }
 async function main(){
