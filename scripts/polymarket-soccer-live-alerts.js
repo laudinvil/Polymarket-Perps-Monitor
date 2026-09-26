@@ -107,13 +107,32 @@ async function sendTelegram(message){
   if(!r.ok)throw new Error("Telegram HTTP "+r.status);const b=await r.json();if(!b.ok)throw new Error("Telegram rejected message");
 }
 const alerted=new Set();
+async function refreshEvent(x){
+  let fresh=null;
+  try{
+    fresh=await json(GAMMA+"/events?slug="+encodeURIComponent(x.slug),{timeout:5000});
+    fresh=Array.isArray(fresh)?fresh[0]:fresh;
+  }catch{}
+  if(!fresh){
+    const byId=await json(GAMMA+"/events/"+encodeURIComponent(x.eventId),{timeout:5000});
+    fresh=byId?.event||byId;
+  }
+  if(fresh)x.event=fresh;
+  if(!Array.isArray(x.event?.markets)||x.event.markets.length===0){
+    try{
+      const ms=await json(GAMMA+"/markets?event_id="+encodeURIComponent(x.eventId)+"&active=true&closed=false&limit=100",{timeout:5000});
+      if(Array.isArray(ms)&&ms.length)x.event.markets=ms;
+    }catch{}
+  }
+  return x.event;
+}
 async function cycle(){
   const candidates=await discover();
   for(const x of candidates){
     if(stopping)break;
     const id=x.eventId||x.slug;if(alerted.has(id))continue;
     try{
-      const fresh=await json(GAMMA+"/events/"+encodeURIComponent(id),{timeout:5000});x.event=fresh?.event||fresh;
+      await refreshEvent(x);
       await sendTelegram(buildAlert(x));alerted.add(id);
       console.log(JSON.stringify({level:"INFO",event:"alert_sent",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
     }catch(e){console.log(JSON.stringify({level:"ERROR",event:"alert_failed",eventId:id,slug:x.slug,message:e.message}));}
