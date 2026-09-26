@@ -21,17 +21,23 @@ function decode(s){return t(s).replace(/&nbsp;/g," ").replace(/&amp;/g,"&").repl
 function hrefs(html){const out=new Set();let m;const re=/href=["'](\/[^"'#? ]+)["']/gi;while((m=re.exec(html)))out.add(m[1]);return [...out];}
 function slugFromHref(h){return t(h).split("/").filter(Boolean).pop()||"";}
 function fixtureSlug(h){return slugFromHref(h).replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|half-time|second-half-result|second-half|1st-half-result|1st-half|2nd-half-result|2nd-half|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");}
-function fixtureLinks(html){return hrefs(html).filter(h=>/^\/(?:ru\/)?sports\/[^?#]+$/i.test(h));}
+function fixtureLinks(html){
+  return hrefs(html).filter(h=>{
+    const m=t(h).match(/^\/(?:ru\/)?sports\/([^/?#]+)\/([^/?#]+)(?:\/[^?#]*)?$/i);
+    return !!m && !/^(?:games|live|futures)$/i.test(m[1]) && !/^(?:games|live|futures)$/i.test(m[2]);
+  });
+}
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
 function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
-  // A /sports/<sport>/ URL is authoritative for sport classification.
-  // Never infer soccer from a generic "vs" title or a draw market: tennis also has
-  // match-result style markets and must never enter the football monitor.
-  const sportPath=h.match(/\/sports\/([^/?#]+)/i);
+  // Explicit sport paths are authoritative when they name the sport directly.
+  // League paths such as /sports/es2/<fixture-slug> are not enough by themselves;
+  // continue to Gamma fields/football-market signals so valid soccer leagues pass.
+  const sportPath=h.match(/\/sports\/([^/?#]+)(?:\/|$)/i);
   if(sportPath){
     const sport=t(sportPath[1]).toLowerCase();
-    return sport==="soccer" || sport==="football";
+    if(sport==="soccer" || sport==="football")return true;
+    if(/^(?:tennis|wta|atp|basketball|baseball|hockey|nfl|cfb|ufc|cricket)$/i.test(sport))return false;
   }
   const values=[];
   for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug","seriesSlug","series_slug","eventType","event_type","gameType","game_type"])values.push(event?.[k]);
