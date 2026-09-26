@@ -276,7 +276,29 @@ function scoreTotal(match) {
 }
 
 async function maybeOneOneAlert(match, priceSource, phase = "live") {
-  if (!match.url) return;
+  if (!match.url && match.eventId) {
+    try {
+      const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId), { timeoutMs: 3_000 });
+      const event = data?.event || data;
+      if (text(event?.slug)) {
+        match.url = eventUrl(event);
+        match.slug = text(event.slug);
+        log("INFO", "candidate_url_recovered", "Recovered Polymarket event URL before alert", {
+          eventId: match.eventId, url: match.url
+        });
+      }
+    } catch (err) {
+      log("WARN", "candidate_url_recovery_failed", "Could not recover Polymarket event URL before alert", {
+        eventId: match.eventId, message: err.message
+      });
+    }
+  }
+  if (!match.url) {
+    log("ERROR", "candidate_alert_blocked_no_url", "Football candidate reached BUY but has no Polymarket event URL", {
+      eventId: match.eventId, slug: match.slug || null, teams: [match.homeTeam, match.awayTeam]
+    });
+    return;
+  }
 
   const key = match.eventId || match.slug;
   const home = Number(match.live?.score?.home || 0);
@@ -568,7 +590,7 @@ async function claimTelegramAlert(key) {
     });
     const body = await response.json().catch(() => ({}));
     if (response.status === 200) return { claimed: true, replyToMessageId: body.replyToMessageId ?? null };
-    if (response.status === 409) return { claimed: false, replyToMessageId: null };
+    if (response.status === 409) {\n      log("INFO", "telegram_claim_denied", "Telegram dedupe already claimed this alert", { key, status: 409 });\n      return { claimed: false, replyToMessageId: null };\n    }
     throw new Error("Convex claim HTTP " + response.status);
   } catch (err) {
     log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
