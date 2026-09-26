@@ -146,6 +146,15 @@ function buildAlert(x){
     "VOLUME: "+money(vol),"LIQUIDITY: "+money(liq),start?"START: "+start:"START: —","",
     "➡️ OPEN MATCH",x.url].join("\n");
 }
+async function claimFootballMatch(slug){
+  const url=t(process.env.CONVEX_SITE_URL||"");
+  const token=t(process.env.CONVEX_DEPLOY_KEY||"");
+  if(!url||!token)throw new Error("Convex configuration is missing");
+  const r=await fetch(url+"/api/mutation",{method:"POST",headers:{"content-type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({path:"btc5mState:claimFootballMatch",args:{marketSlug:slug}}),signal:AbortSignal.timeout(8000)});
+  if(!r.ok)throw new Error("Convex claim HTTP "+r.status);
+  const b=await r.json(); return b && b.value && b.value.allowed===true;
+}
+
 async function sendTelegram(message){
   const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
   if(!token||!chat)throw new Error("Telegram credentials are missing");
@@ -181,6 +190,7 @@ async function cycle(){
     alerting.add(id);
     try{
       await refreshEvent(x);
+      if(!(await claimFootballMatch(id))){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
       await sendTelegram(buildAlert(x));alerted.add(id);
       console.log(JSON.stringify({level:"INFO",event:"alert_sent",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
     }catch(e){console.log(JSON.stringify({level:"ERROR",event:"alert_failed",eventId:id,slug:x.slug,message:e.message}));}
