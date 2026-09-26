@@ -68,7 +68,17 @@ async function json(url, timeout=5000){
   if(!r.ok)throw new Error("HTTP "+r.status+" "+url);
   return r.json();
 }
-async function sofascoreLive(){ return json(SOFASCORE_LIVE_URL,5000); }
+async function sofascoreLive(){
+  const urls=[SOFASCORE_LIVE_URL,"https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-26"];
+  let last;
+  for(const url of urls){
+    try{
+      const x=await json(url,7000);
+      if(Array.isArray(x?.events))return x;
+    }catch(err){last=err;}
+  }
+  throw last||new Error("Sofascore live events unavailable");
+}
 async function polymarketSearch(home,away){
   return arr((await json(POLY_SEARCH_URL+"?q="+encodeURIComponent(home+" "+away)+"&limit_per_type=20&keep_closed_markets=0",5000))?.events);
 }
