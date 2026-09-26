@@ -1,5 +1,6 @@
 name: Polymarket Football · Live Discovery
 run-name: Football monitor · live-only
+# forced live monitor restart
 
 on:
   push:
