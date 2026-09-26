@@ -1,4 +1,4 @@
 framework: node
 install: npm install
-start: npm start
+start: node scripts/deplexo-start.js
 port: 3000
