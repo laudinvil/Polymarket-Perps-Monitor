@@ -463,9 +463,17 @@ async function discoverLiveZeroZero(){
       log(JSON.stringify({event:"live_candidate_rejected_not_started",sourceSlug:pm?.slug,fixtureSlug:fixture?.slug,startMs:fixtureStarted,status:fixtureStatus,live:fixture?.live}));
       continue;
     }
+    // Missing 1X2 / 1:1 data must NOT suppress the first LIVE alert.
+    // These values are enrichment for the alert, not the live-match gate.
     if(!polyOne||polyExact==null){
-      log(JSON.stringify({event:"live_candidate_rejected_missing_markets",teams:[phome,paway],sourceSlug:pm?.slug,fixtureSlug:fixture?.slug,has1X2:!!polyOne,hasExact11:polyExact!=null}));
-      continue;
+      log(JSON.stringify({
+        event:"live_market_data_incomplete",
+        teams:[phome,paway],
+        sourceSlug:pm?.slug,
+        fixtureSlug:fixture?.slug,
+        has1X2:!!polyOne,
+        hasExact11:polyExact!=null
+      }));
     }
 
     try{
@@ -504,7 +512,11 @@ async function discoverLiveZeroZero(){
       }));
 
       // No odds, score, 0:0 or Sofascore match is allowed to block this first LIVE alert.
-      await sendLiveFound(phome,paway,minute,score,{...sofa,one:polyOne,exact:polyExact},fixture);
+      await sendLiveFound(phome,paway,minute,score,{
+        ...sofa,
+        one:polyOne||sofa.one||null,
+        exact:polyExact!=null?polyExact:(sofa.exact!=null?sofa.exact:null)
+      },fixture);
 
       if(!sofaEvent)continue;
       if(!sofa.one||sofa.exact==null){
