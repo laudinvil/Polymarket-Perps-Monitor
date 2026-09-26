@@ -686,11 +686,26 @@ async function polymarketSportsLive(){
       if(!liveStatuses.has(st))continue;
       const sh=t(se?.homeTeam?.name),sa=t(se?.awayTeam?.name);
       if(!sh||!sa)continue;
-      const hit=all.find(e=>{
+      let hit=all.find(e=>{
         const [eh,ea]=teamsFromEvent(e);
         return eh&&ea&&sameMatch({homeTeam:eh,awayTeam:ea},sh,sa);
       });
-      if(!hit)continue;
+      // Do not require the live match to already exist in the Gamma soccer
+      // candidate set. Search Polymarket directly by the live team names and
+      // recover the canonical event when Gamma's sport/tag feeds omit it.
+      if(!hit){
+        try{
+          const searched=await polymarketSearch(sh,sa);
+          hit=arr(searched).find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,sh,sa))||null;
+          if(hit)log(JSON.stringify({event:"polymarket_live_search_recovered",teams:[sh,sa],fixtureSlug:hit?.slug,fixtureId:hit?.id}));
+        }catch(err){
+          log(JSON.stringify({event:"polymarket_live_search_recovery_failed",teams:[sh,sa],message:err.message}));
+        }
+      }
+      if(!hit){
+        log(JSON.stringify({event:"polymarket_live_match_not_found",teams:[sh,sa]}));
+        continue;
+      }
       const score={home:Number(se?.homeScore?.current),away:Number(se?.awayScore?.current)};
       const minute=sofascoreMinute(se);
       if(!Number.isFinite(score.home)||!Number.isFinite(score.away)||minute==null)continue;
