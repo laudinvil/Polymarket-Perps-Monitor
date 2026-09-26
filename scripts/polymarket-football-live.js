@@ -17,6 +17,7 @@ const known = new Map();
 const resolved = new Map();
 const history = new Map();
 const oneOneState = new Map();
+const prematchCandidates = new Map();
 const convexLogBuffer = [];
 let convexTickCount = 0;
 
@@ -363,8 +364,13 @@ async function tick() {
   try{
     const tickStartedAt=Date.now();
     log("INFO","stage_start","Polymarket discovery stage started",{stage:"polymarket_discovery",source:GAMMA_URL});
-    const matches=await discoverPolymarket();
-    const cycle={matches:matches.length,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
+    const discovered=await discoverPolymarket();
+    for (const match of discovered) {
+      const key=match.eventId||match.slug;
+      if (key) prematchCandidates.set(key, {...prematchCandidates.get(key), ...match});
+    }
+    const matches=Array.from(prematchCandidates.values());
+    const cycle={discovered:discovered.length,retainedCandidates:matches.length,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
     log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
     const evalStarted=Date.now();
@@ -405,7 +411,7 @@ async function tick() {
       }));
     }
     log("INFO","stage_done","Polymarket-only alert evaluation finished",{stage:"evaluation",elapsedMs:Date.now()-evalStarted,candidates:matches.length});
-    log("INFO","cycle_summary","Football monitor cycle summary",{elapsedMs:Date.now()-tickStartedAt,...cycle,note:"Polymarket only: discovery, kickoff, 1X2 prices, live state and score"});
+    log("INFO","cycle_summary","Football monitor cycle summary",{elapsedMs:Date.now()-tickStartedAt,...cycle,note:"Polymarket only; discovered fixtures are retained across cycles until lifecycle resolution"});
     return matches.length;
   }catch(err){
     log("ERROR","discovery_failed","Football Polymarket-only tick failed; monitoring continues",{message:err.message});
