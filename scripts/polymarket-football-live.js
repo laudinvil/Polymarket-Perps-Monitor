@@ -2,7 +2,7 @@ const GAMMA_URL = "https://gamma-api.polymarket.com";
 
 const POLL_MS = 20_000;
 const MIN_EDGE = 0.01;
-const RUN_MS = 6 * 60 * 60 * 1000;
+const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
