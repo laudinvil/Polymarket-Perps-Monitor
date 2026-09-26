@@ -1,5 +1,5 @@
 const GAMMA = "https://gamma-api.polymarket.com";
-const SOFASCORE_LIVE_URL = "https://www.sofascore.com/api/v1/sport/football/events/live";
+const SOFASCORE_LIVE_URL = "https://api.sofascore.com/api/v1/sport/football/events/live";
 const POLY_SEARCH_URL = "https://gamma-api.polymarket.com/search";
 const APPROX_MAX_DIFF = 0.10;
 const POLL_MS = 15_000; // continuous football discovery
@@ -69,7 +69,7 @@ async function json(url, timeout=5000){
   return r.json();
 }
 async function sofascoreLive(){
-  const urls=[SOFASCORE_LIVE_URL,"https://www.sofascore.com/api/v1/sport/football/scheduled-events/2026-09-26"];
+  const urls=[SOFASCORE_LIVE_URL];
   let last;
   for(const url of urls){
     try{
