@@ -727,40 +727,51 @@ async function loadGammaGames() {
   }
 }
 
-async function refreshPolymarketLiveState(match) {
-  try {
-    const games = await loadGammaGames();
-    const live = findStructuredLiveGame(games, match);
-
-    if (!live) {
-      log("INFO", "gamma_games_match_not_found", "No structured LIVE /games row matched the Polymarket fixture", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam],
-        scoreSource: null,
-        minuteSource: null
-      });
-      return null;
+function extractLiveCardData(page, match) {
+  const p = norm(page), h = norm(match.homeTeam), a = norm(match.awayTeam);
+  if (!p || !h || !a) return null;
+  const esc = v => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const aliases = v => [...new Set([v, v.replace(/\b(?:fc|cf|sc|afc|ac|cd)\b/g, "").replace(/\s+/g, " ").trim()].filter(Boolean))];
+  for (const hh of aliases(h)) {
+    let pos = 0;
+    while (true) {
+      const hi = p.indexOf(hh, pos); if (hi < 0) break;
+      for (const aa of aliases(a)) {
+        const ai = p.indexOf(aa, hi + hh.length);
+        if (ai < 0 || ai - hi > 1200) continue;
+        const card = p.slice(Math.max(0, hi - 500), Math.min(p.length, ai + aa.length + 500));
+        if (!/\b(?:live|1h|2h|ht|et|aet|playing|in progress)\b/i.test(card)) continue;
+        const local = p.slice(hi, Math.min(p.length, ai + aa.length + 500));
+        let score = null;
+        let m = local.match(new RegExp(esc(hh) + "\\s+(\\d{1,2})\\s*[–-]\\s*(\\d{1,2})\\s+" + esc(aa), "i"));
+        if (m) score = {home:Number(m[1]), away:Number(m[2])};
+        if (!score) {
+          m = local.match(new RegExp(esc(hh) + "\\s+(\\d{1,2})\\s+" + esc(aa) + "\\s+(\\d{1,2})\\b", "i"));
+          if (m) score = {home:Number(m[1]), away:Number(m[2])};
+        }
+        let minute = null;
+        for (const re of [/\b(\d{1,3})\s*[\x27′]/, /\b(\d{1,3})\s*(?:min|mins|minute|minutes)\b/i]) {
+          const x = local.match(re); if (x && Number(x[1]) <= 130) { minute=Number(x[1]); break; }
+        }
+        if (score && minute !== null && score.home <= 20 && score.away <= 20) return {status:"live",score,minute,scoreSource:"polymarket_live_card",minuteSource:"polymarket_live_card"};
+        log("INFO","live_card_incomplete","Matched fixture card lacks real score or minute",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score,minute});
+      }
+      pos = hi + hh.length;
     }
-
-    log("INFO", "gamma_games_live_match_found", "Structured /games LIVE data matched the Polymarket fixture", {
-      eventId: match.eventId,
-      teams: [match.homeTeam, match.awayTeam],
-      score: live.score,
-      minute: live.minute,
-      scoreSource: live.score?.home !== null && live.score?.away !== null ? live.source : null,
-      minuteSource: live.minute !== null ? live.source : null
-    });
-
-    return live;
-  } catch (err) {
-    log("WARN", "gamma_games_live_state_failed", "Could not determine LIVE state from structured Gamma /games", {
-      eventId: match.eventId,
-      message: err.message
-    });
-    return null;
   }
+  return null;
 }
 
+async function refreshPolymarketLiveState(match) {
+  try {
+    if (!livePagePromise) livePagePromise = loadPolymarketLivePage();
+    const page = await livePagePromise;
+    const live = page ? extractLiveCardData(page, match) : null;
+    if (!live) { log("INFO","live_card_not_complete","LIVE alert blocked: real score AND minute were not found",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],scoreSource:null,minuteSource:null}); return null; }
+    log("INFO","live_card_complete","Real score and minute extracted from matched LIVE fixture card",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score:live.score,minute:live.minute,scoreSource:live.scoreSource,minuteSource:live.minuteSource});
+    return live;
+  } catch (err) { log("WARN","live_state_failed","Could not read score and minute from matched LIVE fixture card",{eventId:match.eventId,message:err.message}); return null; }
+}
 async function claimTelegramAlert(key) {
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
   try {
