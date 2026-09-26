@@ -239,14 +239,7 @@ async function fetchLiveSports(){
         const [home,away]=gameTeams(p);
         if(!gameId&&!slug||!home||!away)return;
         const key=gameId||slug;
-        let score=null;
-        const s=p?.score??p?.scores??p?.scoreboard;
-        if(typeof s==="string"){
-          const mm=s.match(/^(\d+)\s*[-–:]\s*(\d+)/); if(mm)score=[Number(mm[1]),Number(mm[2])];
-        } else if(s&&typeof s==="object"){
-          const h=s.home??s.homeScore??s.home_score, a=s.away??s.awayScore??s.away_score;
-          if(h!=null&&a!=null)score=[h,a];
-        }
+        const score=gameScore(p);
         const minute=gameMinute(p);
         const existing=live.find(x=>(x.gameId&&gameId&&x.gameId===gameId)||(x.slug&&slug&&x.slug===slug));
         if(existing){
@@ -691,6 +684,12 @@ function saveDedupe(set){
   fs.renameSync(tmp,DEDUPE_FILE);
 }
 const persistentAlerted=loadDedupe();
+console.log(JSON.stringify({
+  level:"INFO",
+  event:"DEDUPE_STATE",
+  file:DEDUPE_FILE,
+  entries:persistentAlerted.size
+}));
 
 // Persistent dedupe: the exact Polymarket event URL is the identity.
 // The file lives on Deplexo's persistent /data volume and survives restarts.
