@@ -232,3 +232,25 @@ export const recentBtc5mLogs = query({
     }));
   },
 });
+
+const FOOTBALL_MONITOR = "polymarket-soccer-live";
+
+export const claimFootballMatch = mutation({
+  args: { marketSlug: v.string() },
+  returns: v.object({ allowed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) =>
+        q.eq("monitor", FOOTBALL_MONITOR).eq("marketSlug", args.marketSlug)
+      )
+      .first();
+    if (existing) return { allowed: false };
+    await ctx.db.insert("telegramDedupe", {
+      monitor: FOOTBALL_MONITOR,
+      marketSlug: args.marketSlug,
+      claimedAt: Date.now(),
+    });
+    return { allowed: true };
+  },
+});
