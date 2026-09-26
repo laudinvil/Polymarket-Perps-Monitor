@@ -235,6 +235,21 @@ export const recentBtc5mLogs = query({
 
 const FOOTBALL_MONITOR = "polymarket-soccer-live";
 
+export const releaseFootballMatch = mutation({
+  args: { marketSlug: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("telegramDedupe")
+      .withIndex("by_monitor_market", (q) =>
+        q.eq("monitor", FOOTBALL_MONITOR).eq("marketSlug", args.marketSlug)
+      )
+      .first();
+    if (existing) await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
 export const claimFootballMatch = mutation({
   args: { marketSlug: v.string() },
   returns: v.object({ allowed: v.boolean() }),
