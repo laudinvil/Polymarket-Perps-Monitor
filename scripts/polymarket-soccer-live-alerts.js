@@ -69,7 +69,7 @@ async function fetchLiveSports(){
     let timer;
     try{
       ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},15000);
+      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},25000);
       ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
       ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
       ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
@@ -220,31 +220,41 @@ async function discover(){
     }
   }
 
-  // Primary gate: matches visible on Polymarket's live page.
-  // Soccer is confirmed from the event metadata or an explicit /sports/soccer/ href.
-  for(const href of liveLinks){
-    const slug=fixtureSlug(href);
-    if(!slug)continue;
+  // Secondary authoritative source: Gamma /games. It is accepted only when it explicitly
+  // reports the game as live. This source is used to survive WS snapshots that miss a game.
+  for(const g of games){
     try{
-      let raw;
-      try{
-        raw=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
-      }catch{
-        raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
+      const gameSlug=t(g.slug||g.eventSlug||g.event_slug);
+      const gameId=t(g.gameId||g.game_id||g.id);
+      let raw=null;
+      if(gameSlug){ try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(gameSlug),{timeout:5000}); }catch{} }
+      if(!raw && gameId){ try{ raw=await json(GAMMA+"/events?game_id="+encodeURIComponent(gameId),{timeout:5000}); }catch{} }
+      const event=Array.isArray(raw)?raw[0]:raw;
+      if(event){
+        await addEvent(event,null,true,true);
+        const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
+        if(item)attachGame(item,g);
+        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_GAME",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question}));
+      } else {
+        console.log(JSON.stringify({level:"WARN",event:"LIVE_GAME_EVENT_LOOKUP_FAILED",gameId:gameId,slug:gameSlug,teams:gameTeams(g)}));
       }
-      await addEvent(Array.isArray(raw)?raw[0]:raw,href,true);
-    }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
+    }catch(e){
+      console.log(JSON.stringify({level:"WARN",event:"live_game_candidate_failed",gameId:t(g.gameId||g.game_id||g.id),message:e.message}));
+    }
   }
 
-  // Fallback for Polymarket's client-rendered pages: discover current soccer events from Gamma
-  // when raw HTML contains no usable fixture links.
+  // Do NOT treat raw HTML from the live page as proof that a match has started.
+  // The page is retained for diagnostics/linking only; actual LIVE status must come
+  // from Sports WS or an explicit live=true/status=live game record.
+  console.log(JSON.stringify({level:"INFO",event:"live_page_not_used_as_live_gate",links:liveLinks.length}));
+
+  // Gamma soccer events without an authoritative live flag are diagnostics only.
+  // They must never become LIVE candidates: this prevents prematch/future alerts.
   if(candidates.length===0){
     try{
       const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&order=end_date&ascending=true&limit=500",{timeout:8000});
       const events=Array.isArray(raw)?raw:[];
-      console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,sample:events.slice(0,10).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,start:e?.startDate,end:e?.endDate,status:e?.status,active:e?.active,closed:e?.closed}))}));
-      for(const event of events)await addEvent(event,null);
-      console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback",events:events.length,added:candidates.length}));
+      console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,liveCandidatesAdded:0,diagnostic:"Gamma-only events are not eligible for LIVE alerts without Sports WS or live game confirmation."}));
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"gamma_soccer_fallback_failed",message:e.message}));}
   }
 
