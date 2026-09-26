@@ -97,7 +97,16 @@ function eventUrl(event){
 const CHILD_MARKET_SUFFIX = /\s+-\s+(?:more markets|player props?|total (?:corners|goals|cards|shots)|first team to score|last team to score|exact score|half[- ]?time result|second half result|1st half result|2nd half result|match result|draw no bet|double chance|both teams to score|btts|to score|team totals?|alternate lines?|correct score|winning margin|clean sheet|win to nil|half[- ]?time|first half|second half).*$/i;
 
 function cleanFixtureSide(value){return text(value).replace(CHILD_MARKET_SUFFIX,"").trim();}
+function isStartingElevenEvent(event){
+  const slug=text(event.slug||"").toLowerCase();
+  const title=text(event.title||event.question||"").toLowerCase();
+  return /(?:^|-)starting-eleven(?:-|$)/.test(slug) || /\bstarting\s+eleven\b/.test(title);
+}
+function parentFixtureSlug(slug){
+  return text(slug).replace(/-starting-eleven-(?:home|away)(?:-.+)?$/i,"").replace(/-starting-eleven$/i,"");
+}
 function isPrimaryMatchEvent(event){
+  if(isStartingElevenEvent(event)) return false;
   const title=text(event.title||event.question).trim();
   if(!/\s(?:vs\.?|v\.?|versus)\s/i.test(title)) return false;
   // Polymarket exposes many child events for the same fixture. Their titles
@@ -137,7 +146,38 @@ async function discoverPolymarket(){
   const pagePlan={soccer_newest:3,soccer_recent:5,soccer_live_window:3};
   const sourcePages=sources.flatMap(source=>Array.from({length:pagePlan[source.name]??1},(_,page)=>({name:source.name,url:source.baseUrl+"&offset="+(page*100),page})));
   const results=await Promise.all(sourcePages.map(async source=>{try{const response=await fetch(source.url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10_000)}),body=await response.text();if(!response.ok)throw new Error("HTTP "+response.status+" for "+source.url);let data;try{data=JSON.parse(body);}catch(error){throw error;}const rows=Array.isArray(data)?data:(data?.events||data?.data||[]);log("INFO","event_source_response","Raw Polymarket football source response captured",{source:source.name,status:response.status,rowCount:rows.length,bodyBytes:Buffer.byteLength(body,"utf8")});return{name:source.name,rows,error:null};}catch(error){return{name:source.name,rows:[],error};}}));
-  for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;if(!isPrimaryMatchEvent(event)){log("INFO","non_fixture_filtered","Football event has no recognizable fixture form; not passed to strategy",{eventId:text(event.id||event.eventId||event.event_id),title:text(event.title||event.question),source:result.name});continue;}const [home,away]=extractTeams(event);if(!home||!away){log("INFO","match_teams_missing","Football event has no recognizable teams",{eventId:text(event.id),title:text(event.title)});continue;}const startTime=event.startDate||event.start_date||event.startTime||null,endTime=event.endDate||event.end_date||event.endTime||null,eventId=text(event.id||event.eventId||event.event_id),slug=text(event.slug),key=eventId||slug;if(!key){log("WARN","match_identity_missing","Football match has teams but no event id/slug",{title:text(event.title||event.question),home,away});continue;}const nestedMarkets=Array.isArray(event.markets)?event.markets.map(market=>({marketId:text(market?.id||market?.marketId),question:text(market?.question||market?.title),outcomes:Array.isArray(parseJson(market?.outcomes))?parseJson(market.outcomes):[],outcomePrices:Array.isArray(parseJson(market?.outcomePrices||market?.outcome_prices))?parseJson(market?.outcomePrices||market?.outcome_prices):[],active:market?.active!==false,closed:market?.closed===true})):[];const groupKey=fixtureKey(home,away,startTime);
+  for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
+      if(isStartingElevenEvent(event)){
+        log("INFO","starting_eleven_filtered","Starting XI child event ignored; resolving its parent fixture event",{
+          eventId:text(event.id||event.eventId||event.event_id),
+          slug:text(event.slug),
+          title:text(event.title||event.question),
+          parentSlug:parentFixtureSlug(event.slug),
+          source:result.name
+        });
+        const parentSlug=parentFixtureSlug(event.slug);
+        if(parentSlug){
+          try{
+            const parent=await getJson(GAMMA_URL+"/events/slug/"+encodeURIComponent(parentSlug),{timeoutMs:3_000});
+            if(parent&&parent.active!==false&&parent.closed!==true&&isPrimaryMatchEvent(parent)){
+              result.rows.push(parent);
+              log("INFO","starting_eleven_parent_loaded","Parent fixture loaded from Starting XI child event",{
+                childEventId:text(event.id||event.eventId||event.event_id),
+                childSlug:text(event.slug),
+                parentEventId:text(parent.id||parent.eventId||parent.event_id),
+                parentSlug:text(parent.slug),
+                teams:extractTeams(parent)
+              });
+            }
+          }catch(err){
+            log("WARN","starting_eleven_parent_load_failed","Could not load parent fixture for Starting XI child event",{
+              childSlug:text(event.slug),parentSlug,message:err.message
+            });
+          }
+        }
+        continue;
+      }
+      if(!isPrimaryMatchEvent(event)){log("INFO","non_fixture_filtered","Football event has no recognizable fixture form; not passed to strategy",{eventId:text(event.id||event.eventId||event.event_id),title:text(event.title||event.question),source:result.name});continue;}const [home,away]=extractTeams(event);if(!home||!away){log("INFO","match_teams_missing","Football event has no recognizable teams",{eventId:text(event.id),title:text(event.title)});continue;}const startTime=event.startDate||event.start_date||event.startTime||null,endTime=event.endDate||event.end_date||event.endTime||null,eventId=text(event.id||event.eventId||event.event_id),slug=text(event.slug),key=eventId||slug;if(!key){log("WARN","match_identity_missing","Football match has teams but no event id/slug",{title:text(event.title||event.question),home,away});continue;}const nestedMarkets=Array.isArray(event.markets)?event.markets.map(market=>({marketId:text(market?.id||market?.marketId),question:text(market?.question||market?.title),outcomes:Array.isArray(parseJson(market?.outcomes))?parseJson(market.outcomes):[],outcomePrices:Array.isArray(parseJson(market?.outcomePrices||market?.outcome_prices))?parseJson(market?.outcomePrices||market?.outcome_prices):[],active:market?.active!==false,closed:market?.closed===true})):[];const groupKey=fixtureKey(home,away,startTime);
       const existing=groups.get(groupKey);
       if(existing){
         childMarketEventsGrouped++;
@@ -362,7 +402,6 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       difference: Math.abs(oneXTwo.homeProb - oneXTwo.awayProb),
       maxDifference: BALANCE_MAX_DIFF
     });
-    oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
     oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
     const claimKey = key + ":BUY";
