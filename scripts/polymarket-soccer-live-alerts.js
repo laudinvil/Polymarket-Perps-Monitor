@@ -430,3 +430,5 @@ async function main(){
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
 }
 process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
+
+// monitor trigger: live workflow restart
