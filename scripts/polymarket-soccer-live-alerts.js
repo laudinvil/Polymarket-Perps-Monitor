@@ -74,10 +74,9 @@ function eventLiveWindow(event){
   const now=Date.now();
   const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
   if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
-  const start=Date.parse(event.startDate||event.start_date||event.startTime||event.gameStartTime||"");
-  const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
-  // Gamma soccer events often expose startDate but omit endDate/live flags.
-  // A started active event is therefore live-window eligible unless its explicit end is past.
+  const start=Date.parse(event.gameStartTime||event.game_start_time||event.eventStartTime||event.event_start_time||event.startTime||event.start_time||"");
+  const end=Date.parse(event.endTime||event.end_time||event.matchEndTime||event.match_end_time||"");
+  // Do not use startDate: for sports it can represent market/event deployment timing.
   if(Number.isFinite(start)&&start<=now){
     return !Number.isFinite(end)||end>=now;
   }
@@ -137,7 +136,7 @@ async function discover(){
   // when raw HTML contains no usable fixture links.
   if(candidates.length===0){
     try{
-      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&limit=500&order=startDate&ascending=false",{timeout:8000});
+      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&live=true&limit=500",{timeout:8000});
       const events=Array.isArray(raw)?raw:[];
       console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,sample:events.slice(0,10).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,start:e?.startDate,end:e?.endDate,status:e?.status,active:e?.active,closed:e?.closed}))}));
       for(const event of events)await addEvent(event,null);
@@ -227,29 +226,28 @@ async function sendTelegram(message,replyMarkup){
   return b;
 }
 
-async function claimFootballMatch(slug){
-  const siteUrl=t(process.env.CONVEX_SITE_URL||"");
-  const deployKey=t(process.env.CONVEX_DEPLOY_KEY||"");
-  if(!siteUrl||!deployKey)throw new Error("Convex configuration is missing");
+const DEFAULT_CONVEX_SITE_URL="https://brainy-canary-207.eu-west-1.convex.site";
+
+async function convexMutation(path,args){
+  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
   const convexUrl=siteUrl.replace(/\\.convex\\.site$/,".convex.cloud");
   const r=await fetch(convexUrl+"/api/mutation",{
     method:"POST",
-    headers:{"content-type":"application/json","Authorization":"Convex "+deployKey},
-    body:JSON.stringify({path:"btc5mState:claimFootballMatch",args:{marketSlug:slug},format:"json"}),
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({path,args,format:"json"}),
     signal:AbortSignal.timeout(8000)
   });
-  if(!r.ok)throw new Error("Convex claim HTTP "+r.status);
-  const b=await r.json();
+  if(!r.ok)throw new Error("Convex "+path+" HTTP "+r.status);
+  return r.json();
+}
+
+async function claimFootballMatch(slug){
+  const b=await convexMutation("btc5mState:claimFootballMatch",{marketSlug:slug});
   return b && b.value && b.value.allowed===true;
 }
 
 async function releaseFootballMatch(slug){
-  const siteUrl=t(process.env.CONVEX_SITE_URL||"");
-  const deployKey=t(process.env.CONVEX_DEPLOY_KEY||"");
-  if(!siteUrl||!deployKey)return;
-  const convexUrl=siteUrl.replace(/\.convex\.site$/,".convex.cloud");
-  const r=await fetch(convexUrl+"/api/mutation",{method:"POST",headers:{"content-type":"application/json","Authorization":"Convex "+deployKey},body:JSON.stringify({path:"btc5mState:releaseFootballMatch",args:{marketSlug:slug},format:"json"}),signal:AbortSignal.timeout(8000)});
-  if(!r.ok)throw new Error("Convex release HTTP "+r.status);
+  await convexMutation("btc5mState:releaseFootballMatch",{marketSlug:slug});
 }
 
 const alerted=new Set();
