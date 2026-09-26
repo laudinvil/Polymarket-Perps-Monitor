@@ -250,10 +250,17 @@ async function fetchLiveSports(){
         const gameId=t(p?.gameId||p?.id);
         const slug=t(p?.slug);
         const [home,away]=gameTeams(p);
-        if(!gameId&&!slug||!home||!away)return;
-        const key=gameId||slug;
         const score=gameScore(p);
         const minute=gameMinute(p);
+        if(!gameId&&!slug||!home||!away){
+          if(type==="sport_result"&&live.length<10)console.log(JSON.stringify({
+            level:"DEBUG",event:"sports_ws_reject_missing_identity",
+            gameId:gameId||null,slug:slug||null,teams:[home,away],score,minute,
+            keys:Object.keys(p||{})
+          }));
+          return;
+        }
+        const key=gameId||slug;
         const existing=live.find(x=>(x.gameId&&gameId&&x.gameId===gameId)||(x.slug&&slug&&x.slug===slug));
         if(existing){
           existing.status=p?.status||existing.status||"InProgress";
