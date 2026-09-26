@@ -387,7 +387,12 @@ function buildAlertPages(x){
     "EVENT LIQUIDITY: "+money(eventLiquidity||totalLiquidity),
     "",
     "ALL ACTIVE MARKETS ("+rows.length+")"].join("\n");
-  return splitPages(header,rows);
+  const oneX2=rows.filter(r=>{
+    const q=t(r.question).toLowerCase();
+    const n=r.outcomes.map(t).filter(Boolean);
+    return /1x2|match result/.test(q) || (n.length===3 && n.some(v=>/^draw$/i.test(v)));
+  }).slice(0,1);
+  return splitPages(header.replace("ALL ACTIVE MARKETS ("+rows.length+")","1X2 / MATCH RESULT"),oneX2);
 }
 let telegramNextAt=0;
 async function sendTelegram(message,replyMarkup){
@@ -471,7 +476,8 @@ async function refreshEvent(x){
     const q=t(m?.question||m?.title||m?.groupItemTitle).toLowerCase();
     const outs=parse(m?.outcomes);
     const outcomeText=Array.isArray(outs)?outs.map(t).join(" ").toLowerCase():"";
-    return /1x2|match result|moneyline|winner|draw|win|result/.test(q+" "+outcomeText);
+    const n=Array.isArray(outs)?outs.map(t).filter(Boolean):[];
+    return /1x2|match result/.test(q) || (n.length===3 && n.some(v=>/^draw$/i.test(v)));
   });
   x.event.markets=relevant;
   console.log(JSON.stringify({
