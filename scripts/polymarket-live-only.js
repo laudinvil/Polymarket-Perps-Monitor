@@ -156,16 +156,16 @@ async function discoverUpcoming(page){
   }
   return found;
 }
-async function sendLive(row,score){
-  const alertKey=row.key+":LIVE",c=await claim(alertKey);
+async function sendNext(row,score){
+  const alertKey=row.key+":NEXT",c=await claim(alertKey);
   if(!c.claimed)return false;
-  const message=["⚽ LIVE","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const message=["⚽ NEXT","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
-    console.log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE",key:row.key,score,messageId:sent.message_id}));
+    console.log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
-    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"LIVE",key:row.key,message:err.message}));return false;
+    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"NEXT",key:row.key,message:err.message}));return false;
   }
 }
 async function sendLoss(row,score){
@@ -178,6 +178,18 @@ async function sendLoss(row,score){
     return true;
   }catch(err){
     await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"LOSS",key:row.key,message:err.message}));return false;
+  }
+}
+async function sendLive(row,score){
+  const alertKey=row.key+":LIVE",c=await claim(alertKey);
+  if(!c.claimed)return false;
+  const message=["⚽ LIVE","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  try{
+    const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
+    console.log(JSON.stringify({event:"telegram_alert_sent",type:"LIVE",key:row.key,score,messageId:sent.message_id}));
+    return true;
+  }catch(err){
+    await release(alertKey);console.log(JSON.stringify({event:"telegram_alert_failed",type:"LIVE",key:row.key,message:err.message}));return false;
   }
 }
 async function sendSell(row,score){
@@ -203,9 +215,15 @@ async function scan(){
     const detectedScore=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away));
     const score=detectedScore||{home:0,away:0};
     const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
-    if(!row.liveSent){
+    if(!row.nextSent){
+      const sent=await sendNext(row,score);
+      if(sent)row.nextSent=true;
+    }
+    if(Date.now()>=row.startMs&&!row.liveSent){
       const sent=await sendLive(row,score);
       if(sent)row.liveSent=true;
+    }
+    if(!row.liveSent){
       row.lastScore=score.home+"-"+score.away;
       continue;
     }
