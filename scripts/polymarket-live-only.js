@@ -88,11 +88,11 @@ function sofascoreMinute(e){
   if(ts>0)return Math.floor(Math.max(0,Date.now()/1000-ts)/60);
   const m=t(e?.status?.description).match(/(\d{1,3})/); return m?Number(m[1]):0;
 }
-function scoreZeroZero(e){return Number(e?.homeScore?.current??0)===0&&Number(e?.awayScore?.current??0)===0;}
+function scoreZeroZero(e){const h=Number(e?.homeScore?.current),a=Number(e?.awayScore?.current);return Number.isFinite(h)&&Number.isFinite(a)&&h===0&&a===0;}
 function teamMatch(a,b){const x=norm(a),y=norm(b);return x===y||x.includes(y)||y.includes(x);}
-function sameMatch(e,home,away){const [h,a]=teamsFromEvent(e);return teamMatch(h,home)&&teamMatch(a,away);}
+function sameMatch(e,home,away){const [h,a]=teamsFromEvent(e);return (teamMatch(h,home)&&teamMatch(a,away))||(teamMatch(h,away)&&teamMatch(a,home));}
 async function sofascoreOdds(id){
-  const data=await json("https://www.sofascore.com/api/v1/event/"+id+"/odds/1/all",5000),markets=arr(data?.markets);
+  const data=await json("https://api.sofascore.com/api/v1/event/"+id+"/odds/1/all",5000),markets=arr(data?.markets);
   let one=null,exact=null;
   for(const m of markets){
     const name=t(m?.name||m?.group).toLowerCase(),choices=arr(m?.choices);
