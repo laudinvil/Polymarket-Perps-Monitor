@@ -254,6 +254,19 @@ async function fetchLiveEvents(){
   console.log(JSON.stringify({level:"INFO",event:"gamma_live_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
   return live;
 }
+function liveHrefForTeams(home,away,links){
+  const nh=norm(home), na=norm(away);
+  if(!nh||!na)return "";
+  for(const href of links||[]){
+    const slug=fixtureSlug(href);
+    if(!slug)continue;
+    const parts=slug.replace(/^.*\//,"").split("-");
+    const joined=norm(slug);
+    if(joined.includes(nh)&&joined.includes(na))return href;
+  }
+  return "";
+}
+
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
   return (gh&&ga&&((nh===nx&&na===ny)||(nh===ny&&na===nx))) || t(g.eventId||g.event_id)===x.eventId || t(g.eventSlug||g.event_slug||g.slug)===x.slug;
@@ -356,7 +369,26 @@ async function discover(){
           if(sg.score)item.score=sg.score;
           item.sportsGame=sg;
         }
-      } else if(sg.gameId){
+      } else {
+        // WS slugs/gameIds are not always Gamma event identifiers. When direct
+        // Gamma lookup fails, resolve the authoritative LIVE-page fixture by
+        // the WS team names before giving up.
+        const liveHref=liveHrefForTeams(sg.home,sg.away,liveLinks);
+        if(liveHref){
+          const liveSlug=fixtureSlug(liveHref);
+          try{
+            const rr=await json(GAMMA+"/events?slug="+encodeURIComponent(liveSlug),{timeout:5000});
+            const liveEvent=Array.isArray(rr)?rr[0]:rr;
+            if(liveEvent){
+              console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_WS_TEAMS",gameId:sg.gameId,wsSlug:sg.slug,liveHref,liveSlug,eventId:liveEvent.id,title:liveEvent.title||liveEvent.question}));
+              await addEvent(liveEvent,liveHref,true,true);
+              const item=candidates.find(x=>x.eventId===t(liveEvent.id)||x.slug===t(liveEvent.slug));
+              if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
+            }
+          }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_team_fixture_lookup_failed",gameId:sg.gameId,liveHref,message:e.message}));}
+        }
+        if(candidates.some(x=>x.eventId===t(event?.id)||x.slug===t(event?.slug)))continue;
+        if(sg.gameId){
         try{
           const ms=await json(GAMMA+"/markets?game_id="+encodeURIComponent(sg.gameId)+"&active=true&closed=false&limit=100",{timeout:5000});
           const markets=Array.isArray(ms)?ms:(ms?.data||[]);
