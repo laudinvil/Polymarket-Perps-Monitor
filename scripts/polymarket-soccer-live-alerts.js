@@ -14,6 +14,7 @@ function decode(s){return t(s).replace(/&nbsp;/g," ").replace(/&amp;/g,"&").repl
 function hrefs(html){const out=new Set();let m;const re=/href=["'](\/[^"'#? ]+)["']/gi;while((m=re.exec(html)))out.add(m[1]);return [...out];}
 function slugFromHref(h){return t(h).split("/").filter(Boolean).pop()||"";}
 function fixtureSlug(h){return slugFromHref(h).replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|half-time|second-half-result|second-half|1st-half-result|1st-half|2nd-half-result|2nd-half|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");}
+function fixtureLinks(html){return hrefs(html).filter(h=>/^\/sports\/[^/]+\/[^/]+$/i.test(h));}
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
 function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
@@ -24,13 +25,14 @@ async function fetchPage(url){
 
 async function discover(){
   const [liveHtml,soccerHtml]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE)]);
-  const liveLinks=hrefs(liveHtml).filter(h=>/^\/sports\/[^/]+\/[^/]+$/i.test(h));
-  const soccerLinks=hrefs(soccerHtml).filter(h=>/^\/sports\/soccer\/[^/]+$/i.test(h));
+  const liveLinks=fixtureLinks(liveHtml);
+  const soccerLinks=fixtureLinks(soccerHtml);
+  const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
   for(const href of liveLinks){
     const slug=fixtureSlug(href);
-    if(!slug||!soccerSlugs.has(slug)||seen.has(slug))continue;
+    if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug))||seen.has(slug))continue;
     seen.add(slug);
     try{
       const event=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
