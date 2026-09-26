@@ -590,14 +590,27 @@ async function tick() {
       if (key) prematchCandidates.set(key, {...prematchCandidates.get(key), ...match});
     }
     const matches=Array.from(prematchCandidates.values());
-    const cycle={discovered:discovered.length,retainedCandidates:matches.length,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
-    log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length});
+    const now=Date.now();
+    // Keep every discovered candidate persisted, but never spend a full cycle
+    // refreshing thousands of future fixtures. Only LIVE/start-now candidates
+    // enter the expensive live-state + 1X2 evaluation path.
+    const evaluationCandidates=matches.filter(match=>{
+      const kickoff=Date.parse(match.startTime||"");
+      const liveHint=match.polymarketLiveHint===true;
+      const inLiveWindow=Number.isFinite(kickoff) &&
+        kickoff >= now - 6*60*60*1000 &&
+        kickoff <= now + PREMATCH_WINDOW_MS;
+      return liveHint || inLiveWindow;
+    });
+    const deferredCandidates=matches.length-evaluationCandidates.length;
+    const cycle={discovered:discovered.length,retainedCandidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
+    log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"only LIVE or starting-now football fixtures can alert; 1X2 is included in every alert"});
+    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"only LIVE or starting-now football fixtures can alert; 1X2 is included in every alert",evaluationCandidates:evaluationCandidates.length,deferredCandidates});
     const BATCH=20;
-    for(let i=0;i<matches.length;i+=BATCH){
-      await Promise.all(matches.slice(i,i+BATCH).map(async match=>{
+    for(let i=0;i<evaluationCandidates.length;i+=BATCH){
+      await Promise.all(evaluationCandidates.slice(i,i+BATCH).map(async match=>{
         cycle.evaluations++;
         const liveState=await refreshPolymarketLiveState(match);
         const phase=classifyFixturePhase(match,liveState);
