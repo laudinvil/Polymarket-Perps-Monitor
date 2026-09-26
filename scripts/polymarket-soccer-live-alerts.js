@@ -145,11 +145,19 @@ async function fetchLiveSports(){
         if(raw==="ping"){try{ws.send("pong")}catch{};return;}
         let m; try{m=JSON.parse(raw)}catch{return;}
         const type=t(m?.type||m?.event_type);
-        const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
+        const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
+        const p={...m,...p0};
         const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
-        const soccerPayload=wsSoccerConfirmed(p);
-        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
+        const period=t(p?.period).toUpperCase();
+        const elapsed=t(p?.elapsed);
+        const soccerPayload=wsSoccerConfirmed(p)||(
+          type==="sport_result" &&
+          (/^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed)||
+           /soccer|football|epl|premier|laliga|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/.test(league))
+        );
+        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout|live/.test(status)||
+          /^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed);
         if(type&&type!=="sport_result"&&!liveFlag)return;
         if(!soccerPayload)return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
