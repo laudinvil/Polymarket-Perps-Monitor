@@ -7,6 +7,8 @@ const TELEGRAM_MAX = 3900;
 const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
 const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : 4 * 60 * 60 * 1000;
 const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
+const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
+const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
 let stopping = false;
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
@@ -75,7 +77,7 @@ async function fetchLiveSports(){
     let timer;
     try{
       ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},25000);
+      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},SPORTS_WS_TIMEOUT_MS);
       ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
       ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
       ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
@@ -206,7 +208,9 @@ async function discover(){
   }
 
   // Primary live source: Polymarket Sports WebSocket. It provides actual kickoff/status/score.
-  for(const sg of sportsLive){
+  const sportsLookupList=sportsLive.slice(0,MAX_SPORTS_WS_LOOKUPS);
+  if(sportsLive.length>sportsLookupList.length)console.log(JSON.stringify({level:"WARN",event:"sports_ws_lookup_capped",total:sportsLive.length,processed:sportsLookupList.length,diagnostic:DIAGNOSTIC_MODE}));
+  for(const sg of sportsLookupList){
     try{
       let raw;
       if(sg.slug){
