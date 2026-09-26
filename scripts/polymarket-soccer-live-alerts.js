@@ -125,9 +125,11 @@ function eventLiveWindow(event){
   const now=Date.now();
   const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
   if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
-  const start=Date.parse(event.gameStartTime||event.game_start_time||event.eventStartTime||event.event_start_time||event.startTime||event.start_time||"");
-  const end=Date.parse(event.endTime||event.end_time||event.matchEndTime||event.match_end_time||"");
-  // Do not use startDate: for sports it can represent market/event deployment timing.
+  if(event.ended===true||event.finished===true||event.final===true)return false;
+  const start=Date.parse(event.gameStartTime||event.game_start_time||event.startTime||event.start_time||event.eventStartTime||event.event_start_time||"");
+  const end=Date.parse(event.gameEndTime||event.game_end_time||event.matchEndTime||event.match_end_time||"");
+  // For sports, startDate/endDate may describe market lifecycle rather than kickoff.
+  // gameStartTime/startTime are the actual fixture start fields.
   if(Number.isFinite(start)&&start<=now){
     return !Number.isFinite(end)||end>=now;
   }
@@ -150,11 +152,11 @@ async function discover(){
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
     if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
-    const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
+    const ended=event.ended===true||event.finished===true||event.final===true;
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
     if(!isFixtureTitle(rawTitle)&&!(event.homeTeam&&event.awayTeam)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
     if(!liveConfirmed&&!eventLiveWindow(event)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.startDate,end:event.endDate,status:event.status}));return;}
-    if(Number.isFinite(end)&&end<Date.now()){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"ended",eventId:event.id,title:rawTitle,end:event.endDate}));return;}
+    if(ended){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"ended",eventId:event.id,title:rawTitle}));return;}
     const slug=t(event.slug)||fixtureSlug(href||"");
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
     seen.add(slug);
@@ -238,7 +240,7 @@ async function discover(){
   // when raw HTML contains no usable fixture links.
   if(candidates.length===0){
     try{
-      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&live=true&limit=500",{timeout:8000});
+      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&order=end_date&ascending=true&limit=500",{timeout:8000});
       const events=Array.isArray(raw)?raw:[];
       console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,sample:events.slice(0,10).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,start:e?.startDate,end:e?.endDate,status:e?.status,active:e?.active,closed:e?.closed}))}));
       for(const event of events)await addEvent(event,null);
