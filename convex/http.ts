@@ -141,6 +141,19 @@ http.route({
   }),
 });
 
+http.route({
+  path: "/football/telegram-message",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const monitor = url.searchParams.get("monitor") || "polymarket-football";
+    const marketSlug = url.searchParams.get("marketSlug") || "";
+    if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
+    const row = await ctx.runQuery(internal.footballLogs.telegramMessage, { monitor, marketSlug });
+    return Response.json({ messageId: row?.telegramMessageId ?? null });
+  }),
+});
+
 export default http;
 
 // trigger: run monitor after candidate persistence route fix
