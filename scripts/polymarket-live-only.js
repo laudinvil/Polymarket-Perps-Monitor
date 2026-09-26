@@ -552,12 +552,24 @@ async function discoverLiveZeroZero(){
         sofa
       }));
 
-      // No odds, score, 0:0 or Sofascore match is allowed to block this first LIVE alert.
-      await sendLiveFound(phome,paway,minute,score,{
-        ...sofa,
+      // Never send a price-less LIVE alert. Both 1X2 and 1:1
+      // prices must be present in the Telegram message.
+      const alertPrices={
         one:polyOne||sofa.one||null,
         exact:polyExact!=null?polyExact:(sofa.exact!=null?sofa.exact:null)
-      },fixture);
+      };
+      if(!alertPrices.one||alertPrices.exact==null){
+        log(JSON.stringify({
+          event:"live_alert_blocked_missing_prices",
+          teams:[phome,paway],
+          sourceSlug:pm?.slug,
+          fixtureSlug:fixture?.slug,
+          has1X2:!!alertPrices.one,
+          hasExact11:alertPrices.exact!=null
+        }));
+        continue;
+      }
+      await sendLiveFound(phome,paway,minute,score,alertPrices,fixture);
 
       if(!sofaEvent)continue;
       if(!sofa.one||sofa.exact==null){
