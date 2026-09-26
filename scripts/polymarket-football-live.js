@@ -460,18 +460,16 @@ async function maybeOneOneAlert(match, nutmeg) {
     return;
   }
 
-  // SELL requires a BUY first. The first SELL is only at 0:1 or 1:0.
-  // A later 1:1 SELL is allowed only after that first-goal state was observed.
-  const firstGoal = (home === 1 && away === 0) || (home === 0 && away === 1);
-  const recovery = home === 1 && away === 1;
-  if (!firstGoal && !recovery) return;
+  // SELL requires a BUY first. A goal can happen between any two
+  // 20s cycles, so do not require the observed score to be exactly 1:0/0:1.
+  // Any non-zero score is an exit signal; Convex dedupe guarantees one SELL.
+  const hasGoal = (home + away) > 0;
+  if (!hasGoal) return;
 
-  if (firstGoal) {
-    const firstGoalKey = key + ":FIRST_GOAL";
-    await claimTelegramAlert(firstGoalKey);
-  }
+  const firstGoalKey = key + ":FIRST_GOAL";
+  await claimTelegramAlert(firstGoalKey);
 
-  const claimKey = key + (recovery ? ":SELL_11" : ":SELL");
+  const claimKey = key + ":SELL";
   const claim = await claimTelegramAlert(claimKey);
   if (!claim.claimed) return;
 
@@ -580,7 +578,14 @@ async function tick() {
       // must never be misclassified as pre-match merely because kickoff metadata
       // is stale or inaccurate.
       const nm = findNutmegMatch(match, nutmeg);
-      const nmIsLive = Boolean(nm?.row?.live && nm?.row?.score);
+      // Nutmeg probabilities are cached for 5 minutes, but live score must
+      // never inherit that cache. Refresh Polymarket live state every 20s so
+      // a goal can trigger SELL on the next monitor cycle.
+      const fastLiveState = nm ? await refreshPolymarketLiveState(match) : null;
+      const nmIsLive = Boolean(
+        (fastLiveState?.status === "live" && fastLiveState?.score) ||
+        (nm?.row?.live && nm?.row?.score)
+      );
       const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
       const kickoff = Date.parse(match.startTime || "");
       const fixtureDay = slugDate || (Number.isNaN(kickoff) ? null : new Date(kickoff).toISOString().slice(0, 10));
@@ -621,37 +626,39 @@ async function tick() {
         return;
       }
 
-      // Nutmegly live cards are the primary live-score source because the
-      // same matched fixture already supplies the strategy probabilities.
-      // Polymarket is retained only as a fallback if Nutmegly temporarily
-      // has no live score for this fixture.
+      // Nutmegly is the probability/matching source and may be cached for
+      // 5 minutes. Score monitoring is independent and refreshes from Gamma
+      // every 20s. Nutmeg live score is only a secondary fallback.
       const nmLive = nm;
       let liveState = null;
-      if (nmLive?.row?.live && nmLive.row.score) {
+      if (fastLiveState?.status === "live" && fastLiveState.score) {
+        liveState = fastLiveState;
+        log("INFO", "live_state_from_polymarket_fast", "Fast live score received from Polymarket", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          score: liveState.score,
+          minute: liveState.minute
+        });
+      } else if (nmLive?.row?.live && nmLive.row.score) {
         liveState = {
           status: "live",
           score: nmLive.row.score,
           minute: Number(nmLive.row.minute || 0),
           finished: Boolean(nmLive.row.finished)
         };
-        log("INFO", "live_state_from_nutmeg", "Live score received from Nutmegly", {
+        log("INFO", "live_state_from_nutmeg_fallback", "Used Nutmeg live score fallback", {
           eventId: match.eventId,
           teams: [match.homeTeam, match.awayTeam],
           score: liveState.score,
-          minute: liveState.minute,
-          nutmegScore: nmLive.score,
-          nutmegSwapped: Boolean(nmLive.swapped)
+          minute: liveState.minute
         });
       } else if (nmLive) {
-        liveState = await refreshPolymarketLiveState(match);
-        if (liveState) {
-          log("INFO", "live_state_from_polymarket_fallback", "Nutmegly matched fixture had no live score; used Polymarket fallback", {
-            eventId: match.eventId,
-            teams: [match.homeTeam, match.awayTeam],
-            score: liveState.score,
-            minute: liveState.minute
-          });
-        }
+        log("INFO", "live_state_unavailable", "Fast score refresh did not report a live state", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          fastScore: fastLiveState?.score || null,
+          fastStatus: fastLiveState?.status || null
+        });
       } else {
         log("INFO", "live_state_unavailable", "Fixture was not matched to Nutmegly; skipped expensive Polymarket live fallback", {
           eventId: match.eventId,
