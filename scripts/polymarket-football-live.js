@@ -283,6 +283,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       const sent = await sendTelegram(message);
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
+      await markCandidateBuySent(key);
       log("INFO", "one_one_buy_alert_sent", "1:1 pre-match entry alert sent", {
         eventId: match.eventId, reason: "balanced_polymarket_1x2_prematch", telegramMessageId: sent.messageId
       });
@@ -365,6 +366,7 @@ async function tick() {
     const tickStartedAt=Date.now();
     log("INFO","stage_start","Polymarket discovery stage started",{stage:"polymarket_discovery",source:GAMMA_URL});
     const discovered=await discoverPolymarket();
+    await persistPrematchCandidates(discovered);
     for (const match of discovered) {
       const key=match.eventId||match.slug;
       if (key) prematchCandidates.set(key, {...prematchCandidates.get(key), ...match});
@@ -469,6 +471,66 @@ function extractPolymarketScore(event) {
   return null;
 }
 
+async function candidateRequest(path, body = null) {
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  const response = await fetch(base.replace(/\/$/, "") + path, {
+    method: body === null ? "GET" : "POST",
+    headers: body === null ? undefined : { "content-type": "application/json" },
+    ...(body === null ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(3_000),
+  });
+  if (!response.ok) throw new Error("Convex candidate HTTP " + response.status);
+  return body === null ? response.json() : null;
+}
+
+async function loadPersistedCandidates() {
+  try {
+    const rows = await candidateRequest("/football/candidates");
+    let restored = 0;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      try {
+        const match = JSON.parse(row.data);
+        if (!match?.eventId && !match?.slug) continue;
+        const key = row.key || match.eventId || match.slug;
+        prematchCandidates.set(key, match);
+        if (row.buySent) oneOneState.set(key, { prematchSeen: true });
+        restored++;
+      } catch {}
+    }
+    log("INFO", "persistent_candidates_loaded", "Restored PRE-MATCH candidates from Convex", { restored });
+    return restored;
+  } catch (err) {
+    log("WARN", "persistent_candidates_load_failed", "Could not restore PRE-MATCH candidates; discovery continues", { message: err.message });
+    return 0;
+  }
+}
+
+async function persistPrematchCandidates(discovered) {
+  let admitted = 0;
+  const now = Date.now();
+  for (const match of discovered) {
+    const kickoff = Date.parse(match.startTime || "");
+    if (!Number.isFinite(kickoff) || kickoff <= now) continue;
+    const key = match.eventId || match.slug;
+    if (!key) continue;
+    try {
+      await candidateRequest("/football/candidates/admit", { key, data: JSON.stringify(match) });
+      admitted++;
+    } catch (err) {
+      log("WARN", "candidate_persist_failed", "Could not persist PRE-MATCH candidate", { eventId: match.eventId, message: err.message });
+    }
+  }
+  return admitted;
+}
+
+async function markCandidateBuySent(key) {
+  try {
+    await candidateRequest("/football/candidates/mark-buy", { key });
+  } catch (err) {
+    log("WARN", "candidate_buy_state_failed", "Could not persist BUY state", { key, message: err.message });
+  }
+}
+
 async function claimTelegramAlert(key) {
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
   try {
@@ -545,6 +607,7 @@ async function runCycle() {
 
 async function main(){
   console.log(JSON.stringify({event:"monitor_start",message:"football monitor continuous entrypoint started",runMs:RUN_MS,pollMs:POLL_MS,createdAt:Date.now()}));
+  await loadPersistedCandidates();
   const deadline=Date.now()+RUN_MS;
   let cycle=0;
   while(!stopping && Date.now()<deadline){
