@@ -284,10 +284,10 @@ async function discoverLiveZeroZero(){
       if(!pass)continue;
       const key=polyId||polySlug,tt=teamsFromEvent(pm);
       const row={
-        key,slug:polySlug,href:polyEventUrl(pm),
+        key,sofaId:String(s.id),slug:polySlug,href:polyEventUrl(pm),
         home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
         odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,priceDiff:diff,
-        nextSent:false
+        lastScore:score,lastMinute:minute,lastStatus:t(s?.status?.type),nextSent:false,liveSent:false
       };
       tracked.set(key,row);found.push(row);
       log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,source:"sofascore_only"}));
@@ -350,7 +350,55 @@ async function sendSell(row,score){
 async function scan(){
   const discovered=await discoverLiveZeroZero();
   log(JSON.stringify({event:"sofascore_live_00_snapshot",discovered:discovered.length,tracked:tracked.size}));
-  for(const [key,row] of [...tracked])if(!row.nextSent){const sent=await sendNext(row,{home:0,away:0});if(sent)row.nextSent=true;}
+
+  for(const [key,row] of [...tracked]){
+    try{
+      const ev=(arr((await sofascoreLive())?.events)).find(e=>String(e?.id)===String(row.sofaId));
+      if(!ev){
+        log(JSON.stringify({event:"tracked_match_not_in_live_snapshot",key,sofaId:row.sofaId,teams:[row.home,row.away]}));
+        continue;
+      }
+      const score={home:Number(ev?.homeScore?.current),away:Number(ev?.awayScore?.current)};
+      const status=t(ev?.status?.type);
+      const minute=sofascoreMinute(ev);
+      const scoreChanged=!row.lastScore||score.home!==row.lastScore.home||score.away!==row.lastScore.away;
+
+      try{
+        const sofa=await sofascoreOdds(row.sofaId);
+        if(sofa.one){
+          row.odds=formatOne(sofa.one);
+          row.priceDiff=Math.abs(sofa.one.home-sofa.one.away);
+        }
+        if(sofa.exact!=null)row.exact11Current=sofa.exact;
+      }catch(err){
+        log(JSON.stringify({event:"tracked_sofascore_odds_failed",key,sofaId:row.sofaId,message:err.message}));
+      }
+
+      log(JSON.stringify({event:"tracked_match_update",key,sofaId:row.sofaId,teams:[row.home,row.away],minute,score,status,scoreChanged}));
+
+      if(scoreChanged && row.nextSent){
+        await sendSell(row,score);
+      }
+
+      if(status!=="inprogress" && row.nextSent && !row.lossSent && score.home===0 && score.away===0){
+        const sent=await sendLoss(row,score);
+        if(sent)row.lossSent=true;
+      }
+
+      row.lastScore=score;
+      row.lastMinute=minute;
+      row.lastStatus=status;
+    }catch(err){
+      log(JSON.stringify({event:"tracked_match_update_failed",key,sofaId:row.sofaId,message:err.message}));
+    }
+  }
+
+  for(const [key,row] of [...tracked]){
+    if(!row.nextSent){
+      const sent=await sendNext(row,row.lastScore||{home:0,away:0});
+      if(sent)row.nextSent=true;
+    }
+  }
 }
 async function main(){
   const end=Date.now()+RUN_MS;
