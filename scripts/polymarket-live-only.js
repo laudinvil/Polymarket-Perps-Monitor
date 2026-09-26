@@ -85,6 +85,30 @@ function scoreFromCard(card){
   const h=Number(m[1]),a=Number(m[2]);
   return h<=20&&a<=20?{home:h,away:a}:null;
 }
+function exactScore11Yes(e){
+  const markets=arr(e?.markets);
+  for(const m of markets){
+    if(m?.active===false||m?.closed===true)continue;
+    const os=arr(m?.outcomes),ps=arr(m?.outcomePrices??m?.outcome_prices).map(Number);
+    if(os.length!==ps.length||os.length<2||ps.some(x=>!Number.isFinite(x)))continue;
+    const q=norm(m.question||m.groupItemTitle||m.title);
+    if(!/(exact score|correct score|score)/.test(q))continue;
+    for(let i=0;i<os.length;i++){
+      const o=t(os[i]);
+      if(/^(yes|1[-–:]1)$/.test(norm(o))){
+        const value=ps[i];
+        if(value>=0&&value<=1)return value;
+      }
+    }
+  }
+  return null;
+}
+function pct(v){return Math.round(v*100)+"%";}
+function exactDelta(first,current){
+  const d=current-first;
+  const arrow=d>0?"↑":d<0?"↓":"→";
+  return pct(first)+" "+arrow+" "+pct(current)+" ("+(d>0?"+":"")+Math.round(d*100)+" п.п.)";
+}
 function eventFinished(e){
   if(e?.closed===true||e?.resolved===true||e?.ended===true)return true;
   const status=t(e?.status||e?.gameStatus||e?.game_status||e?.state).toLowerCase();
@@ -151,7 +175,7 @@ async function discoverUpcoming(page){
       console.log(JSON.stringify({event:"starting_soon_waiting_1x2",key,teams:[home,away],startMs:start,odds:odds||"MISSING"}));
       continue;
     }
-    const row={key,slug,href:item.href,home,away,startMs:start,odds};
+    const exact11=exactScore11Yes(e);\n    if(exact11===null){\n      console.log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));\n      continue;\n    }\n    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
     found.push(row);tracked.set(key,row);
   }
   return found;
@@ -159,7 +183,7 @@ async function discoverUpcoming(page){
 async function sendNext(row,score){
   const alertKey=row.key+":NEXT",c=await claim(alertKey);
   if(!c.claimed)return false;
-  const message=["⚽ NEXT","",row.home+" vs "+row.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const message=["⚽ NEXT","",row.home+" vs "+row.away,"1:1 YES: "+pct(row.exact11First),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
     console.log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
@@ -195,7 +219,7 @@ async function sendLive(row,score){
 async function sendSell(row,score){
   const alertKey=row.key+":SELL::"+score.home+"-"+score.away,c=await claim(alertKey);
   if(!c.claimed)return false;
-  const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const current=row.exact11Current??row.exact11First;\n  const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"1:1 YES: "+exactDelta(row.exact11First,current),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
     console.log(JSON.stringify({event:"telegram_alert_sent",type:"SELL",key:row.key,score,messageId:sent.message_id}));
@@ -214,7 +238,7 @@ async function scan(){
     catch(err){console.log(JSON.stringify({event:"tracked_event_failed",key,message:err.message}));continue;}
     const detectedScore=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away));
     const score=detectedScore||{home:0,away:0};
-    const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
+    const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;\n    const exact11=exactScore11Yes(e);\n    if(exact11!==null)row.exact11Current=exact11;
     if(!row.nextSent){
       const sent=await sendNext(row,score);
       if(sent)row.nextSent=true;
