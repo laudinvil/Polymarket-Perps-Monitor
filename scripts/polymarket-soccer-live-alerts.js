@@ -441,6 +441,11 @@ async function discover(){
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
+    // If this candidate came from the authoritative live source, carry its
+    // score/clock immediately. This prevents the later Gamma refresh from
+    // becoming the first place where live facts are attached.
+    const sourceGame=liveEvents.find(g=>matchGame(item,g))||sportsLive.find(g=>matchGame(item,g));
+    if(sourceGame)attachGame(item,sourceGame);
     const game=liveEvents.find(g=>matchGame(item,g));
     const wsGame=sportsLive.find(g=>matchGame(item,g));
     if(game)attachGame(item,game);
