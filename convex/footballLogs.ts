@@ -94,11 +94,11 @@ export const admitCandidate = mutation({
 });
 
 export const markCandidateBuySent = mutation({
-  args: { key: v.string() },
+  args: { key: v.string(), buyOneOnePrice: v.number() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.query("footballCandidates").withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key)).first();
-    if (row) await ctx.db.patch(row._id, { buySent: true, updatedAt: Date.now() });
+    if (row) await ctx.db.patch(row._id, { buySent: true, buyOneOnePrice: args.buyOneOnePrice, updatedAt: Date.now() });
     return null;
   },
 });
@@ -125,10 +125,10 @@ export const markCandidateSellSent = mutation({
 
 export const admittedCandidates = query({
   args: {},
-  returns: v.array(v.object({ key: v.string(), data: v.string(), buySent: v.boolean(), startedSent: v.boolean(), sellSent: v.boolean() })),
+  returns: v.array(v.object({ key: v.string(), data: v.string(), buySent: v.boolean(), startedSent: v.boolean(), sellSent: v.boolean(), buyOneOnePrice: v.union(v.number(), v.null()) })),
   handler: async (ctx) => {
     const rows = await ctx.db.query("footballCandidates").withIndex("by_monitor", q => q.eq("monitor", MONITOR)).collect();
-    return rows.map(row => ({ key: row.key, data: row.data, buySent: row.buySent, startedSent: row.startedSent ?? false, sellSent: row.sellSent ?? false }));
+    return rows.map(row => ({ key: row.key, data: row.data, buySent: row.buySent, startedSent: row.startedSent ?? false, sellSent: row.sellSent ?? false, buyOneOnePrice: row.buyOneOnePrice ?? null }));
   },
 });
 
