@@ -1,68 +1,48 @@
-const http = require("node:http");
-const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
-const POLL_MS = 5000;
-const seen = new Map();
-let lastSent = 0;
+const http=require("node:http");
+const GAMMA="https://gamma-api.polymarket.com";
+const POLL_MS=3000;
+let sent=new Set();
+let lastSent=0;
 
-function text(s){return String(s||"").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#x27;/g,"'").replace(/\s+/g," ").trim();}
-function parseCandidate(href,raw){
-  const clean=text(raw);
-  const tm=clean.match(/(.{2,120}?)\s+(?:vs\.?|v\.?|versus)\s+(.{2,120}?)(?=\s+(?:1H|2H|HT|ET|OT)\b|\s+\d{1,3}[′']|$)/i);
-  if(!tm)return null;
-  const home=tm[1].trim(),away=tm[2].trim();
-  if(!home||!away)return null;
-  const clock=clean.match(/\b(?:1H|2H|ET|OT)\s*(?:-|–|:)?\s*(\d{1,3})\s*(?:′|')?/i)
-    ||clean.match(/\b(?:1H|2H|ET|OT)\b/i)
-    ||clean.match(/\b(\d{1,3})\s*(?:′|')\b/i);
-  if(!clock)return null;
-  const minute=clock[1]!=null?Number(clock[1]):0;
-  if(!Number.isFinite(minute)||minute<0||minute>130)return null;
-  const pos=clean.indexOf(tm[0]);
-  const tail=pos>=0?clean.slice(pos,Math.min(clean.length,pos+3500)):clean;
-  let score=null;
-  for(const re of [/\b(\d{1,2})\s*[-–:]\s*(\d{1,2})\b/,/\b(\d{1,2})\s*[–—]\s*(\d{1,2})\b/]){
-    const m=tail.match(re);if(m){score=[Number(m[1]),Number(m[2])];break;}
-  }
-  if(!score)return null;
-  return {href:href.startsWith("http")?href:"https://polymarket.com"+href,home,away,minute,score};
+async function getJson(url){
+  const r=await fetch(url,{headers:{"accept":"application/json","user-agent":"Mozilla/5.0"},signal:AbortSignal.timeout(6000)});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return await r.json();
 }
-async function fetchLive(){
-  const urls=[
-    "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=100",
-    "https://gamma-api.polymarket.com/events?live=true&active=true&closed=false&limit=100"
-  ];
-  for(const url of urls){
-    try{
-      const r=await fetch(url,{headers:{"accept":"application/json"},signal:AbortSignal.timeout(8000)});
-      const raw=await r.json();
-      const events=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
-      for(const e of events){
-        const title=String(e?.title||e?.question||"");
-        const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
-        if(!m)continue;
-        const slug=String(e?.slug||"").trim();
-        if(!slug)continue;
-        return {
-          href:"https://polymarket.com/event/"+slug,
-          home:m[1].trim(),
-          away:m[2].trim(),
-          minute:0,
-          score:[0,0]
-        };
-      }
-    }catch{}
+function list(x){return Array.isArray(x)?x:(x?.data||x?.events||x?.markets||[]);}
+function pick(items){
+  for(const x of items){
+    const title=String(x?.title||x?.question||x?.name||"").trim();
+    const slug=String(x?.slug||"").trim();
+    const active=x?.active!==false && x?.closed!==true;
+    if(!active||!title||!slug) continue;
+    const low=(title+" "+slug).toLowerCase();
+    if(/soccer|football|fc\b| vs | v |win|draw|match|game/.test(low)) return {title,slug};
   }
   return null;
 }
-async function telegram(c){
-  const token=process.env.TELEGRAM_BOT_TOKEN,chat=process.env.TELEGRAM_CHAT_ID;
-  if(!token||!chat){console.log(JSON.stringify({level:"ERROR",event:"TELEGRAM_CONFIG_MISSING",hasToken:!!token,hasChat:!!chat}));return false;}
-  const now=Date.now(); if(now-lastSent<40000)return false;
-  const key=c.href+"|"+c.score.join("-")+"|"+c.minute; if(seen.has(key))return false;
-  const body=`⚽ LIVE FOUND\n\n${c.home} vs ${c.away}\nLIVE · ${c.minute}′\nSCORE: ${c.score[0]}–${c.score[1]}`;
-  const r=await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chat,text:body,reply_markup:{inline_keyboard:[[{text:"ОТКРЫТЬ POLYMARKET",url:c.href}]]}}),signal:AbortSignal.timeout(8000)});
-  const response=await r.text(); if(!r.ok)throw new Error("Telegram HTTP "+r.status+" "+response);
-  seen.set(key,now);lastSent=now;console.log(JSON.stringify({level:"INFO",event:"TELEGRAM_SENT",...c}));return true;
+async function findEvent(){
+  const urls=[
+    GAMMA+"/events?active=true&closed=false&order=volume_24hr&ascending=false&limit=100",
+    GAMMA+"/events?active=true&closed=false&order=volume&ascending=false&limit=100",
+    GAMMA+"/markets?active=true&closed=false&order=volume&ascending=false&limit=100"
+  ];
+  for(const u of urls){
+    try{const p=pick(list(await getJson(u)));if(p)return p;}catch{}
+  }
+  return null;
 }
-async function cycle(){try{const c=await fetchLive();console.log(JSON.stringify({level:"INFO",event:"LIVE_DIRECT_SCAN",candidate:c}));if(c)await telegram(c);}catch(e){console.log(JSON.stringify({level:"ERROR",event:"DIRECT_SCAN_ERROR",message:e.stack||e.message||String(e)}));}}
-const port=Number(process.env.PORT||3000);const server=http.createServer((q,s)=>{s.writeHead(200,{"content-type":"application/json"});s.end(JSON.stringify({ok:true,service:"polymarket-soccer-live-direct",time:new Date().toISOString()}));});server.listen(port,"0.0.0.0",()=>{console.log(JSON.stringify({level:"INFO",event:"DIRECT_MONITOR_STARTED",port}));cycle();setInterval(cycle,POLL_MS);});
+async function send(e){
+  const token=process.env.TELEGRAM_BOT_TOKEN,chat=process.env.TELEGRAM_CHAT_ID;
+  if(!token||!chat)return;
+  if(Date.now()-lastSent<10000)return;
+  if(sent.has(e.slug))return;
+  const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+    chat_id:chat,
+    text:"⚽ "+e.title+"\n\nhttps://polymarket.com/event/"+e.slug
+  }),signal:AbortSignal.timeout(6000)});
+  if(r.ok){sent.add(e.slug);lastSent=Date.now();}
+}
+async function cycle(){try{const e=await findEvent();if(e)await send(e);}catch{}}
+const port=Number(process.env.PORT||3000);
+http.createServer((q,s)=>{s.writeHead(200,{"content-type":"application/json"});s.end('{"ok":true}');}).listen(port,"0.0.0.0",()=>{cycle();setInterval(cycle,POLL_MS);});
