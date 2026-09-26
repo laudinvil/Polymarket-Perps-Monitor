@@ -73,6 +73,13 @@ jobs:
               const html=await page.text();
               const parsed=parsePage(html);
               exact=parsed.exact; odds=parsed.odds;
+              if(attempt===1){
+                for(const term of ['Slovenia','Scotland','1 - 1','1-1','Exact Score','Correct Score']){
+                  let p=html.indexOf(term);
+                  console.log('TERM '+term+' POS '+p);
+                  if(p>=0) console.log(html.slice(Math.max(0,p-1200),p+2200).replace(/\\s+/g,' ').slice(0,3600));
+                }
+              }
               last=JSON.stringify({attempt,status:page.status,htmlLength:html.length,exact,odds,source:parsed.source});
               console.log(last);
             }catch(err){last=String(err.message);console.log(JSON.stringify({attempt,error:last}))}
