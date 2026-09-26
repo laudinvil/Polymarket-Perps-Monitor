@@ -911,21 +911,50 @@ function findLivePageMatch(page, match) {
       continue;
     }
 
-    const cardStart = Math.max(0, hi - 220);
-    const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 260);
+    const cardStart = Math.max(0, hi - 260);
+    const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 320);
     const card = normalizedPage.slice(cardStart, cardEnd);
-    const liveStatus = /\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
+    const liveStatus = /\\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\\b/i.test(card);
 
     if (liveStatus) {
-      const homeScore = scoreAfterTeam(normalizedPage.slice(hi, cardEnd), match.homeTeam);
-      const awayScore = scoreAfterTeam(normalizedPage.slice(ai, cardEnd), match.awayTeam);
-      if (homeScore && awayScore) {
-        return {
-          status: "live",
-          score: {home: homeScore.home, away: awayScore.home},
-          minute: 0
-        };
+      // Polymarket's rendered live card does not always serialize a football
+      // score as "HOME 1-0 AWAY". Depending on the page payload it may appear
+      // as "HOME 1 AWAY 0", or the away score may be omitted from the extracted
+      // text altogether. LIVE membership must therefore not depend on one
+      // brittle score layout.
+      const betweenTeams = normalizedPage.slice(hi + homeTeam.length, ai);
+      const afterAway = normalizedPage.slice(ai + awayTeam.length, cardEnd);
+      const homeScoreMatch = betweenTeams.match(/\\b(\\d{1,2})\\b/);
+      const awayScoreMatch = afterAway.match(/^\\s*(\\d{1,2})\\b/);
+
+      let home = homeScoreMatch ? Number(homeScoreMatch[1]) : null;
+      let away = awayScoreMatch ? Number(awayScoreMatch[1]) : null;
+
+      if (home === null || away === null) {
+        const compact = normalizedPage.slice(hi, cardEnd);
+        const compactMatch = compact.match(
+          new RegExp(homeTeam + "\\\\s+(\\\\d{1,2})\\\\s+" + awayTeam + "\\\\s+(\\\\d{1,2})\\\\b", "i")
+        );
+        if (compactMatch) {
+          home = Number(compactMatch[1]);
+          away = Number(compactMatch[2]);
+        }
       }
+
+      if (![home, away].every(Number.isInteger) || home < 0 || away < 0 || home > 20 || away > 20) {
+        log("WARN", "polymarket_live_score_unparsed", "Polymarket live card confirmed the fixture but its score layout could not be parsed; keeping LIVE state", {
+          teams: [match.homeTeam, match.awayTeam],
+          card: card.slice(0, 500)
+        });
+        home = 0;
+        away = 0;
+      }
+
+      return {
+        status: "live",
+        score: {home, away},
+        minute: 0
+      };
     }
 
     from = hi + homeTeam.length;
