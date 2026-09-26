@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   monitor:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'DIAGNOSTIC_RUN'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     permissions:
