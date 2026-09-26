@@ -25,20 +25,31 @@ function fixtureLinks(html){return hrefs(html).filter(h=>/^\/(?:ru\/)?sports\/[^
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
 function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
-  if(/\/sports\/soccer\//i.test(h))return true;
-  if(/\/sports\/(?:cfb|nfl|mlb|nba|nhl|ufc|wta|atp|tennis|cricket|basketball|baseball|hockey)\//i.test(h))return false;
+  // A /sports/<sport>/ URL is authoritative for sport classification.
+  // Never infer soccer from a generic "vs" title or a draw market: tennis also has
+  // match-result style markets and must never enter the football monitor.
+  const sportPath=h.match(/\/sports\/([^/?#]+)/i);
+  if(sportPath){
+    const sport=t(sportPath[1]).toLowerCase();
+    return sport==="soccer" || sport==="football";
+  }
   const values=[];
   for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug","seriesSlug","series_slug","eventType","event_type","gameType","game_type"])values.push(event?.[k]);
   const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
   if(Array.isArray(tags))for(const z of tags)values.push(typeof z==="string"?z:(z?.slug||z?.label||z?.name));
-  if(values.filter(Boolean).some(v=>/soccer/i.test(String(v))))return true;
+  const explicit=values.filter(Boolean).map(v=>String(v).toLowerCase());
+  if(explicit.some(v=>/soccer|football/.test(v)))return true;
+  if(explicit.some(v=>/tennis|wta|atp|basketball|baseball|hockey|nfl|cfb|ufc|cricket/.test(v)))return false;
   const slug=t(event?.slug||event?.eventSlug||event?.event_slug).toLowerCase();
-  if(/(^|[-_])soccer([-_]|$)/.test(slug))return true;
+  if(/(^|[-_])(?:soccer|football)([-_]|$)/.test(slug))return true;
+  if(/(^|[-_])(?:tennis|wta|atp|basketball|baseball|hockey|nfl|cfb|ufc|cricket)([-_]|$)/.test(slug))return false;
+  // Last-resort Gamma classification: require multiple football-specific market
+  // signals, not merely "draw" or a generic match-result market.
   const title=t(event?.title||event?.question);
   if(!/\s(?:vs\.?|v\.?|versus)\s/i.test(title))return false;
   const markets=Array.isArray(event?.markets)?event.markets:[];
   const text=markets.map(m=>t(m?.question||m?.title||m?.groupItemTitle)).join(" ").toLowerCase();
-  return /\b1x2\b|\bdraw\b|both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance/.test(text);
+  return /both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance|draw no bet/.test(text);
 }
 function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
@@ -52,7 +63,7 @@ function gameTeams(g){
   const away=t(g.awayTeam||g.away_team||g.away||g.awayTeamName||g.away_team_name);
   return [home,away];
 }
-function wsSoccerConfirmed(sg){return /soccer|football/i.test(t(sg?.league)||t(sg?.sport)||t(sg?.leagueAbbreviation)||t(sg?.sportSlug)) || !!sg?.gameId;}
+function wsSoccerConfirmed(sg){return /soccer|football/i.test([sg?.league,sg?.sport,sg?.leagueAbbreviation,sg?.sportSlug].map(t).join(" "));}
 function gameLive(g){
   const status=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period).toLowerCase();
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
@@ -93,7 +104,7 @@ async function fetchLiveSports(){
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
         const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
         if(type&&type!=="sport_result"&&!liveFlag)return;
-        if(!/soccer|football/.test(league)&&!String(p?.slug||"").match(/^(?:soccer|football)-/i))return;
+        if(!/soccer|football/.test(league))return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
         if(!liveFlag)return;
         const gameId=t(p?.gameId||p?.id);
