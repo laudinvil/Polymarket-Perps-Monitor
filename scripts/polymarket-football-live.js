@@ -563,7 +563,7 @@ async function claimTelegramAlert(key) {
   try {
     const response = await fetch(base.replace(/\/$/, "") + "/football/claim", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
+      body: JSON.stringify({ monitor: "polymarket-football", marketSlug: key }),
       signal: AbortSignal.timeout(2_000),
     });
     const body = await response.json().catch(() => ({}));
@@ -580,7 +580,7 @@ async function saveTelegramMessageId(key, messageId) {
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
   const response = await fetch(base.replace(/\/$/, "") + "/football/telegram-message", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key, messageId }),
+    body: JSON.stringify({ monitor: "polymarket-football", marketSlug: key, messageId }),
     signal: AbortSignal.timeout(2_000),
   });
   if (!response.ok) throw new Error("Convex telegram-message HTTP " + response.status);
@@ -591,7 +591,7 @@ async function releaseTelegramAlert(key) {
   try {
     const response = await fetch(base.replace(/\/$/, "") + "/football/release", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ monitor: "polymarket-football-1-1", marketSlug: key }),
+      body: JSON.stringify({ monitor: "polymarket-football", marketSlug: key }),
       signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) throw new Error("Convex release HTTP " + response.status);
