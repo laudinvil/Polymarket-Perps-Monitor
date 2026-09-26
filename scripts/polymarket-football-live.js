@@ -914,7 +914,7 @@ function findLivePageMatch(page, match) {
     const cardStart = Math.max(0, hi - 260);
     const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 320);
     const card = normalizedPage.slice(cardStart, cardEnd);
-    const liveStatus = /\\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\\b/i.test(card);
+    const liveStatus = /\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
 
     if (liveStatus) {
       // Polymarket's rendered live card does not always serialize a football
@@ -924,7 +924,7 @@ function findLivePageMatch(page, match) {
       // brittle score layout.
       const betweenTeams = normalizedPage.slice(hi + homeTeam.length, ai);
       const afterAway = normalizedPage.slice(ai + awayTeam.length, cardEnd);
-      const homeScoreMatch = betweenTeams.match(/\\b(\\d{1,2})\\b/);
+      const homeScoreMatch = betweenTeams.match(/\b(\d{1,2})\b/);
       const awayScoreMatch = afterAway.match(/^\\s*(\\d{1,2})\\b/);
 
       let home = homeScoreMatch ? Number(homeScoreMatch[1]) : null;
@@ -933,7 +933,7 @@ function findLivePageMatch(page, match) {
       if (home === null || away === null) {
         const compact = normalizedPage.slice(hi, cardEnd);
         const compactMatch = compact.match(
-          new RegExp(homeTeam + "\\\\s+(\\\\d{1,2})\\\\s+" + awayTeam + "\\\\s+(\\\\d{1,2})\\\\b", "i")
+          new RegExp(homeTeam + "\\s+(\\d{1,2})\\s+" + awayTeam + "\\s+(\\d{1,2})\\b", "i")
         );
         if (compactMatch) {
           home = Number(compactMatch[1]);
