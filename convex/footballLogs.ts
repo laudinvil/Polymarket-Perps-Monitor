@@ -83,7 +83,7 @@ export const claimTelegramAlert = mutation({
   returns: v.object({ claimed: v.boolean(), replyToMessageId: v.union(v.number(), v.null()) }),
   handler: async (ctx, args) => {
     const now = Date.now();
-    const key = args.marketSlug.trim().replace(/\\/$/, "");
+    const key = args.marketSlug.trim().replace(/\/$/, "");
     if (!key) return { claimed: false, replyToMessageId: null };
 
     // URL is the sole identity for a soccer LIVE alert.
@@ -106,7 +106,8 @@ export const saveTelegramMessageId = mutation({
   args: { monitor: v.string(), marketSlug: v.string(), messageId: v.number() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const row = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug)).first();
+    const key = args.marketSlug.trim().replace(/\/$/, "");
+    const row = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", MONITOR).eq("marketSlug", key)).first();
     if (!row) return null;
     await ctx.db.patch(row._id, { telegramMessageId: args.messageId });
     return null;
@@ -125,7 +126,8 @@ export const telegramMessage = query({
 export const releaseTelegramAlert = mutation({
   args: { monitor: v.string(), marketSlug: v.string() }, returns: v.null(),
   handler: async (ctx, args) => {
-    const existing = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug)).first();
+    const key = args.marketSlug.trim().replace(/\/$/, "");
+    const existing = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", MONITOR).eq("marketSlug", key)).first();
     if (existing) await ctx.db.delete(existing._id);
     return null;
   },
