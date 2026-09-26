@@ -247,7 +247,19 @@ async function loadPolyMarkets(...events){
         const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
         if(mid)merged.set(mid,m);
       }
-      log(JSON.stringify({event:"polymarket_markets_loaded",eventId:id,count:markets.length}));
+      log(JSON.stringify({
+        event:"polymarket_markets_loaded",
+        eventId:id,
+        count:markets.length,
+        markets:markets.slice(0,30).map(m=>({
+          id:m?.id,
+          question:m?.question||m?.title||m?.groupItemTitle||m?.slug,
+          outcomes:m?.outcomes,
+          outcomePrices:m?.outcomePrices??m?.outcome_prices,
+          active:m?.active,
+          closed:m?.closed
+        }))
+      }));
     }catch(err){
       log(JSON.stringify({event:"polymarket_markets_fetch_failed",eventId:id,message:err.message}));
     }
