@@ -431,4 +431,4 @@ async function main(){
 }
 process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
 
-// monitor trigger: live workflow restart
+// DIAGNOSTIC_RUN_TRIGGER
