@@ -93,6 +93,17 @@ export const admitCandidate = mutation({
   },
 });
 
+export const candidateBuyPrice = query({
+  args: { key: v.string() },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("footballCandidates")
+      .withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key))
+      .first();
+    return row?.buyOneOnePrice ?? null;
+  },
+});
+
 export const markCandidateBuySent = mutation({
   args: { key: v.string(), buyOneOnePrice: v.number() },
   returns: v.null(),
