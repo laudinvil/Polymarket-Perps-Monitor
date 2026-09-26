@@ -45,8 +45,9 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const body = await request.json();
     const key = typeof body.key === "string" ? body.key : "";
-    if (!key) return new Response("missing key", { status: 400 });
-    await ctx.runMutation(internal.footballLogs.markCandidateBuySent, { key });
+    const buyOneOnePrice = Number(body.buyOneOnePrice);
+    if (!key || !Number.isFinite(buyOneOnePrice)) return new Response("invalid key/price", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.markCandidateBuySent, { key, buyOneOnePrice });
     return new Response("marked", { status: 200 });
   }),
 });
