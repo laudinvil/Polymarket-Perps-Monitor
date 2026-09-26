@@ -1,6 +1,10 @@
 name: Polymarket Soccer Live Alerts
 
 on:
+  push:
+    paths:
+      - "scripts/polymarket-soccer-live-alerts.js"
+      - ".github/workflows/polymarket-soccer-live-alerts.yml"
   workflow_dispatch:
   schedule:
     - cron: "0 */5 * * *"
