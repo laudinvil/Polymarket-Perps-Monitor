@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/send-slovenia-scotland-next.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,42 +12,109 @@ permissions:
 jobs:
   send:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
-      - name: Send Telegram NEXT
+      - name: Resolve markets and send Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           node <<'NODE'
-          const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
-          const slug='unl-slv-sco-2026-09-26';
-          const e=await (await fetch('https://gamma-api.polymarket.com/events/slug/'+slug)).json();
-          const eventId=e.id||e.eventId;
-          const direct=Array.isArray(e.markets)?e.markets:[];
-          let markets=direct;
-          if(!markets.length && eventId) markets=await (await fetch('https://gamma-api.polymarket.com/markets?event_id='+encodeURIComponent(eventId)+'&limit=500')).json();
-          if(!Array.isArray(markets)) markets=[];
-          let exact=null;
-          for(const m of markets){
-            const g=String(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section||'').toLowerCase();
-            const q=String(m.question||m.title||m.slug||'').toLowerCase();
-            if(!/(exact score|correct score|точн)/.test(g+' '+q)) continue;
-            const os=Array.isArray(m.outcomes)?m.outcomes:JSON.parse(m.outcomes||'[]');
-            const ps=Array.isArray(m.outcomePrices)?m.outcomePrices.map(Number):JSON.parse(m.outcomePrices||'[]').map(Number);
-            for(let i=0;i<os.length;i++){
-              if(String(os[i]).trim().toLowerCase()==='yes' && /1\s*[-:]\s*1/.test(q)) exact=ps[i];
-              if(/^1\s*[-:]\s*1$/.test(String(os[i]).trim())) exact=ps[i];
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          const get=async(url)=>{
+            const r=await fetch(url,{headers:{accept:'application/json'},signal:AbortSignal.timeout(10000)});
+            const body=await r.text();
+            if(!r.ok) throw new Error('HTTP '+r.status+' '+url+' '+body.slice(0,300));
+            try{return JSON.parse(body)}catch{throw new Error('Invalid JSON from '+url+': '+body.slice(0,300))}
+          };
+          const asArray=v=>{
+            if(Array.isArray(v)) return v;
+            if(typeof v==='string'){try{const x=JSON.parse(v);return Array.isArray(x)?x:[]}catch{return []}}
+            if(v&&typeof v==='object'){
+              for(const k of ['data','markets','results','items']) if(Array.isArray(v[k])) return v[k];
             }
+            return [];
+          };
+          const text=v=>String(v??'').replace(/\s+/g,' ').trim().toLowerCase();
+          const priceArray=v=>asArray(v).map(Number);
+          const parseMarketRows=(event)=>{
+            const direct=asArray(event.markets);
+            const id=event.id??event.eventId;
+            return {direct,id};
+          };
+          const exact11From=markets=>{
+            for(const m of markets){
+              if(m?.active===false||m?.closed===true) continue;
+              const q=text(m.question??m.title??m.slug);
+              const g=text(m.groupItemTitle??m.group_item_title??m.marketGroup??m.market_group??m.category??m.section);
+              if(!/(exact score|correct score|точн|exact-score|correct-score)/.test(q+' '+g)) continue;
+              const os=asArray(m.outcomes);
+              const ps=priceArray(m.outcomePrices??m.outcome_prices);
+              if(os.length!==ps.length) continue;
+              const q11=/(^|\s)(1\s*[-:–]\s*1)(\s|$)/.test(q);
+              for(let i=0;i<os.length;i++){
+                const o=text(os[i]);
+                if((q11&&o==='yes')||/^1\s*[-:–]\s*1$/.test(o)){
+                  if(Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
+                }
+              }
+            }
+            return null;
+          };
+          const oneXTwoFrom=markets=>{
+            for(const m of markets){
+              if(m?.active===false||m?.closed===true) continue;
+              const os=asArray(m.outcomes),ps=priceArray(m.outcomePrices??m.outcome_prices);
+              if(os.length!==ps.length||os.length<3) continue;
+              const q=text(m.question??m.title??m.slug);
+              if(!/(1x2|1 x 2|match result|full time result|result|winner)/.test(q)) continue;
+              let a=-1,d=-1,h=-1;
+              os.forEach((v,i)=>{const o=text(v);if(o==='1'||o==='home')h=i;else if(o==='x'||o==='draw'||o==='tie')d=i;else if(o==='2'||o==='away')a=i});
+              if(h>=0&&d>=0&&a>=0&&[h,d,a].every(i=>ps[i]>0&&ps[i]<=1))
+                return [ps[h],ps[d],ps[a]];
+            }
+            return null;
+          };
+          const slug='unl-slv-sco-2026-09-26';
+          const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
+          let exact=null,odds=null,last='';
+          for(let attempt=1;attempt<=12 && (exact===null||odds===null);attempt++){
+            try{
+              const e=await get('https://gamma-api.polymarket.com/events/slug/'+slug);
+              const {direct,id}=parseMarketRows(e);
+              let markets=direct;
+              if(id){
+                const extra=await get('https://gamma-api.polymarket.com/markets?event_id='+encodeURIComponent(id)+'&limit=500');
+                const remote=asArray(extra);
+                markets=[...direct,...remote];
+              }
+              exact=exact11From(markets);
+              odds=oneXTwoFrom(markets);
+              last=JSON.stringify({attempt,eventId:id,direct:direct.length,total:markets.length,exact,odds});
+              console.log(last);
+            }catch(err){last=String(err.message);console.log(JSON.stringify({attempt,error:last}))}
+            if(exact===null||odds===null) await sleep(5000);
           }
-          if(exact==null) throw new Error('Exact Score 1:1 price not found');
-          const p=String(Math.round(exact*100))+'%';
-          const text=['⚽ NEXT','','Slovenia vs Scotland','1:1 YES: '+p,'','1: 38% · X: 31% · 2: 33%','','➡️ OPEN MATCH',eventUrl].join('\n');
-          const r=await fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/sendMessage',{
-            method:'POST',headers:{'content-type':'application/json'},
-            body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
+          if(exact===null) throw new Error('Exact Score 1:1 YES not resolved after retries: '+last);
+          if(!odds) throw new Error('1X2 not resolved after retries: '+last);
+          const pct=x=>Math.round(x*100)+'%';
+          const msg=[
+            '⚽ NEXT','',
+            'Slovenia vs Scotland',
+            '1:1 YES: '+pct(exact),
+            '',
+            '1: '+pct(odds[0])+' · X: '+pct(odds[1])+' · 2: '+pct(odds[2]),
+            '',
+            '➡️ OPEN MATCH',
+            eventUrl
+          ].join('\\n');
+          const tg=await fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/sendMessage',{
+            method:'POST',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:msg,disable_web_page_preview:false}),
+            signal:AbortSignal.timeout(10000)
           });
-          if(!r.ok) throw new Error('Telegram HTTP '+r.status);
-          const j=await r.json();
-          if(!j.ok) throw new Error('Telegram rejected message');
-          console.log(JSON.stringify({sent:true,messageId:j.result.message_id,exact11:p}));
+          const tj=await tg.json();
+          if(!tg.ok||!tj.ok) throw new Error('Telegram failed: HTTP '+tg.status+' '+JSON.stringify(tj));
+          console.log(JSON.stringify({sent:true,messageId:tj.result.message_id,exact11:pct(exact),oneXTwo:odds.map(pct)}));
           NODE
