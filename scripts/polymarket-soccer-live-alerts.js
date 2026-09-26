@@ -120,27 +120,57 @@ function gameLive(g){
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
 }
 function gameScore(g){
-  const sources=[g,g?.game,g?.match,g?.result,g?.data].filter(x=>x&&typeof x==="object");
-  for(const x of sources){
-    const h=x.homeScore??x.home_score??x.score?.home??x.score?.homeScore??x.scores?.home??x.scores?.homeScore??x.home?.score??x.home?.score?.current??x.homeTeam?.score??x.homeTeam?.score?.current??x.homeTeam?.score?.value??x.scoreboard?.home?.score??x.scoreboard?.homeScore;
-    const aw=x.awayScore??x.away_score??x.score?.away??x.score?.awayScore??x.scores?.away??x.scores?.awayScore??x.away?.score??x.away?.score?.current??x.awayTeam?.score??x.awayTeam?.score?.current??x.awayTeam?.score?.value??x.scoreboard?.away?.score??x.scoreboard?.awayScore;
-    if(h!=null&&aw!=null)return[h,aw];
-    const raw=t(x.score||x.scoreboard||x.currentScore||x.resultScore);
-    const m=raw.match(/^(\d+)\s*[-–:]\s*(\d+)/);
-    if(m)return[Number(m[1]),Number(m[2])];
+  const seen=new Set();
+  function walk(x,depth=0){
+    if(!x||typeof x!=="object"||depth>8||seen.has(x))return null;
+    seen.add(x);
+    if(!Array.isArray(x)){
+      const h=x.homeScore??x.home_score;
+      const aw=x.awayScore??x.away_score;
+      if(h!=null&&aw!=null)return[Number(h),Number(aw)];
+      for(const k of ["score","scores","scoreboard","result","currentScore","resultScore"]){
+        const v=x[k];
+        if(v&&typeof v==="object"&&!Array.isArray(v)){
+          const hh=v.home??v.homeScore??v.home_score??v.homeTeam?.score;
+          const aa=v.away??v.awayScore??v.away_score??v.awayTeam?.score;
+          if(hh!=null&&aa!=null)return[Number(hh),Number(aa)];
+        }
+      }
+      const raw=t(x.score||x.scoreboard||x.currentScore||x.resultScore);
+      const m=raw.match(/^(\d+)\s*[-–:]\s*(\d+)/);
+      if(m)return[Number(m[1]),Number(m[2])];
+    }
+    for(const v of Object.values(x)){
+      const found=walk(v,depth+1);
+      if(found)return found;
+    }
+    return null;
   }
-  return null;
+  const result=walk(g);
+  return result&&result.every(Number.isFinite)?result:null;
 }
 function gameMinute(g){
-  const sources=[g,g?.game,g?.match,g?.result,g?.data].filter(x=>x&&typeof x==="object");
-  for(const x of sources){
-    const raw=x?.minute??x?.matchMinute??x?.elapsed??x?.clock?.minute??x?.periodTime??x?.matchClock??x?.liveClock??x?.elapsedTime??x?.matchClockMinutes;
-    if(typeof raw==="number"&&Number.isFinite(raw)&&raw>=0&&raw<=130)return Math.floor(raw)+"'";
-    const str=t(raw);
-    const m=str.match(/^(\d{1,3})(?:[:.]\d{1,2})?(?:\s*min)?(?:ute)?(?:[′']|$)/i);
-    if(m){const n=Number(m[1]);if(n>=0&&n<=130)return n+"'";}
+  const seen=new Set();
+  function walk(x,depth=0){
+    if(!x||typeof x!=="object"||depth>8||seen.has(x))return "";
+    seen.add(x);
+    if(!Array.isArray(x)){
+      for(const [k,v] of Object.entries(x)){
+        if(/^(minute|matchMinute|elapsed|elapsedTime|matchClock|liveClock|periodTime|clock|clockMinute|matchClockMinutes)$/i.test(k)){
+          if(typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=130)return Math.floor(v)+"'";
+          const str=t(v);
+          const m=str.match(/^(\d{1,3})(?:[:.]\d{1,2})?(?:\s*min)?(?:ute)?(?:[′']|$)/i);
+          if(m){const n=Number(m[1]);if(n>=0&&n<=130)return n+"'";}
+        }
+      }
+    }
+    for(const v of Object.values(x)){
+      const found=walk(v,depth+1);
+      if(found)return found;
+    }
+    return "";
   }
-  return "";
+  return walk(g);
 }
 function pageGameSnapshot(){ return null; }
 function attachGame(x,g){
