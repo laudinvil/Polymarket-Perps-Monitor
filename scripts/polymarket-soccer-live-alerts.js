@@ -210,7 +210,9 @@ async function discover(){
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
     const game=liveEvents.find(g=>matchGame(item,g));
+    const wsGame=sportsLive.find(g=>matchGame(item,g));
     if(game)attachGame(item,game);
+    else if(wsGame)attachGame(item,wsGame);
     else {
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
       const sc=gameScore(event); if(sc)item.score=sc;
@@ -385,7 +387,7 @@ function buildAlertPages(x){
   const sh=x.score?.[0]??e.homeScore??e.home_score??e.score?.home??null;
   const sa=x.score?.[1]??e.awayScore??e.away_score??e.score?.away??null;
   const status=x.gameStatus||t(e.status||e.gameStatus||e.liveStatus||"LIVE");
-  const start=t(e.startDate||e.start_date||e.startTime);
+  const start=t(e.gameStartTime||e.game_start_time||e.startTime||e.start_time);
   const eventVolume=Number(e.volumeNum??e.volume??e.volume24hr??0);
   const eventLiquidity=Number(e.liquidityNum??e.liquidity??0);
   const totalVolume=rows.reduce((a,r)=>a+r.volume,0);
@@ -398,12 +400,7 @@ function buildAlertPages(x){
     "EVENT LIQUIDITY: "+money(eventLiquidity||totalLiquidity),
     "",
     "ALL ACTIVE MARKETS ("+rows.length+")"].join("\n");
-  const oneX2=rows.filter(r=>{
-    const q=t(r.question).toLowerCase();
-    const n=r.outcomes.map(t).filter(Boolean);
-    return /1x2|match result/.test(q) || (n.length===3 && n.some(v=>/^draw$/i.test(v)));
-  }).slice(0,1);
-  return splitPages(header.replace("ALL ACTIVE MARKETS ("+rows.length+")","1X2 / MATCH RESULT"),oneX2);
+  return splitPages(header,rows);
 }
 let telegramNextAt=0;
 async function sendTelegram(message,replyMarkup){
@@ -483,13 +480,7 @@ async function refreshEvent(x){
   // and can return unrelated markets. Use only markets embedded in this event,
   // then keep soccer match-result / 1X2 markets.
   const embedded=Array.isArray(x.event.markets)?x.event.markets:[];
-  const relevant=embedded.filter(m=>{
-    const q=t(m?.question||m?.title||m?.groupItemTitle).toLowerCase();
-    const outs=parse(m?.outcomes);
-    const outcomeText=Array.isArray(outs)?outs.map(t).join(" ").toLowerCase():"";
-    const n=Array.isArray(outs)?outs.map(t).filter(Boolean):[];
-    return /1x2|match result/.test(q) || (n.length===3 && n.some(v=>/^draw$/i.test(v)));
-  });
+  const relevant=embedded.filter(m=>m&&m.active!==false&&m.closed!==true);
   x.event.markets=relevant;
   console.log(JSON.stringify({
     level:"INFO",event:"MARKETS_FILTERED",eventId:x.eventId,slug:x.slug,
