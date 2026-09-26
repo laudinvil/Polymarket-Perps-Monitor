@@ -503,7 +503,7 @@ async function convexMutation(path,args){
 // Once a URL is successfully claimed, every later cycle/run is blocked,
 // regardless of score, minute, alert phase, or slug changes.
 async function claimFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\\/$/,"");
+  const key=t(eventUrl).replace(/\/$/,"");
   if(!key) return false;
   const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
   try{
@@ -524,7 +524,7 @@ async function claimFootballMatch(eventUrl){
 }
 
 async function releaseFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\\/$/,"");
+  const key=t(eventUrl).replace(/\/$/,"");
   if(!key)return;
   const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
   try{
@@ -574,7 +574,7 @@ async function cycle(){
   console.log(JSON.stringify({level:"INFO",event:"CYCLE_CANDIDATES",count:candidates.length}));
   for(const x of candidates){
     if(stopping)break;
-    const id=t(x.url).replace(/\\/$/,"");if(!id||alerted.has(id)||alerting.has(id))continue;
+    const id=t(x.url).replace(/\/$/,"");if(!id||alerted.has(id)||alerting.has(id))continue;
     alerting.add(id);
     try{
       await refreshEvent(x);
