@@ -1,4 +1,3 @@
-framework: node
-install: npm install
-start: node scripts/deplexo-start.js
+framework: dockerfile
+dockerfile: Dockerfile
 port: 3000
