@@ -226,9 +226,16 @@ function eventFinished(e){
 }
 function oneXTwo(e,home,away){const p=parsePolyOneXTwo(e,home,away);return p?formatOne(p):null;}
 async function claim(key){
-  const r=await fetch(CONVEX+"/football/claim",{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({monitor:"polymarket-football",marketSlug:key}),signal:AbortSignal.timeout(2000)});
-  return r.status===200?await r.json():{claimed:false};
+  try{
+    const r=await fetch(CONVEX+"/football/claim",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({monitor:"polymarket-football",marketSlug:key}),signal:AbortSignal.timeout(2000)});
+    if(r.status===200)return await r.json();
+    log(JSON.stringify({event:"claim_non_200",key,status:r.status}));
+    return {claimed:true,replyToMessageId:null};
+  }catch(err){
+    log(JSON.stringify({event:"claim_failed_fail_open",key,message:err.message}));
+    return {claimed:true,replyToMessageId:null};
+  }
 }
 async function release(key){
   try{await fetch(CONVEX+"/football/release",{method:"POST",headers:{"content-type":"application/json"},
