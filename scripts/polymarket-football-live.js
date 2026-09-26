@@ -642,16 +642,23 @@ async function tick() {
           nutmegScore: nmLive.score,
           nutmegSwapped: Boolean(nmLive.swapped)
         });
-      } else {
+      } else if (nmLive) {
         liveState = await refreshPolymarketLiveState(match);
         if (liveState) {
-          log("INFO", "live_state_from_polymarket_fallback", "Nutmegly live score unavailable; used Polymarket fallback", {
+          log("INFO", "live_state_from_polymarket_fallback", "Nutmegly matched fixture had no live score; used Polymarket fallback", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
             score: liveState.score,
             minute: liveState.minute
           });
         }
+      } else {
+        log("INFO", "live_state_unavailable", "Fixture was not matched to Nutmegly; skipped expensive Polymarket live fallback", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          nutmegMatched: false
+        });
+        return;
       }
       if (!liveState) {
         log("INFO", "live_state_unavailable", "No live score available from Nutmegly or Polymarket; live alert evaluation skipped", {
