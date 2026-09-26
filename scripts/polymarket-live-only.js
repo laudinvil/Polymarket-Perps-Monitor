@@ -52,7 +52,11 @@ function startPolymarketSportsWs(){
       const ws=new WebSocket("wss://sports-api.polymarket.com/ws");
       sportsWs=ws;
       ws.onopen=()=>log(JSON.stringify({event:"polymarket_sports_ws_connected"}));
-      ws.onmessage=ev=>parseSportsWsMessage(String(ev.data||""));
+      ws.onmessage=ev=>{
+        const raw=String(ev.data||"");
+        if(raw!=="ping")log(JSON.stringify({event:"polymarket_sports_ws_message",bytes:raw.length,preview:raw.slice(0,500)}));
+        parseSportsWsMessage(raw);
+      };
       ws.onerror=()=>log(JSON.stringify({event:"polymarket_sports_ws_error"}));
       ws.onclose=()=>{
         if(sportsWs===ws)sportsWs=null;
@@ -292,39 +296,48 @@ function parsePolyOneXTwo(e,home,away){
 
 async function loadPolyMarkets(...events){
   const merged=new Map();
+  const slugs=new Set();
   for(const e of events){
-    const id=t(e?.id||e?.eventId);
-    if(!id)continue;
-    // Keep inline markets first.
+    const slug=t(e?.slug);
+    if(slug)slugs.add(slug);
     for(const m of arr(e?.markets)){
       const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
       if(mid)merged.set(mid,m);
     }
-    try{
-      const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",4500);
-      const markets=Array.isArray(data)?data:arr(data?.markets);
-      for(const m of markets){
-        const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
-        if(mid)merged.set(mid,m);
+  }
+  const bases=[...slugs];
+  for(const slug of bases){
+    const base=slug.replace(/-(?:player-props|player-props-live|exact-score|match-result|moneyline|1x2|game-lines|game-line)$/i,"");
+    for(const candidate of [slug,base,base+"-exact-score",base+"-match-result",base+"-moneyline",base+"-1x2"]){
+      try{
+        const data=await json(GAMMA+"/events?slug="+encodeURIComponent(candidate),4500);
+        const evs=arr(data?.events||data);
+        for(const ev of evs){
+          for(const m of arr(ev?.markets)){
+            const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
+            if(mid)merged.set(mid,m);
+          }
+        }
+      }catch(err){
+        log(JSON.stringify({event:"polymarket_event_markets_fetch_failed",slug:candidate,message:err.message}));
       }
-      log(JSON.stringify({
-        event:"polymarket_markets_loaded",
-        eventId:id,
-        count:markets.length,
-        markets:markets.slice(0,30).map(m=>({
-          id:m?.id,
-          question:m?.question||m?.title||m?.groupItemTitle||m?.slug,
-          outcomes:m?.outcomes,
-          outcomePrices:m?.outcomePrices??m?.outcome_prices,
-          active:m?.active,
-          closed:m?.closed
-        }))
-      }));
-    }catch(err){
-      log(JSON.stringify({event:"polymarket_markets_fetch_failed",eventId:id,message:err.message}));
     }
   }
-  return [...merged.values()];
+  const markets=[...merged.values()];
+  log(JSON.stringify({
+    event:"polymarket_markets_loaded",
+    slugs:bases,
+    count:markets.length,
+    markets:markets.slice(0,40).map(m=>({
+      id:m?.id,
+      question:m?.question||m?.title||m?.groupItemTitle||m?.slug,
+      outcomes:m?.outcomes,
+      outcomePrices:m?.outcomePrices??m?.outcome_prices,
+      active:m?.active,
+      closed:m?.closed
+    }))
+  }));
+  return markets;
 }
 
 function exactScore11FromMarkets(markets){
@@ -732,8 +745,8 @@ async function discoverLiveZeroZero(){
       // Never send a price-less LIVE alert. Both 1X2 and 1:1
       // prices must be present in the Telegram message.
       const alertPrices={
-        one:polyOne||sofa.one||null,
-        exact:polyExact!=null?polyExact:(sofa.exact!=null?sofa.exact:null)
+        one:polyOne||null,
+        exact:polyExact!=null?polyExact:null
       };
       if(!alertPrices.one||alertPrices.exact==null){
         log(JSON.stringify({
