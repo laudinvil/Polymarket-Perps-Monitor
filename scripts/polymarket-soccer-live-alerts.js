@@ -84,10 +84,10 @@ function gameMinute(g){
 }
 function pageGameSnapshot(html, home, away, startValue){
   const raw=decode(html)
-    .replace(/<script[\\s\\S]*?<\\/script>/gi," ")
-    .replace(/<style[\\s\\S]*?<\\/style>/gi," ")
+    .replace(/<script[\s\S]*?<\\/script>/gi," ")
+    .replace(/<style[\s\S]*?<\\/style>/gi," ")
     .replace(/<[^>]+>/g," ")
-    .replace(/\\s+/g," ")
+    .replace(/\s+/g," ")
     .trim();
   const h=t(home),a=t(away);
   const hi=raw.toLowerCase().indexOf(h.toLowerCase());
@@ -96,9 +96,9 @@ function pageGameSnapshot(html, home, away, startValue){
   const ai=window.toLowerCase().indexOf(a.toLowerCase());
   if(ai<0)return null;
   const between=window.slice(0,ai+h.length);
-  const scoreMatches=[...between.matchAll(/(?:^|\\s)(\\d{1,3})\\s*[-–:]\\s*(\\d{1,3})(?:\\s|$)/g)];
+  const scoreMatches=[...between.matchAll(/(?:^|\s)(\d{1,3})\s*[-–:]\s*(\d{1,3})(?:\s|$)/g)];
   const score=scoreMatches.length? [Number(scoreMatches.at(-1)[1]),Number(scoreMatches.at(-1)[2])] : null;
-  const minuteMatch=window.match(/(?:^|\\s)(\\d{1,3})[′']/);
+  const minuteMatch=window.match(/(?:^|\s)(\d{1,3})[′']/);
   let minute=minuteMatch?minuteMatch[1]+"'" :"";
   if(!minute){
     const start=Date.parse(startValue||"");
@@ -417,21 +417,21 @@ function pct(v){const n=Number(v);return Number.isFinite(n)?(n*100).toFixed(1).r
 function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:0}):"—";}
 function marketText(r){
   const title=(r.question||r.group||"Market")
-    .replace(/^Will\\s+/i,"")
-    .replace(/\\s+on\\s+\\d{4}-\\d{2}-\\d{2}\\??$/i,"")
-    .replace(/\\s+end\\s+in\\s+a\\s+draw\\??$/i," — Draw");
+    .replace(/^Will\s+/i,"")
+    .replace(/\s+on\s+\d{4}-\d{2}-\d{2}\\??$/i,"")
+    .replace(/\s+end\s+in\s+a\s+draw\\??$/i," — Draw");
   const vals=r.outcomes.map((o,i)=>{
     const p=Number.isFinite(r.prices[i])?pct(r.prices[i]):"—";
     return o+": "+p;
-  }).join("\\n");
-  return title+"\\n"+vals+"\\nVOL: "+money(r.volume)+"\\nLIQ: "+money(r.liquidity);
+  }).join("\n");
+  return title+"\n"+vals+"\nVOL: "+money(r.volume)+"\nLIQ: "+money(r.liquidity);
 }
 function splitPages(header,rows,maxLen=TELEGRAM_MAX){
   const pages=[];let current=header;
   for(const row of rows){
     const block=marketText(row);
-    if(current.length+2+block.length>maxLen&&current!==header){pages.push(current);current=header+"\\n\\n"+block;}
-    else current+="\\n\\n"+block;
+    if(current.length+2+block.length>maxLen&&current!==header){pages.push(current);current=header+"\n\n"+block;}
+    else current+="\n\n"+block;
   }
   if(current!==header||pages.length===0)pages.push(current);
   return pages;
@@ -560,8 +560,8 @@ async function cycle(){
         const pages=buildAlertPages(x);
         for(let i=0;i<pages.length;i++){
           const label=pages.length>1?"📄 "+(i+1)+"/"+pages.length:"";
-          const suffix="\\n\\n"+x.url;
-          await sendTelegram((label?(label+"\\n\\n"):"")+pages[i]+suffix);
+          const suffix="\n\n"+x.url;
+          await sendTelegram((label?(label+"\n\n"):"")+pages[i]+suffix);
         }
         alerted.add(id);
       } catch(e) {
