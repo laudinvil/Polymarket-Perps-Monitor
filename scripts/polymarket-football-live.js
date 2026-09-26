@@ -1,12 +1,12 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
 
-const POLL_MS = 20_000; // Polymarket-only polling.
+const POLL_MS = 15_000; // Polymarket-only polling.
 const MIN_EDGE = 0.01;
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = 15 * 60 * 1000;
-const EARLY_WINDOW_MS = 45 * 60 * 1000;
+const PREMATCH_WINDOW_MS = 0;
+const EARLY_WINDOW_MS = 0;
 const BALANCE_MAX_DIFF = 0.15; // BUY only when 1X2 home/away probabilities differ by at most 15 percentage points.
 const MIN_DRAW_PROB = 0.22;
 const MIN_BTTS_PROB = 0.45;
