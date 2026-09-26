@@ -494,11 +494,13 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
     try{
       const sent=await sendTelegram(message,claim.replyToMessageId);
       if(!sent.ok)throw new Error("Telegram not configured");
-      await saveTelegramMessageId(claimKey,sent.messageId);
+      try { await saveTelegramMessageId(claimKey,sent.messageId); } catch (saveErr) {
+        log("WARN","telegram_message_id_save_failed","Telegram message was already sent; dedupe claim is intentionally kept",{eventId:match.eventId,messageId:sent.messageId,message:saveErr.message});
+      }
       log("INFO","live_alert_sent","First LIVE alert sent for Soccer fixture found on Polymarket /sports/live",{eventId:match.eventId,score:{home,away},telegramMessageId:sent.messageId});
     }catch(err){
       await releaseTelegramAlert(claimKey);
-      log("ERROR","telegram_send_failed","LIVE alert send failed; claim released",{eventId:match.eventId,message:err.message});
+      log("ERROR","telegram_send_failed","Telegram send failed before confirmation; claim released",{eventId:match.eventId,message:err.message});
     }
     return;
   }
