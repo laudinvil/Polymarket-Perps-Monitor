@@ -87,7 +87,7 @@ export const admitCandidate = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, { data: args.data, updatedAt: now });
     } else {
-      await ctx.db.insert("footballCandidates", { monitor: MONITOR, key: args.key, data: args.data, admittedAt: now, updatedAt: now, buySent: false });
+      await ctx.db.insert("footballCandidates", { monitor: MONITOR, key: args.key, data: args.data, admittedAt: now, updatedAt: now, buySent: false, startedSent: false, sellSent: false });
     }
     return null;
   },
@@ -103,12 +103,32 @@ export const markCandidateBuySent = mutation({
   },
 });
 
+export const markCandidateStartedSent = mutation({
+  args: { key: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("footballCandidates").withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key)).first();
+    if (row) await ctx.db.patch(row._id, { startedSent: true, updatedAt: Date.now() });
+    return null;
+  },
+});
+
+export const markCandidateSellSent = mutation({
+  args: { key: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("footballCandidates").withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key)).first();
+    if (row) await ctx.db.patch(row._id, { sellSent: true, updatedAt: Date.now() });
+    return null;
+  },
+});
+
 export const admittedCandidates = query({
   args: {},
-  returns: v.array(v.object({ key: v.string(), data: v.string(), buySent: v.boolean() })),
+  returns: v.array(v.object({ key: v.string(), data: v.string(), buySent: v.boolean(), startedSent: v.boolean(), sellSent: v.boolean() })),
   handler: async (ctx) => {
     const rows = await ctx.db.query("footballCandidates").withIndex("by_monitor", q => q.eq("monitor", MONITOR)).collect();
-    return rows.map(row => ({ key: row.key, data: row.data, buySent: row.buySent }));
+    return rows.map(row => ({ key: row.key, data: row.data, buySent: row.buySent, startedSent: row.startedSent ?? false, sellSent: row.sellSent ?? false }));
   },
 });
 
