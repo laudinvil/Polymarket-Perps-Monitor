@@ -85,21 +85,16 @@ function scoreFromCard(card){
   const h=Number(m[1]),a=Number(m[2]);
   return h<=20&&a<=20?{home:h,away:a}:null;
 }
-function exactScore11Yes(e,extraMarkets=[]){
-  const markets=[...arr(e?.markets),...arr(extraMarkets)];
+function exactScore11Yes(e){
+  const markets=arr(e?.markets);
   for(const m of markets){
     if(m?.active===false||m?.closed===true)continue;
-    const os=arr(m?.outcomes),ps=arr(m?.outcomePrices??m?.outcome_prices).map(Number);
-    if(os.length!==ps.length||os.length<2||ps.some(x=>!Number.isFinite(x)))continue;
-    const fields=[m.question,m.groupItemTitle,m.group_item_title,m.title,m.slug].map(norm).filter(Boolean);
-    const q=fields.join(" ");
-    const has11=fields.some(x=>/(^| )1[ :\-–]1($| )/.test(x)||x.includes("1 1"));
-    const exactLabel=/(exact score|correct score|correct result|exact result|score)/.test(q);
+    const title=norm(m.groupItemTitle||m.group_item_title||m.question||m.title||m.slug);
+    if(!/(exact score|correct score|точн|точный)/.test(title))continue;
+    const os=arr(m.outcomes),ps=arr(m.outcomePrices??m.outcome_prices).map(Number);
+    if(os.length!==ps.length||!ps.length)continue;
     for(let i=0;i<os.length;i++){
-      const o=norm(os[i]);
-      const yes=/^yes$/.test(o);
-      const direct=/^1[ :\-–]1$/.test(o)||/^1 1$/.test(o);
-      if((yes&&(has11||exactLabel&&has11))||direct){
+      if(/^1[ :\\-–]1$/.test(norm(os[i]))||(/^yes$/.test(norm(os[i]))&&/(1[ :\\-–]1)/.test(title))){
         const value=ps[i];
         if(value>=0&&value<=1)return value;
       }
@@ -113,14 +108,13 @@ async function exactScore11(e){
   const id=t(e?.id||e?.eventId);
   if(!id)return null;
   try{
-    const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=100",3500);
-    const markets=Array.isArray(data)?data:(arr(data?.markets).length?data.markets:[]);
-    const value=exactScore11Yes({markets});
-    if(value!==null)return value;
+    const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",3500);
+    const markets=Array.isArray(data)?data:arr(data?.markets);
+    return exactScore11Yes({markets});
   }catch(err){
     console.log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
+    return null;
   }
-  return null;
 }
 function pct(v){return Math.round(v*100)+"%";}
 function exactDelta(first,current){
