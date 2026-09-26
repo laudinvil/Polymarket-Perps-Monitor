@@ -746,6 +746,16 @@ async function refreshEvent(x){
   if(fresh)x.event=fresh;
   if(!x.event)return null;
 
+  // Keep the authoritative live score/clock already attached to the candidate.
+  // Gamma refresh is only for current markets/event metadata and must not erase
+  // live Sports WS facts.
+  const preservedScore=x.score;
+  const preservedMinute=x.minute;
+  const preservedStatus=x.gameStatus;
+  if(preservedScore)x.score=preservedScore;
+  if(preservedMinute)x.minute=preservedMinute;
+  if(preservedStatus)x.gameStatus=preservedStatus;
+
   // Never query /markets globally here: some Gamma deployments ignore event_id
   // and can return unrelated markets. Use only markets embedded in this event,
   // then keep soccer match-result / 1X2 markets.
