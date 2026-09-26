@@ -455,12 +455,29 @@ async function discoverLiveZeroZero(){
     // canonical fixture and both requested Polymarket market values.
     const polyOne=parsePolyOneXTwo(fixture,phome,paway);
     const polyExact=await exactScore11(pm);
+    // The live-state source is the tagged Polymarket child event (pm).
+    // fixtureParentEvent() is used only to recover the canonical fixture and
+    // its URL/markets. The parent often has no live/status flags of its own,
+    // so requiring fixture.live here can reject every real live match.
     const fixtureStarted=startMs(fixture);
+    const sourceStarted=startMs(pm);
+    const effectiveStartMs=Number.isFinite(fixtureStarted)?fixtureStarted:sourceStarted;
     const fixtureStatus=t(fixture?.gameStatus||fixture?.game_status||fixture?.status||fixture?.state).toLowerCase();
-    const fixtureLive=Number.isFinite(fixtureStarted)&&fixtureStarted<=Date.now() &&
-      (fixture?.live===true||fixture?.isLive===true||liveTypes.has(fixtureStatus));
+    const sourceStatus=t(pm?.gameStatus||pm?.game_status||pm?.status||pm?.state).toLowerCase();
+    const sourceLive=pm?.live===true||pm?.isLive===true||liveTypes.has(sourceStatus);
+    const canonicalLive=fixture?.live===true||fixture?.isLive===true||liveTypes.has(fixtureStatus);
+    const fixtureLive=Number.isFinite(effectiveStartMs)&&effectiveStartMs<=Date.now()&&(sourceLive||canonicalLive);
     if(!fixtureLive){
-      log(JSON.stringify({event:"live_candidate_rejected_not_started",sourceSlug:pm?.slug,fixtureSlug:fixture?.slug,startMs:fixtureStarted,status:fixtureStatus,live:fixture?.live}));
+      log(JSON.stringify({
+        event:"live_candidate_rejected_not_started",
+        sourceSlug:pm?.slug,
+        fixtureSlug:fixture?.slug,
+        startMs:effectiveStartMs,
+        fixtureStatus,
+        sourceStatus,
+        sourceLive:!!sourceLive,
+        canonicalLive:!!canonicalLive
+      }));
       continue;
     }
     // Missing 1X2 / 1:1 data must NOT suppress the first LIVE alert.
