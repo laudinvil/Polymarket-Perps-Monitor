@@ -70,6 +70,13 @@ function extractEmbeddedLiveGames(html){
     const txt=raw.trim();
     if(!txt)continue;
     try{walk(JSON.parse(txt));}catch{}
+    for(const m of txt.matchAll(/\\{[^{}]{0,12000}(?:homeScore|awayScore|scoreboard|matchClock|elapsed|gameId|eventId)[^{}]{0,12000}\\}/g)){
+      try{walk(JSON.parse(m[0]));}catch{}
+    }
+  }
+  const decoded=String(html||"").replace(/&quot;/g,'"').replace(/&#x27;/g,"'").replace(/&amp;/g,"&");
+  for(const m of decoded.matchAll(/\\{[^{}]{0,16000}(?:homeScore|awayScore|scoreboard|matchClock|elapsed|gameId|eventId)[^{}]{0,16000}\\}/g)){
+    try{walk(JSON.parse(m[0]));}catch{}
   }
   return out;
 }
