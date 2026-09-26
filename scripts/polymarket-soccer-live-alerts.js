@@ -65,7 +65,12 @@ function eventLiveWindow(event){
   if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
   const start=Date.parse(event.startDate||event.start_date||event.startTime||event.gameStartTime||"");
   const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
-  return Number.isFinite(start)&&start<=now&&Number.isFinite(end)&&end>=now;
+  // Gamma soccer events often expose startDate but omit endDate/live flags.
+  // A started active event is therefore live-window eligible unless its explicit end is past.
+  if(Number.isFinite(start)&&start<=now){
+    return !Number.isFinite(end)||end>=now;
+  }
+  return false;
 }
 
 async function discover(){
@@ -116,12 +121,16 @@ async function discover(){
     try{
       const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&limit=500&order=startDate&ascending=false",{timeout:8000});
       const events=Array.isArray(raw)?raw:[];
+      console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback_scan",events:events.length,sample:events.slice(0,10).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,start:e?.startDate,end:e?.endDate,status:e?.status,active:e?.active,closed:e?.closed}))}));
       for(const event of events)await addEvent(event,null);
       console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback",events:events.length,added:candidates.length}));
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"gamma_soccer_fallback_failed",message:e.message}));}
   }
 
-  console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away,minute:x.minute,score:x.score}))}));
+  console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away,minute:x.minute,score:x.score,status:x.gameStatus}))}));
+  if(candidates.length===0){
+    console.log(JSON.stringify({level:"ERROR",event:"NO_LIVE_CANDIDATES",diagnostic:"No soccer candidate survived discovery. Check source_scan, gamma_soccer_fallback_scan and candidate_reject records above."}));
+  }
   return candidates;
 }
 function marketRows(event){
