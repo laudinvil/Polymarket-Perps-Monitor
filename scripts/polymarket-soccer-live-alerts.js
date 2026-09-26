@@ -272,9 +272,11 @@ async function discover(){
     }
   }
 
-  // Secondary authoritative source: active Gamma /events. It is accepted only after
-  // local soccer classification and the actual fixture LIVE-window check.
-  for(const g of liveEvents){
+  // Secondary authoritative source: active Gamma /events. Keep this bounded so a
+  // slow/stale Gamma list can never delay the live-page candidates past a diagnostic run.
+  const secondaryLiveEvents=liveEvents.slice(0,DIAGNOSTIC_MODE?8:20);
+  console.log(JSON.stringify({level:"INFO",event:"secondary_live_event_scan",total:liveEvents.length,processed:secondaryLiveEvents.length,diagnostic:DIAGNOSTIC_MODE}));
+  for(const g of secondaryLiveEvents){
     try{
       const gameSlug=t(g.slug||g.eventSlug||g.event_slug);
       const gameId=t(g.gameId||g.game_id||g.id);
@@ -299,7 +301,8 @@ async function discover(){
   // Use its soccer fixture links as a LIVE gate when Sports WS/Gamma live feeds
   // are unavailable. Gamma is still used only to resolve the actual event/markets.
   let pageLiveResolved = 0;
-  for(const href of liveLinks){
+  const pageLinks=liveLinks.slice(0,DIAGNOSTIC_MODE?20:50);
+  for(const href of pageLinks){
     if(candidates.length >= 50)break;
     const slug=fixtureSlug(href);
     if(!slug)continue;
@@ -321,7 +324,7 @@ async function discover(){
       console.log(JSON.stringify({level:"WARN",event:"live_page_candidate_failed",href,slug,message:e.message}));
     }
   }
-  console.log(JSON.stringify({level:"INFO",event:"live_page_used_as_live_gate",links:liveLinks.length,resolved:pageLiveResolved}));
+  console.log(JSON.stringify({level:"INFO",event:"live_page_used_as_live_gate",links:liveLinks.length,processed:pageLinks.length,resolved:pageLiveResolved}));
 
   // Gamma soccer events without an authoritative live flag are diagnostics only.
   // They must never become LIVE candidates: this prevents prematch/future alerts.
