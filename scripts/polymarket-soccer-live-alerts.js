@@ -415,13 +415,19 @@ async function convexMutation(path,args){
   return r.json();
 }
 
+// Football dedupe is local because the deployed Convex function is not guaranteed
+// to be present in every deployment. Workflow concurrency is cancel-in-progress,
+// so only one active monitor instance is allowed to claim/send a match.
+const footballClaims=new Set();
+
 async function claimFootballMatch(slug){
-  const b=await convexMutation("btc5mState:claimFootballMatch",{marketSlug:slug});
-  return b && b.value && b.value.allowed===true;
+  if(footballClaims.has(slug))return false;
+  footballClaims.add(slug);
+  return true;
 }
 
 async function releaseFootballMatch(slug){
-  await convexMutation("btc5mState:releaseFootballMatch",{marketSlug:slug});
+  footballClaims.delete(slug);
 }
 
 const alerted=new Set();
