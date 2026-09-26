@@ -37,6 +37,7 @@ jobs:
           };
           const norm=v=>String(v??'').replace(/\s+/g,' ').trim().toLowerCase();
           const prices=v=>arr(v).map(Number);
+          console.log('MARKET_DIAGNOSTIC_RUN');
           const slug='unl-slv-sco-2026-09-26';
           const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
           const home='slovenia',away='scotland';
