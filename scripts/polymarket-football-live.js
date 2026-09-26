@@ -590,7 +590,10 @@ async function claimTelegramAlert(key) {
     });
     const body = await response.json().catch(() => ({}));
     if (response.status === 200) return { claimed: true, replyToMessageId: body.replyToMessageId ?? null };
-    if (response.status === 409) {\n      log("INFO", "telegram_claim_denied", "Telegram dedupe already claimed this alert", { key, status: 409 });\n      return { claimed: false, replyToMessageId: null };\n    }
+    if (response.status === 409) {
+      log("INFO", "telegram_claim_denied", "Telegram dedupe already claimed this alert", { key, status: 409 });
+      return { claimed: false, replyToMessageId: null };
+    }
     throw new Error("Convex claim HTTP " + response.status);
   } catch (err) {
     log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
