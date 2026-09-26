@@ -19,7 +19,9 @@ jobs:
         with:
           node-version: 22
       - name: Run live soccer monitor
+        env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: node scripts/polymarket-soccer-live-alerts.js
