@@ -321,15 +321,6 @@ function findMatchResultMarket(match) {
   return null;
 }
 
-function balancedFromPolymarket(market) {
-  return Boolean(
-    market &&
-    Number.isFinite(market.homeProb) &&
-    Number.isFinite(market.awayProb) &&
-    Math.abs(market.homeProb - market.awayProb) <= BALANCE_MAX_DIFF
-  );
-}
-
 function classifyFixturePhase(_match, liveState) {
   return liveState?.status === "live" ? "live" : "not_live";
 }
@@ -395,7 +386,7 @@ async function ensureEventMarkets(match) {
       match.markets = [...byId.values()];
 
       const oneXTwo = findMatchResultMarket(match);
-      log("INFO", "event_markets_loaded", "Current Polymarket markets refreshed before BUY", {
+      log("INFO", "event_markets_loaded", "Current Polymarket 1X2 markets refreshed before alert", {
         eventId: match.eventId,
         attempt,
         marketCount: match.markets.length,
