@@ -8,7 +8,7 @@ const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
 const EARLY_WINDOW_MS = 45 * 60 * 1000;
 const NUTMEG_CACHE_MS = 30 * 1000;
-const BALANCE_MAX_DIFF = 0.15;
+const BALANCE_MAX_DIFF = 0.25; // Wider balanced window so valid near-even matches can reach BUY.
 const MIN_DRAW_PROB = 0.22;
 const MIN_BTTS_PROB = 0.45;
 
@@ -578,7 +578,7 @@ async function tick() {
       // must never be misclassified as pre-match merely because kickoff metadata
       // is stale or inaccurate.
       const nm = findNutmegMatch(match, nutmeg);
-      // Nutmeg probabilities are cached for 5 minutes, but live score must
+      // Nutmeg probabilities refresh every 30s, while live score must
       // never inherit that cache. Refresh Polymarket live state every 20s so
       // a goal can trigger SELL on the next monitor cycle.
       const fastLiveState = nm ? await refreshPolymarketLiveState(match) : null;
@@ -626,7 +626,7 @@ async function tick() {
         return;
       }
 
-      // Nutmegly is the probability/matching source and may be cached for
+      // Nutmegly is the probability/matching source and refreshes every 30s.
       // 5 minutes. Score monitoring is independent and refreshes from Gamma
       // every 20s. Nutmeg live score is only a secondary fallback.
       const nmLive = nm;
