@@ -65,12 +65,16 @@ function arr(v){
   return [];
 }
 async function json(url, timeout=5000){
-  const headers={
+  const isSofa=/^https:\/\/api\.sofascore\.com\//.test(url);
+  const headers=isSofa ? {
     accept:"application/json, text/plain, */*",
     "accept-language":"en-US,en;q=0.9",
     "user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
     origin:"https://www.sofascore.com",
     referer:"https://www.sofascore.com/"
+  } : {
+    accept:"application/json",
+    "user-agent":"Mozilla/5.0"
   };
   let last;
   for(let attempt=0;attempt<2;attempt++){
@@ -78,7 +82,7 @@ async function json(url, timeout=5000){
       const r=await fetch(url,{headers,signal:AbortSignal.timeout(timeout)});
       if(!r.ok){
         last=new Error("HTTP "+r.status+" "+url);
-        if(r.status===403&&attempt===0){await new Promise(x=>setTimeout(x,250));continue;}
+        if((r.status===403||r.status===429)&&attempt===0){await new Promise(x=>setTimeout(x,250));continue;}
         throw last;
       }
       return r.json();
@@ -327,8 +331,9 @@ async function discoverLiveZeroZero(){
       log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
       const candidates=await polymarketSearch(home,away);
       const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
+      log(JSON.stringify({event:"polymarket_search_result",teams:[home,away],minute,results:candidates.length,matched:!!pm,matchedEventId:pm?.id||pm?.eventId||null}));
       if(!pm){
-        log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute}));
+        log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute,searchResults:candidates.slice(0,5).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,homeTeam:e?.homeTeam,awayTeam:e?.awayTeam}))}));
         continue;
       }
       await sendLiveFound(home,away,minute,score,sofa,pm);
