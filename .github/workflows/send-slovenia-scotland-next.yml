@@ -1,0 +1,48 @@
+name: Send Slovenia Scotland NEXT
+
+on:
+  push:
+    paths:
+      - '.github/workflows/send-slovenia-scotland-next.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram NEXT
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          node <<'NODE'
+          const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
+          const slug='unl-slv-sco-2026-09-26';
+          const e=await (await fetch('https://gamma-api.polymarket.com/events/slug/'+slug)).json();
+          const markets=Array.isArray(e.markets)?e.markets:[];
+          let exact=null;
+          for(const m of markets){
+            const g=String(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section||'').toLowerCase();
+            const q=String(m.question||m.title||m.slug||'').toLowerCase();
+            if(!/(exact score|correct score|точн)/.test(g+' '+q)) continue;
+            const os=Array.isArray(m.outcomes)?m.outcomes:JSON.parse(m.outcomes||'[]');
+            const ps=Array.isArray(m.outcomePrices)?m.outcomePrices.map(Number):JSON.parse(m.outcomePrices||'[]').map(Number);
+            for(let i=0;i<os.length;i++){
+              if(String(os[i]).trim().toLowerCase()==='yes' && /1\s*[-:]\s*1/.test(q)) exact=ps[i];
+              if(/^1\s*[-:]\s*1$/.test(String(os[i]).trim())) exact=ps[i];
+            }
+          }
+          if(exact==null) throw new Error('Exact Score 1:1 price not found');
+          const p=String(Math.round(exact*100))+'%';
+          const text=['⚽ NEXT','','Slovenia vs Scotland','1:1 YES: '+p,'','1: 38% · X: 31% · 2: 33%','','➡️ OPEN MATCH',eventUrl].join('\n');
+          const r=await fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/sendMessage',{
+            method:'POST',headers:{'content-type':'application/json'},
+            body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text,disable_web_page_preview:false})
+          });
+          if(!r.ok) throw new Error('Telegram HTTP '+r.status);
+          const j=await r.json();
+          if(!j.ok) throw new Error('Telegram rejected message');
+          console.log(JSON.stringify({sent:true,messageId:j.result.message_id,exact11:p}));
+          NODE
