@@ -202,7 +202,7 @@ async function discoverLivePageFixtures() {
     const re = /href=["\'](\/ru\/sports\/[^"\']+)["\']/gi;
     let m;
     while ((m = re.exec(html))) hrefs.add(m[1]);
-    const slugs = Array.from(hrefs).map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-vs-|-v-|-versus-/i.test(slug));
+    const slugs = Array.from(hrefs).map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
     const rows = [];
     for (const slug of slugs.slice(0, 40)) {
       try {
