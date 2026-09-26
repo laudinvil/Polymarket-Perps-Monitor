@@ -27,7 +27,6 @@ export default defineSchema({
     footballEvents: v.optional(v.number()),
     candidateGatePassed: v.optional(v.number()),
     liveToday: v.optional(v.number()),
-    preMatchFuture: v.optional(v.number()),
     unknownDate: v.optional(v.number()),
     childMarketFiltered: v.optional(v.number()),
     oneOneMarketFound: v.optional(v.number()),
