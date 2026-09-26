@@ -1,13 +1,13 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
 
-const POLL_MS = 20_000; // Fast score polling remains independent from the 5-minute Nutmeg cache.
+const POLL_MS = 20_000; // Fast score polling; Nutmeg probabilities refresh every 30s.
 const MIN_EDGE = 0.01;
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
 const EARLY_WINDOW_MS = 45 * 60 * 1000;
-const NUTMEG_CACHE_MS = 5 * 60 * 1000;
+const NUTMEG_CACHE_MS = 30 * 1000;
 const BALANCE_MAX_DIFF = 0.15;
 const MIN_DRAW_PROB = 0.22;
 const MIN_BTTS_PROB = 0.45;
