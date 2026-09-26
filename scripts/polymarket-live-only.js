@@ -349,45 +349,140 @@ async function saveId(key,id){
   try{await fetch(CONVEX+"/football/telegram-message",{method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({monitor:"polymarket-football",marketSlug:key,messageId:id}),signal:AbortSignal.timeout(2000)});}catch{}
 }
-async function discoverLiveZeroZero(){
-  const live=await sofascoreLive(),events=arr(live?.events);
-  const liveTypes=new Set(["inprogress","halftime","paused","suspended","interrupted"]);
-  const inprogress=events.filter(e=>liveTypes.has(t(e?.status?.type).toLowerCase()));
-  log(JSON.stringify({event:"sofascore_live_snapshot",total:events.length,inprogress:inprogress.length,liveTypes:[...new Set(events.map(e=>t(e?.status?.type).toLowerCase()).filter(Boolean))]}));
-  const found=[];
-  for(const s of inprogress){
-    const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
-    if(!s?.id||!home||!away)continue;
+async function polymarketSportsLive(){
+  const sports=arr(await json(GAMMA+"/sports",5000));
+  const soccerSports=sports.filter(s=>{
+    const name=t(s?.sport||s?.name||s?.slug).toLowerCase();
+    return /soccer|football/.test(name);
+  });
+  const tagIds=new Set(["100639"]);
+  for(const s of soccerSports){
+    const raw=t(s?.tags||s?.tagIds||s?.tag_ids);
+    for(const id of raw.split(/[,\\s]+/).map(x=>x.trim()).filter(Boolean))tagIds.add(id);
+  }
+  const merged=new Map();
+  for(const tagId of tagIds){
     try{
-      const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
-      const sofa=await sofascoreOdds(s.id,home,away);
-      log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
-      const candidates=await polymarketSearch(home,away);
-      const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
-      log(JSON.stringify({event:"polymarket_search_result",teams:[home,away],minute,results:candidates.length,matched:!!pm,matchedEventId:pm?.id||pm?.eventId||null}));
-      if(!pm){
-        log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute,searchResults:candidates.slice(0,5).map(e=>({id:e?.id,slug:e?.slug,title:e?.title,homeTeam:e?.homeTeam,awayTeam:e?.awayTeam}))}));
-        continue;
+      const page=await json(GAMMA+"/events?tag_id="+encodeURIComponent(tagId)+"&related_tags=true&closed=false&limit=100&order=volume24hr&ascending=false",5000);
+      for(const e of arr(page?.events||page)){
+        const id=t(e?.id||e?.eventId||e?.slug);
+        if(id)merged.set(id,e);
       }
-      await sendLiveFound(home,away,minute,score,sofa,pm);
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_sports_events_failed",tagId,message:err.message}));
+    }
+  }
+  const all=[...merged.values()];
+  const liveStatuses=new Set(["live","inprogress","in progress","halftime","paused","suspended","interrupted"]);
+  const live=all.filter(e=>{
+    const status=t(e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
+    return e?.live===true||e?.isLive===true||liveStatuses.has(status);
+  });
+  log(JSON.stringify({
+    event:"polymarket_live_snapshot",
+    sports:soccerSports.map(s=>({sport:s?.sport,name:s?.name,tags:s?.tags})),
+    tagIds:[...tagIds],
+    total:all.length,
+    live:live.length,
+    liveMatches:live.slice(0,20).map(e=>{
+      const tt=teamsFromEvent(e);
+      return {id:e?.id,slug:e?.slug,teams:tt,gameStatus:e?.gameStatus,live:e?.live,score:eventScore(e)};
+    })
+  }));
+  return live;
+}
+
+async function discoverLiveZeroZero(){
+  // PRIMARY: Polymarket's own sports/live state. Sofascore is enrichment, not the gate.
+  const polyLive=await polymarketSportsLive();
+  const sofaPayload=await sofascoreLive().catch(err=>{
+    log(JSON.stringify({event:"sofascore_live_optional_failed",message:err.message}));
+    return {events:[]};
+  });
+  const sofaEvents=arr(sofaPayload?.events);
+  const liveTypes=new Set(["inprogress","halftime","paused","suspended","interrupted"]);
+  const sofaLive=sofaEvents.filter(e=>liveTypes.has(t(e?.status?.type).toLowerCase()));
+  log(JSON.stringify({
+    event:"sofascore_live_snapshot",
+    total:sofaEvents.length,
+    inprogress:sofaLive.length,
+    liveTypes:[...new Set(sofaEvents.map(e=>t(e?.status?.type).toLowerCase()).filter(Boolean))]
+  }));
+
+  const found=[];
+  for(const pm of polyLive){
+    const [phome,paway]=teamsFromEvent(pm);
+    if(!phome||!paway)continue;
+    try{
+      const sofaEvent=sofaLive.find(s=>{
+        const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
+        return sameMatch({homeTeam:home,awayTeam:away},phome,paway);
+      });
+      const score=eventScore(pm)||
+        (sofaEvent?{home:Number(sofaEvent?.homeScore?.current),away:Number(sofaEvent?.awayScore?.current)}:{home:0,away:0});
+      const minute=sofaEvent?sofascoreMinute(sofaEvent):0;
+      let sofa={one:null,exact:null};
+      if(sofaEvent){
+        sofa=await sofascoreOdds(sofaEvent.id,phome,paway);
+      }
+      log(JSON.stringify({
+        event:"polymarket_live_candidate",
+        teams:[phome,paway],
+        polyId:pm?.id||pm?.eventId,
+        slug:pm?.slug,
+        gameStatus:pm?.gameStatus,
+        live:pm?.live,
+        score,
+        minute,
+        sofascoreMatched:!!sofaEvent,
+        sofaId:sofaEvent?.id||null,
+        sofa
+      }));
+
+      // No odds, score, 0:0 or Sofascore match is allowed to block this first LIVE alert.
+      await sendLiveFound(phome,paway,minute,score,sofa,pm);
+
+      if(!sofaEvent)continue;
       if(!sofa.one||sofa.exact==null){
-        log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
-        if(sofa.one&&sofa.exact==null)await sendDataCheck(home,away,minute,sofa,pm);
+        log(JSON.stringify({
+          event:"sofascore_required_odds_missing",
+          teams:[phome,paway],
+          minute,
+          has1x2:!!sofa.one,
+          hasExact11:sofa.exact!=null,
+          sofa
+        }));
+        if(sofa.one&&sofa.exact==null)await sendDataCheck(phome,paway,minute,sofa,pm);
         continue;
       }
+
       const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
       const diff=Math.abs(sofa.one.home-sofa.one.away);
       const pass=diff<=APPROX_MAX_DIFF;
-      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,score,sofa,homePrice:sofa.one.home,awayPrice:sofa.one.away,diff,threshold:APPROX_MAX_DIFF,pass,polymarketEventId:polyId,polymarketSlug:polySlug}));
+      log(JSON.stringify({
+        event:"live_filter_check",
+        teams:[phome,paway],
+        minute,
+        score,
+        sofa,
+        homePrice:sofa.one.home,
+        awayPrice:sofa.one.away,
+        diff,
+        threshold:APPROX_MAX_DIFF,
+        pass,
+        polymarketEventId:polyId,
+        polymarketSlug:polySlug
+      }));
       if(!pass)continue;
-      const key=polyId||polySlug,tt=teamsFromEvent(pm);
+
+      const key=polyId||polySlug;
       const existing=tracked.get(key);
       if(existing){
-        existing.sofaId=String(s.id);
+        existing.sofaId=String(sofaEvent.id);
         existing.slug=polySlug||existing.slug;
         existing.href=polyEventUrl(pm)||existing.href;
-        existing.home=tt[0]||home;
-        existing.away=tt[1]||away;
+        existing.home=phome;
+        existing.away=paway;
         existing.odds=formatOne(sofa.one);
         if(existing.exact11First==null&&sofa.exact!=null)existing.exact11First=sofa.exact;
         if(sofa.exact!=null)existing.exact11Current=sofa.exact;
@@ -395,17 +490,29 @@ async function discoverLiveZeroZero(){
         found.push(existing);
       }else{
         const row={
-          key,sofaId:String(s.id),slug:polySlug,href:polyEventUrl(pm),
-          home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
-          odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,priceDiff:diff,
-          lastScore:score,lastMinute:minute,lastStatus:t(s?.status?.type),nextSent:false,liveSent:false
+          key,
+          sofaId:String(sofaEvent.id),
+          slug:polySlug,
+          href:polyEventUrl(pm),
+          home:phome,
+          away:paway,
+          startMs:Date.now(),
+          odds:formatOne(sofa.one),
+          exact11First:sofa.exact,
+          exact11Current:sofa.exact,
+          priceDiff:diff,
+          lastScore:score,
+          lastMinute:minute,
+          lastStatus:t(sofaEvent?.status?.type),
+          nextSent:false,
+          liveSent:false
         };
         tracked.set(key,row);
         found.push(row);
       }
-      log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,source:"sofascore_only"}));
+      log(JSON.stringify({event:"live_filter_passed",key,teams:[phome,paway],minute,score,source:"polymarket_live+sofascore"}));
     }catch(err){
-      log(JSON.stringify({event:"sofascore_live_candidate_failed",teams:[home,away],message:err.message}));
+      log(JSON.stringify({event:"polymarket_live_candidate_failed",teams:[phome,paway],message:err.message}));
     }
   }
   return found;
