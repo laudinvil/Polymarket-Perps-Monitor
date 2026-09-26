@@ -326,6 +326,36 @@ function balancedForOneOne(nutmeg) {
   return Math.abs(r.homeProb - r.awayProb) <= BALANCE_MAX_DIFF;
 }
 
+function isStrictPrematch(match, nutmeg, liveState) {
+  if (liveState?.status === "live" || nutmeg?.row?.live) return false;
+  if (nutmeg?.row?.finished) return false;
+
+  const kickoff = Date.parse(match.startTime || "");
+  if (!Number.isFinite(kickoff)) {
+    log("INFO", "prematch_time_unknown", "Fixture has no usable kickoff time; not admitted as PRE-MATCH", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      startTime: match.startTime || null
+    });
+    return false;
+  }
+
+  // A future kickoff is the only valid entry state. Once kickoff has passed,
+  // the fixture must be observed as LIVE before it can receive STARTED.
+  const future = kickoff > Date.now();
+  if (!future) {
+    log("INFO", "kickoff_passed_not_prematch", "Kickoff has passed; fixture cannot become a new BUY entry", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      startTime: match.startTime,
+      kickoffPassedMs: Date.now() - kickoff,
+      nutmegLive: Boolean(nutmeg?.row?.live),
+      liveState: liveState?.status || null
+    });
+  }
+  return future;
+}
+
 async function ensureEventMarkets(match) {
   if (Array.isArray(match.markets) && match.markets.length) return true;
   if (!match.eventId) return false;
@@ -552,11 +582,11 @@ async function tick() {
           fastLiveState?.status === "live" ||
           nm?.row?.live
         );
+        const isPrematch = isStrictPrematch(match, nm, fastLiveState);
 
-        // Pre-match means the fixture is not currently live. This is the
-        // admission state: balanced Nutmeg probability is checked here and
-        // BUY can happen here only.
-        if (!isLive) {
+        // PRE-MATCH is strictly a future kickoff. A missing/stale live flag
+        // cannot turn an already-started 0:0 fixture into a BUY candidate.
+        if (isPrematch) {
           const candidate = Boolean(nm && balancedForOneOne(nm));
           log("INFO", "prematch_evaluation", "Pre-match fixture evaluated for BUY", {
             eventId: match.eventId,
