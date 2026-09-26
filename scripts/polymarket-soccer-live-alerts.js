@@ -394,16 +394,26 @@ async function sendTelegram(message,replyMarkup){
   const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
   const wait=Math.max(0,telegramNextAt-Date.now());
   if(wait>0)await new Promise(r=>setTimeout(r,wait));
-  telegramNextAt=Date.now()+1200;
   if(!token||!chat)throw new Error("Telegram credentials are missing");
-  const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{
-    method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({chat_id:chat,text:message,disable_web_page_preview:false,reply_markup:replyMarkup}),
-    signal:AbortSignal.timeout(10000)
-  });
-  if(!r.ok)throw new Error("Telegram HTTP "+r.status);
-  const b=await r.json();if(!b.ok)throw new Error("Telegram rejected message");
-  return b;
+  for(let attempt=1;attempt<=4;attempt++){
+    const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({chat_id:chat,text:message,disable_web_page_preview:false,reply_markup:replyMarkup}),
+      signal:AbortSignal.timeout(10000)
+    });
+    const b=await r.json().catch(()=>({}));
+    if(r.ok&&b.ok){telegramNextAt=Date.now()+5000;return b;}
+    if(r.status===429){
+      const retry=Number(b?.parameters?.retry_after);
+      const delay=(Number.isFinite(retry)&&retry>0?retry:5)+1;
+      telegramNextAt=Date.now()+delay*1000;
+      console.log(JSON.stringify({level:"WARN",event:"telegram_rate_limited",attempt,retryAfter:delay}));
+      await new Promise(r=>setTimeout(r,delay*1000));
+      continue;
+    }
+    throw new Error("Telegram HTTP "+r.status+(b?.description?": "+b.description:""));
+  }
+  throw new Error("Telegram rate limit persisted after retries");
 }
 
 const DEFAULT_CONVEX_SITE_URL="https://brainy-canary-207.eu-west-1.convex.site";
