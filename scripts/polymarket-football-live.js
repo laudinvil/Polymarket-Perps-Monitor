@@ -475,7 +475,8 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
     log("ERROR","candidate_alert_blocked_no_url","Live Soccer fixture has no Polymarket event URL",{eventId:match.eventId,slug:match.slug||null,teams:[match.homeTeam,match.awayTeam]});
     return;
   }
-  const key=match.eventId||match.slug;
+  const key=String(match.url || "").trim().replace(/\/$/, "");
+  if (!key) { log("ERROR","alert_blocked_no_dedupe_url","Alert blocked because the Polymarket event URL is required for URL-based dedupe",{eventId:match.eventId,slug:match.slug||null}); return; }
   const liveHome=match.live?.score?.home, liveAway=match.live?.score?.away, liveMinute=match.live?.minute;
   if (!Number.isInteger(liveHome) || !Number.isInteger(liveAway) || liveMinute === null || liveMinute === undefined) { log("WARN","alert_blocked_missing_live_data","Alert blocked: score and minute are mandatory",{eventId:match.eventId,score:match.live?.score??null,minute:liveMinute??null}); return; }
   const home=liveHome, away=liveAway;
@@ -487,7 +488,7 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
   }
   const oneXTwoLine=`1: ${Math.round(oneXTwo.homeProb*100)}% · X: ${Math.round(oneXTwo.drawProb*100)}% · 2: ${Math.round(oneXTwo.awayProb*100)}%`;
   if(phase==="live_entry"){
-    const claimKey=key+":LIVE", claim=await claimTelegramAlert(claimKey);
+    const claimKey=key, claim=await claimTelegramAlert(claimKey);
     if(!claim.claimed)return;
     const message=["⚽ LIVE","",match.homeTeam+" vs "+match.awayTeam,"MINUTE: "+liveMinute,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
     try{
@@ -502,7 +503,7 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
     return;
   }
   if(home+away<=0)return;
-  const claimKey=key+":SELL:"+home+"-"+away, claim=await claimTelegramAlert(claimKey);
+  const claimKey=key, claim=await claimTelegramAlert(claimKey);
   if(!claim.claimed)return;
   const message=["⚽ SELL","",match.homeTeam+" vs "+match.awayTeam,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
   try{
