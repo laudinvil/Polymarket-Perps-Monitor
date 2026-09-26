@@ -397,7 +397,7 @@ async function tick() {
     log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"future PRE-MATCH + balanced Polymarket 1X2 = BUY; live 0:0 is never entry"});
+    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"future PRE-MATCH football candidate = BUY; no market gate"});
     const BATCH=20;
     for(let i=0;i<matches.length;i+=BATCH){
       await Promise.all(matches.slice(i,i+BATCH).map(async match=>{
@@ -407,17 +407,11 @@ async function tick() {
         const isPrematch=isStrictPrematch(match,liveState);
         if(isPrematch){
           cycle.preMatch++;
-          await ensureEventMarkets(match);
-          const market=findMatchResultMarket(match);
-          const balanced=balancedFromPolymarket(market);
-          log("INFO","polymarket_prematch_evaluation","Polymarket 1X2 prices evaluated",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,marketFound:Boolean(market),marketId:market?.market?.marketId||null,homePrice:market?.homeProb??null,drawPrice:market?.drawProb??null,awayPrice:market?.awayProb??null,balanced});
-          if(!balanced){
-            cycle.buyRejected++;
-            log("INFO","candidate_rejected_buy_filter","PRE-MATCH rejected by Polymarket 1X2 balance",{eventId:match.eventId,reason:market?"not_balanced":"no_polymarket_1x2_market"});
-            return;
-          }
+          // A discovered future football fixture is already a strategy candidate.
+          // There is no additional market/price gate between candidate admission and BUY.
           cycle.buyPassed++;
-          await maybeOneOneAlert({...match,live:{status:"scheduled",score:{home:0,away:0},minute:0}},market,"prematch");
+          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime});
+          await maybeOneOneAlert({...match,live:{status:"scheduled",score:{home:0,away:0},minute:0}},null,"prematch");
           return;
         }
         const score=liveState?.score||{home:0,away:0};
