@@ -267,9 +267,12 @@ async function discoverLiveZeroZero(){
       const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
       const sofa=await sofascoreOdds(s.id);
       log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
-      if(!sofa.one||sofa.exact==null){
-        log(JSON.stringify({event:"sofascore_odds_missing",teams:[home,away],minute,sofa}));
+      if(!sofa.one){
+        log(JSON.stringify({event:"sofascore_1x2_missing",teams:[home,away],minute,sofa}));
         continue;
+      }
+      if(sofa.exact==null){
+        log(JSON.stringify({event:"sofascore_exact11_missing_but_candidate_kept",teams:[home,away],minute}));
       }
       const candidates=await polymarketSearch(home,away);
       const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
@@ -283,13 +286,28 @@ async function discoverLiveZeroZero(){
       log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,score,sofa,homePrice:sofa.one.home,awayPrice:sofa.one.away,diff,threshold:APPROX_MAX_DIFF,pass,polymarketEventId:polyId,polymarketSlug:polySlug}));
       if(!pass)continue;
       const key=polyId||polySlug,tt=teamsFromEvent(pm);
-      const row={
-        key,sofaId:String(s.id),slug:polySlug,href:polyEventUrl(pm),
-        home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
-        odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,priceDiff:diff,
-        lastScore:score,lastMinute:minute,lastStatus:t(s?.status?.type),nextSent:false,liveSent:false
-      };
-      tracked.set(key,row);found.push(row);
+      const existing=tracked.get(key);
+      if(existing){
+        existing.sofaId=String(s.id);
+        existing.slug=polySlug||existing.slug;
+        existing.href=polyEventUrl(pm)||existing.href;
+        existing.home=tt[0]||home;
+        existing.away=tt[1]||away;
+        existing.odds=formatOne(sofa.one);
+        if(existing.exact11First==null&&sofa.exact!=null)existing.exact11First=sofa.exact;
+        if(sofa.exact!=null)existing.exact11Current=sofa.exact;
+        existing.priceDiff=diff;
+        found.push(existing);
+      }else{
+        const row={
+          key,sofaId:String(s.id),slug:polySlug,href:polyEventUrl(pm),
+          home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
+          odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,priceDiff:diff,
+          lastScore:score,lastMinute:minute,lastStatus:t(s?.status?.type),nextSent:false,liveSent:false
+        };
+        tracked.set(key,row);
+        found.push(row);
+      }
       log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,source:"sofascore_only"}));
     }catch(err){
       log(JSON.stringify({event:"sofascore_live_candidate_failed",teams:[home,away],message:err.message}));
@@ -301,10 +319,10 @@ async function discoverLiveZeroZero(){
 async function sendNext(row,score){
   const alertKey=row.key+":NEXT",c=await claim(alertKey);
   if(!c.claimed)return false;
-  const message=["⚽ NEXT","",row.home+" vs "+row.away,"1:1 YES: "+pct(row.exact11First),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const message=["⚽ BUY","",row.home+" vs "+row.away,"1:1 YES: "+pct(row.exact11First),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);row.nextMessageId=sent.message_id;
-    log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
+    log(JSON.stringify({event:"telegram_alert_sent",type:"BUY",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
     await release(alertKey);log(JSON.stringify({event:"telegram_alert_failed",type:"NEXT",key:row.key,message:err.message}));return false;
@@ -337,7 +355,12 @@ async function sendLive(row,score){
 async function sendSell(row,score){
   const alertKey=row.key+":SELL::"+score.home+"-"+score.away,c=await claim(alertKey);
   if(!c.claimed)return false;
-  const current=row.exact11Current??row.exact11First;
+  const current=row.exact11Current;
+  if(row.exact11First==null||current==null){
+    log(JSON.stringify({event:"sell_skipped_exact11_missing",key:row.key,first:row.exact11First,current}));
+    await release(alertKey);
+    return false;
+  }
   const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"1:1 YES: "+exactDelta(row.exact11First,current),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
