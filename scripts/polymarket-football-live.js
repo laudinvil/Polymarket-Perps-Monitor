@@ -199,7 +199,7 @@ async function discoverLivePageFixtures() {
     const html = await response.text();
     if (!response.ok) throw new Error("HTTP " + response.status + " for " + url);
     const hrefs = new Set();
-    const re = /href=["\'](\/ru\/sports\/[^"\']+)["\']/gi;
+    const re = /href=["\'](\/sports\/[^"\']+)["\']/gi;
     let m;
     while ((m = re.exec(html))) hrefs.add(m[1]);
     const slugs = Array.from(hrefs).map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
