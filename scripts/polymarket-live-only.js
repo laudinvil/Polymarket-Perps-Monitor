@@ -23,8 +23,10 @@ function parseSportsWsMessage(raw){
   const p=msg?.payload && typeof msg.payload==="object" ? msg.payload : msg;
   const slug=t(p?.slug);
   if(!slug)return;
+  // Competition abbreviations such as EPL/EFL/UCL are valid football.
+  // Do not require the literal words soccer/football here; the Gamma
+  // soccer universe below is the actual sport filter.
   const league=t(p?.leagueAbbreviation||p?.league||p?.sport).toLowerCase();
-  if(league && !/soccer|football/.test(league))return;
   polymarketSportsLiveState.set(slug,p);
   log(JSON.stringify({
     event:"polymarket_sports_ws_update",
