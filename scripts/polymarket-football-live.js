@@ -114,7 +114,7 @@ function norm(v) {
   return text(v).toLowerCase()
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .replace(/&/g, "and")
-    .replace(/\b(fc|cf|sc|afc|ac|club|football club)\b/g, " ")
+    .replace(/\b(fc|cf|sc|afc|ac|cd|club|football club)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -202,7 +202,7 @@ async function discoverLivePageFixtures() {
     for (const slug of slugs.slice(0, 40)) {
       try {
         const event = await getJson(GAMMA_URL + "/events/slug/" + encodeURIComponent(slug), {timeoutMs:3_000});
-        if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push(event);
+        if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push({...event, _liveSportsHref: eventHref});
       } catch (err) { log("WARN","live_page_event_load_failed","Could not load live-page football event from Gamma",{slug,message:err.message}); }
     }
     log("INFO","sports_live_page_discovery","Polymarket /sports/live is the sole football discovery source",{url,hrefCount:hrefs.size,eventHrefCount:eventHrefs.length,footballSlugCount:slugs.length,eventCount:rows.length});
@@ -271,7 +271,7 @@ async function discoverPolymarket(){
     }
 
     groups.set(groupKey,{
-      eventId,slug,url:eventUrl(event),title:text(event.title||event.question),
+      eventId,slug,url:event._liveSportsHref ? "https://polymarket.com" + event._liveSportsHref : eventUrl(event),title:text(event.title||event.question),
       homeTeam:home,awayTeam:away,startTime,endTime,
       active:event.active!==false,closed:event.closed===true,
       polymarketLiveHint:true,markets:nestedMarkets,relatedEventIds:[eventId]
@@ -558,16 +558,23 @@ function findLivePageMatch(page, match) {
   const homeTeam = norm(match.homeTeam);
   const awayTeam = norm(match.awayTeam);
   if (!normalizedPage || !homeTeam || !awayTeam) return null;
+  const homeAliases = [homeTeam, homeTeam.replace(/^cd\s+/, "")].filter(Boolean);
+  const awayAliases = [awayTeam, awayTeam.replace(/^cd\s+/, "")].filter(Boolean);
 
   let from = 0;
   while (from < normalizedPage.length) {
-    const hi = normalizedPage.indexOf(homeTeam, from);
-    if (hi < 0) break;
-    const ai = normalizedPage.indexOf(awayTeam, hi + homeTeam.length);
-    if (ai < 0 || ai - hi > 900) {
-      from = hi + homeTeam.length;
-      continue;
+    let found = null;
+    for (const h of homeAliases) {
+      const hi0 = normalizedPage.indexOf(h, from);
+      if (hi0 < 0) continue;
+      for (const a of awayAliases) {
+        const ai0 = normalizedPage.indexOf(a, hi0 + h.length);
+        if (ai0 >= 0 && ai0 - hi0 <= 900) { found = {h, a, hi: hi0, ai: ai0}; break; }
+      }
+      if (found) break;
     }
+    if (!found) break;
+    const {h: matchedHome, a: matchedAway, hi, ai} = found;
 
     const cardStart = Math.max(0, hi - 260);
     const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 320);
@@ -591,7 +598,7 @@ function findLivePageMatch(page, match) {
       if (home === null || away === null) {
         const compact = normalizedPage.slice(hi, cardEnd);
         const compactMatch = compact.match(
-          new RegExp(homeTeam + "\\s+(\\d{1,2})\\s+" + awayTeam + "\\s+(\\d{1,2})\\b", "i")
+          new RegExp(matchedHome + "\\s+(\\d{1,2})\\s+" + matchedAway + "\\s+(\\d{1,2})\\b", "i")
         );
         if (compactMatch) {
           home = Number(compactMatch[1]);
@@ -615,7 +622,7 @@ function findLivePageMatch(page, match) {
       };
     }
 
-    from = hi + homeTeam.length;
+    from = hi + matchedHome.length;
   }
 
   return null;
