@@ -399,9 +399,21 @@ async function discover(){
       console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle,teams:[home,away]}));
       return;
     }
-    // LIVE confirmation never overrides a future kickoff timestamp.
-    // This blocks stale Sports WS/Gamma data from creating prematch alerts.
-    if(!eventLiveWindow(event)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.startDate,end:event.endDate,status:event.status,liveConfirmed}));return;}
+    // Gamma kickoff timestamps can lag/lead the live Sports feed. If the
+    // authoritative Sports WS/Gamma-live record already contains BOTH a valid
+    // score and a valid match minute, that is stronger live evidence than a
+    // stale future kickoff field. Future events without those live facts remain blocked.
+    let authoritativeLive=false;
+    if(liveConfirmed){
+      const auth=liveEvents.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g))||
+                 sportsLive.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g));
+      authoritativeLive=!!auth&&validScore(gameScore(auth))&&validMinute(gameMinute(auth));
+    }
+    if(!eventLiveWindow(event)&&!authoritativeLive){
+      console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.gameStartTime||event.startDate,end:event.gameEndTime||event.endDate,status:event.status,liveConfirmed,authoritativeLive}));
+      return;
+    }
+    if(authoritativeLive)console.log(JSON.stringify({level:"INFO",event:"LIVE_WINDOW_OVERRIDDEN_BY_AUTHORITATIVE_SCORE_CLOCK",eventId:event.id,title:rawTitle}));
     if(ended){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"ended",eventId:event.id,title:rawTitle}));return;}
     const slug=t(event.slug)||fixtureSlug(href||"");
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
