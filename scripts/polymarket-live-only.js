@@ -1,5 +1,5 @@
 const GAMMA = "https://gamma-api.polymarket.com";
-const SOCCER_GAMES_URL = "https://polymarket.com/ru/sports/live";
+const SOCCER_GAMES_URL = "https://polymarket.com/sports/live";
 const POLL_MS = 15_000; // continuous football discovery
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const SOON_MS = 6 * 60 * 60 * 1000;
@@ -77,10 +77,18 @@ function cleanHtml(h){
     .replace(/&#39;/g,"'").replace(/\s+/g," "));
 }
 function links(html){
-  const out=[];const re=/href=["'](\/sports\/([^"']+))["']/gi;let m;
-  while((m=re.exec(html)))out.push({href:m[1],path:m[2]});
-  return [...new Map(out.map(x=>[x.href,x])).values()]
-    .filter(x=>x.path!=="live" && x.path!=="games" && !x.path.includes("/games/") && /-[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x.path));
+  const raw=String(html||"");
+  const out=[];const re=/href=["']((?:\/[a-z]{2})?\/sports\/([^"'#?]+))["']/gi;let m;
+  while((m=re.exec(raw))){
+    const href=m[1],path=m[2];
+    if(path==="live"||path==="games"||path.includes("/games/"))continue;
+    if(!/-[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(path))continue;
+    const around=cleanHtml(raw.slice(Math.max(0,m.index-1800),Math.min(raw.length,m.index+5000))).toLowerCase();
+    // Soccer cards on /sports/live expose a DRAW price; tennis/football/etc do not.
+    if(!around.includes("draw"))continue;
+    out.push({href,path});
+  }
+  return [...new Map(out.map(x=>[x.href,x])).values()];
 }
 function teamsFromEvent(e){
   const title=t(e?.title||e?.question),h=t(e?.homeTeam||e?.home_team),a=t(e?.awayTeam||e?.away_team);
@@ -131,28 +139,22 @@ function exactScore11Yes(e){
   const markets=arr(e?.markets);
   for(const m of markets){
     if(m?.active===false||m?.closed===true)continue;
-    const group=norm(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section);
-    const question=norm(m.question||m.title||m.slug);
-    const combined=group+" "+question;
-    const exactGroup=/(exact score|correct score|точн счет|точныи счет)/.test(group);
-    const exactMarket=/(exact score|correct score|точн счет|точныи счет)/.test(combined);
-    if(!exactGroup&&!exactMarket)continue;
-
-    const is11=/(^|\s)1\s*[-:–]\s*1($|\s)/.test(question) ||
-      /(^|\s)1\s*[-:–]\s*1($|\s)/.test(group);
+    // IMPORTANT: norm() removes '-' and ':'; score matching must use raw market text.
+    const rawGroup=t(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section).toLowerCase();
+    const rawQuestion=t(m.question||m.title||m.slug).toLowerCase();
+    const combinedRaw=rawGroup+" "+rawQuestion;
+    const group=norm(rawGroup),question=norm(rawQuestion);
+    const exactSection=/(exact score|correct score|точн[а-я]*\s*сч[её]т)/i.test(combinedRaw);
+    const is11=/(^|[^0-9])1\s*[-:–]\s*1([^0-9]|$)/.test(combinedRaw);
     const os=arr(m.outcomes),ps=arr(m.outcomePrices??m.outcome_prices).map(Number);
     if(os.length!==ps.length||!ps.length)continue;
-
     for(let i=0;i<os.length;i++){
       const o=norm(os[i]);
-      if(is11&&o==="yes"){
-        const value=ps[i];
-        if(value>=0&&value<=1)return value;
+      const rawO=t(os[i]).toLowerCase();
+      if((is11||exactSection)&&o==="yes"&&ps[i]>=0&&ps[i]<=1){
+        if(is11)return ps[i];
       }
-      if(/^1\s*[-:–]\s*1$/.test(o)){
-        const value=ps[i];
-        if(value>=0&&value<=1)return value;
-      }
+      if(/^1\s*[-:–]\s*1$/.test(rawO)&&ps[i]>=0&&ps[i]<=1)return ps[i];
     }
   }
   return null;
