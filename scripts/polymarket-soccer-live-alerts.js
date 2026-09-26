@@ -63,7 +63,7 @@ async function discover(){
 
   // Fallback for Polymarket's client-rendered pages: discover current soccer events from Gamma
   // when raw HTML contains no usable fixture links.
-  if(liveLinks.length===0||soccerLinks.length===0){
+  if(candidates.length===0){
     try{
       const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&limit=500&order=startDate&ascending=false",{timeout:8000});
       const events=Array.isArray(raw)?raw:[];
