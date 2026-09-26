@@ -205,17 +205,25 @@ function validMinute(minute){
 
 function eventLiveWindow(event){
   const now=Date.now();
-  const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
-  if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
   if(event.ended===true||event.finished===true||event.final===true)return false;
+
+  // The Polymarket live page can mark a fixture "live" before kickoff.
+  // Never trust that flag to override the actual fixture start time.
   const start=Date.parse(event.gameStartTime||event.game_start_time||event.startTime||event.start_time||event.eventStartTime||event.event_start_time||"");
   const end=Date.parse(event.gameEndTime||event.game_end_time||event.matchEndTime||event.match_end_time||"");
-  // For sports, startDate/endDate may describe market lifecycle rather than kickoff.
-  // gameStartTime/startTime are the actual fixture start fields.
-  if(Number.isFinite(start)&&start<=now){
-    return !Number.isFinite(end)||end>=now;
-  }
-  return false;
+
+  // If an authoritative kickoff timestamp exists, it is a hard lower bound.
+  // This prevents stale WS minute/score data (e.g. 53') from leaking into
+  // a match that has not actually started yet.
+  if(Number.isFinite(start)&&start>now)return false;
+  if(Number.isFinite(end)&&end<now)return false;
+
+  const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
+  const explicitLive=event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status);
+  if(explicitLive)return true;
+
+  // Without a kickoff timestamp we refuse to infer LIVE from market lifecycle.
+  return Number.isFinite(start)&&start<=now;
 }
 
 async function discover(){
