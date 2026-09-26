@@ -7,7 +7,7 @@ const HISTORY_MS = 20 * 60 * 1000;
 const ALERT_BUCKET_MS = 60 * 1000;
 const PREMATCH_WINDOW_MS = 15 * 60 * 1000;
 const EARLY_WINDOW_MS = 45 * 60 * 1000;
-const BALANCE_MAX_DIFF = 0.25; // Wider balanced window so valid near-even matches can reach BUY.
+const BALANCE_MAX_DIFF = 0.15; // BUY only when 1X2 home/away probabilities differ by at most 15 percentage points.
 const MIN_DRAW_PROB = 0.22;
 const MIN_BTTS_PROB = 0.45;
 
@@ -371,9 +371,29 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     : "1X2: —";
 
   if (phase === "prematch" || phase === "live_entry") {
-    // 1X2 is informational in the alert only. It is NOT a BUY gate.
-    // BUY must remain free of market-selection / balance / 1:1 filters.
-    log("INFO", "buy_1x2_snapshot", "Captured 1X2 for BUY alert without using it as a filter", {
+    // 1X2 is required for BUY and is used only as the approximate-strength filter.
+    // The 1:1 market remains completely outside the BUY gate.
+    if (!oneXTwo) {
+      log("INFO", "buy_blocked_no_1x2", "Fixture reached BUY but no usable 1X2 market was found", {
+        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], phase
+      });
+      return;
+    }
+    const difference = Math.abs(oneXTwo.homeProb - oneXTwo.awayProb);
+    if (difference > BALANCE_MAX_DIFF) {
+      log("INFO", "buy_blocked_unbalanced", "Fixture reached BUY but 1X2 home/away probabilities differ by more than the allowed threshold", {
+        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], phase,
+        homeProb: oneXTwo.homeProb, drawProb: oneXTwo.drawProb, awayProb: oneXTwo.awayProb,
+        difference, maxDifference: BALANCE_MAX_DIFF
+      });
+      return;
+    }
+    log("INFO", "buy_balance_passed", "Fixture passed the 1X2 approximate-strength filter", {
+      eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], phase,
+      homeProb: oneXTwo.homeProb, drawProb: oneXTwo.drawProb, awayProb: oneXTwo.awayProb,
+      difference, maxDifference: BALANCE_MAX_DIFF
+    });
+    log("INFO", "buy_1x2_snapshot", "Captured 1X2 for BUY alert after passing the strength filter", {
       eventId: match.eventId,
       teams: [match.homeTeam, match.awayTeam],
       phase,
