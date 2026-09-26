@@ -675,15 +675,19 @@ async function cycle(){
     try{
       await refreshEvent(x);
       console.log(JSON.stringify({level:"INFO",event:"CANDIDATE_BEFORE_CLAIM",slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null,markets:Array.isArray(x.event?.markets)?x.event.markets.length:0}));
-      // A live score is sufficient proof that the match has started.
-      // Minute is useful metadata but must not block a real LIVE alert when
-      // the authoritative source temporarily omits the clock.
-      if(!validScore(x.score)){
-        console.log(JSON.stringify({level:"WARN",event:"candidate_rejected_untrusted_live_data",reason:"invalid_score",eventId:id,slug:x.slug,minute:x.minute??null,score:x.score??null}));
+      // Both authoritative score and match minute are mandatory for an alert.
+      // Never send a LIVE alert with missing or fabricated clock data.
+      if(!validScore(x.score)||!validMinute(x.minute)){
+        console.log(JSON.stringify({
+          level:"WARN",
+          event:"candidate_rejected_untrusted_live_data",
+          reason:!validScore(x.score)?"invalid_score":"invalid_minute",
+          eventId:id,
+          slug:x.slug,
+          minute:x.minute??null,
+          score:x.score??null
+        }));
         continue;
-      }
-      if(!validMinute(x.minute)){
-        console.log(JSON.stringify({level:"INFO",event:"candidate_live_without_clock",eventId:id,slug:x.slug,minute:null,score:x.score}));
       }
       const claimAllowed=await claimFootballMatch(id);
       console.log(JSON.stringify({level:"INFO",event:claimAllowed?"CLAIM_ALLOWED":"CLAIM_BLOCKED",eventId:id,slug:x.slug}));
