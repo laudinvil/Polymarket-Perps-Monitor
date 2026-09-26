@@ -278,13 +278,15 @@ async function discoverLiveZeroZero(){
         continue;
       }
       const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
-      const maxDiff=0;
-      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,score,sofa,maxDiff,pass:true,polymarketEventId:polyId,polymarketSlug:polySlug}));
+      const diff=Math.abs(sofa.one.home-sofa.one.away);
+      const pass=diff<=APPROX_MAX_DIFF;
+      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,score,sofa,homePrice:sofa.one.home,awayPrice:sofa.one.away,diff,threshold:APPROX_MAX_DIFF,pass,polymarketEventId:polyId,polymarketSlug:polySlug}));
+      if(!pass)continue;
       const key=polyId||polySlug,tt=teamsFromEvent(pm);
       const row={
         key,slug:polySlug,href:polyEventUrl(pm),
         home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
-        odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,
+        odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,priceDiff:diff,
         nextSent:false
       };
       tracked.set(key,row);found.push(row);
