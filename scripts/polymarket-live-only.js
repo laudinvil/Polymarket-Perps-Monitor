@@ -389,6 +389,19 @@ function eventScore(e){
   }
   return null;
 }
+function sportsWsScore(ws){
+  const raw=t(ws?.score);
+  if(!raw)return null;
+  const m=raw.match(/(^|[^0-9])(\\d{1,2})\\s*[-–:]\\s*(\\d{1,2})(?=$|[^0-9])/);
+  if(!m)return null;
+  const home=Number(m[2]),away=Number(m[3]);
+  return home<=20&&away<=20?{home,away}:null;
+}
+function sportsWsMinute(ws){
+  const raw=t(ws?.elapsed);
+  const m=raw.match(/(\\d{1,3})/);
+  return m?Number(m[1]):null;
+}
 function cardAround(page,home,away){
   const p=norm(page),h=norm(home),a=norm(away);if(!p||!h||!a)return null;
   const aliases=x=>[x,x.replace(/^cd\s+/,"")].filter(Boolean);
@@ -673,15 +686,16 @@ async function discoverLiveZeroZero(){
         return sameMatch({homeTeam:home,awayTeam:away},phome,paway);
       });
       const polyScore=eventScore(pm);
+      const wsScore=sportsWsScore(pm?.__sportsWs);
       const sofaScore=sofaEvent ? {
         home:Number(sofaEvent?.homeScore?.current),
         away:Number(sofaEvent?.awayScore?.current)
       } : null;
-      const score=polyScore || (
+      const score=polyScore || wsScore || (
         sofaScore && Number.isFinite(sofaScore.home) && Number.isFinite(sofaScore.away) &&
         sofaScore.home>=0 && sofaScore.away>=0 ? sofaScore : null
       );
-      const minute=sofaEvent?sofascoreMinute(sofaEvent):null;
+      const minute=sportsWsMinute(pm?.__sportsWs) ?? (sofaEvent?sofascoreMinute(sofaEvent):null);
       if(!score || minute==null){
         log(JSON.stringify({
           event:"live_alert_blocked_missing_live_state",
@@ -690,6 +704,7 @@ async function discoverLiveZeroZero(){
           fixtureSlug:fixture?.slug,
           sofascoreMatched:!!sofaEvent,
           polyScore,
+          wsScore,
           sofaScore,
           minute,
           reason:"no_verified_score_or_minute"
