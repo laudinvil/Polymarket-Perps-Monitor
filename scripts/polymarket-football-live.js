@@ -21,6 +21,63 @@ const prematchCandidates = new Map();
 const convexLogBuffer = [];
 let convexTickCount = 0;
 
+const STALE_RUN_CHECK_MS = 15_000;
+let staleRunCheckPromise = null;
+let lastStaleRunCheckAt = 0;
+
+async function stopIfSuperseded() {
+  if (stopping) return true;
+  const currentRunId = Number(process.env.GITHUB_RUN_ID || 0);
+  const token = process.env.GITHUB_TOKEN || "";
+  if (!currentRunId || !token) return false;
+
+  const now = Date.now();
+  if (now - lastStaleRunCheckAt < STALE_RUN_CHECK_MS) return false;
+  if (staleRunCheckPromise) return staleRunCheckPromise;
+
+  lastStaleRunCheckAt = now;
+  staleRunCheckPromise = (async () => {
+    try {
+      const url = "https://api.github.com/repos/laudinvil/Polymarket-Perps-Monitor/actions/workflows/polymarket-football-live.yml/runs?branch=main&per_page=20";
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: "Bearer " + token,
+          "x-github-api-version": "2022-11-28",
+          "user-agent": "PolymarketFootballMonitor"
+        },
+        signal: AbortSignal.timeout(3_000)
+      });
+      if (!response.ok) throw new Error("GitHub Actions HTTP " + response.status);
+      const body = await response.json();
+      const newer = (Array.isArray(body.workflow_runs) ? body.workflow_runs : [])
+        .find(run => Number(run.id) > currentRunId);
+
+      if (newer) {
+        stopping = true;
+        log("WARN", "superseded_run_detected", "Newer football monitor run detected; stopping this run before another alert can be sent", {
+          currentRunId,
+          newerRunId: newer.id,
+          newerRunNumber: newer.run_number,
+          newerStatus: newer.status,
+          newerHeadSha: newer.head_sha
+        });
+        return true;
+      }
+    } catch (err) {
+      log("WARN", "stale_run_check_failed", "Could not verify whether a newer football monitor run exists; continuing current run", {
+        currentRunId,
+        message: err.message
+      });
+    } finally {
+      staleRunCheckPromise = null;
+    }
+    return stopping;
+  })();
+
+  return staleRunCheckPromise;
+}
+
 function log(level, event, message, data = undefined) {
   const entry = {
     level, event, message,
@@ -709,6 +766,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 }
 
 async function tick() {
+  if (await stopIfSuperseded()) return;
   if(stopping||tick.running)return;
   tick.running=true; convexTickCount+=1;
   try{
@@ -1059,7 +1117,12 @@ async function runCycle() {
 }
 
 async function main(){
-  console.log(JSON.stringify({event:"monitor_start",message:"football monitor continuous entrypoint started",runMs:RUN_MS,pollMs:POLL_MS,createdAt:Date.now()}));
+  console.log(JSON.stringify({event:"monitor_start",message:"football monitor continuous entrypoint started",runMs:RUN_MS,pollMs:POLL_MS,createdAt:Date.now(),githubRunId:process.env.GITHUB_RUN_ID||null}));
+  await stopIfSuperseded();
+  if (stopping) {
+    await flushConvexLogs();
+    return;
+  }
   await loadPersistedCandidates();
   const deadline=Date.now()+RUN_MS;
   let cycle=0;
