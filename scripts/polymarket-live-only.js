@@ -185,7 +185,7 @@ async function sendNext(row,score){
   if(!c.claimed)return false;
   const message=["⚽ NEXT","",row.home+" vs "+row.away,"1:1 YES: "+pct(row.exact11First),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
-    const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
+    const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);row.nextMessageId=sent.message_id;
     console.log(JSON.stringify({event:"telegram_alert_sent",type:"NEXT",key:row.key,score,messageId:sent.message_id}));
     return true;
   }catch(err){
@@ -219,7 +219,8 @@ async function sendLive(row,score){
 async function sendSell(row,score){
   const alertKey=row.key+":SELL::"+score.home+"-"+score.away,c=await claim(alertKey);
   if(!c.claimed)return false;
-  const current=row.exact11Current??row.exact11First;\n  const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"1:1 YES: "+exactDelta(row.exact11First,current),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
+  const current=row.exact11Current??row.exact11First;
+  const message=["⚽ SELL","",row.home+" vs "+row.away,"SCORE: "+score.home+"–"+score.away,"1:1 YES: "+exactDelta(row.exact11First,current),"",row.odds,"","➡️ OPEN MATCH","https://polymarket.com"+row.href].join("\n");
   try{
     const sent=await telegram(message,c.replyToMessageId??null);await saveId(alertKey,sent.message_id);
     console.log(JSON.stringify({event:"telegram_alert_sent",type:"SELL",key:row.key,score,messageId:sent.message_id}));
@@ -241,7 +242,7 @@ async function scan(){
     const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;\n    const exact11=exactScore11Yes(e);\n    if(exact11!==null)row.exact11Current=exact11;
     if(!row.nextSent){
       const sent=await sendNext(row,score);
-      if(sent)row.nextSent=true;
+      if(sent){row.nextSent=true;}
     }
     if(Date.now()>=row.startMs&&!row.liveSent){
       const sent=await sendLive(row,score);
