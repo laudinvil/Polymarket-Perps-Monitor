@@ -10,9 +10,10 @@ on:
       - 'convex/http.ts'
       - 'convex/footballLogs.ts'
       - 'convex/schema.ts'
+      - '.github/workflows/polymarket-football-live.yml'
   workflow_dispatch:
   schedule:
-    - cron: "2 */6 * * *"
+    - cron: "*/5 * * * *"
 
 concurrency:
   group: polymarket-football-live
