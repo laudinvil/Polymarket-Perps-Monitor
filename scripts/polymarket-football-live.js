@@ -741,11 +741,11 @@ async function tick() {
     const discovered=await discoverPolymarket();
     for (const match of discovered) {
       const key=match.eventId||match.slug;
-      if (key) prematchCandidates.set(key, {...prematchCandidates.get(key), ...match});
     }
-    const matches=Array.from(prematchCandidates.values());
-    // Candidates come exclusively from the current Polymarket /sports/live page.
-    // Never gate a live fixture by Gamma kickoff timestamps.
+    // The candidate set is a fresh snapshot of the current Polymarket /sports/live
+    // soccer page. Persistent alert state is kept separately in oneOneState/Convex.
+    // Never carry old prematch/line candidates into a new cycle.
+    const matches=discovered.slice();
     const evaluationCandidates=matches;
     const deferredCandidates=0;
     const cycle={discovered:discovered.length,retainedCandidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
