@@ -199,7 +199,7 @@ async function discoverPolymarket(){
         existing.relatedEventIds.push(eventId);
         log("INFO","fixture_event_grouped","Child/duplicate football market event grouped into existing fixture",{fixtureKey:groupKey,eventId,teams:[home,away],title:text(event.title||event.question),source:result.name,groupedEventCount:existing.relatedEventIds.length});
       } else {
-        groups.set(groupKey,{eventId,slug,url:eventUrl(event),title:text(event.title||event.question),homeTeam:home,awayTeam:away,startTime,endTime,active:event.active!==false,closed:event.closed===true,markets:nestedMarkets,relatedEventIds:[eventId]});
+        groups.set(groupKey,{eventId,slug,url:eventUrl(event),title:text(event.title||event.question),homeTeam:home,awayTeam:away,startTime,endTime,active:event.active!==false,closed:event.closed===true,polymarketLiveHint:event.live===true||event.isLive===true||/live|in progress|playing|ongoing/i.test(text(event.status)),markets:nestedMarkets,relatedEventIds:[eventId]});
         log("INFO","match_discovery_passed","Unique football fixture passed discovery",{source:result.name,eventId,slug,fixtureKey:groupKey,teams:[home,away],startTime,active:event.active,closed:event.closed,marketCount:nestedMarkets.length});
       }}await checkpoint("event_source_done",{source:result.name,rows:result.rows.length,eventScanned,footballEventFound,uniqueFixtures:groups.size,childMarketEventsGrouped});}
   const matches=Array.from(groups.values());
