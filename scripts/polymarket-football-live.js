@@ -299,8 +299,12 @@ async function ensureEventMarkets(match) {
       const eventMarkets = normalizeMarkets(event?.markets);
 
       // Fallback source: query Gamma's markets endpoint directly for this event.
+      // We need both the current 1X2 and the Exact Score (1:1) market for alerts.
       let directMarkets = [];
-      if (!findMatchResultMarket({ ...match, markets: eventMarkets })) {
+      if (
+        !findMatchResultMarket({ ...match, markets: eventMarkets }) ||
+        !findOneOneMarket({ ...match, markets: eventMarkets })
+      ) {
         try {
           const marketData = await getJson(
             GAMMA_URL + "/markets?event_id=" + encodeURIComponent(match.eventId) + "&active=true&closed=false&limit=500",
@@ -335,6 +339,11 @@ async function ensureEventMarkets(match) {
           homeProb: oneXTwo.homeProb,
           drawProb: oneXTwo.drawProb,
           awayProb: oneXTwo.awayProb
+        } : null,
+        exactScoreOneOne: findOneOneMarket(match) ? {
+          outcome: findOneOneMarket(match).outcome,
+          price: findOneOneMarket(match).price,
+          question: findOneOneMarket(match).market.question || null
         } : null,
         elapsedMs: Date.now() - startedAt
       });
@@ -443,6 +452,17 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     }
 
     const oneXTwoLine = `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`;
+    const exactScoreOneOne = findOneOneMarket(match);
+    const exactScoreOneOneLine = exactScoreOneOne
+      ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
+      : "1:1 YES: —";
+    log("INFO", "exact_score_one_one_snapshot", "Captured current Polymarket Exact Score 1:1 price for BUY alert", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      price: exactScoreOneOne?.price ?? null,
+      outcome: exactScoreOneOne?.outcome ?? null,
+      question: exactScoreOneOne?.market?.question ?? null
+    });
     const difference = Math.abs(oneXTwo.homeProb - oneXTwo.awayProb);
     if (difference > BALANCE_MAX_DIFF) {
       log("INFO", "buy_blocked_unbalanced", "Fixture reached BUY but 1X2 home/away probabilities differ by more than the allowed threshold", {
@@ -490,7 +510,9 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     });
 
     const message = [
-      "⚽ BUY", "",
+      "⚽ BUY",
+      exactScoreOneOneLine,
+      "",
       match.homeTeam + " vs " + match.awayTeam,
       "LIVE / STARTING",
       "", oneXTwoLine, "", "➡️ OPEN MATCH", match.url
@@ -551,12 +573,29 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   const hasGoal = (home + away) > 0;
   if (!hasGoal) return;
 
+  // Refresh the event markets immediately before SELL so the alert carries
+  // the current Exact Score 1:1 YES price from the live match.
+  await ensureEventMarkets(match);
+  const exactScoreOneOne = findOneOneMarket(match);
+  const exactScoreOneOneLine = exactScoreOneOne
+    ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
+    : "1:1 YES: —";
+  log("INFO", "exact_score_one_one_snapshot", "Captured current Polymarket Exact Score 1:1 price for SELL alert", {
+    eventId: match.eventId,
+    teams: [match.homeTeam, match.awayTeam],
+    price: exactScoreOneOne?.price ?? null,
+    outcome: exactScoreOneOne?.outcome ?? null,
+    question: exactScoreOneOne?.market?.question ?? null
+  });
+
   const claimKey = key + ":SELL";
   const claim = await claimTelegramAlert(claimKey);
   if (!claim.claimed) return;
 
   const message = [
-    "⚽ SELL", "",
+    "⚽ SELL",
+    exactScoreOneOneLine,
+    "",
     match.homeTeam + " vs " + match.awayTeam,
     "SCORE: " + home + "–" + away,
     "", "➡️ OPEN MATCH", match.url
