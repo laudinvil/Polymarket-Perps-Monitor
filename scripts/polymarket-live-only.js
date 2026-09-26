@@ -200,7 +200,8 @@ async function scan(){
     let e;
     try{e=await json(GAMMA+"/events/slug/"+encodeURIComponent(row.slug),3500);}
     catch(err){console.log(JSON.stringify({event:"tracked_event_failed",key,message:err.message}));continue;}
-    const score=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away))||{home:0,away:0};
+    const detectedScore=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away));
+    const score=detectedScore||{home:0,away:0};
     const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
     if(!row.liveSent){
       const sent=await sendLive(row,score);
@@ -214,7 +215,7 @@ async function scan(){
       if(sent)row.lastScore=scoreKey;
     }
     if(eventFinished(e)){
-      if(score.home===0&&score.away===0) await sendLoss(row,score);
+      if(detectedScore&&score.home===0&&score.away===0) await sendLoss(row,score);
       tracked.delete(key);
     }
   }
