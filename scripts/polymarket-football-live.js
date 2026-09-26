@@ -393,17 +393,18 @@ function scoreTotal(match) {
   return Number(match.live?.score?.home || 0) + Number(match.live?.score?.away || 0);
 }
 
-async function maybeOneOneAlert(match, nutmeg) {
+async function maybeOneOneAlert(match, nutmeg, phase = "live") {
   if (!match.url) return;
 
   const key = match.eventId || match.slug;
-  const preMatch = Boolean(match.preMatch);
   const home = Number(match.live?.score?.home || 0);
   const away = Number(match.live?.score?.away || 0);
 
-  if (!preMatch && (!match.live || match.live.status === "unresolved" || match.live.status === "provider_error" || match.live.status === "provider_unavailable")) return;
+  // BUY is created only while the fixture is still pre-match.
+  // A match discovered for the first time already live is never a BUY candidate.
+  if (phase === "prematch") {
+    oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
-  if (preMatch || (home === 0 && away === 0)) {
     const claimKey = key + ":BUY";
     const claim = await claimTelegramAlert(claimKey);
     if (!claim.claimed) return;
@@ -411,7 +412,7 @@ async function maybeOneOneAlert(match, nutmeg) {
     const message = [
       "⚽ 1:1 · BUY", "",
       match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: 0–0",
+      "PRE-MATCH",
       "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
@@ -419,8 +420,8 @@ async function maybeOneOneAlert(match, nutmeg) {
       const sent = await sendTelegram(message);
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
-      log("INFO", "one_one_buy_alert_sent", "1:1 entry alert sent", {
-        eventId: match.eventId, preMatch, reason: "balanced_nutmeg_candidate", telegramMessageId: sent.messageId
+      log("INFO", "one_one_buy_alert_sent", "1:1 pre-match entry alert sent", {
+        eventId: match.eventId, reason: "balanced_nutmeg_prematch", telegramMessageId: sent.messageId
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
@@ -431,43 +432,43 @@ async function maybeOneOneAlert(match, nutmeg) {
     return;
   }
 
-  // A BUY that remains 0:0 through full time is a LOSS. Nutmegly is
-  // the authoritative score source for this final-state check.
-  if (match.live?.finished && home === 0 && away === 0) {
-    const claimKey = key + ":LOSS";
+  // Only a fixture that was previously admitted as pre-match gets a
+  // one-time STARTED reminder when its state changes to live.
+  if (phase === "started") {
+    const state = oneOneState.get(key);
+    if (!state?.prematchSeen) return;
+
+    const claimKey = key + ":STARTED";
     const claim = await claimTelegramAlert(claimKey);
     if (!claim.claimed) return;
 
     const message = [
-      "⚽ LOSS", "",
+      "⚽ MATCH STARTED", "",
       match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: 0–0",
+      "SCORE: " + home + "–" + away,
       "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
     try {
       const sent = await sendTelegram(message, claim.replyToMessageId);
       if (!sent.ok) throw new Error("Telegram not configured");
-      log("INFO", "one_one_loss_alert_sent", "1:1 loss alert sent as Telegram reply to BUY", {
+      log("INFO", "match_started_alert_sent", "Pre-match fixture transitioned to live", {
         eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId
       });
     } catch (err) {
       await releaseTelegramAlert(claimKey);
-      log("ERROR", "telegram_send_failed", "LOSS alert send failed; claim released", {
+      log("ERROR", "telegram_send_failed", "MATCH STARTED alert send failed; claim released", {
         eventId: match.eventId, message: err.message
       });
     }
     return;
   }
 
-  // SELL requires a BUY first. A goal can happen between any two
-  // 20s cycles, so do not require the observed score to be exactly 1:0/0:1.
-  // Any non-zero score is an exit signal; Convex dedupe guarantees one SELL.
+  // A goal can happen between two 20s cycles. SELL is allowed only after
+  // a prior BUY claim; an already-live fixture discovered without a BUY
+  // is never converted into an entry.
   const hasGoal = (home + away) > 0;
   if (!hasGoal) return;
-
-  const firstGoalKey = key + ":FIRST_GOAL";
-  await claimTelegramAlert(firstGoalKey);
 
   const claimKey = key + ":SELL";
   const claim = await claimTelegramAlert(claimKey);
@@ -492,7 +493,6 @@ async function maybeOneOneAlert(match, nutmeg) {
       eventId: match.eventId, message: err.message
     });
   }
-
 }
 
 async function tick() {
@@ -531,198 +531,94 @@ async function tick() {
       }))
     });
 
-    const now = Date.now();
-    const todayUtc = new Date(now).toISOString().slice(0, 10);
-    const fixtureDate = match => {
-      const slugMatch = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/);
-      if (slugMatch) return slugMatch[1];
-      const parsed = Date.parse(match.startTime || "");
-      return Number.isNaN(parsed) ? null : new Date(parsed).toISOString().slice(0, 10);
-    };
-    // Gamma startDate is often the event publication/update timestamp, not
-    // the fixture kickoff. The fixture date in the Polymarket slug is the
-    // reliable date signal for live-vs-future classification.
-    const liveCandidates = matches.filter(m => {
-      const d = fixtureDate(m);
-      const kickoff = Date.parse(m.startTime || "");
-      return d === todayUtc && (Number.isNaN(kickoff) || kickoff <= now);
-    });
-    const preMatchCandidates = matches.filter(m => {
-      const d = fixtureDate(m);
-      const kickoff = Date.parse(m.startTime || "");
-      return Boolean(d && (d > todayUtc || (d === todayUtc && Number.isFinite(kickoff) && kickoff > now)));
-    });
-    log("INFO", "match_timing_classified", "Classified football candidates by fixture date", {
-      todayUtc,
-      total: matches.length,
-      liveToday: liveCandidates.length,
-      preMatchFuture: preMatchCandidates.length,
-      unknownDate: matches.length - liveCandidates.length - preMatchCandidates.length
-    });
-
+    const todayUtc = new Date().toISOString().slice(0, 10);
     const evaluationStartedAt = Date.now();
     log("INFO", "stage_start", "Alert evaluation stage started", {
-      stage: "evaluation", candidates: matches.length
+      stage: "evaluation", candidates: matches.length,
+      rule: "BUY only pre-match; already-live 0:0 is never an entry"
     });
 
-    // The 1:1 market is not a discovery or BUY gate. Do not load hundreds
-    // of event-market payloads before reaching the alert decision.
-    // Evaluate fixtures concurrently in bounded batches. A slow Gamma event
-    // endpoint must never serialize hundreds of matches into a multi-minute tick.
+    // IMPORTANT: discovery admits fixtures before kickoff. A fixture that is
+    // already live when first seen is NOT a BUY candidate, even at 0:0.
+    // The live transition is only a reminder for fixtures previously admitted
+    // as pre-match. Goal/SELL logic remains available only after a prior BUY.
     const EVAL_BATCH = 20;
     for (let batchStart = 0; batchStart < matches.length; batchStart += EVAL_BATCH) {
       const batch = matches.slice(batchStart, batchStart + EVAL_BATCH);
       await Promise.all(batch.map(async match => {
-      // Nutmegly live state takes precedence over Gamma kickoff timestamps.
-      // Gamma startDate can be a publication/update timestamp, so a live card
-      // must never be misclassified as pre-match merely because kickoff metadata
-      // is stale or inaccurate.
-      const nm = findNutmegMatch(match, nutmeg);
-      // Nutmeg probabilities refresh every 30s, while live score must
-      // never inherit that cache. Refresh Polymarket live state every 20s so
-      // a goal can trigger SELL on the next monitor cycle.
-      const fastLiveState = nm ? await refreshPolymarketLiveState(match) : null;
-      const nmIsLive = Boolean(
-        (fastLiveState?.status === "live" && fastLiveState?.score) ||
-        (nm?.row?.live && nm?.row?.score)
-      );
-      const slugDate = text(match.slug).match(/(?:^|-)((?:20)\d{2}-\d{2}-\d{2})(?:-|$)/)?.[1] || null;
-      const kickoff = Date.parse(match.startTime || "");
-      const fixtureDay = slugDate || (Number.isNaN(kickoff) ? null : new Date(kickoff).toISOString().slice(0, 10));
-      const preMatch = !nmIsLive && Boolean(
-        fixtureDay &&
-        (fixtureDay > new Date().toISOString().slice(0, 10) ||
-         (fixtureDay === new Date().toISOString().slice(0, 10) && Number.isFinite(kickoff) && kickoff > Date.now()))
-      );
-
-      if (preMatch) {
-        let candidateProvider = "nutmeg";
-        let candidate = Boolean(nm && balancedForOneOne(nm));
-                log("INFO", "candidate_evaluation", "Pre-match BUY filter evaluated", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          preMatch: true,
-          candidateProvider,
-          nutmegMatched: Boolean(nm),
-          nutmegScore: nm?.score ?? null,
-          balanced: balancedForOneOne(nm),
-          candidate
-        });
-
-        if (!candidate) {
-          log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected", {
-            eventId: match.eventId,
-            teams: [match.homeTeam, match.awayTeam],
-            candidateProvider,
-            nutmeg: nm?.row || null
-          });
-          return;
-        }
-
-        await maybeOneOneAlert({
-          ...match,
-          live: { status: "scheduled", score: { home: 0, away: 0 }, minute: 0 }
-        }, nm);
-        return;
-      }
-
-      // Nutmegly is the probability/matching source and refreshes every 30s.
-      // 5 minutes. Score monitoring is independent and refreshes from Gamma
-      // every 20s. Nutmeg live score is only a secondary fallback.
-      const nmLive = nm;
-      let liveState = null;
-      if (fastLiveState?.status === "live" && fastLiveState.score) {
-        liveState = fastLiveState;
-        log("INFO", "live_state_from_polymarket_fast", "Fast live score received from Polymarket", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          score: liveState.score,
-          minute: liveState.minute
-        });
-      } else if (nmLive?.row?.live && nmLive.row.score) {
-        liveState = {
-          status: "live",
-          score: nmLive.row.score,
-          minute: Number(nmLive.row.minute || 0),
-          finished: Boolean(nmLive.row.finished)
-        };
-        log("INFO", "live_state_from_nutmeg_fallback", "Used Nutmeg live score fallback", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          score: liveState.score,
-          minute: liveState.minute
-        });
-      } else if (nmLive) {
-        log("INFO", "live_state_unavailable", "Fast score refresh did not report a live state", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          fastScore: fastLiveState?.score || null,
-          fastStatus: fastLiveState?.status || null
-        });
-      } else {
-        log("INFO", "live_state_unavailable", "Fixture was not matched to Nutmegly; skipped expensive Polymarket live fallback", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          nutmegMatched: false
-        });
-        return;
-      }
-      if (!liveState) {
-        log("INFO", "live_state_unavailable", "No live score available from Nutmegly or Polymarket; live alert evaluation skipped", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          nutmegMatched: Boolean(nmLive),
-          nutmegLive: Boolean(nmLive?.row?.live)
-        });
-        return;
-      }
-      match.live = liveState;
-      const score = match.live.score || { home: 0, away: 0 };
-
-      log("INFO", "live_candidate_observed", "Live candidate observed", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam],
-        score,
-        minute: match.live?.minute ?? 0
-      });
-
-      // At 0:0, apply BUY filters.
-      if (Number(score.home) === 0 && Number(score.away) === 0) {
         const nm = findNutmegMatch(match, nutmeg);
-        const candidateProvider = "nutmeg";
-        const candidate = Boolean(nm && balancedForOneOne(nm));
-        log("INFO", "candidate_evaluation", "Live 0:0 BUY filter evaluated", {
-          eventId: match.eventId,
-          teams: [match.homeTeam, match.awayTeam],
-          preMatch: false,
-          score,
-          candidateProvider,
-          nutmegMatched: Boolean(nm),
-          nutmegScore: nm?.score ?? null,
-          balanced: balancedForOneOne(nm),
-          candidate,
-          price: findOneOneMarket(match)?.price ?? null
-        });
+        const fastLiveState = await refreshPolymarketLiveState(match);
+        const isLive = Boolean(
+          fastLiveState?.status === "live" ||
+          nm?.row?.live
+        );
 
-        if (!candidate) {
-          log("INFO", "candidate_rejected_buy_filter", "Live 0:0 candidate rejected", {
+        // Pre-match means the fixture is not currently live. This is the
+        // admission state: balanced Nutmeg probability is checked here and
+        // BUY can happen here only.
+        if (!isLive) {
+          const candidate = Boolean(nm && balancedForOneOne(nm));
+          log("INFO", "prematch_evaluation", "Pre-match fixture evaluated for BUY", {
             eventId: match.eventId,
             teams: [match.homeTeam, match.awayTeam],
-            candidateProvider,
-            nutmeg: nm?.row || null
+            nutmegMatched: Boolean(nm),
+            nutmegScore: nm?.score ?? null,
+            balanced: balancedForOneOne(nm),
+            candidate
           });
+
+          if (!candidate) {
+            log("INFO", "candidate_rejected_buy_filter", "Pre-match candidate rejected", {
+              eventId: match.eventId,
+              teams: [match.homeTeam, match.awayTeam],
+              reason: nm ? "not_balanced" : "nutmeg_match_missing"
+            });
+            return;
+          }
+
+          await maybeOneOneAlert({
+            ...match,
+            live: { status: "scheduled", score: { home: 0, away: 0 }, minute: 0 }
+          }, nm, "prematch");
           return;
         }
 
-        await maybeOneOneAlert({ ...match, live: { ...match.live, score }, preMatch: false }, nm);
-        return;
-      }
+        // Already-live fixtures are never entered at 0:0. If this exact
+        // fixture was previously admitted pre-match, send only one STARTED
+        // reminder, then monitor the score for a post-BUY SELL.
+        const score = fastLiveState?.score ||
+          (nm?.row?.live && nm?.row?.score ? nm.row.score : { home: 0, away: 0 });
 
-      // After kickoff and after a goal, do not run BUY filters.
-      // maybeOneOneAlert sends SELL only for exactly 1:0/0:1,
-      // and Convex rejects SELL unless the BUY phase was completed.
-      cycle.sellEvaluated += 1;
-       await maybeOneOneAlert({ ...match, live: { ...match.live, score, finished: Boolean(match.live?.finished) }, preMatch: false }, nmLive);
+        const state = oneOneState.get(match.eventId || match.slug);
+        if (state?.prematchSeen) {
+          await maybeOneOneAlert({
+            ...match,
+            live: {
+              ...(fastLiveState || {}),
+              status: "live",
+              score
+            }
+          }, nm, "started");
+        }
+
+        log("INFO", "live_fixture_not_entry", "Already-live fixture skipped as BUY entry", {
+          eventId: match.eventId,
+          teams: [match.homeTeam, match.awayTeam],
+          score,
+          previouslyAdmittedPrematch: Boolean(state?.prematchSeen)
+        });
+
+        // Only a previously purchased pre-match fixture can produce SELL.
+        if ((Number(score.home) + Number(score.away)) > 0 && state?.prematchSeen) {
+          await maybeOneOneAlert({
+            ...match,
+            live: {
+              ...(fastLiveState || {}),
+              status: "live",
+              score
+            }
+          }, nm, "live");
+        }
       }));
     }
 
