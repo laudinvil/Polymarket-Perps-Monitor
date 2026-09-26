@@ -82,6 +82,33 @@ function gameScore(g){
 function gameMinute(g){
   return t(g.minute||g.matchMinute||g.elapsed||g.clock||g.time||g.gameTime||g.periodTime||g.matchClock||g.liveClock||g.clock?.display||g.clock?.minute||g.period?.minute);
 }
+function pageGameSnapshot(html, home, away, startValue){
+  const raw=decode(html)
+    .replace(/<script[\\s\\S]*?<\\/script>/gi," ")
+    .replace(/<style[\\s\\S]*?<\\/style>/gi," ")
+    .replace(/<[^>]+>/g," ")
+    .replace(/\\s+/g," ")
+    .trim();
+  const h=t(home),a=t(away);
+  const hi=raw.toLowerCase().indexOf(h.toLowerCase());
+  if(hi<0)return null;
+  const window=raw.slice(Math.max(0,hi-500),Math.min(raw.length,hi+1200));
+  const ai=window.toLowerCase().indexOf(a.toLowerCase());
+  if(ai<0)return null;
+  const between=window.slice(0,ai+h.length);
+  const scoreMatches=[...between.matchAll(/(?:^|\\s)(\\d{1,3})\\s*[-–:]\\s*(\\d{1,3})(?:\\s|$)/g)];
+  const score=scoreMatches.length? [Number(scoreMatches.at(-1)[1]),Number(scoreMatches.at(-1)[2])] : null;
+  const minuteMatch=window.match(/(?:^|\\s)(\\d{1,3})[′']/);
+  let minute=minuteMatch?minuteMatch[1]+"'" :"";
+  if(!minute){
+    const start=Date.parse(startValue||"");
+    if(Number.isFinite(start)&&start<=Date.now()){
+      const mins=Math.floor((Date.now()-start)/60000);
+      if(mins>=0&&mins<=130)minute=Math.min(mins,120)+"'";
+    }
+  }
+  return {score,minute};
+}
 function attachGame(x,g){
   x.game=g;
   const sc=gameScore(g); if(sc)x.score=sc;
@@ -223,6 +250,12 @@ async function discover(){
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
       const sc=gameScore(event); if(sc)item.score=sc;
       item.minute=gameMinute(event);
+      const pageSnap=pageGameSnapshot(liveHtml,home,away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
+      if(pageSnap){
+        if(pageSnap.score)item.score=pageSnap.score;
+        if(pageSnap.minute)item.minute=pageSnap.minute;
+        item.pageGameSnapshot=pageSnap;
+      }
     }
     candidates.push(item);
     console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATE",slug:item.slug,eventId:item.eventId,teams:[item.home,item.away],status:item.gameStatus,minute:item.minute??null,score:item.score??null,source:sourceConfirmed?"sports_ws":"page_or_gamma"}));
@@ -322,6 +355,15 @@ async function discover(){
       }
       const before=candidates.length;
       await addEvent(event,href,true,false);
+      const pageItem=candidates.find(x=>x.slug===slug||x.eventId===t(event.id));
+      if(pageItem){
+        const snap=pageGameSnapshot(liveHtml,pageItem.home,pageItem.away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
+        if(snap){
+          if(snap.score)pageItem.score=snap.score;
+          if(snap.minute)pageItem.minute=snap.minute;
+          pageItem.pageGameSnapshot=snap;
+        }
+      }
       if(candidates.length>before){
         pageLiveResolved++;
         console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_CANDIDATE",href,slug,eventId:event.id,title:event.title||event.question}));
@@ -374,12 +416,15 @@ function marketRows(event){
 function pct(v){const n=Number(v);return Number.isFinite(n)?(n*100).toFixed(1).replace(/\\.0$/,"")+"%":"—";}
 function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:0}):"—";}
 function marketText(r){
+  const title=(r.question||r.group||"Market")
+    .replace(/^Will\\s+/i,"")
+    .replace(/\\s+on\\s+\\d{4}-\\d{2}-\\d{2}\\??$/i,"")
+    .replace(/\\s+end\\s+in\\s+a\\s+draw\\??$/i," — Draw");
   const vals=r.outcomes.map((o,i)=>{
     const p=Number.isFinite(r.prices[i])?pct(r.prices[i]):"—";
     return o+": "+p;
-  }).join(" · ");
-  const meta=["VOL "+money(r.volume),"LIQ "+money(r.liquidity)].join(" · ");
-  return "• "+(r.question||r.group||"Market")+"\\n  "+vals+"\\n  "+meta;
+  }).join("\\n");
+  return title+"\\n"+vals+"\\nVOL: "+money(r.volume)+"\\nLIQ: "+money(r.liquidity);
 }
 function splitPages(header,rows,maxLen=TELEGRAM_MAX){
   const pages=[];let current=header;
@@ -412,7 +457,7 @@ function buildAlertPages(x){
   return splitPages(header,rows);
 }
 let telegramNextAt=0;
-async function sendTelegram(message,replyMarkup){
+async function sendTelegram(message,replyMarkup=null){
   const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
   const wait=Math.max(0,telegramNextAt-Date.now());
   if(wait>0)await new Promise(r=>setTimeout(r,wait));
@@ -420,7 +465,7 @@ async function sendTelegram(message,replyMarkup){
   for(let attempt=1;attempt<=4;attempt++){
     const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{
       method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({chat_id:chat,text:message,disable_web_page_preview:false,reply_markup:replyMarkup}),
+      body:JSON.stringify({chat_id:chat,text:message,disable_web_page_preview:false,...(replyMarkup?{reply_markup:replyMarkup}:{})}),
       signal:AbortSignal.timeout(10000)
     });
     const b=await r.json().catch(()=>({}));
@@ -514,12 +559,9 @@ async function cycle(){
       try {
         const pages=buildAlertPages(x);
         for(let i=0;i<pages.length;i++){
-          const label="📄 "+(i+1)+"/"+pages.length;
-          const replyMarkup={inline_keyboard:[
-            [{text:"➡️ OPEN MATCH",url:x.url}],
-            [{text:"🌐 POLYMARKET LIVE",url:LIVE_PAGE}]
-          ]};
-          await sendTelegram(label+"\\n\\n"+pages[i],replyMarkup);
+          const label=pages.length>1?"📄 "+(i+1)+"/"+pages.length:"";
+          const suffix="\\n\\n"+x.url;
+          await sendTelegram((label?(label+"\\n\\n"):"")+pages[i]+suffix);
         }
         alerted.add(id);
       } catch(e) {
