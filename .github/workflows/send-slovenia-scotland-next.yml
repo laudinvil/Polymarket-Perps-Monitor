@@ -93,6 +93,9 @@ jobs:
                 const extra=await get('https://gamma-api.polymarket.com/markets?event_id='+encodeURIComponent(id)+'&limit=500');
                 markets=[...direct,...arr(extra)];
               }
+              if(attempt===1){
+                console.log(JSON.stringify(markets.map(m=>({id:m?.id,slug:m?.slug,question:m?.question,title:m?.title,groupItemTitle:m?.groupItemTitle,marketGroup:m?.marketGroup,outcomes:m?.outcomes,outcomePrices:m?.outcomePrices,active:m?.active,closed:m?.closed})),null,2));
+              }
               exact=exact11(markets);
               odds=oneXTwo(markets);
               last=JSON.stringify({attempt,eventId:id,direct:direct.length,total:markets.length,exact,odds});
