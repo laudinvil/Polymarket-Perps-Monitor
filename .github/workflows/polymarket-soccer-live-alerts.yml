@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   monitor:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'schedule'
+    if: false # EMERGENCY STOP: disable soccer alerts until dedupe/live-data fix is verified
     runs-on: ubuntu-latest
     timeout-minutes: 240
     permissions:
