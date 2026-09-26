@@ -193,7 +193,7 @@ async function activeEventsBySeries(seriesId){const data=await getJson(GAMMA_URL
 
 
 async function discoverLivePageFixtures() {
-  const url = "https://polymarket.com/ru/sports/live";
+  const url = "https://polymarket.com/sports/live";
   try {
     const response = await fetch(url, {headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/150 Safari/537.36"},signal:AbortSignal.timeout(8_000)});
     const html = await response.text();
