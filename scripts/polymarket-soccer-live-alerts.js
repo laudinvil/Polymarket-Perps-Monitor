@@ -609,7 +609,12 @@ async function main(){
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
   try{healthServer.close()}catch{}
 }
-process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
+process.on("SIGTERM",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGTERM"}));stopping=true});
+process.on("SIGINT",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGINT"}));stopping=true});
+process.on("uncaughtException",e=>console.log(JSON.stringify({level:"ERROR",event:"uncaught_exception",name:e?.name,message:e?.message,stack:e?.stack})));
+process.on("unhandledRejection",e=>console.log(JSON.stringify({level:"ERROR",event:"unhandled_rejection",message:e?.message||String(e),stack:e?.stack})));
+console.log(JSON.stringify({level:"INFO",event:"startup_bootstrap",node:process.version,pid:process.pid,port:Number(process.env.PORT||3000)}));
+main().catch(e=>console.log(JSON.stringify({level:"ERROR",event:"main_failed",name:e?.name,message:e?.message,stack:e?.stack}));
 
 // DIAGNOSTIC_RUN_TRIGGER
 // FORCE_DIAGNOSTIC_TRIGGER_2026_09_26
