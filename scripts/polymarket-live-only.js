@@ -18,26 +18,77 @@ function parseSportsWsMessage(raw){
   if(raw === "ping"){ try{sportsWs?.send("pong");}catch{} return; }
   let msg;
   try{msg=JSON.parse(raw);}catch{return;}
-  const type=t(msg?.type||msg?.event_type);
-  if(type && type!=="sport_result")return;
-  const p=msg?.payload && typeof msg.payload==="object" ? msg.payload : msg;
-  const slug=t(p?.slug);
-  if(!slug)return;
-  // Competition abbreviations such as EPL/EFL/UCL are valid football.
-  // Do not require the literal words soccer/football here; the Gamma
-  // soccer universe below is the actual sport filter.
-  const league=t(p?.leagueAbbreviation||p?.league||p?.sport).toLowerCase();
-  polymarketSportsLiveState.set(slug,p);
+
+  const type=t(msg?.type||msg?.event_type||msg?.eventType);
+  if(type && type!=="sport_result" && type!=="sportResult")return;
+
+  const candidates=[];
+  const add=(v)=>{
+    if(!v || typeof v!=="object" || Array.isArray(v))return;
+    if(!candidates.includes(v))candidates.push(v);
+  };
+  add(msg?.payload);
+  add(msg?.data);
+  add(msg?.result);
+  add(msg);
+  for(const root of [...candidates]){
+    add(root?.data);
+    add(root?.event);
+    add(root?.sport_result);
+    add(root?.sportResult);
+    add(root?.payload);
+  }
+
+  const pick=(keys)=>{
+    for(const obj of candidates){
+      for(const key of keys){
+        const v=obj?.[key];
+        if(v!==undefined&&v!==null&&v!=="")return v;
+      }
+    }
+    return null;
+  };
+  const slug=t(pick(["slug","eventSlug","event_slug"]));
+  const id=t(pick(["id","eventId","event_id","sportEventId","sport_event_id"]));
+  if(!slug && !id){
+    log(JSON.stringify({event:"polymarket_sports_ws_unparsed",type,keys:Object.keys(msg||{}),preview:JSON.stringify(msg).slice(0,1200)}));
+    return;
+  }
+
+  const normalized={
+    ...Object.assign({}, ...candidates),
+    slug:slug||undefined,
+    id:id||undefined,
+    live:pick(["live","isLive","is_live","inPlay","inplay"]),
+    ended:pick(["ended","isEnded","is_ended","finished"]),
+    status:pick(["status","gameStatus","game_status","state"]),
+    score:pick(["score","liveScore","live_score","result"]),
+    homeScore:pick(["homeScore","home_score","homeGoals","home_goals"]),
+    awayScore:pick(["awayScore","away_score","awayGoals","away_goals"]),
+    minute:pick(["minute","minutes","matchMinute","match_minute","elapsed"]),
+    elapsed:pick(["elapsed","minute","minutes","matchMinute","match_minute"]),
+    period:pick(["period","currentPeriod","current_period","phase"]),
+    leagueAbbreviation:pick(["leagueAbbreviation","league_abbreviation","league","competition","sport"])
+  };
+
+  // Index by slug and id. Keep the raw message for diagnostics and robust
+  // score/minute extraction even when Polymarket changes nesting.
+  const keys=[slug,id].filter(Boolean);
+  for(const key of keys)polymarketSportsLiveState.set(key,normalized);
+
   log(JSON.stringify({
     event:"polymarket_sports_ws_update",
-    slug,
-    league,
-    status:p?.status,
-    live:p?.live,
-    ended:p?.ended,
-    score:p?.score,
-    period:p?.period,
-    elapsed:p?.elapsed
+    slug:slug||null,
+    id:id||null,
+    league:t(normalized.leagueAbbreviation).toLowerCase(),
+    status:normalized.status,
+    live:normalized.live,
+    ended:normalized.ended,
+    score:normalized.score,
+    homeScore:normalized.homeScore,
+    awayScore:normalized.awayScore,
+    period:normalized.period,
+    elapsed:normalized.elapsed
   }));
 }
 
@@ -403,17 +454,43 @@ function eventScore(e){
   return null;
 }
 function sportsWsScore(ws){
-  const raw=t(ws?.score);
-  if(!raw)return null;
-  const m=raw.match(/(^|[^0-9])(\\d{1,2})\\s*[-–:]\\s*(\\d{1,2})(?=$|[^0-9])/);
-  if(!m)return null;
-  const home=Number(m[2]),away=Number(m[3]);
-  return home<=20&&away<=20?{home,away}:null;
+  if(!ws)return null;
+  const pairs=[
+    [ws.homeScore,ws.awayScore],
+    [ws.home_score,ws.away_score],
+    [ws.score?.home,ws.score?.away],
+    [ws.score?.homeScore,ws.score?.awayScore],
+    [ws.score?.home_score,ws.score?.away_score],
+    [ws.liveScore?.home,ws.liveScore?.away],
+    [ws.live_score?.home,ws.live_score?.away]
+  ];
+  for(const pair of pairs){
+    const home=Number(pair[0]),away=Number(pair[1]);
+    if(Number.isFinite(home)&&Number.isFinite(away)&&home>=0&&away>=0&&home<=20&&away<=20)
+      return {home,away};
+  }
+  for(const rawValue of [ws.score,ws.result,ws.liveScore,ws.live_score]){
+    const raw=typeof rawValue==="string"?rawValue:JSON.stringify(rawValue||"");
+    const m=raw.match(/(^|[^0-9])(\d{1,2})\s*[-–:]\s*(\d{1,2})(?=$|[^0-9])/);
+    if(m){
+      const home=Number(m[2]),away=Number(m[3]);
+      if(home<=20&&away<=20)return {home,away};
+    }
+  }
+  return null;
 }
 function sportsWsMinute(ws){
-  const raw=t(ws?.elapsed);
-  const m=raw.match(/(\\d{1,3})/);
-  return m?Number(m[1]):null;
+  if(!ws)return null;
+  for(const v of [ws.minute,ws.elapsed,ws.matchMinute,ws.match_minute]){
+    if(typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=150)return Math.floor(v);
+    const raw=t(v);
+    const m=raw.match(/(\d{1,3})/);
+    if(m){
+      const n=Number(m[1]);
+      if(n>=0&&n<=150)return n;
+    }
+  }
+  return null;
 }
 function cardAround(page,home,away){
   const p=norm(page),h=norm(home),a=norm(away);if(!p||!h||!a)return null;
@@ -463,33 +540,11 @@ async function exactScore11(e){
     log(JSON.stringify({event:"exact_score_11_source",source:"event.markets",price:pct(direct)}));
     return direct;
   }
-  const id=t(e?.id||e?.eventId);
-  if(!id)return null;
-  try{
-    const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",3500);
-    const markets=Array.isArray(data)?data:arr(data?.markets);
-    const value=exactScore11Yes({markets});
-    if(value!==null)log(JSON.stringify({event:"exact_score_11_source",source:"Gamma /markets",eventId:id,price:pct(value),markets:markets.length}));
-    return value;
-  }catch(err){
-    log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
-    return null;
-  }
+  const markets=await loadPolyMarkets(e);
+  const value=exactScore11FromMarkets(markets);
+  if(value!==null)log(JSON.stringify({event:"exact_score_11_source",source:"event_slug_markets",price:pct(value)}));
+  return value;
 }
-function pct(v){return Math.round(v*100)+"%";}
-function exactDelta(first,current){
-  const d=current-first;
-  const arrow=d>0?"↑":d<0?"↓":"→";
-  return pct(first)+" "+arrow+" "+pct(current)+" ("+(d>0?"+":"")+Math.round(d*100)+" п.п.)";
-}
-function eventFinished(e){
-  if(e?.closed===true||e?.resolved===true||e?.ended===true)return true;
-  const status=t(e?.status||e?.gameStatus||e?.game_status||e?.state).toLowerCase();
-  if(/^(final|finished|ended|resolved|complete|completed)$/.test(status))return true;
-  const end=startMs({startDate:e?.endDate,endTime:e?.endTime});
-  return Number.isFinite(end)&&end<=Date.now();
-}
-function oneXTwo(e,home,away){const p=parsePolyOneXTwo(e,home,away);return p?formatOne(p):null;}
 async function claim(key){
   try{
     const r=await fetch(CONVEX+"/football/claim",{method:"POST",headers:{"content-type":"application/json"},
@@ -589,14 +644,35 @@ async function polymarketSportsLive(){
   const live=[];
   for(const e of all){
     const slug=t(e?.slug);
-    const ws=slug?polymarketSportsLiveState.get(slug):null;
+    const eid=t(e?.id||e?.eventId);
+    const ws= (slug&&polymarketSportsLiveState.get(slug))
+      || (eid&&polymarketSportsLiveState.get(eid))
+      || null;
     const status=t(ws?.status||e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
     const started=startMs(e);
     const startedNow=!Number.isFinite(started)||started<=Date.now();
-    const wsLive=ws?.live===true && ws?.ended!==true;
+    const wsLive=(ws?.live===true||ws?.live==="true"||ws?.live===1||ws?.live==="1"||
+      /live|in.?progress|halftime|break|paused|suspended|interrupted/i.test(t(ws?.status))) &&
+      ws?.ended!==true && ws?.ended!=="true";
     const gammaLive=e?.live===true||e?.isLive===true||liveStatuses.has(status);
     if(startedNow && (wsLive||gammaLive)){
       live.push(ws ? {...e,__sportsWs:ws} : e);
+    }
+  }
+
+  // If the WS announced a live fixture that Gamma's soccer event list did not
+  // include, recover it by matching the announced slug/id against active
+  // Gamma events. This prevents the WS state from being discarded merely
+  // because the two feeds expose different event universes.
+  for(const [wsKey,ws] of polymarketSportsLiveState){
+    const wsLive=(ws?.live===true||ws?.live==="true"||ws?.live===1||ws?.live==="1"||
+      /live|in.?progress|halftime|break|paused|suspended|interrupted/i.test(t(ws?.status))) &&
+      ws?.ended!==true && ws?.ended!=="true";
+    if(!wsLive)continue;
+    const hit=all.find(e=>t(e?.slug)===t(ws?.slug)||t(e?.id||e?.eventId)===t(ws?.id));
+    if(hit){
+      if(!live.some(e=>t(e?.id||e?.eventId||e?.slug)===t(hit?.id||hit?.eventId||hit?.slug)))
+        live.push({...hit,__sportsWs:ws});
     }
   }
 
@@ -704,7 +780,7 @@ async function discoverLiveZeroZero(){
         home:Number(sofaEvent?.homeScore?.current),
         away:Number(sofaEvent?.awayScore?.current)
       } : null;
-      const score=polyScore || wsScore || (
+      const score=wsScore || polyScore || (
         sofaScore && Number.isFinite(sofaScore.home) && Number.isFinite(sofaScore.away) &&
         sofaScore.home>=0 && sofaScore.away>=0 ? sofaScore : null
       );
@@ -742,23 +818,13 @@ async function discoverLiveZeroZero(){
         sofa
       }));
 
-      // Never send a price-less LIVE alert. Both 1X2 and 1:1
-      // prices must be present in the Telegram message.
+      // Market prices are Polymarket-only. Missing contracts must not
+      // suppress the first LIVE alert; show an em dash until the contract
+      // becomes available, while keeping the candidate fully diagnosed.
       const alertPrices={
         one:polyOne||null,
         exact:polyExact!=null?polyExact:null
       };
-      if(!alertPrices.one||alertPrices.exact==null){
-        log(JSON.stringify({
-          event:"live_alert_blocked_missing_prices",
-          teams:[phome,paway],
-          sourceSlug:pm?.slug,
-          fixtureSlug:fixture?.slug,
-          has1X2:!!alertPrices.one,
-          hasExact11:alertPrices.exact!=null
-        }));
-        continue;
-      }
       await sendLiveFound(phome,paway,minute,score,alertPrices,fixture);
 
       if(!sofaEvent)continue;
