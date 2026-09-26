@@ -65,9 +65,29 @@ function arr(v){
   return [];
 }
 async function json(url, timeout=5000){
-  const r=await fetch(url,{headers:{accept:"application/json","user-agent":"PolymarketFootballMonitor/2.0"},signal:AbortSignal.timeout(timeout)});
-  if(!r.ok)throw new Error("HTTP "+r.status+" "+url);
-  return r.json();
+  const headers={
+    accept:"application/json, text/plain, */*",
+    "accept-language":"en-US,en;q=0.9",
+    "user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    origin:"https://www.sofascore.com",
+    referer:"https://www.sofascore.com/"
+  };
+  let last;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const r=await fetch(url,{headers,signal:AbortSignal.timeout(timeout)});
+      if(!r.ok){
+        last=new Error("HTTP "+r.status+" "+url);
+        if(r.status===403&&attempt===0){await new Promise(x=>setTimeout(x,250));continue;}
+        throw last;
+      }
+      return r.json();
+    }catch(err){
+      last=err;
+      if(attempt===0)await new Promise(x=>setTimeout(x,250));
+    }
+  }
+  throw last||new Error("HTTP request failed "+url);
 }
 async function sofascoreLive(){
   const urls=[SOFASCORE_LIVE_URL];
