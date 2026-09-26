@@ -255,7 +255,22 @@ async function discoverLiveZeroZero(){
     try{
       const candidates=await polymarketSearch(home,away),pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
       if(!pm){log(JSON.stringify({event:"sofascore_00_no_polymarket",teams:[home,away],minute:sofascoreMinute(s)}));continue;}
-      const sofa=await sofascoreOdds(s.id),polyOne=parsePolyOneXTwo(pm,home,away),polyExact=exactScore11Yes(pm);
+      const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
+      let full=pm;
+      try{
+        if(polySlug) full=(await json(GAMMA+"/events/slug/"+encodeURIComponent(polySlug),5000))||pm;
+        else if(polyId) full=(await json(GAMMA+"/events/"+encodeURIComponent(polyId),5000))||pm;
+      }catch(err){log(JSON.stringify({event:"polymarket_event_fetch_failed",teams:[home,away],message:err.message}));}
+      if(polyId){
+        try{
+          const md=await json(GAMMA+"/markets?event_id="+encodeURIComponent(polyId)+"&limit=500",5000);
+          const markets=arr(md?.markets??md);
+          if(markets.length)full={...full,markets};
+          log(JSON.stringify({event:"polymarket_markets_loaded",teams:[home,away],eventId:polyId,marketCount:markets.length}));
+        }catch(err){log(JSON.stringify({event:"polymarket_markets_fetch_failed",teams:[home,away],eventId:polyId,message:err.message}));}
+      }
+      log(JSON.stringify({event:"polymarket_match_found",teams:[home,away],eventId:polyId,slug:polySlug,candidateCount:candidates.length}));
+      const sofa=await sofascoreOdds(s.id),polyOne=parsePolyOneXTwo(full,home,away),polyExact=exactScore11Yes(full);
       if(!sofa.one||sofa.exact==null||!polyOne||polyExact==null){log(JSON.stringify({event:"sofascore_poly_market_data_missing",teams:[home,away],minute:sofascoreMinute(s),sofa,polyOne,polyExact}));continue;}
       const pass=approxPass(sofa,{one:polyOne,exact:polyExact}),maxDiff=Math.max(Math.abs(sofa.one.home-polyOne.home),Math.abs(sofa.one.draw-polyOne.draw),Math.abs(sofa.one.away-polyOne.away),Math.abs(sofa.exact-polyExact));
       log(JSON.stringify({event:"sofascore_match_check",teams:[home,away],minute:sofascoreMinute(s),sofa,poly:{one:polyOne,exact:polyExact},maxDiff,pass}));
