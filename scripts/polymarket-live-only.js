@@ -1,6 +1,6 @@
 const GAMMA = "https://gamma-api.polymarket.com";
 const SOCCER_GAMES_URL = "https://polymarket.com/sports/soccer/games";
-const POLL_MS = 15_000;
+const POLL_MS = 15_000; // continuous football discovery
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const SOON_MS = 6 * 60 * 60 * 1000;
 const CONVEX = (process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site").replace(/\/$/, "");
