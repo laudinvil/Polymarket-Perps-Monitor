@@ -484,7 +484,7 @@ async function maybeOneOneAlert(match, nutmeg) {
     const sent = await sendTelegram(message, claim.replyToMessageId);
     if (!sent.ok) throw new Error("Telegram not configured");
     log("INFO", "one_one_sell_alert_sent", "1:1 exit alert sent as Telegram reply to BUY", {
-      eventId: match.eventId, score: { home, away }, recovery, replyToMessageId: claim.replyToMessageId
+      eventId: match.eventId, score: { home, away }, goalDetected: hasGoal, replyToMessageId: claim.replyToMessageId
     });
   } catch (err) {
     await releaseTelegramAlert(claimKey);
