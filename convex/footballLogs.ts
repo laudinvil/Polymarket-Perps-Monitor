@@ -147,12 +147,19 @@ export const claimTelegramAlert = mutation({
       return { claimed: true, replyToMessageId: buy.telegramMessageId };
     }
     if (existing) return { claimed: false, replyToMessageId: null };
+    const sellScoreMatch = args.marketSlug.match(/^(.*):SELL:(\d+)-(\d+)$/);
+    if (sellScoreMatch) {
+      const baseKey = sellScoreMatch[1];
+      const live = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":LIVE")).first();
+      if (!live || !live.telegramMessageId || existing) return { claimed: false, replyToMessageId: null };
+      await ctx.db.insert("telegramDedupe", { monitor: MONITOR, marketSlug: args.marketSlug, claimedAt: now });
+      return { claimed: true, replyToMessageId: live.telegramMessageId };
+    }
     if (args.marketSlug.endsWith(":SELL")) {
       const baseKey = args.marketSlug.slice(0, -5);
       const live = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":LIVE")).first();
-      if (!live || !live.telegramMessageId) return { claimed: false, replyToMessageId: null };
-      if (existing) await ctx.db.patch(existing._id, { claimedAt: now });
-      else await ctx.db.insert("telegramDedupe", { monitor: MONITOR, marketSlug: args.marketSlug, claimedAt: now });
+      if (!live || !live.telegramMessageId || existing) return { claimed: false, replyToMessageId: null };
+      await ctx.db.insert("telegramDedupe", { monitor: MONITOR, marketSlug: args.marketSlug, claimedAt: now });
       return { claimed: true, replyToMessageId: live.telegramMessageId };
     }
     if (args.marketSlug.endsWith(":STARTED")) {
@@ -191,6 +198,15 @@ export const saveTelegramMessageId = mutation({
     if (!row) return null;
     await ctx.db.patch(row._id, { telegramMessageId: args.messageId });
     return null;
+  },
+});
+
+export const telegramMessage = query({
+  args: { monitor: v.string(), marketSlug: v.string() },
+  returns: v.union(v.object({ telegramMessageId: v.optional(v.number()) }), v.null()),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", q => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug)).first();
+    return row ? { telegramMessageId: row.telegramMessageId } : null;
   },
 });
 
