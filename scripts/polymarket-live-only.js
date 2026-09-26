@@ -399,6 +399,15 @@ async function polymarketSportsLive(){
       if(id)merged.set(id,e);
     }
   };
+  // Direct soccer slug query is the most reliable discovery path; the
+  // sports metadata/tag-id relationship can vary by league.
+  try{
+    const page=await json(GAMMA+"/events?tag_slug=soccer&active=true&closed=false&limit=500&order=startDate&ascending=false",5000);
+    ingest(page);
+  }catch(err){
+    log(JSON.stringify({event:"polymarket_soccer_slug_events_failed",message:err.message}));
+  }
+
   for(const tagId of tagIds){
     try{
       const page=await json(GAMMA+"/events?tag_id="+encodeURIComponent(tagId)+"&related_tags=false&closed=false&limit=100&order=volume24hr&ascending=false",5000);
