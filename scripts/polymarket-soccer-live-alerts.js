@@ -37,18 +37,41 @@ async function discover(){
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
+
+  async function addEvent(event,href){
+    if(!event||!event.id)return;
+    const [home,away]=teams(event);
+    const now=Date.now();
+    const end=Date.parse(event.endDate||event.end_date||"");
+    if(!home||!away||!isFixtureTitle(event.title||event.question)||!eventStarted(event))return;
+    if(Number.isFinite(end)&&end<now)return;
+    const slug=t(event.slug)||fixtureSlug(href||"");
+    if(!slug||seen.has(slug))return;
+    seen.add(slug);
+    candidates.push({eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event});
+  }
+
+  // Primary gate: matches visible on Polymarket's live page and confirmed on soccer page.
   for(const href of liveLinks){
     const slug=fixtureSlug(href);
-    if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug))||seen.has(slug))continue;
-    seen.add(slug);
+    if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug)))continue;
     try{
       const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
-      const event=Array.isArray(raw)?raw[0]:raw;
-      const [home,away]=teams(event);
-      if(!home||!away||!isFixtureTitle(event.title||event.question)||!eventStarted(event))continue;
-      candidates.push({eventId:t(event.id),slug,url:"https://polymarket.com"+href,home,away,event});
+      await addEvent(Array.isArray(raw)?raw[0]:raw,href);
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
   }
+
+  // Fallback for Polymarket's client-rendered pages: discover current soccer events from Gamma
+  // when raw HTML contains no usable fixture links.
+  if(liveLinks.length===0||soccerLinks.length===0){
+    try{
+      const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&limit=500&order=startDate&ascending=false",{timeout:8000});
+      const events=Array.isArray(raw)?raw:[];
+      for(const event of events)await addEvent(event,null);
+      console.log(JSON.stringify({level:"INFO",event:"gamma_soccer_fallback",events:events.length,added:candidates.length}));
+    }catch(e){console.log(JSON.stringify({level:"WARN",event:"gamma_soccer_fallback_failed",message:e.message}));}
+  }
+
   console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away}))}));
   return candidates;
 }
