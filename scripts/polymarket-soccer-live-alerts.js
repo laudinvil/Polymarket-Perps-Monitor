@@ -119,9 +119,14 @@ async function discover(){
   // Soccer is confirmed from the event metadata or an explicit /sports/soccer/ href.
   for(const href of liveLinks){
     const slug=fixtureSlug(href);
-    if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug)))continue;
+    if(!slug)continue;
     try{
-      const raw=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
+      let raw;
+      try{
+        raw=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
+      }catch{
+        raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
+      }
       await addEvent(Array.isArray(raw)?raw[0]:raw,href,true);
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
   }
