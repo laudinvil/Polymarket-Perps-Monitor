@@ -280,10 +280,33 @@ async function discover(){
     }
   }
 
-  // Do NOT treat raw HTML from the live page as proof that a match has started.
-  // The page is retained for diagnostics/linking only; actual LIVE status must come
-  // from Sports WS or an explicit live=true/status=live game record.
-  console.log(JSON.stringify({level:"INFO",event:"live_page_not_used_as_live_gate",links:liveLinks.length}));
+  // The Polymarket /sports/live page is an explicit LIVE-only surface.
+  // Use its soccer fixture links as a LIVE gate when Sports WS/Gamma live feeds
+  // are unavailable. Gamma is still used only to resolve the actual event/markets.
+  let pageLiveResolved = 0;
+  for(const href of liveLinks){
+    if(candidates.length >= 50)break;
+    const slug=fixtureSlug(href);
+    if(!slug)continue;
+    try{
+      let raw=null;
+      try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000}); }catch{}
+      const event=Array.isArray(raw)?raw[0]:raw;
+      if(!event){
+        console.log(JSON.stringify({level:"WARN",event:"live_page_event_lookup_failed",href,slug}));
+        continue;
+      }
+      const before=candidates.length;
+      await addEvent(event,href,true,false);
+      if(candidates.length>before){
+        pageLiveResolved++;
+        console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_CANDIDATE",href,slug,eventId:event.id,title:event.title||event.question}));
+      }
+    }catch(e){
+      console.log(JSON.stringify({level:"WARN",event:"live_page_candidate_failed",href,slug,message:e.message}));
+    }
+  }
+  console.log(JSON.stringify({level:"INFO",event:"live_page_used_as_live_gate",links:liveLinks.length,resolved:pageLiveResolved}));
 
   // Gamma soccer events without an authoritative live flag are diagnostics only.
   // They must never become LIVE candidates: this prevents prematch/future alerts.
