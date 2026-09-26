@@ -374,7 +374,11 @@ async function polymarketSportsLive(){
   // Build the candidate set only from soccer/football sport definitions.
   // Do not use a generic hard-coded tag and do not use related tags.
   const tagIds=new Set();
+  const seriesIds=new Set();
+  const SOCCER_TAG_ID="100350";
   for(const s of soccerSports){
+    const series=t(s?.series);
+    if(series)seriesIds.add(series);
     const values=[];
     for(const key of ["tags","tagIds","tag_ids","tagId","tag_id","primaryTagId","primary_tag_id"]){
       const v=s?.[key];
@@ -383,23 +387,34 @@ async function polymarketSportsLive(){
     }
     for(const v of values){
       const id=typeof v==="object" ? t(v?.id||v?.tagId||v?.tag_id) : t(v);
-      if(id)tagIds.add(id);
+      if(id && id!=="1" && id!=="100639")tagIds.add(id);
     }
   }
+  if(soccerSports.length)tagIds.add(SOCCER_TAG_ID);
 
   const merged=new Map();
+  const ingest=page=>{
+    for(const e of arr(page?.events||page)){
+      const id=t(e?.id||e?.eventId||e?.slug);
+      if(id)merged.set(id,e);
+    }
+  };
   for(const tagId of tagIds){
     try{
       const page=await json(GAMMA+"/events?tag_id="+encodeURIComponent(tagId)+"&related_tags=false&closed=false&limit=100&order=volume24hr&ascending=false",5000);
-      for(const e of arr(page?.events||page)){
-        const id=t(e?.id||e?.eventId||e?.slug);
-        if(id)merged.set(id,e);
-      }
+      ingest(page);
     }catch(err){
       log(JSON.stringify({event:"polymarket_sports_events_failed",tagId,message:err.message}));
     }
   }
-
+  for(const seriesId of seriesIds){
+    try{
+      const page=await json(GAMMA+"/events?series_id="+encodeURIComponent(seriesId)+"&closed=false&limit=100&order=volume24hr&ascending=false",5000);
+      ingest(page);
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_sports_series_events_failed",seriesId,message:err.message}));
+    }
+  }
   const all=[...merged.values()];
   const liveStatuses=new Set(["live","inprogress","in progress","halftime","paused","suspended","interrupted"]);
 
