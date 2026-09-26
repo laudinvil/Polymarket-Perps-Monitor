@@ -376,7 +376,7 @@ async function polymarketSportsLive(){
   const tagIds=new Set();
   for(const s of soccerSports){
     const values=[];
-    for(const key of ["tags","tagIds","tag_ids","tagId","tag_id"]){
+    for(const key of ["tags","tagIds","tag_ids","tagId","tag_id","primaryTagId","primary_tag_id"]){
       const v=s?.[key];
       if(Array.isArray(v))values.push(...v);
       else if(typeof v==="string")values.push(...v.split(/[,\\s]+/));
