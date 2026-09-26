@@ -104,13 +104,18 @@ function exactScore11Yes(e){
 }
 async function exactScore11(e){
   const direct=exactScore11Yes(e);
-  if(direct!==null)return direct;
+  if(direct!==null){
+    console.log(JSON.stringify({event:"exact_score_11_source",source:"event.markets",price:pct(direct)}));
+    return direct;
+  }
   const id=t(e?.id||e?.eventId);
   if(!id)return null;
   try{
     const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",3500);
     const markets=Array.isArray(data)?data:arr(data?.markets);
-    return exactScore11Yes({markets});
+    const value=exactScore11Yes({markets});
+    if(value!==null)console.log(JSON.stringify({event:"exact_score_11_source",source:"Gamma /markets",eventId:id,price:pct(value),markets:markets.length}));
+    return value;
   }catch(err){
     console.log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
     return null;
@@ -193,6 +198,7 @@ async function discoverUpcoming(page){
       console.log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));
       continue;
     }
+    console.log(JSON.stringify({event:"exact_score_11_found",key,teams:[home,away],startMs:start,exact11:pct(exact11)}));
     const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
     found.push(row);tracked.set(key,row);
   }
