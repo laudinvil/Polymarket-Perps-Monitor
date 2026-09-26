@@ -484,7 +484,10 @@ async function discover(){
         (validScore(eventScore)&&validMinute(eventMinute)) ||
         (!!auth&&validScore(gameScore(auth))&&validMinute(gameMinute(auth)));
     }
-    if(!eventLiveWindow(event)&&!authoritativeLive){
+    // /sports/live is itself the explicit LIVE gate. Do not let a stale,
+    // missing, or delayed Gamma kickoff timestamp veto a fixture that is
+    // currently present on the live page.
+    if(!liveConfirmed&&!eventLiveWindow(event)&&!authoritativeLive){
       console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.gameStartTime||event.startDate,end:event.gameEndTime||event.endDate,status:event.status,liveConfirmed,authoritativeLive}));
       return;
     }
@@ -884,19 +887,19 @@ async function cycle(){
     try{
       await refreshEvent(x);
       console.log(JSON.stringify({level:"INFO",event:"CANDIDATE_BEFORE_CLAIM",slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null,markets:Array.isArray(x.event?.markets)?x.event.markets.length:0}));
-      // Both authoritative score and match minute are mandatory for an alert.
-      // Never send a LIVE alert with missing or fabricated clock data.
+      // LIVE status is decided by the live-page/live-feed gate, not by
+      // whether score/clock parsing happened to succeed. Score and minute are
+      // enriched when available; missing values must never suppress the first
+      // LIVE alert.
       if(!validScore(x.score)||!validMinute(x.minute)){
         console.log(JSON.stringify({
-          level:"WARN",
-          event:"candidate_rejected_untrusted_live_data",
-          reason:!validScore(x.score)?"invalid_score":"invalid_minute",
+          level:"INFO",
+          event:"live_alert_without_complete_score_clock",
           eventId:id,
           slug:x.slug,
           minute:x.minute??null,
           score:x.score??null
         }));
-        continue;
       }
       const claimAllowed=await claimFootballMatch(id);
       console.log(JSON.stringify({level:"INFO",event:claimAllowed?"CLAIM_ALLOWED":"CLAIM_BLOCKED",eventId:id,slug:x.slug}));
