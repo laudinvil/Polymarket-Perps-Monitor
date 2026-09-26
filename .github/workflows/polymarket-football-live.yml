@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - 'scripts/polymarket-football-live.js'
+      - 'convex/http.ts'
   workflow_dispatch:
   schedule:
     - cron: "2 */6 * * *"
