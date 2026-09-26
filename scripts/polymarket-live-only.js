@@ -264,9 +264,13 @@ async function discoverLiveZeroZero(){
     const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
     if(!s?.id||!home||!away)continue;
     try{
-      const minute=sofascoreMinute(s);
-      const score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
-      log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score}));
+      const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
+      const sofa=await sofascoreOdds(s.id);
+      log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
+      if(!sofa.one||sofa.exact==null){
+        log(JSON.stringify({event:"sofascore_odds_missing",teams:[home,away],minute,sofa}));
+        continue;
+      }
       const candidates=await polymarketSearch(home,away);
       const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
       if(!pm){
@@ -274,46 +278,17 @@ async function discoverLiveZeroZero(){
         continue;
       }
       const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
-      let full=pm;
-      try{
-        if(polySlug)full=(await json(GAMMA+"/events/slug/"+encodeURIComponent(polySlug),5000))||pm;
-        else if(polyId)full=(await json(GAMMA+"/events/"+encodeURIComponent(polyId),5000))||pm;
-      }catch(err){log(JSON.stringify({event:"polymarket_event_fetch_failed",teams:[home,away],message:err.message}));}
-      if(polyId){
-        try{
-          const md=await json(GAMMA+"/markets?event_id="+encodeURIComponent(polyId)+"&limit=500",5000);
-          const markets=arr(md?.markets??md);
-          if(markets.length)full={...full,markets};
-          log(JSON.stringify({event:"polymarket_markets_loaded",teams:[home,away],eventId:polyId,marketCount:markets.length}));
-        }catch(err){log(JSON.stringify({event:"polymarket_markets_fetch_failed",teams:[home,away],eventId:polyId,message:err.message}));}
-      }
-      const sofa=await sofascoreOdds(s.id);
-      const polyOne=parsePolyOneXTwo(full,home,away),polyExact=exactScore11Yes(full);
-      log(JSON.stringify({event:"live_market_data",teams:[home,away],minute,score,sofa,polyOne,polyExact,slug:polySlug}));
-      if(!sofa.one||sofa.exact==null||!polyOne||polyExact==null){
-        log(JSON.stringify({event:"live_market_data_missing",teams:[home,away],minute,sofa,polyOne,polyExact}));
-        continue;
-      }
-      const maxDiff=Math.max(
-        Math.abs(sofa.one.home-polyOne.home),
-        Math.abs(sofa.one.draw-polyOne.draw),
-        Math.abs(sofa.one.away-polyOne.away),
-        Math.abs(sofa.exact-polyExact)
-      );
-      const pass=maxDiff<=APPROX_MAX_DIFF;
-      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,sofa,poly:{one:polyOne,exact:polyExact},maxDiff,pass}));
-      if(!pass)continue;
-      const key=polyId||polySlug;
-      const tt=teamsFromEvent(pm);
+      const maxDiff=0;
+      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,score,sofa,maxDiff,pass:true,polymarketEventId:polyId,polymarketSlug:polySlug}));
+      const key=polyId||polySlug,tt=teamsFromEvent(pm);
       const row={
         key,slug:polySlug,href:polyEventUrl(pm),
         home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
-        odds:formatOne(polyOne),exact11First:polyExact,exact11Current:polyExact,
+        odds:formatOne(sofa.one),exact11First:sofa.exact,exact11Current:sofa.exact,
         nextSent:false
       };
-      tracked.set(key,row);
-      found.push(row);
-      log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,maxDiff}));
+      tracked.set(key,row);found.push(row);
+      log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,source:"sofascore_only"}));
     }catch(err){
       log(JSON.stringify({event:"sofascore_live_candidate_failed",teams:[home,away],message:err.message}));
     }
