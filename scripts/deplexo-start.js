@@ -36,7 +36,7 @@ console.warn = (...args) => {
   originalWarn(...args);
 };
 
-safeWrite("DEPLEXO_BOOT");
+pushLog("INFO", ["DEPLEXO_BOOT"]);\nsafeWrite("DEPLEXO_BOOT");
 
 const server = http.createServer((req,res)=>{
   try {
@@ -86,12 +86,17 @@ server.on("error",e=>{
 
 server.listen(port,"0.0.0.0",()=>{
   safeWrite("DEPLEXO_LISTENING " + port);
+  pushLog("INFO", ["DEPLEXO_LISTENING", port]);
   process.env.DEPLEXO_WRAPPER="1";
+  pushLog("INFO", ["DEPLEXO_REQUIRING_MONITOR"]);
   try {
     require("./polymarket-soccer-live-alerts.js");
+    pushLog("INFO", ["DEPLEXO_MONITOR_STARTED"]);
     safeWrite("DEPLEXO_MONITOR_STARTED");
   } catch(e) {
-    safeWrite("DEPLEXO_MONITOR_ERROR " + String(e?.stack||e));
+    const err=String(e?.stack||e);
+    pushLog("ERROR", ["DEPLEXO_MONITOR_ERROR", err]);
+    safeWrite("DEPLEXO_MONITOR_ERROR " + err);
   }
 });
 
