@@ -256,12 +256,10 @@ function classifyFixturePhase(match, liveState) {
     return "unknown";
   }
   if (kickoff > Date.now()) return "prematch";
-  if (match.active !== false && match.closed !== true) {
-    log("INFO","active_kickoff_passed_treated_live","Active Polymarket fixture has passed kickoff; treating it as live candidate", {
-      eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime,kickoffPassedMs:Date.now()-kickoff
-    });
-    return "live";
-  }
+  log("INFO","kickoff_passed_not_live","Kickoff passed but Polymarket did not report the fixture as live; not a live candidate", {
+    eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime,
+    active:match.active !== false,closed:match.closed === true,kickoffPassedMs:Date.now()-kickoff
+  });
   log("INFO","kickoff_passed_not_active","Kickoff passed and event is not active; not a live candidate", {
     eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime
   });
