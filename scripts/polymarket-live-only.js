@@ -85,21 +85,40 @@ function scoreFromCard(card){
   const h=Number(m[1]),a=Number(m[2]);
   return h<=20&&a<=20?{home:h,away:a}:null;
 }
-function exactScore11Yes(e){
-  const markets=arr(e?.markets);
+function exactScore11Yes(e,extraMarkets=[]){
+  const markets=[...arr(e?.markets),...arr(extraMarkets)];
   for(const m of markets){
     if(m?.active===false||m?.closed===true)continue;
     const os=arr(m?.outcomes),ps=arr(m?.outcomePrices??m?.outcome_prices).map(Number);
     if(os.length!==ps.length||os.length<2||ps.some(x=>!Number.isFinite(x)))continue;
-    const q=norm(m.question||m.groupItemTitle||m.title);
-    if(!/(exact score|correct score|score)/.test(q))continue;
+    const fields=[m.question,m.groupItemTitle,m.group_item_title,m.title,m.slug].map(norm).filter(Boolean);
+    const q=fields.join(" ");
+    const has11=fields.some(x=>/(^| )1[ :\-–]1($| )/.test(x)||x.includes("1 1"));
+    const exactLabel=/(exact score|correct score|correct result|exact result|score)/.test(q);
     for(let i=0;i<os.length;i++){
-      const o=t(os[i]);
-      if(/^(yes|1[-–:]1)$/.test(norm(o))){
+      const o=norm(os[i]);
+      const yes=/^yes$/.test(o);
+      const direct=/^1[ :\-–]1$/.test(o)||/^1 1$/.test(o);
+      if((yes&&(has11||exactLabel&&has11))||direct){
         const value=ps[i];
         if(value>=0&&value<=1)return value;
       }
     }
+  }
+  return null;
+}
+async function exactScore11(e){
+  const direct=exactScore11Yes(e);
+  if(direct!==null)return direct;
+  const id=t(e?.id||e?.eventId);
+  if(!id)return null;
+  try{
+    const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=100",3500);
+    const markets=Array.isArray(data)?data:(arr(data?.markets).length?data.markets:[]);
+    const value=exactScore11Yes({markets});
+    if(value!==null)return value;
+  }catch(err){
+    console.log(JSON.stringify({event:"exact_11_market_fetch_failed",eventId:id,message:err.message}));
   }
   return null;
 }
@@ -175,7 +194,12 @@ async function discoverUpcoming(page){
       console.log(JSON.stringify({event:"starting_soon_waiting_1x2",key,teams:[home,away],startMs:start,odds:odds||"MISSING"}));
       continue;
     }
-    const exact11=exactScore11Yes(e);\n    if(exact11===null){\n      console.log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));\n      continue;\n    }\n    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
+    const exact11=await exactScore11(e);
+    if(exact11===null){
+      console.log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));
+      continue;
+    }
+    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
     found.push(row);tracked.set(key,row);
   }
   return found;
@@ -239,7 +263,9 @@ async function scan(){
     catch(err){console.log(JSON.stringify({event:"tracked_event_failed",key,message:err.message}));continue;}
     const detectedScore=eventScore(e)||scoreFromCard(cardAround(clean,row.home,row.away));
     const score=detectedScore||{home:0,away:0};
-    const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;\n    const exact11=exactScore11Yes(e);\n    if(exact11!==null)row.exact11Current=exact11;
+    const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
+    const exact11=await exactScore11(e);
+    if(exact11!==null)row.exact11Current=exact11;
     if(!row.nextSent){
       const sent=await sendNext(row,score);
       if(sent){row.nextSent=true;}
