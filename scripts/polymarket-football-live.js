@@ -964,7 +964,7 @@ function findLivePageMatch(page, match) {
 }
 
 async function loadPolymarketLivePage() {
-  const url="https://polymarket.com/ru/sports/live";
+  const url="https://polymarket.com/sports/live";
   try {
     const r=await fetch(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketFootballMonitor/1.0)"},signal:AbortSignal.timeout(6000)});
     if(!r.ok)throw new Error("HTTP "+r.status+" for "+url);
