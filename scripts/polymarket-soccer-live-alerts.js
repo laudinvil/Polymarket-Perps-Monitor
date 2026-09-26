@@ -18,6 +18,15 @@ function slugFromHref(h){return t(h).split("/").filter(Boolean).pop()||"";}
 function fixtureSlug(h){return slugFromHref(h).replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|half-time|second-half-result|second-half|1st-half-result|1st-half|2nd-half-result|2nd-half|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");}
 function fixtureLinks(html){return hrefs(html).filter(h=>/^\/(?:ru\/)?sports\/[^/]+\/[^/]+$/i.test(h));}
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
+function isSoccerEvent(event,href=""){
+  const h=t(href).toLowerCase();
+  if(/\/sports\/soccer\//i.test(h))return true;
+  const values=[];
+  for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug"])values.push(event?.[k]);
+  const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
+  if(Array.isArray(tags))for(const z of tags)values.push(typeof z==="string"?z:(z?.slug||z?.label||z?.name));
+  return values.filter(Boolean).some(v=>/soccer|football/i.test(String(v)));
+}
 function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
 async function fetchPage(url){
@@ -86,6 +95,7 @@ async function discover(){
     const rawTitle=t(event?.title||event?.question);
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
+    if(!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
     if(!isFixtureTitle(rawTitle)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
@@ -105,12 +115,13 @@ async function discover(){
     candidates.push(item);
   }
 
-  // Primary gate: matches visible on Polymarket's live page and confirmed on soccer page.
+  // Primary gate: matches visible on Polymarket's live page.
+  // Soccer is confirmed from the event metadata or an explicit /sports/soccer/ href.
   for(const href of liveLinks){
     const slug=fixtureSlug(href);
     if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug)))continue;
     try{
-      const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
+      const raw=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
       await addEvent(Array.isArray(raw)?raw[0]:raw,href,true);
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
   }
