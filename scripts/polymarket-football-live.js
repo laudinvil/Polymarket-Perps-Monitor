@@ -474,9 +474,15 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 
     const oneXTwoLine = `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`;
     const exactScoreOneOne = findOneOneMarket(match);
-    const exactScoreOneOneLine = exactScoreOneOne
-      ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
-      : "1:1 YES: —";
+    if (!exactScoreOneOne || !Number.isFinite(exactScoreOneOne.price)) {
+      log("WARN", "buy_waiting_for_one_one", "BUY reached the alert stage but Exact Score 1:1 YES price is unavailable; retrying next cycle", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        retryRequired: true
+      });
+      return;
+    }
+    const exactScoreOneOneLine = `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`;
     log("INFO", "exact_score_one_one_snapshot", "Captured current Polymarket Exact Score 1:1 price for BUY alert", {
       eventId: match.eventId,
       teams: [match.homeTeam, match.awayTeam],
@@ -547,7 +553,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       const sent = await sendTelegram(message);
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
-      await markCandidateBuySent(key);
+      await markCandidateBuySent(key, exactScoreOneOne.price);
       log("INFO", "one_one_buy_alert_sent", "BUY entry alert sent", {
         eventId: match.eventId, reason: "live_or_starting_now_no_market_filter", telegramMessageId: sent.messageId
       });
@@ -578,9 +584,15 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 
     const liveOneXTwoLine = `1: ${Math.round(liveOneXTwo.homeProb * 100)}% · X: ${Math.round(liveOneXTwo.drawProb * 100)}% · 2: ${Math.round(liveOneXTwo.awayProb * 100)}%`;
     const exactScoreOneOne = findOneOneMarket(match);
-    const exactScoreOneOneLine = exactScoreOneOne
-      ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
-      : "1:1 YES: —";
+    if (!exactScoreOneOne || !Number.isFinite(exactScoreOneOne.price)) {
+      log("WARN", "live_waiting_for_one_one", "LIVE reply is waiting for the current Exact Score 1:1 YES price; retrying next cycle", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        retryRequired: true
+      });
+      return;
+    }
+    const exactScoreOneOneLine = `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`;
 
     const claimKey = key + ":STARTED";
     const claim = await claimTelegramAlert(claimKey);
@@ -620,13 +632,40 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   // the current Exact Score 1:1 YES price from the live match.
   await ensureEventMarkets(match);
   const exactScoreOneOne = findOneOneMarket(match);
-  const buyOneOnePrice = oneOneState.get(key)?.buyOneOnePrice;
-  if (!exactScoreOneOne || !Number.isFinite(buyOneOnePrice)) {
-    log("WARN", "sell_waiting_for_one_one_prices", "SELL is waiting until both the original BUY 1:1 YES price and current 1:1 YES price are available", {
+  if (!exactScoreOneOne || !Number.isFinite(exactScoreOneOne.price)) {
+    log("WARN", "sell_waiting_for_current_one_one", "SELL is waiting only for the current Exact Score 1:1 YES price; retrying next cycle", {
       eventId: match.eventId,
       teams: [match.homeTeam, match.awayTeam],
-      buyPrice: buyOneOnePrice ?? null,
       currentPrice: exactScoreOneOne?.price ?? null
+    });
+    return;
+  }
+
+  let buyOneOnePrice = oneOneState.get(key)?.buyOneOnePrice;
+  if (!Number.isFinite(buyOneOnePrice)) {
+    try {
+      const persisted = await candidateRequest("/football/candidates/buy-price?key=" + encodeURIComponent(key));
+      buyOneOnePrice = Number(persisted?.buyOneOnePrice);
+      if (Number.isFinite(buyOneOnePrice)) {
+        oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true, buyOneOnePrice });
+        log("INFO", "sell_buy_price_restored", "Restored original BUY 1:1 YES price from persistent Convex state", {
+          eventId: match.eventId,
+          buyPrice: buyOneOnePrice
+        });
+      }
+    } catch (err) {
+      log("ERROR", "sell_buy_price_lookup_failed", "Persistent BUY 1:1 price lookup failed; SELL will retry next cycle", {
+        eventId: match.eventId,
+        message: err.message
+      });
+      return;
+    }
+  }
+
+  if (!Number.isFinite(buyOneOnePrice)) {
+    log("ERROR", "sell_buy_price_missing_persistent", "Persistent BUY 1:1 YES price is missing for an already admitted BUY; SELL will retry after state restoration", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam]
     });
     return;
   }
@@ -877,7 +916,12 @@ async function loadPersistedCandidates() {
         if (!match?.eventId && !match?.slug) continue;
         const key = row.key || match.eventId || match.slug;
         prematchCandidates.set(key, match);
-        if (row.buySent || row.startedSent || row.sellSent) oneOneState.set(key, { prematchSeen: true });
+        if (row.buySent || row.startedSent || row.sellSent) {
+          oneOneState.set(key, {
+            prematchSeen: true,
+            ...(Number.isFinite(Number(row.buyOneOnePrice)) ? { buyOneOnePrice: Number(row.buyOneOnePrice) } : {})
+          });
+        }
         if (row.startedSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
         if (row.sellSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), sellSent: true });
         restored++;
@@ -919,9 +963,9 @@ async function markCandidateSellSent(key) {
   catch (err) { log("WARN", "candidate_sell_state_failed", "Could not persist SELL state", { key, message: err.message }); }
 }
 
-async function markCandidateBuySent(key) {
+async function markCandidateBuySent(key, buyOneOnePrice) {
   try {
-    await candidateRequest("/football/candidates/mark-buy", { key });
+    await candidateRequest("/football/candidates/mark-buy", { key, buyOneOnePrice });
   } catch (err) {
     log("WARN", "candidate_buy_state_failed", "Could not persist BUY state", { key, message: err.message });
   }
