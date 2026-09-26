@@ -21,7 +21,11 @@ jobs:
           const eventUrl='https://polymarket.com/ru/sports/unl/unl-slv-sco-2026-09-26';
           const slug='unl-slv-sco-2026-09-26';
           const e=await (await fetch('https://gamma-api.polymarket.com/events/slug/'+slug)).json();
-          const markets=Array.isArray(e.markets)?e.markets:[];
+          const eventId=e.id||e.eventId;
+          const direct=Array.isArray(e.markets)?e.markets:[];
+          let markets=direct;
+          if(!markets.length && eventId) markets=await (await fetch('https://gamma-api.polymarket.com/markets?event_id='+encodeURIComponent(eventId)+'&limit=500')).json();
+          if(!Array.isArray(markets)) markets=[];
           let exact=null;
           for(const m of markets){
             const g=String(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section||'').toLowerCase();
