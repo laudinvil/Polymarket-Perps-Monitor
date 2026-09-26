@@ -246,13 +246,15 @@ async function discoverUpcoming(page){
     catch(err){log(JSON.stringify({event:"gamma_event_failed",slug,message:err.message}));continue;}
     if(!e||e.active===false||e.closed===true||!eventIsFixture(e))continue;
     const start=startMs(e);
-    if(!Number.isFinite(start)||start<=now||start>now+SOON_MS)continue;
+    // Live-page discovery is authoritative: keep both STARTING and already-LIVE cards.
+    // Missing/odd Gamma startDate must never make a Live-page candidate disappear.
+    if(Number.isFinite(start)&&start>now+SOON_MS)continue;
     const teams=teamsFromEvent(e),home=teams[0],away=teams[1],key=t(e.id||e.eventId||e.slug);
     if(!key||tracked.has(key))continue;
     const odds=oneXTwo(e,home,away);
     if(!odds)log(JSON.stringify({event:"one_x_two_parse_failed",key,teams:[home,away],markets:arr(e?.markets).map(m=>({question:m?.question||m?.title||m?.groupItemTitle,outcomes:arr(m?.outcomes)})).slice(0,30)}));
     const exact11=await exactScore11(e);
-    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11,nextSent:false};
+    const row={key,slug,href:item.href,home,away,startMs:Number.isFinite(start)?start:now,odds,exact11First:exact11,exact11Current:exact11,nextSent:false};
     tracked.set(key,row);found.push(row);
     log(JSON.stringify({event:"starting_soon_candidate",key,teams:[home,away],startMs:start,has1X2:!!odds,hasExact11:exact11!==null}));
   }
