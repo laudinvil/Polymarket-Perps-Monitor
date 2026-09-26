@@ -15,7 +15,7 @@ export default defineSchema({
     monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
     data: v.optional(v.string()), createdAt: v.number(),
   }).index("by_monitor_time", ["monitor", "createdAt"]),
-  footballCandidates: defineTable({\n    monitor: v.string(), key: v.string(), data: v.string(), admittedAt: v.number(), updatedAt: v.number(), buySent: v.boolean(),\n  }).index("by_monitor_key", ["monitor", "key"]).index("by_monitor", ["monitor"]),\n  footballLogs: defineTable({
+  footballCandidates: defineTable({\n    monitor: v.string(), key: v.string(), data: v.string(), admittedAt: v.number(), updatedAt: v.number(), buySent: v.boolean(), startedSent: v.boolean(), sellSent: v.boolean(),\n  }).index("by_monitor_key", ["monitor", "key"]).index("by_monitor", ["monitor"]),\n  footballLogs: defineTable({
     monitor: v.string(), level: v.string(), event: v.string(), message: v.string(),
     data: v.optional(v.string()), createdAt: v.number(),
   }).index("by_monitor_time", ["monitor", "createdAt"]),
