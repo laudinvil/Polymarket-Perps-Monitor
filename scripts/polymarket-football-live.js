@@ -422,7 +422,7 @@ async function maybeOneOneAlert(match, nutmeg) {
     if (!claim.claimed) return;
 
     const message = [
-      "⚽ 1:1 · LOSS", "",
+      "⚽ LOSS", "",
       match.homeTeam + " vs " + match.awayTeam,
       "SCORE: 0–0",
       "", "➡️ OPEN MATCH", match.url
