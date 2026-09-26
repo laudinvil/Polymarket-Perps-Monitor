@@ -594,7 +594,7 @@ async function cycle(){
         }
         alerted.add(id);
       } catch(e) {
-        try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",eventId:id,slug:x.slug,message:re.message})); }
+        try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"dedupe_release_failed",eventId:id,slug:x.slug,message:re.message})); }
         throw e;
       }
       console.log(JSON.stringify({level:"INFO",event:"TELEGRAM_SENT",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
