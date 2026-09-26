@@ -44,4 +44,22 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
-        run: node scripts/polymarket-live-only.js
+        run: |
+          set -u
+          node scripts/polymarket-live-only.js > football-monitor.log 2>&1 &
+          MONITOR_PID=$!
+          while kill -0 "$MONITOR_PID" 2>/dev/null; do
+            echo "===== FOOTBALL TELEMETRY $(date -u '+%Y-%m-%dT%H:%M:%SZ') ====="
+            curl -fsS --max-time 5 "https://brainy-canary-207.eu-west-1.convex.site/football/status?limit=20" || true
+            echo
+            sleep 30
+          done
+          wait "$MONITOR_PID"
+      - name: Publish football diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-monitor-diagnostics
+          path: football-monitor.log
+          if-no-files-found: ignore
+          retention-days: 3
