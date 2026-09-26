@@ -51,9 +51,12 @@ jobs:
               if(os.length!==ps.length||!os.length) continue;
               const labels=os.map(norm);
               const scoreLabels=labels.filter(x=>/^\\d{1,2}\\s*[-:–]\\s*\\d{1,2}$/.test(x));
-              const exactSection=/(exact score|correct score|точн)/.test(q+' '+g);
+              const combined=q+' '+g+' '+norm(m.slug);
+              const exactSection=/(exact score|correct score|точн)/.test(combined);
               const scoreMarket=scoreLabels.length>=4 && labels.some(x=>/^1\\s*[-:–]\\s*1$/.test(x));
-              if(!exactSection&&!scoreMarket) continue;
+              const explicit11=/\\b1\\s*[-:–]\\s*1\\b/.test(combined);
+              const yesNo=labels.includes('yes')&&labels.includes('no');
+              if(!exactSection&&!scoreMarket&&!(explicit11&&yesNo)) continue;
               for(let i=0;i<os.length;i++){
                 if(/^1\\s*[-:–]\\s*1$/.test(labels[i]) && Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
                 if(exactSection && /1\\s*[-:–]\\s*1/.test(q) && labels[i]==='yes' && Number.isFinite(ps[i])&&ps[i]>=0&&ps[i]<=1) return ps[i];
@@ -72,7 +75,7 @@ jobs:
               let ai=labels.findIndex(x=>x===away||x.includes(away));
               let di=labels.findIndex(x=>x==='x'||x==='draw'||x==='tie'||x.includes('draw'));
               const q=norm(m.question??m.title??m.slug);
-              const titleOK=/(1x2|1 x 2|match result|full time result|winner|moneyline|result)/.test(q);
+              const titleOK=/(1x2|1 x 2|match result|full time result|winner|moneyline|result|1x2)/.test(q+' '+norm(m.slug));
               if(hi<0) hi=labels.findIndex(x=>x==='1');
               if(ai<0) ai=labels.findIndex(x=>x==='2');
               if(di<0) di=labels.findIndex(x=>x==='x');
