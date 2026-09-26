@@ -134,9 +134,28 @@ async function discoverPolymarket(){
   await checkpoint("discovery_done",{eventScanned,footballEventFound,matchesFound:matches.length,childMarketEventsGrouped,matches:matches.map(m=>({eventId:m.eventId,teams:[m.homeTeam,m.awayTeam],startTime:m.startTime,relatedEventCount:m.relatedEventIds.length,marketCount:m.markets.length}))});
   return matches;
 }
+function decodeHtml(value) {
+  return text(value)
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&ndash;|&#8211;/gi, "–")
+    .replace(/&mdash;|&#8212;/gi, "—")
+    .replace(/&apos;|&#39;/gi, "'")
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
+}
+
 function stripHtml(value) {
-  return text(value).replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  return decodeHtml(text(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<(?:br|\/(?:div|li|p|article|section|tr|td|th|h[1-6]))\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " "));
+}
+
+function nutmegTeamPattern() {
+  return "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \\t]+[\\p{L}\\p{N}.'’&()\\-]+){0,12}";
 }
 
 async function nutmegRows() {
@@ -146,6 +165,10 @@ async function nutmegRows() {
 
   const rows = [];
   let successfulPages = 0;
+  let probabilityBlocks = 0;
+  let pagesWithProbability = 0;
+  let pagesWithTeamContext = 0;
+  const parseDiagnostics = [];
   const pages = [1, 2, 3, 4, 5, 6];
 
   const results = await Promise.all(pages.map(async page => {
@@ -162,21 +185,33 @@ async function nutmegRows() {
 
       const raw = await r.text();
       const body = stripHtml(raw)
-        .replace(/\u00a0/g, " ")
+        .replace(/\r/g, "\n")
         .replace(/[ \t]+/g, " ")
-        .replace(/\n+/g, " ")
+        .replace(/\n{2,}/g, "\n")
         .trim();
 
       const out = [];
-      const probabilityRe =
-        /Home\s*win\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*(\d+(?:\.\d+)?)\s*%/gi;
+      const probabilityPatterns = [
+        /Home\s*win\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*:?\s*(\d+(?:\.\d+)?)\s*%/gi,
+        /Home\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*:?\s*(\d+(?:\.\d+)?)\s*%/gi,
+        /1\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*X\s*:?\s*(\d+(?:\.\d+)?)\s*%\s*2\s*:?\s*(\d+(?:\.\d+)?)\s*%/gi
+      ];
 
-      let m;
-      while ((m = probabilityRe.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 2500), m.index);
-        const team = "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \t]+[\\p{L}\\p{N}.'’&()\\-]+){0,12}";
+      const probabilityMatches = [];
+      for (const re of probabilityPatterns) {
+        let m;
+        while ((m = re.exec(body))) probabilityMatches.push({ index: m.index, match: m });
+      }
+      probabilityMatches.sort((a, b) => a.index - b.index);
+      probabilityBlocks = probabilityMatches.length;
+
+      const team = nutmegTeamPattern();
+      for (const item of probabilityMatches) {
+        const m = item.match;
+        const prefix = body.slice(Math.max(0, item.index - 2500), item.index);
+        const localContext = body.slice(Math.max(0, item.index - 700), Math.min(body.length, item.index + 250));
         const patterns = [
-          new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]?\\s+(" + team + ")", "giu"),
           new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(" + team + ")", "giu"),
           new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")", "giu"),
           new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")", "giu")
@@ -192,8 +227,12 @@ async function nutmegRows() {
             break;
           }
         }
-        if (!candidate) continue;
+        if (!candidate) {
+          parseDiagnostics.push({ page, type: "probability_without_teams", context: localContext.slice(0, 900) });
+          continue;
+        }
 
+        pagesWithTeamContext += 1;
         const home = candidate[1].trim();
         const away = kind === "live" ? candidate[5].trim() : candidate[4]?.trim() || candidate[2].trim();
         let score = null;
@@ -218,26 +257,40 @@ async function nutmegRows() {
         });
       }
 
+      if (probabilityMatches.length) pagesWithProbability += 1;
       successfulPages++;
-      return out;
+      return { page, rows: out, probabilityBlocks: probabilityMatches.length };
     } catch (err) {
       log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
-      return [];
+      return { page, rows: [], probabilityBlocks: 0 };
     }
   }));
 
-  for (const part of results) rows.push(...part);
+  for (const part of results) rows.push(...part.rows);
+
   const providerUnavailable = successfulPages === 0;
   nutmegCache = { at: Date.now(), rows, providerUnavailable };
 
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", {
-    rows: rows.length, successfulPages, providerUnavailable
+    rows: rows.length,
+    successfulPages,
+    providerUnavailable,
+    probabilityBlocks,
+    pagesWithProbability,
+    pagesWithTeamContext,
+    parserVersion: "v10-diagnostics"
   });
+
   if (rows.length === 0 && successfulPages > 0) {
-    log("WARN", "nutmeg_parse_zero", "Nutmegly pages loaded but no probability blocks were parsed", {
-      pages: successfulPages
+    log("WARN", "nutmeg_parse_zero", "Nutmegly pages loaded but no fixtures were parsed", {
+      pages: successfulPages,
+      probabilityBlocks,
+      pagesWithProbability,
+      pagesWithTeamContext,
+      samples: parseDiagnostics.slice(0, 3)
     });
   }
+
   return { rows, providerUnavailable };
 }
 
