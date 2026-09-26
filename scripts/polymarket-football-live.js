@@ -476,7 +476,8 @@ async function tick() {
         if(!liveState)cycle.liveStateUnavailable++;
 
         const kickoffMs = Date.parse(match.startTime || "");
-        const startingNow = Number.isFinite(kickoffMs) && kickoffMs <= Date.now() + PREMATCH_WINDOW_MS && kickoffMs >= Date.now() - 6 * 60 * 60 * 1000 && match.active !== false && match.closed !== true;\n        if((isPrematch && startingNow) || (isLive && score.home===0 && score.away===0 && !state?.prematchSeen)){
+        const startingNow = Number.isFinite(kickoffMs) && kickoffMs <= Date.now() + PREMATCH_WINDOW_MS && kickoffMs >= Date.now() - 6 * 60 * 60 * 1000 && match.active !== false && match.closed !== true;
+        if((isPrematch && startingNow) || (isLive && score.home===0 && score.away===0 && !state?.prematchSeen)){
           cycle.buyPassed++;
           log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime});
           await maybeOneOneAlert({...match,live:{status:isLive?"live":"scheduled",score,minute:liveState?.minute||0}},null,isLive?"live_entry":"prematch");
