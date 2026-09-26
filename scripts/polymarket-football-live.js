@@ -199,7 +199,7 @@ async function discoverLivePageFixtures() {
     const html = await response.text();
     if (!response.ok) throw new Error("HTTP " + response.status + " for " + url);
     const hrefs = new Set();
-    const re = /href=["'](\\/ru\\/sports\\/[^"'#?\\s]+)["']/gi;
+    const re = /href=["\'](\/ru\/sports\/[^"\']+)["\']/gi;
     let m;
     while ((m = re.exec(html))) hrefs.add(m[1]);
     const slugs = Array.from(hrefs).map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-vs-|-v-|-versus-/i.test(slug));
@@ -229,7 +229,7 @@ async function discoverPolymarket(){
    const livePageRows=await discoverLivePageFixtures();
   const results=await Promise.all(sourcePages.map(async source=>{try{const response=await fetch(source.url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10_000)}),body=await response.text();if(!response.ok)throw new Error("HTTP "+response.status+" for "+source.url);let data;try{data=JSON.parse(body);}catch(error){throw error;}const rows=Array.isArray(data)?data:(data?.events||data?.data||[]);log("INFO","event_source_response","Raw Polymarket football source response captured",{source:source.name,status:response.status,rowCount:rows.length,bodyBytes:Buffer.byteLength(body,"utf8")});return{name:source.name,rows,error:null};}catch(error){return{name:source.name,rows:[],error};}}));
   results.push({name:"sports_live_page",rows:livePageRows,error:null});
-   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
+   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window"||result.name==="sports_live_page";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
       if(isStartingElevenEvent(event)){
         log("INFO","starting_eleven_filtered","Starting XI child event ignored; resolving its parent fixture event",{
           eventId:text(event.id||event.eventId||event.event_id),
