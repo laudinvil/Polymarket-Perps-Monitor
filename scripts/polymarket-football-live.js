@@ -310,8 +310,24 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
     const claimKey = key + ":BUY";
+    log("INFO", "buy_attempt", "BUY candidate reached Telegram claim", {
+      eventId: match.eventId,
+      claimKey,
+      teams: [match.homeTeam, match.awayTeam],
+      kickoff: match.startTime
+    });
     const claim = await claimTelegramAlert(claimKey);
-    if (!claim.claimed) return;
+    if (!claim.claimed) {
+      log("WARN", "buy_blocked", "BUY candidate was blocked before Telegram send", {
+        eventId: match.eventId,
+        claimKey
+      });
+      return;
+    }
+    log("INFO", "telegram_claim_granted", "BUY Telegram claim granted", {
+      eventId: match.eventId,
+      claimKey
+    });
 
     const message = [
       "⚽ 1:1 · BUY", "",
@@ -321,6 +337,10 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     ].join("\n");
 
     try {
+      log("INFO", "telegram_send_attempt", "Sending BUY alert to Telegram", {
+        eventId: match.eventId,
+        claimKey
+      });
       const sent = await sendTelegram(message);
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
@@ -589,12 +609,22 @@ async function claimTelegramAlert(key) {
       signal: AbortSignal.timeout(2_000),
     });
     const body = await response.json().catch(() => ({}));
-    if (response.status === 200) return { claimed: true, replyToMessageId: body.replyToMessageId ?? null };
+    if (response.status === 200) {
+      log("INFO", "telegram_claim_granted", "Persistent Telegram dedupe claim granted", {
+        key,
+        status: 200
+      });
+      return { claimed: true, replyToMessageId: body.replyToMessageId ?? null };
+    }
     if (response.status === 409) {
-      log("INFO", "telegram_claim_denied", "Telegram dedupe already claimed this alert", { key, status: 409 });
+      log("WARN", "telegram_claim_denied", "Telegram dedupe already claimed this alert", {
+        key,
+        status: 409,
+        body
+      });
       return { claimed: false, replyToMessageId: null };
     }
-    throw new Error("Convex claim HTTP " + response.status);
+    throw new Error("Convex claim HTTP " + response.status + " " + JSON.stringify(body));
   } catch (err) {
     log("ERROR", "telegram_claim_failed", "Persistent Telegram dedupe unavailable; alert blocked for safety", { key, message: err.message });
     return { claimed: false, replyToMessageId: null };
