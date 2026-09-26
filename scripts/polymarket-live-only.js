@@ -80,7 +80,7 @@ function links(html){
   const out=[];const re=/href=["'](\/sports\/([^"']+))["']/gi;let m;
   while((m=re.exec(html)))out.push({href:m[1],path:m[2]});
   return [...new Map(out.map(x=>[x.href,x])).values()]
-    .filter(x=>x.path!=="live" && x.path.startsWith("soccer/") && /-\d{4}-\d{2}-\d{2}$/.test(x.path));
+    .filter(x=>x.path!=="live" && x.path.startsWith("soccer/"));
 }
 function teamsFromEvent(e){
   const title=t(e?.title||e?.question),h=t(e?.homeTeam||e?.home_team),a=t(e?.awayTeam||e?.away_team);
@@ -138,8 +138,8 @@ function exactScore11Yes(e){
     const exactMarket=/(exact score|correct score|точн счет|точныи счет)/.test(combined);
     if(!exactGroup&&!exactMarket)continue;
 
-    const is11=/(^|\\s)1\\s*[-:–]\\s*1($|\\s)/.test(question) ||
-      /(^|\\s)1\\s*[-:–]\\s*1($|\\s)/.test(group);
+    const is11=/(^|\s)1\s*[-:–]\s*1($|\s)/.test(question) ||
+      /(^|\s)1\s*[-:–]\s*1($|\s)/.test(group);
     const os=arr(m.outcomes),ps=arr(m.outcomePrices??m.outcome_prices).map(Number);
     if(os.length!==ps.length||!ps.length)continue;
 
@@ -149,7 +149,7 @@ function exactScore11Yes(e){
         const value=ps[i];
         if(value>=0&&value<=1)return value;
       }
-      if(/^1\\s*[-:–]\\s*1$/.test(o)){
+      if(/^1\s*[-:–]\s*1$/.test(o)){
         const value=ps[i];
         if(value>=0&&value<=1)return value;
       }
@@ -234,7 +234,7 @@ async function saveId(key,id){
 }
 async function discoverUpcoming(page){
   const now=Date.now(),items=links(page),found=[];
-  for(const item of items.slice(0,120)){
+  for(const item of items.slice(0,160)){
     const slug=item.path.split("/").filter(Boolean).pop();if(!slug)continue;
     let e;
     try{e=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),3500);}
@@ -243,19 +243,12 @@ async function discoverUpcoming(page){
     const start=startMs(e);
     if(!Number.isFinite(start)||start<=now||start>now+SOON_MS)continue;
     const teams=teamsFromEvent(e),home=teams[0],away=teams[1],key=t(e.id||e.eventId||e.slug);
+    if(!key||tracked.has(key))continue;
     const odds=oneXTwo(e,home,away);
-    if(!key||!odds){
-      log(JSON.stringify({event:"starting_soon_waiting_1x2",key,teams:[home,away],startMs:start,odds:odds||"MISSING"}));
-      continue;
-    }
     const exact11=await exactScore11(e);
-    if(exact11===null){
-      log(JSON.stringify({event:"starting_soon_waiting_exact_11",key,teams:[home,away],startMs:start}));
-      continue;
-    }
-    log(JSON.stringify({event:"exact_score_11_found",key,teams:[home,away],startMs:start,exact11:pct(exact11)}));
-    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11};
-    found.push(row);tracked.set(key,row);
+    const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11,nextSent:false};
+    tracked.set(key,row);found.push(row);
+    log(JSON.stringify({event:"starting_soon_candidate",key,teams:[home,away],startMs:start,has1X2:!!odds,hasExact11:exact11!==null}));
   }
   return found;
 }
@@ -320,10 +313,17 @@ async function scan(){
     const score=detectedScore||{home:0,away:0};
     const odds=oneXTwo(e,row.home,row.away);if(odds)row.odds=odds;
     const exact11=await exactScore11(e);
-    if(exact11!==null)row.exact11Current=exact11;
+    if(exact11!==null){
+      if(row.exact11First===null||row.exact11First===undefined)row.exact11First=exact11;
+      row.exact11Current=exact11;
+    }
     if(!row.nextSent){
-      const sent=await sendNext(row,score);
-      if(sent){row.nextSent=true;}
+      if(row.odds&&row.exact11First!==null&&row.exact11First!==undefined){
+        const sent=await sendNext(row,score);
+        if(sent)row.nextSent=true;
+      }else{
+        log(JSON.stringify({event:"next_waiting_market_data",key,has1X2:!!row.odds,hasExact11:row.exact11First!==null&&row.exact11First!==undefined}));
+      }
     }
     if(Date.now()>=row.startMs&&!row.liveSent){
       const sent=await sendLive(row,score);
