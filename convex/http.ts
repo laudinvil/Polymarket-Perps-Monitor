@@ -80,7 +80,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const body = await request.json();
-    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football";
     const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
     if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
     await ctx.runMutation(internal.footballLogs.releaseTelegramAlert, { monitor, marketSlug });
@@ -94,7 +94,7 @@ http.route({
   handler: httpAction(async (ctx) => {
     const stats = await ctx.runQuery(internal.footballLogs.stats, {});
     const recentLogs = await ctx.runQuery(internal.footballLogs.recentLogs, { limit: 500 });
-    return Response.json({ monitor: "polymarket-football-1-1", status: "ok", stats, recentLogs });
+    return Response.json({ monitor: "polymarket-football", status: "ok", stats, recentLogs });
   }),
 });
 
@@ -104,7 +104,7 @@ http.route({
   handler: httpAction(async (ctx) => {
     const stats = await ctx.runQuery(internal.footballLogs.stats, {});
     return Response.json({
-      status: "ok", monitor: "polymarket-football-1-1",
+      status: "ok", monitor: "polymarket-football",
       updatedAt: stats?.updatedAt ?? null, ticks: stats?.ticks ?? 0,
       candidates: stats?.candidates ?? 0, evaluations: stats?.evaluations ?? 0,
       balanced: stats?.balanced ?? 0, marketMissing: stats?.marketMissing ?? 0,
@@ -119,7 +119,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const body = await request.json();
-    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football";
     const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
     if (!marketSlug) return new Response("missing marketSlug", { status: 400 });
     const result = await ctx.runMutation(internal.footballLogs.claimTelegramAlert, { monitor, marketSlug });
@@ -132,7 +132,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const body = await request.json();
-    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football-1-1";
+    const monitor = typeof body.monitor === "string" ? body.monitor : "polymarket-football";
     const marketSlug = typeof body.marketSlug === "string" ? body.marketSlug : "";
     const messageId = Number(body.messageId);
     if (!marketSlug || !Number.isInteger(messageId)) return new Response("invalid request", { status: 400 });
