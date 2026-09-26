@@ -51,6 +51,17 @@ function fixtureLinks(html){
   });
 }
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
+function isKnownSoccerLeague(event){
+  const values=[];
+  for(const k of ["league","leagueSlug","league_slug","seriesSlug","series_slug","sport","sportSlug","sport_slug","category","subcategory"]){
+    if(event?.[k]!=null)values.push(String(event[k]).toLowerCase());
+  }
+  const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
+  if(Array.isArray(tags))for(const z of tags)values.push(String(z?.slug||z?.label||z?.name||z).toLowerCase());
+  const joined=values.join(" ");
+  return /soccer|football|premier league|epl|laliga|la liga|serie a|serie b|bundesliga|ligue 1|ligue 2|mls|nwsl|liga mx|brasileirao|brasileirão|j2 league|j1 league|eredivisie|primeira liga|concacaf|uefa|fifa|superliga|allsvenskan|eliteserien|süper lig|a league|a-league|women's|wsl|premiership|scottish|belgian|danish|greek|croatian|serbian|polish|czech|romanian|bulgarian|slovenian|slovak|hungarian|austrian|swiss|norwegian|sweden|finland|iceland|argentina|colombia|chile|peru|ecuador|uruguay|paraguay|bolivia|venezuela|costa rica|honduras|guatemala|jamaica|el salvador|martinique|nations league/.test(joined);
+}
+
 function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
   // Explicit sport paths are authoritative when they name the sport directly.
@@ -226,7 +237,9 @@ async function fetchLiveEvents(){
   const live=[];
   for(const e of all){
     const id=t(e.id||e.slug);
-    if(!id||seenRaw.has(id)||!isSoccerEvent(e,""))continue;
+    if(!id||seenRaw.has(id))continue;
+    const fixture=teams(e);
+    if(!isSoccerEvent(e,"")&&!isKnownSoccerLeague(e)&&!(fixture[0]&&fixture[1]))continue;
     seenRaw.add(id);
     if(e.ended===true||e.finished===true||e.final===true)continue;
     const [home,away]=teams(e);
