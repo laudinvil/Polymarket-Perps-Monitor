@@ -267,12 +267,9 @@ async function discoverLiveZeroZero(){
       const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
       const sofa=await sofascoreOdds(s.id);
       log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
-      if(!sofa.one){
-        log(JSON.stringify({event:"sofascore_1x2_missing",teams:[home,away],minute,sofa}));
+      if(!sofa.one||sofa.exact==null){
+        log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
         continue;
-      }
-      if(sofa.exact==null){
-        log(JSON.stringify({event:"sofascore_exact11_missing_but_candidate_kept",teams:[home,away],minute}));
       }
       const candidates=await polymarketSearch(home,away);
       const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
