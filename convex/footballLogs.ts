@@ -16,7 +16,7 @@ export const ingest = mutation({
     const now = Date.now();
     const existing = await ctx.db.query("footballStats").withIndex("by_monitor", (q) => q.eq("monitor", MONITOR)).first();
     let eventsScanned = 0, discoveryMatchesFound = 0, footballEvents = 0, candidateGatePassed = 0;
-    let liveToday = 0, preMatchFuture = 0, unknownDate = 0, childMarketFiltered = 0;
+    let liveToday = 0, unknownDate = 0, childMarketFiltered = 0;
     let oneOneMarketFound = 0, rejectedBuyFilter = 0, candidates = 0, evaluations = 0;
     let balanced = 0, marketMissing = 0, unresolved = 0, buyAlerts = 0, sellAlerts = 0, errors = 0;
     for (const item of args.logs) {
@@ -24,7 +24,7 @@ export const ingest = mutation({
       if (item.event === "event_source_response" && item.data) { try { eventsScanned += Number(JSON.parse(item.data).rowCount ?? 0); } catch {} }
       if (item.event === "discovery_done" && item.data) { try { discoveryMatchesFound += Number(JSON.parse(item.data).matchesFound ?? 0); } catch {} }
       footballEvents += item.event === "match_discovery_passed" ? 1 : 0;
-      if (item.event === "match_timing_classified" && item.data) { try { const d = JSON.parse(item.data); liveToday += Number(d.liveToday ?? 0); preMatchFuture += Number(d.preMatchFuture ?? 0); unknownDate += Number(d.unknownDate ?? 0); } catch {} }
+      if (item.event === "match_timing_classified" && item.data) { try { const d = JSON.parse(item.data); liveToday += Number(d.liveToday ?? 0); unknownDate += Number(d.unknownDate ?? 0); } catch {} }
       childMarketFiltered += item.event === "fixture_event_grouped" ? 1 : 0;
       if (item.event === "event_markets_loaded" && item.data) { try { if (JSON.parse(item.data).oneOneMarketAvailable === true) oneOneMarketFound += 1; } catch {} }
       rejectedBuyFilter += item.event === "candidate_rejected_buy_filter" ? 1 : 0;
@@ -44,7 +44,7 @@ export const ingest = mutation({
       discoveryMatchesFound: (existing?.discoveryMatchesFound ?? 0) + discoveryMatchesFound,
       footballEvents: (existing?.footballEvents ?? 0) + footballEvents,
       candidateGatePassed: (existing?.candidateGatePassed ?? 0) + candidateGatePassed,
-      liveToday: (existing?.liveToday ?? 0) + liveToday, preMatchFuture: (existing?.preMatchFuture ?? 0) + preMatchFuture,
+      liveToday: (existing?.liveToday ?? 0) + liveToday,
       unknownDate: (existing?.unknownDate ?? 0) + unknownDate, childMarketFiltered: (existing?.childMarketFiltered ?? 0) + childMarketFiltered,
       oneOneMarketFound: (existing?.oneOneMarketFound ?? 0) + oneOneMarketFound, rejectedBuyFilter: (existing?.rejectedBuyFilter ?? 0) + rejectedBuyFilter,
       candidates: (existing?.candidates ?? 0) + candidates, evaluations: (existing?.evaluations ?? 0) + evaluations,
@@ -61,7 +61,7 @@ export const stats = query({
   args: {}, returns: v.union(v.object({
     monitor: v.string(), ticks: v.number(), eventsScanned: v.optional(v.number()), discoveryMatchesFound: v.optional(v.number()),
     footballEvents: v.optional(v.number()), candidateGatePassed: v.optional(v.number()), liveToday: v.optional(v.number()),
-    preMatchFuture: v.optional(v.number()), unknownDate: v.optional(v.number()), childMarketFiltered: v.optional(v.number()),
+    unknownDate: v.optional(v.number()), childMarketFiltered: v.optional(v.number()),
     oneOneMarketFound: v.optional(v.number()), rejectedBuyFilter: v.optional(v.number()), candidates: v.number(), evaluations: v.number(),
     balanced: v.number(), marketMissing: v.number(), unresolved: v.number(), buyAlerts: v.number(), sellAlerts: v.number(), errors: v.number(), updatedAt: v.number(),
   }), v.null()),
@@ -71,7 +71,7 @@ export const stats = query({
     return {
       monitor: row.monitor, ticks: row.ticks, eventsScanned: row.eventsScanned ?? 0, discoveryMatchesFound: row.discoveryMatchesFound ?? 0,
       footballEvents: row.footballEvents ?? 0, candidateGatePassed: row.candidateGatePassed ?? 0, liveToday: row.liveToday ?? 0,
-      preMatchFuture: row.preMatchFuture ?? 0, unknownDate: row.unknownDate ?? 0, childMarketFiltered: row.childMarketFiltered ?? 0,
+      unknownDate: row.unknownDate ?? 0, childMarketFiltered: row.childMarketFiltered ?? 0,
       oneOneMarketFound: row.oneOneMarketFound ?? 0, rejectedBuyFilter: row.rejectedBuyFilter ?? 0, candidates: row.candidates, evaluations: row.evaluations,
       balanced: row.balanced, marketMissing: row.marketMissing, unresolved: row.unresolved, buyAlerts: row.buyAlerts, sellAlerts: row.sellAlerts, errors: row.errors, updatedAt: row.updatedAt,
     };
