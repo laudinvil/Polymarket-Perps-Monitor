@@ -4,7 +4,9 @@ const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const GAMES = GAMMA + "/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
-const RUN_MS = 4 * 60 * 60 * 1000;
+const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
+const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : 4 * 60 * 60 * 1000;
+const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
 let stopping = false;
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
@@ -308,9 +310,9 @@ async function cycle(){
   }
 }
 async function main(){
-  console.log(JSON.stringify({event:"monitor_start",sourceLive:LIVE_PAGE,sourceSoccer:SOCCER_PAGE,pollMs:POLL_MS}));
-  const deadline=Date.now()+RUN_MS;
-  while(!stopping&&Date.now()<deadline){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));console.log(JSON.stringify({event:"cycle_complete",elapsedMs:Date.now()-started}));}
-  console.log(JSON.stringify({event:"monitor_exit"}));
+  console.log(JSON.stringify({event:"monitor_start",mode:DIAGNOSTIC_MODE?"diagnostic":"monitor",sourceLive:LIVE_PAGE,sourceSoccer:SOCCER_PAGE,pollMs:POLL_MS,runMs:RUN_MS,maxCycles:Number.isFinite(MAX_CYCLES)?MAX_CYCLES:null}));
+  const deadline=Date.now()+RUN_MS; let cycles=0;
+  while(!stopping&&Date.now()<deadline&&cycles<MAX_CYCLES){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}cycles++;console.log(JSON.stringify({event:"cycle_complete",cycle:cycles,elapsedMs:Date.now()-started}));if(cycles>=MAX_CYCLES)break;await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));}
+  console.log(JSON.stringify({event:"monitor_exit",cycles}));
 }
 process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
