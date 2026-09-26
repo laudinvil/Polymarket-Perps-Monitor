@@ -1,3 +1,4 @@
+// DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
