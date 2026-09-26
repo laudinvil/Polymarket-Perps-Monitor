@@ -383,24 +383,42 @@ async function ensureEventMarkets(match) {
 }
 
 function findOneOneMarket(match) {
+  const normalizeScoreQuestion = value => text(value)
+    .replace(/[–—−]/g, "-")
+    .replace(/\\s+/g, " ")
+    .trim();
+
   for (const market of match.markets || []) {
     const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
     const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
-    const question = text(market.question || "");
-    if (/(?:exact score|correct score)/i.test(question) &&
-        /(?:^|\s)1\s*[-:]\s*1(?:\s|\?|$)/i.test(question)) {
+    if (!outcomes.length || prices.length !== outcomes.length) continue;
+
+    const question = normalizeScoreQuestion(market.question || "");
+    const isExactScore = /(?:exact\\s+score|correct\\s+score)/i.test(question);
+    const isOneOneQuestion = /(?:^|[^0-9])1\\s*[:\\-]\\s*1(?:[^0-9]|$)/.test(question);
+    if (isExactScore && isOneOneQuestion) {
       const yesIndex = outcomes.findIndex(v => /^yes$/i.test(text(v)));
-      const index = yesIndex >= 0 ? yesIndex : 0;
-      const price = Number(prices[index]);
-      if (Number.isFinite(price)) return { market, outcome: text(outcomes[index] || "Yes"), price };
+      if (yesIndex >= 0) {
+        const price = Number(prices[yesIndex]);
+        if (Number.isFinite(price) && price >= 0 && price <= 1) {
+          return { market, outcome: text(outcomes[yesIndex]), price };
+        }
+      }
     }
+
+    // Some Gamma representations expose the score as an outcome instead of
+    // embedding it in the question. Support both 1-1 and 1:1 spellings.
     for (let i = 0; i < outcomes.length; i++) {
-      if (/^1\s*[-:]\s*1$/.test(text(outcomes[i]))) {
+      const outcome = text(outcomes[i]).replace(/[–—−]/g, "-").trim();
+      if (/^1\\s*[:\\-]\\s*1$/.test(outcome)) {
         const price = Number(prices[i]);
-        if (Number.isFinite(price)) return { market, outcome: text(outcomes[i]), price };
+        if (Number.isFinite(price) && price >= 0 && price <= 1) {
+          return { market, outcome, price };
+        }
       }
     }
   }
+
   return null;
 }
 
