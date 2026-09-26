@@ -22,10 +22,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run live soccer monitor
+      - name: Run live soccer monitor with persistent diagnostics
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: node scripts/polymarket-soccer-live-alerts.js
+        run: |
+          set -o pipefail
+          node scripts/polymarket-soccer-live-alerts.js 2>&1 | tee soccer-monitor.log
+      - name: Upload persistent monitor diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-monitor-diagnostics-${{ github.run_id }}
+          path: soccer-monitor.log
+          if-no-files-found: warn
+          retention-days: 7
