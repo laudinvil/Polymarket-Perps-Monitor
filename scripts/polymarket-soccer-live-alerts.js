@@ -79,13 +79,13 @@ function marketRows(event){
   return (Array.isArray(event.markets)?event.markets:[]).filter(m=>m&&m.active!==false&&m.closed!==true).map(m=>{
     const outcomes=parse(m.outcomes),prices=parse(m.outcomePrices||m.outcome_prices);
     if(!Array.isArray(outcomes)||!Array.isArray(prices)||outcomes.length!==prices.length)return null;
-    return{question:t(m.question||m.title),outcomes:outcomes.map(t),prices:prices.map(Number)};
+    return{question:t(m.question||m.title||m.groupItemTitle),group:t(m.groupItemTitle||m.groupItemTitle),outcomes:outcomes.map(t),prices:prices.map(Number),volume:Number(m.volumeNum??m.volume??0),liquidity:Number(m.liquidityNum??m.liquidity??0)};
   }).filter(Boolean);
 }
 function pct(v){const n=Number(v);return Number.isFinite(n)?Math.round(n*100)+"%":"—";}
 function findMarket(rows,re){return rows.find(r=>re.test(r.question))||null;}
 function find1x2(rows){
-  return rows.find(r=>r.outcomes.length===3&&r.outcomes.every(o=>/^(1|x|2|draw|home|away|win|tie)$/i.test(t(o))))||
+  return rows.find(r=>r.outcomes.length===3&&r.outcomes.some(o=>/^draw$|^x$/i.test(o))&&r.outcomes.filter(o=>/^draw$|^x$/i.test(o)).length===1) ||
          rows.find(r=>/1x2|match result|match winner|who will win|winner|moneyline|result/i.test(r.question))||null;
 }
 function findTotal(rows){return rows.find(r=>/total|over.?under|goals/i.test(r.question)&&r.outcomes.some(o=>/over/i.test(o))&&r.outcomes.some(o=>/under/i.test(o)))||null;}
@@ -94,13 +94,15 @@ function line(row){return row?row.outcomes.map((o,i)=>t(o)+": "+pct(row.prices[i
 function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:0}):"—";}
 function buildAlert(x){
   const e=x.event,rows=marketRows(e);
+  const marketVolume=rows.reduce((a,r)=>a+(Number.isFinite(r.volume)?r.volume:0),0);
+  const marketLiquidity=rows.reduce((a,r)=>a+(Number.isFinite(r.liquidity)?r.liquidity:0),0);
   const one=find1x2(rows);
   const total=findTotal(rows);
   const spread=findHandicap(rows);
   const sh=e.homeScore??e.home_score??e.score?.home??null,sa=e.awayScore??e.away_score??e.score?.away??null;
   const status=t(e.status||e.gameStatus||e.liveStatus||"LIVE");
   const start=t(e.startDate||e.start_date||e.startTime);
-  const vol=e.volumeNum??e.volume??e.volume24hr??null,liq=e.liquidityNum??e.liquidity??null;
+  const vol=Number(e.volumeNum??e.volume??e.volume24hr??0)||marketVolume;const liq=Number(e.liquidityNum??e.liquidity??0)||marketLiquidity;
   return ["⚽ LIVE FOUND","",x.home+" vs "+x.away,status?"STATUS: "+status:"STATUS: LIVE",sh!=null&&sa!=null?"SCORE: "+sh+"–"+sa:"SCORE: —","",
     "1X2: "+line(one),"TOTAL: "+line(total),"HANDICAP: "+line(spread),"",
     "VOLUME: "+money(vol),"LIQUIDITY: "+money(liq),start?"START: "+start:"START: —","",
