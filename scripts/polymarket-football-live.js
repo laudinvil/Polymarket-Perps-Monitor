@@ -199,10 +199,11 @@ async function discoverLivePageFixtures() {
       .map(href => href.split("/").filter(Boolean).pop())
       .filter(slug => slug && /-\d{4}-\d{2}-\d{2}$/i.test(slug));
     const rows = [];
-    for (const slug of slugs.slice(0, 40)) {
+    for (const href of eventHrefs.slice(0, 40)) {
+      const slug = href.split("/").filter(Boolean).pop();
       try {
         const event = await getJson(GAMMA_URL + "/events/slug/" + encodeURIComponent(slug), {timeoutMs:3_000});
-        if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push({...event, _liveSportsHref: eventHref});
+        if (event && event.active !== false && event.closed !== true && isFootballEvent(event,new Set()) && isPrimaryMatchEvent(event)) rows.push({...event, _liveSportsHref: href});
       } catch (err) { log("WARN","live_page_event_load_failed","Could not load live-page football event from Gamma",{slug,message:err.message}); }
     }
     log("INFO","sports_live_page_discovery","Polymarket /sports/live is the sole football discovery source",{url,hrefCount:hrefs.size,eventHrefCount:eventHrefs.length,footballSlugCount:slugs.length,eventCount:rows.length});
