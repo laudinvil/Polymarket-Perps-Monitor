@@ -89,14 +89,15 @@ export const claimTelegramAlert = mutation({
     // URL is the sole identity for a soccer LIVE alert.
     // Keep using the historical football monitor namespace so records created
     // before the monitor rename still block the exact same Polymarket URL.
-    const monitor = MONITOR;
-    const existing = await ctx.db.query("telegramDedupe")
-      .withIndex("by_monitor_market", q => q.eq("monitor", monitor).eq("marketSlug", key))
-      .first();
+    // Search the entire dedupe table by normalized URL, regardless of the
+    // historical monitor namespace. This prevents old/new monitor names from
+    // ever creating a second alert for the same Polymarket URL.
+    const all = await ctx.db.query("telegramDedupe").collect();
+    const existing = all.find((row) => row.marketSlug.trim().replace(/\/$/, "") === key);
     if (existing) return { claimed: false, replyToMessageId: null };
 
     await ctx.db.insert("telegramDedupe", {
-      monitor, marketSlug: key, claimedAt: now
+      monitor: MONITOR, marketSlug: key, claimedAt: now
     });
     return { claimed: true, replyToMessageId: null };
   },
@@ -127,8 +128,12 @@ export const releaseTelegramAlert = mutation({
   args: { monitor: v.string(), marketSlug: v.string() }, returns: v.null(),
   handler: async (ctx, args) => {
     const key = args.marketSlug.trim().replace(/\/$/, "");
-    const existing = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", MONITOR).eq("marketSlug", key)).first();
-    if (existing) await ctx.db.delete(existing._id);
+    const all = await ctx.db.query("telegramDedupe").collect();
+    for (const row of all) {
+      if (row.marketSlug.trim().replace(/\/$/, "") === key) {
+        await ctx.db.delete(row._id);
+      }
+    }
     return null;
   },
 });
