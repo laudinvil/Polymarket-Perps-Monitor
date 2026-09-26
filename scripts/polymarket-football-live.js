@@ -217,19 +217,14 @@ async function discoverLivePageFixtures() {
 async function discoverPolymarket(){
   const groups=new Map();let eventScanned=0,footballEventFound=0,childMarketEventsGrouped=0;
   await checkpoint("discovery_start",{strategy:"football_fixture_first_v9",source:"soccer_tag",note:"Polymarket-only football fixture discovery; no external source matching"});
-  const nowIso = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-  const futureIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  const sources=[
-    {name:"soccer_newest",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&limit=100&order=id&ascending=false"},
-    {name:"soccer_recent",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=false"},
-    {name:"soccer_live_window",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&start_date_min="+encodeURIComponent(new Date(Date.now()-12*60*60*1000).toISOString())+"&start_date_max="+encodeURIComponent(new Date().toISOString())+"&limit=100&order=startDate&ascending=false"}
-  ];
-  const pagePlan={soccer_newest:3,soccer_recent:5,soccer_live_window:3};
-  const sourcePages=sources.flatMap(source=>Array.from({length:pagePlan[source.name]??1},(_,page)=>({name:source.name,url:source.baseUrl+"&offset="+(page*100),page})));
-   const livePageRows=await discoverLivePageFixtures();
+  const nowIso = new Date().toISOString();
+  const futureIso = new Date().toISOString();
+  const sources=[];
+  const pagePlan={};
+  const sourcePages=[];
   const results=await Promise.all(sourcePages.map(async source=>{try{const response=await fetch(source.url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10_000)}),body=await response.text();if(!response.ok)throw new Error("HTTP "+response.status+" for "+source.url);let data;try{data=JSON.parse(body);}catch(error){throw error;}const rows=Array.isArray(data)?data:(data?.events||data?.data||[]);log("INFO","event_source_response","Raw Polymarket football source response captured",{source:source.name,status:response.status,rowCount:rows.length,bodyBytes:Buffer.byteLength(body,"utf8")});return{name:source.name,rows,error:null};}catch(error){return{name:source.name,rows:[],error};}}));
   results.push({name:"sports_live_page",rows:livePageRows,error:null});
-   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window"||result.name==="sports_live_page";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
+   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="sports_live_page";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
       if(isStartingElevenEvent(event)){
         log("INFO","starting_eleven_filtered","Starting XI child event ignored; resolving its parent fixture event",{
           eventId:text(event.id||event.eventId||event.event_id),
@@ -635,6 +630,11 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       const sent = await sendTelegram(message);
       if (!sent.ok) throw new Error("Telegram not configured");
       await saveTelegramMessageId(claimKey, sent.messageId);
+      if (phase === "live_entry") {
+        await saveTelegramMessageId(key + ":LIVE", sent.messageId);
+        oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true, startedSent: true, buyOneOnePrice: exactScoreOneOne.price });
+        await markCandidateStartedSent(key);
+      }
       await markCandidateBuySent(key, exactScoreOneOne.price);
       log("INFO", "one_one_buy_alert_sent", "BUY entry alert sent", {
         eventId: match.eventId, reason: "live_or_starting_now_no_market_filter", telegramMessageId: sent.messageId
@@ -837,38 +837,21 @@ async function tick() {
         if(isLive&&score.home===0&&score.away===0)cycle.liveZeroZero++;
         if(!liveState)cycle.liveStateUnavailable++;
 
-        const kickoffMs = Date.parse(match.startTime || "");
-        const startingNow = Number.isFinite(kickoffMs) && kickoffMs <= Date.now() + PREMATCH_WINDOW_MS && kickoffMs >= Date.now() - 6 * 60 * 60 * 1000 && match.active !== false && match.closed !== true;
-        const startsTooFarAhead = Number.isFinite(kickoffMs) && kickoffMs > Date.now() + PREMATCH_WINDOW_MS;
-        if(startsTooFarAhead && isPrematch){
-          log("INFO","prematch_too_early","Fixture is valid but kickoff is outside the starting-now window; no BUY yet",{
-            eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,
-            minutesUntilKickoff:Math.round((kickoffMs-Date.now())/60000),prematchWindowMinutes:15
-          });
+        if(!isLive){
+          log("INFO","not_live_ignored","Fixture is not currently live; pre-match/line monitoring is disabled",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],phase});
           return;
         }
-        if(isPrematch && startingNow && !state?.prematchSeen){
+        if(!state?.startedSent){
           cycle.buyPassed++;
-          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase:"starting",teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
-          await maybeOneOneAlert({...match,live:{status:"scheduled",score,minute:liveState?.minute||0}},null,"prematch");
+          log("INFO","live_fixture_ready_for_alert","Already-started football fixture reached alert stage from Polymarket /sports/live",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
+          await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"live_entry");
           return;
         }
-
-        if(isLive && state?.prematchSeen && !state?.startedSent){
-          log("INFO","candidate_ready_for_live_reply","Football BUY candidate transitioned to LIVE",{eventId:match.eventId,phase:"live",teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
-          await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"started");
-          return;
-        }
-
-        if(isLive && state?.prematchSeen && state?.startedSent && (Number(score.home)+Number(score.away))===0){
-          log("INFO","live_candidate_started_already","Football candidate already has LIVE reply and no goal yet",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
-          return;
-        }
-
-        log("INFO","fixture_not_buy","Fixture did not reach BUY",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],score,previouslyAdmittedPrematch:Boolean(state?.prematchSeen)});
-        if((Number(score.home)+Number(score.away))>0&&state?.prematchSeen){
+        if((Number(score.home)+Number(score.away))>0){
           cycle.sellEvaluated++;
           await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"live");
+        } else {
+          log("INFO","live_fixture_waiting_for_score_change","Live fixture already alerted; waiting for score change",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
         }
       }));
     }
