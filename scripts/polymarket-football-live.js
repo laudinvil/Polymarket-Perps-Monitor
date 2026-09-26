@@ -751,28 +751,60 @@ function visiblePolymarketText(html) {
   return decodeHtml(s.replace(/<[^>]+>/g," ").replace(/\s+/g," "));
 }
 function scoreAfterTeam(page, team) {
-  const t=text(team);
-  if(!t)return null;
-  const escaped=t.replace(/[.*+?^()|[\]\\]/g,"\\$&");
-  const m=page.match(new RegExp(escaped+"\\s+(\\d{1,2})-(\\d{1,2})(?:\\s|$)","i"));
-  if(!m)return null;
-  const home=Number(m[1]), away=Number(m[2]);
-  if(!Number.isInteger(home)||!Number.isInteger(away)||home<0||away<0||home>20||away>20)return null;
-  return {home,away};
+  const normalizedPage = norm(page);
+  const normalizedTeam = norm(team);
+  if (!normalizedPage || !normalizedTeam) return null;
+  const escaped = normalizedTeam.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&");
+  const re = new RegExp(escaped + "\\s+(\\\\d{1,2})-(\\\\d{1,2})(?=\\\\s|$)", "i");
+  const m = normalizedPage.match(re);
+  if (!m) return null;
+  const home = Number(m[1]), away = Number(m[2]);
+  if (![home, away].every(Number.isInteger) || home < 0 || away < 0 || home > 20 || away > 20) return null;
+  return {home, away};
 }
+
 function findLivePageMatch(page, match) {
-  const h=norm(match.homeTeam), a=norm(match.awayTeam), p=norm(page);
-  if(!h||!a)return null;
-  const hi=p.indexOf(h), ai=p.indexOf(a,Math.max(hi+h.length,0));
-  if(hi<0||ai<0||ai-hi>700)return null;
-  const card=p.slice(Math.max(0,hi-180),Math.min(p.length,ai+a.length+180));
-  const liveStatus=/\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
-  if(!liveStatus)return null;
-  const homeScore=scoreAfterTeam(page,match.homeTeam);
-  const awayScore=scoreAfterTeam(page,match.awayTeam);
-  if(!homeScore||!awayScore)return null;
-  return {status:"live",score:{home:homeScore.home,away:awayScore.home},minute:0};
+  const normalizedPage = norm(page);
+  const homeTeam = norm(match.homeTeam);
+  const awayTeam = norm(match.awayTeam);
+  if (!normalizedPage || !homeTeam || !awayTeam) return null;
+
+  // A team can occur several times on /sports/live. Do not use the first
+  // occurrence globally: walk every home/away pair and select the pair whose
+  // local card actually contains a LIVE status.
+  let from = 0;
+  while (from < normalizedPage.length) {
+    const hi = normalizedPage.indexOf(homeTeam, from);
+    if (hi < 0) break;
+    const ai = normalizedPage.indexOf(awayTeam, hi + homeTeam.length);
+    if (ai < 0 || ai - hi > 900) {
+      from = hi + homeTeam.length;
+      continue;
+    }
+
+    const cardStart = Math.max(0, hi - 220);
+    const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 260);
+    const card = normalizedPage.slice(cardStart, cardEnd);
+    const liveStatus = /\\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\\b/i.test(card);
+
+    if (liveStatus) {
+      const homeScore = scoreAfterTeam(normalizedPage.slice(hi, cardEnd), match.homeTeam);
+      const awayScore = scoreAfterTeam(normalizedPage.slice(ai, cardEnd), match.awayTeam);
+      if (homeScore && awayScore) {
+        return {
+          status: "live",
+          score: {home: homeScore.home, away: awayScore.home},
+          minute: 0
+        };
+      }
+    }
+
+    from = hi + homeTeam.length;
+  }
+
+  return null;
 }
+
 async function loadPolymarketLivePage() {
   const url="https://polymarket.com/ru/sports/live";
   try {
