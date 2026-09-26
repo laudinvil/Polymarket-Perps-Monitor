@@ -92,7 +92,14 @@ function gameTeams(g){
   const away=t(g.awayTeam||g.away_team||g.away||g.awayTeamName||g.away_team_name);
   return [home,away];
 }
-function wsSoccerConfirmed(sg){return /soccer|football/i.test([sg?.league,sg?.sport,sg?.leagueAbbreviation,sg?.sportSlug].map(t).join(" "));}
+function wsSoccerConfirmed(sg){
+  const league=[sg?.league,sg?.sport,sg?.leagueAbbreviation,sg?.sportSlug].map(t).join(" ").toLowerCase();
+  if(/soccer|football|epl|premier|laliga|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/.test(league))return true;
+  if(/^(nba|wnba|nfl|nhl|mlb|ncaa|cfb|ncaab|atp|wta|ufc|mma|cricket|cs2|dota|valorant|lol)$/i.test(t(sg?.leagueAbbreviation)))return false;
+  const period=t(sg?.period).toUpperCase();
+  const elapsed=t(sg?.elapsed);
+  return /^(?:1H|2H|HT)$/.test(period) || /^\d{1,3}:\d{2}$/.test(elapsed);
+}
 function gameLive(g){
   const status=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period).toLowerCase();
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
@@ -141,9 +148,10 @@ async function fetchLiveSports(){
         const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
         const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
+        const soccerPayload=wsSoccerConfirmed(p);
         const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
         if(type&&type!=="sport_result"&&!liveFlag)return;
-        if(!/soccer|football/.test(league))return;
+        if(!soccerPayload)return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
         if(!liveFlag)return;
         const gameId=t(p?.gameId||p?.id);
