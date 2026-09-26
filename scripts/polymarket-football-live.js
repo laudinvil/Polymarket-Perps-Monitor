@@ -79,7 +79,16 @@ function parseJson(v) {
   try { return JSON.parse(v); } catch { return v; }
 }
 
-function eventUrl(event){const slug=text(event.slug);return slug?"https://polymarket.com/event/"+slug:"";}
+function eventUrl(event){
+  let slug=text(event.slug);
+  if(!slug) return "";
+  // Child-market events can carry the market suffix in their slug
+  // (for example "-total-corners"). Alerts must always open the parent
+  // fixture event, not a child market such as corners/goals/cards.
+  slug=slug
+    .replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|second-half-result|1st-half-result|2nd-half-result|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");
+  return "https://polymarket.com/event/"+slug;
+}
 
 // Discovery must identify football fixtures, not decide whether a fixture is
 // suitable for the strategy. Market variants are handled later by the
@@ -339,7 +348,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     });
 
     const message = [
-      "⚽ 1:1 · BUY", "",
+      "⚽ BUY", "",
       match.homeTeam + " vs " + match.awayTeam,
       phase === "live_entry" ? "LIVE" : "PRE-MATCH",
       "", "➡️ OPEN MATCH", match.url
@@ -410,7 +419,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   if (!claim.claimed) return;
 
   const message = [
-    "⚽ 1:1 · SELL", "",
+    "⚽ SELL", "",
     match.homeTeam + " vs " + match.awayTeam,
     "SCORE: " + home + "–" + away,
     "", "➡️ OPEN MATCH", match.url
