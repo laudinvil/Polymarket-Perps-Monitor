@@ -102,31 +102,44 @@ function oddsDecimal(x){
   }
   return NaN;
 }
-async function sofascoreOdds(id){
-  const data=await json("https://api.sofascore.com/api/v1/event/"+id+"/odds/1/all",5000),markets=arr(data?.markets);
+async function sofascoreOdds(id,homeTeam="",awayTeam=""){
+  let markets=[];
+  const urls=[
+    "https://api.sofascore.com/api/v1/event/"+id+"/odds/1/all",
+    "https://api.sofascore.com/api/v1/event/"+id+"/odds/1"
+  ];
+  for(const url of urls){
+    try{
+      const data=await json(url,5000);
+      const got=arr(data?.markets);
+      if(got.length){markets=got;break;}
+    }catch(err){
+      log(JSON.stringify({event:"sofascore_odds_endpoint_failed",sofaId:String(id),url,message:err.message}));
+    }
+  }
+  const hn=norm(homeTeam),an=norm(awayTeam);
   let one=null,exact=null,oneMarket=null,exactMarket=null;
   for(const m of markets){
     const name=t(m?.marketName||m?.name||m?.groupItemTitle||m?.group).toLowerCase(),choices=arr(m?.choices);
-    if(!one&&/(1x2|full time|match result)/.test(name)){
+    if(!one&&/(1x2|match result|match winner|full time|winner)/.test(name)){
       const p={};
       for(const x of choices){
-        const n=t(x?.name).toUpperCase(),d=oddsDecimal(x);
-        if(d>1&&(n==="1"||n==="HOME"))p.h=1/d;
-        if(d>1&&(n==="X"||n==="DRAW"))p.d=1/d;
-        if(d>1&&(n==="2"||n==="AWAY"))p.a=1/d;
+        const raw=t(x?.name),n=raw.toUpperCase(),nx=norm(raw),d=oddsDecimal(x);
+        if(!(d>1))continue;
+        if(n==="1"||n==="HOME"||nx===hn||teamMatch(nx,hn))p.h=1/d;
+        else if(n==="X"||n==="DRAW"||n==="TIE"||nx==="draw"||nx==="tie")p.d=1/d;
+        else if(n==="2"||n==="AWAY"||nx===an||teamMatch(nx,an))p.a=1/d;
       }
       if(p.h&&p.d&&p.a){const s=p.h+p.d+p.a;one={home:p.h/s,draw:p.d/s,away:p.a/s};oneMarket=name;}
     }
-    if(/correct score|exact score/.test(name)){
+    if(/correct score|exact score|correct result/.test(name)){
       for(const x of choices){
-        if(/^1[:\-–]1$/.test(t(x?.name))){
-          const d=oddsDecimal(x);
-          if(d>1){exact=1/d;exactMarket=name;}
-        }
+        const raw=t(x?.name),d=oddsDecimal(x);
+        if(/^1[:\-–]1$/.test(raw)&&d>1){exact=1/d;exactMarket=name;}
       }
     }
   }
-  log(JSON.stringify({event:"sofascore_odds_parsed",sofaId:String(id),marketCount:markets.length,oneFound:!!one,exact11Found:exact!=null,oneMarket,exactMarket}));
+  log(JSON.stringify({event:"sofascore_odds_parsed",sofaId:String(id),marketCount:markets.length,oneFound:!!one,exact11Found:exact!=null,oneMarket,exactMarket,markets:markets.slice(0,12).map(m=>({name:m?.marketName||m?.name||m?.groupItemTitle||m?.group,choices:arr(m?.choices).slice(0,8).map(x=>({name:x?.name,decimal:x?.decimalValue,fractional:x?.fractionalValue}))}))}));
   return {one,exact};
 }
 function parsePolyOneXTwo(e,home,away){
@@ -290,7 +303,7 @@ async function discoverLiveZeroZero(){
     if(!s?.id||!home||!away)continue;
     try{
       const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
-      const sofa=await sofascoreOdds(s.id);
+      const sofa=await sofascoreOdds(s.id,home,away);
       log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
       if(!sofa.one||sofa.exact==null){
         log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
@@ -409,7 +422,7 @@ async function scan(){
       const scoreChanged=!row.lastScore||score.home!==row.lastScore.home||score.away!==row.lastScore.away;
 
       try{
-        const sofa=await sofascoreOdds(row.sofaId);
+        const sofa=await sofascoreOdds(row.sofaId,row.home,row.away);
         if(sofa.one){
           row.odds=formatOne(sofa.one);
           row.priceDiff=Math.abs(sofa.one.home-sofa.one.away);
