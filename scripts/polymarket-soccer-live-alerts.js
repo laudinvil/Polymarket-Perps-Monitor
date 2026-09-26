@@ -162,6 +162,15 @@ async function claimFootballMatch(slug){
   return b && b.value && b.value.allowed===true;
 }
 
+async function releaseFootballMatch(slug){
+  const siteUrl=t(process.env.CONVEX_SITE_URL||"");
+  const deployKey=t(process.env.CONVEX_DEPLOY_KEY||"");
+  if(!siteUrl||!deployKey)return;
+  const convexUrl=siteUrl.replace(/\.convex\.site$/,".convex.cloud");
+  const r=await fetch(convexUrl+"/api/mutation",{method:"POST",headers:{"content-type":"application/json","Authorization":"Convex "+deployKey},body:JSON.stringify({path:"btc5mState:releaseFootballMatch",args:{marketSlug:slug},format:"json"}),signal:AbortSignal.timeout(8000)});
+  if(!r.ok)throw new Error("Convex release HTTP "+r.status);
+}
+
 async function sendTelegram(message){
   const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
   if(!token||!chat)throw new Error("Telegram credentials are missing");
@@ -198,7 +207,12 @@ async function cycle(){
     try{
       await refreshEvent(x);
       if(!(await claimFootballMatch(id))){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
-      await sendTelegram(buildAlert(x));alerted.add(id);
+      try {
+        await sendTelegram(buildAlert(x));alerted.add(id);
+      } catch(e) {
+        try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",eventId:id,slug:x.slug,message:re.message})); }
+        throw e;
+      }
       console.log(JSON.stringify({level:"INFO",event:"alert_sent",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
     }catch(e){console.log(JSON.stringify({level:"ERROR",event:"alert_failed",eventId:id,slug:x.slug,message:e.message}));}
     finally{alerting.delete(id);}
