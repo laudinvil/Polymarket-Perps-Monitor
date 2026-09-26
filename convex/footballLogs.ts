@@ -28,14 +28,14 @@ export const ingest = mutation({
       childMarketFiltered += item.event === "fixture_event_grouped" ? 1 : 0;
       if (item.event === "event_markets_loaded" && item.data) { try { if (JSON.parse(item.data).oneOneMarketAvailable === true) oneOneMarketFound += 1; } catch {} }
       rejectedBuyFilter += item.event === "candidate_rejected_buy_filter" ? 1 : 0;
-      candidateGatePassed += item.event === "candidate_match_found" ? 1 : 0;
-      candidates += item.event === "candidate_match_found" ? 1 : 0;
-      evaluations += item.event === "candidate_evaluation" ? 1 : 0;
+      candidateGatePassed += item.event === "candidate_ready_for_buy" ? 1 : (item.event === "candidate_match_found" ? 1 : 0);
+      candidates += item.event === "candidate_ready_for_buy" ? 1 : (item.event === "candidate_match_found" ? 1 : 0);
+      evaluations += item.event === "candidate_ready_for_buy" ? 1 : (item.event === "candidate_evaluation" ? 1 : 0);
       marketMissing += item.event === "one_one_market_missing" ? 1 : 0;
       unresolved += item.event === "match_unresolved" ? 1 : 0;
       buyAlerts += item.event === "one_one_buy_alert_sent" ? 1 : 0;
       sellAlerts += item.event === "one_one_sell_alert_sent" ? 1 : 0;
-      errors += ["discovery_failed","event_source_failed","event_source_http_error","event_source_json_error","nutmeg_fetch_failed","polymarket_live_state_failed","telegram_send_failed","telegram_claim_failed"].includes(item.event) ? 1 : 0;
+      errors += ["discovery_failed","event_source_failed","event_source_http_error","event_source_json_error","nutmeg_fetch_failed","polymarket_live_state_failed","telegram_send_failed","telegram_claim_failed","candidate_alert_blocked_no_url","candidate_persist_failed"].includes(item.event) ? 1 : 0;
       if (item.event === "candidate_match_found" && item.data) { try { if (JSON.parse(item.data).balanced === true) balanced += 1; } catch {} }
     }
     const patch = {
