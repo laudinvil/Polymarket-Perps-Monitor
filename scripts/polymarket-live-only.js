@@ -217,6 +217,21 @@ function approxPass(sofa,poly){
   return Math.max(Math.abs(sofa.one.home-poly.one.home),Math.abs(sofa.one.draw-poly.one.draw),Math.abs(sofa.one.away-poly.one.away),Math.abs(sofa.exact-poly.exact))<=APPROX_MAX_DIFF;
 }
 function polyEventUrl(e){return t(e?.slug)?"/event/"+e.slug:"";}
+async function fixtureParentEvent(e){
+  const slug=t(e?.slug);
+  if(!slug)return e;
+  const base=slug.replace(/-exact-score$/i,"");
+  if(base===slug)return e;
+  try{
+    const page=await json(GAMMA+"/events?slug="+encodeURIComponent(base),3500);
+    const events=arr(page?.events||page);
+    return events.find(x=>t(x?.slug)===base)||e;
+  }catch(err){
+    log(JSON.stringify({event:"fixture_parent_fetch_failed",slug,base,message:err.message}));
+    return e;
+  }
+}
+
 function teamsFromEvent(e){
   const title=t(e?.title||e?.question),h=t(e?.homeTeam||e?.home_team),a=t(e?.awayTeam||e?.away_team);
   if(h&&a)return [h,a];
@@ -392,7 +407,11 @@ async function polymarketSportsLive(){
   // AND has a live state. No generic sports fallback is allowed.
   const live=all.filter(e=>{
     const status=t(e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
-    return e?.live===true||e?.isLive===true||liveStatuses.has(status);
+    const started=startMs(e);
+    // A market can be marked live before the fixture starts. Never alert
+    // until the scheduled fixture start time has actually passed.
+    const startedNow=Number.isFinite(started)&&started<=Date.now();
+    return startedNow && (e?.live===true||e?.isLive===true||liveStatuses.has(status));
   });
 
   log(JSON.stringify({
@@ -428,8 +447,27 @@ async function discoverLiveZeroZero(){
 
   const found=[];
   for(const pm of polyLive){
-    const [phome,paway]=teamsFromEvent(pm);
+    const fixture=await fixtureParentEvent(pm);
+    const [phome,paway]=teamsFromEvent(fixture);
     if(!phome||!paway)continue;
+
+    // LIVE_FOUND is a real alert, not a discovery ping. Require the
+    // canonical fixture and both requested Polymarket market values.
+    const polyOne=parsePolyOneXTwo(fixture,phome,paway);
+    const polyExact=await exactScore11(pm);
+    const fixtureStarted=startMs(fixture);
+    const fixtureStatus=t(fixture?.gameStatus||fixture?.game_status||fixture?.status||fixture?.state).toLowerCase();
+    const fixtureLive=Number.isFinite(fixtureStarted)&&fixtureStarted<=Date.now() &&
+      (fixture?.live===true||fixture?.isLive===true||liveTypes.has(fixtureStatus));
+    if(!fixtureLive){
+      log(JSON.stringify({event:"live_candidate_rejected_not_started",sourceSlug:pm?.slug,fixtureSlug:fixture?.slug,startMs:fixtureStarted,status:fixtureStatus,live:fixture?.live}));
+      continue;
+    }
+    if(!polyOne||polyExact==null){
+      log(JSON.stringify({event:"live_candidate_rejected_missing_markets",teams:[phome,paway],sourceSlug:pm?.slug,fixtureSlug:fixture?.slug,has1X2:!!polyOne,hasExact11:polyExact!=null}));
+      continue;
+    }
+
     try{
       const sofaEvent=sofaLive.find(s=>{
         const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
@@ -457,7 +495,7 @@ async function discoverLiveZeroZero(){
       }));
 
       // No odds, score, 0:0 or Sofascore match is allowed to block this first LIVE alert.
-      await sendLiveFound(phome,paway,minute,score,sofa,pm);
+      await sendLiveFound(phome,paway,minute,score,{...sofa,one:polyOne,exact:polyExact},fixture);
 
       if(!sofaEvent)continue;
       if(!sofa.one||sofa.exact==null){
