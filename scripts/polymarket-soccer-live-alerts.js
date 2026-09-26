@@ -88,8 +88,8 @@ async function fetchPage(url){
 }
 
 function gameTeams(g){
-  const home=t(g.homeTeam||g.home_team||g.home||g.homeTeamName||g.home_team_name);
-  const away=t(g.awayTeam||g.away_team||g.away||g.awayTeamName||g.away_team_name);
+  const home=t(g.homeTeam?.name||g.homeTeam?.teamName||g.homeTeam?.title||g.home_team?.name||g.home_team?.teamName||g.home?.name||g.home?.teamName||g.home?.title||g.homeTeam||g.home_team||g.homeTeamName||g.home_team_name);
+  const away=t(g.awayTeam?.name||g.awayTeam?.teamName||g.awayTeam?.title||g.away_team?.name||g.away_team?.teamName||g.away?.name||g.away?.teamName||g.away?.title||g.awayTeam||g.away_team||g.awayTeamName||g.away_team_name);
   return [home,away];
 }
 function wsSoccerConfirmed(sg){
@@ -105,9 +105,12 @@ function gameLive(g){
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
 }
 function gameScore(g){
-  const h=g.homeScore??g.home_score??g.score?.home??g.score?.homeScore??g.scores?.home??g.scores?.homeScore??g.home?.score??g.home?.score?.current??g.homeTeam?.score??g.homeTeam?.score?.current??g.scoreboard?.home?.score??g.scoreboard?.homeScore;
-  const a=g.awayScore??g.away_score??g.score?.away??g.score?.awayScore??g.scores?.away??g.scores?.awayScore??g.away?.score??g.away?.score?.current??g.awayTeam?.score??g.awayTeam?.score?.current??g.scoreboard?.away?.score??g.scoreboard?.awayScore;
-  return h!=null&&a!=null?[h,a]:null;
+  const h=g.homeScore??g.home_score??g.score?.home??g.score?.homeScore??g.scores?.home??g.scores?.homeScore??g.home?.score??g.home?.score?.current??g.homeTeam?.score??g.homeTeam?.score?.current??g.homeTeam?.score?.value??g.scoreboard?.home?.score??g.scoreboard?.homeScore;
+  const a=g.awayScore??g.away_score??g.score?.away??g.score?.awayScore??g.scores?.away??g.scores?.awayScore??g.away?.score??g.away?.score?.current??g.awayTeam?.score??g.awayTeam?.score?.current??g.awayTeam?.score?.value??g.scoreboard?.away?.score??g.scoreboard?.awayScore;
+  if(h!=null&&a!=null)return[h,a];
+  const raw=t(g.score||g.scoreboard||g.currentScore);
+  const m=raw.match(/^(\d+)\s*[-–:]\s*(\d+)$/);
+  return m?[Number(m[1]),Number(m[2])]:null;
 }
 function gameMinute(g){
   const raw=g?.minute??g?.matchMinute??g?.elapsed??g?.clock?.minute??g?.periodTime??g?.matchClock??g?.liveClock;
