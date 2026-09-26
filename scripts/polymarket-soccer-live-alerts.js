@@ -150,13 +150,31 @@ async function fetchLiveSports(){
     let timer;
     try{
       ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},SPORTS_WS_TIMEOUT_MS);
-      ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
+      const finish=()=>{
+        if(timer){clearTimeout(timer);timer=null;}
+        try{ws.close()}catch{}
+        resolve(live);
+      };
+      timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
+      ws.onopen=()=>{
+        console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
+        // The Sports WS sends ping frames/messages every few seconds. Keep the
+        // connection alive long enough to receive the initial sport_result batch.
+        clearTimeout(timer);
+        timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
+      };
       ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
       ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
       ws.onmessage=(ev)=>{
         const raw=typeof ev.data==="string"?ev.data:"";
-        if(raw==="ping"){try{ws.send("pong")}catch{};return;}
+        if(raw==="ping"){
+          try{ws.send("pong")}catch{}
+          clearTimeout(timer);
+          timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
+          return;
+        }
+        clearTimeout(timer);
+        timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
         let m; try{m=JSON.parse(raw)}catch{return;}
         const type=t(m?.type||m?.event_type);
         const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
