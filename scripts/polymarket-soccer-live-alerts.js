@@ -23,6 +23,13 @@ async function fetchPage(url){
   return r.text();
 }
 
+function eventStarted(event){
+  const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
+  if(/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
+  const d=Date.parse(event.startDate||event.start_date||event.startTime||"");
+  return Number.isFinite(d)&&d<=Date.now();
+}
+
 async function discover(){
   const [liveHtml,soccerHtml]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE)]);
   const liveLinks=fixtureLinks(liveHtml);
@@ -35,9 +42,10 @@ async function discover(){
     if(!slug||(!soccerHrefs.has(href)&&!soccerSlugs.has(slug))||seen.has(slug))continue;
     seen.add(slug);
     try{
-      const event=await json(GAMMA+"/events/slug/"+encodeURIComponent(slug),{timeout:5000});
+      const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000});
+      const event=Array.isArray(raw)?raw[0]:raw;
       const [home,away]=teams(event);
-      if(!home||!away||!isFixtureTitle(event.title||event.question))continue;
+      if(!home||!away||!isFixtureTitle(event.title||event.question)||!eventStarted(event))continue;
       candidates.push({eventId:t(event.id),slug,url:"https://polymarket.com"+href,home,away,event});
     }catch(e){console.log(JSON.stringify({level:"WARN",event:"event_load_failed",slug,message:e.message}));}
   }
