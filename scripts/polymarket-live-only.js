@@ -89,12 +89,25 @@ function exactScore11Yes(e){
   const markets=arr(e?.markets);
   for(const m of markets){
     if(m?.active===false||m?.closed===true)continue;
-    const title=norm(m.groupItemTitle||m.group_item_title||m.question||m.title||m.slug);
-    if(!/(exact score|correct score|точн|точный)/.test(title))continue;
+    const group=norm(m.groupItemTitle||m.group_item_title||m.marketGroup||m.market_group||m.category||m.section);
+    const question=norm(m.question||m.title||m.slug);
+    const combined=group+" "+question;
+    const exactGroup=/(exact score|correct score|точн счет|точныи счет)/.test(group);
+    const exactMarket=/(exact score|correct score|точн счет|точныи счет)/.test(combined);
+    if(!exactGroup&&!exactMarket)continue;
+
+    const is11=/(^|\\s)1\\s*[-:–]\\s*1($|\\s)/.test(question) ||
+      /(^|\\s)1\\s*[-:–]\\s*1($|\\s)/.test(group);
     const os=arr(m.outcomes),ps=arr(m.outcomePrices??m.outcome_prices).map(Number);
     if(os.length!==ps.length||!ps.length)continue;
+
     for(let i=0;i<os.length;i++){
-      if(/^1[ :\\-–]1$/.test(norm(os[i]))||(/^yes$/.test(norm(os[i]))&&/(1[ :\\-–]1)/.test(title))){
+      const o=norm(os[i]);
+      if(is11&&o==="yes"){
+        const value=ps[i];
+        if(value>=0&&value<=1)return value;
+      }
+      if(/^1\\s*[-:–]\\s*1$/.test(o)){
         const value=ps[i];
         if(value>=0&&value<=1)return value;
       }
