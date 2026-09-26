@@ -925,7 +925,7 @@ function findLivePageMatch(page, match) {
       const betweenTeams = normalizedPage.slice(hi + homeTeam.length, ai);
       const afterAway = normalizedPage.slice(ai + awayTeam.length, cardEnd);
       const homeScoreMatch = betweenTeams.match(/\b(\d{1,2})\b/);
-      const awayScoreMatch = afterAway.match(/^\\s*(\\d{1,2})\\b/);
+      const awayScoreMatch = afterAway.match(/^\s*(\d{1,2})\b/);
 
       let home = homeScoreMatch ? Number(homeScoreMatch[1]) : null;
       let away = awayScoreMatch ? Number(awayScoreMatch[1]) : null;
