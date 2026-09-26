@@ -1,23 +1,10 @@
 const GAMMA_URL = "https://gamma-api.polymarket.com";
 
 const POLL_MS = 15_000; // Polymarket-only polling.
-const MIN_EDGE = 0.01;
 const RUN_MS = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
-const HISTORY_MS = 20 * 60 * 1000;
-const ALERT_BUCKET_MS = 60 * 1000;
-const PREMATCH_WINDOW_MS = 0;
-const EARLY_WINDOW_MS = 0;
-const BALANCE_MAX_DIFF = 0.15; // BUY only when 1X2 home/away probabilities differ by at most 15 percentage points.
-const MIN_DRAW_PROB = 0.22;
-const MIN_BTTS_PROB = 0.45;
 
 let stopping = false;
 let timer = null;
-const known = new Map();
-const resolved = new Map();
-const history = new Map();
-const oneOneState = new Map();
-const prematchCandidates = new Map();
 const convexLogBuffer = [];
 let convexTickCount = 0;
 
@@ -343,22 +330,8 @@ function balancedFromPolymarket(market) {
   );
 }
 
-function classifyFixturePhase(match, liveState) {
-  const kickoff = Date.parse(match.startTime || "");
-  if (liveState?.status === "live") return "live";
-  if (!Number.isFinite(kickoff)) {
-    log("INFO","fixture_time_unknown","No usable Polymarket kickoff; candidate kept for diagnostics", {eventId:match.eventId,startTime:match.startTime||null});
-    return "unknown";
-  }
-  if (kickoff > Date.now()) return "prematch";
-  log("INFO","kickoff_passed_not_live","Kickoff passed but Polymarket did not report the fixture as live; not a live candidate", {
-    eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime,
-    active:match.active !== false,closed:match.closed === true,kickoffPassedMs:Date.now()-kickoff
-  });
-  log("INFO","kickoff_passed_not_active","Kickoff passed and event is not active; not a live candidate", {
-    eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime
-  });
-  return "finished";
+function classifyFixturePhase(_match, liveState) {
+  return liveState?.status === "live" ? "live" : "not_live";
 }
 
 async function ensureEventMarkets(match) {
@@ -366,7 +339,7 @@ async function ensureEventMarkets(match) {
 
   const startedAt = Date.now();
   const attempts = 6;
-  log("INFO", "event_markets_load_start", "Loading current Polymarket markets before BUY", {
+  log("INFO", "event_markets_load_start", "Loading current Polymarket 1X2 markets before alert", {
     eventId: match.eventId,
     teams: [match.homeTeam, match.awayTeam],
     attempts
@@ -394,12 +367,9 @@ async function ensureEventMarkets(match) {
       const eventMarkets = normalizeMarkets(event?.markets);
 
       // Fallback source: query Gamma's markets endpoint directly for this event.
-      // We need both the current 1X2 and the Exact Score (1:1) market for alerts.
+      // Only the current 1X2 market is required for alerts.
       let directMarkets = [];
-      if (
-        !findMatchResultMarket({ ...match, markets: eventMarkets }) ||
-        !findOneOneMarket({ ...match, markets: eventMarkets })
-      ) {
+      if (!findMatchResultMarket({ ...match, markets: eventMarkets })) {
         try {
           const marketData = await getJson(
             GAMMA_URL + "/markets?event_id=" + encodeURIComponent(match.eventId) + "&active=true&closed=false&limit=500",
@@ -435,15 +405,9 @@ async function ensureEventMarkets(match) {
           drawProb: oneXTwo.drawProb,
           awayProb: oneXTwo.awayProb
         } : null,
-        exactScoreOneOne: findOneOneMarket(match) ? {
-          outcome: findOneOneMarket(match).outcome,
-          price: findOneOneMarket(match).price,
-          question: findOneOneMarket(match).market.question || null
-        } : null,
         elapsedMs: Date.now() - startedAt
       });
 
-      const exactScoreOneOne = findOneOneMarket(match);
       if (oneXTwo) return true;
 
       log("WARN", "alert_markets_retry", "Current Polymarket event has not yielded 1X2; retrying before alert", {
@@ -467,7 +431,7 @@ async function ensureEventMarkets(match) {
     }
   }
 
-  log("ERROR", "alert_markets_unavailable_after_retries", "Could not obtain both current 1X2 and Exact Score 1:1 from Polymarket; alert will not be sent with missing market data", {
+  log("ERROR", "alert_markets_unavailable_after_retries", "Could not obtain current Polymarket 1X2 market; alert will not be sent with missing market data", {
     eventId: match.eventId,
     teams: [match.homeTeam, match.awayTeam],
     attempts,
@@ -476,326 +440,91 @@ async function ensureEventMarkets(match) {
   return false;
 }
 
-function findOneOneMarket(match) {
-  const normalizeScoreQuestion = value => text(value)
-    .replace(/[–—−]/g, "-")
-    .replace(/\\s+/g, " ")
-    .trim();
 
-  for (const market of match.markets || []) {
-    const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
-    const prices = Array.isArray(market.outcomePrices) ? market.outcomePrices : [];
-    if (!outcomes.length || prices.length !== outcomes.length) continue;
-
-    const question = normalizeScoreQuestion(market.question || "");
-    const isExactScore = /(?:exact\\s+score|correct\\s+score)/i.test(question);
-    const isOneOneQuestion = /(?:^|[^0-9])1\\s*[:\\-]\\s*1(?:[^0-9]|$)/.test(question);
-    if (isExactScore && isOneOneQuestion) {
-      const yesIndex = outcomes.findIndex(v => /^yes$/i.test(text(v)));
-      if (yesIndex >= 0) {
-        const price = Number(prices[yesIndex]);
-        if (Number.isFinite(price) && price >= 0 && price <= 1) {
-          return { market, outcome: text(outcomes[yesIndex]), price };
-        }
-      }
-    }
-
-    // Some Gamma representations expose the score as an outcome instead of
-    // embedding it in the question. Support both 1-1 and 1:1 spellings.
-    for (let i = 0; i < outcomes.length; i++) {
-      const outcome = text(outcomes[i]).replace(/[–—−]/g, "-").trim();
-      if (/^1\\s*[:\\-]\\s*1$/.test(outcome)) {
-        const price = Number(prices[i]);
-        if (Number.isFinite(price) && price >= 0 && price <= 1) {
-          return { market, outcome, price };
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-function scoreTotal(match) {
-  return Number(match.live?.score?.home || 0) + Number(match.live?.score?.away || 0);
-}
-
-async function maybeOneOneAlert(match, priceSource, phase = "live") {
+async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
   if (!match.url && match.eventId) {
     try {
       const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId), { timeoutMs: 3_000 });
       const event = data?.event || data;
-      if (text(event?.slug)) {
-        match.url = eventUrl(event);
-        match.slug = text(event.slug);
-        log("INFO", "candidate_url_recovered", "Recovered Polymarket event URL before alert", {
-          eventId: match.eventId, url: match.url
-        });
-      }
+      if (text(event?.slug)) { match.url = eventUrl(event); match.slug = text(event.slug); }
     } catch (err) {
-      log("WARN", "candidate_url_recovery_failed", "Could not recover Polymarket event URL before alert", {
-        eventId: match.eventId, message: err.message
-      });
+      log("WARN","candidate_url_recovery_failed","Could not recover Polymarket event URL before alert",{eventId:match.eventId,message:err.message});
     }
   }
   if (!match.url) {
-    log("ERROR", "candidate_alert_blocked_no_url", "Football candidate reached BUY but has no Polymarket event URL", {
-      eventId: match.eventId, slug: match.slug || null, teams: [match.homeTeam, match.awayTeam]
-    });
+    log("ERROR","candidate_alert_blocked_no_url","Live Soccer fixture has no Polymarket event URL",{eventId:match.eventId,slug:match.slug||null,teams:[match.homeTeam,match.awayTeam]});
     return;
   }
-
-  const key = match.eventId || match.slug;
-  const home = Number(match.live?.score?.home || 0);
-  const away = Number(match.live?.score?.away || 0);
-
-  // Refresh Polymarket immediately before BUY and do not permit an empty 1X2.
-  // ensureEventMarkets retries both the event endpoint and the direct markets endpoint.
-  const marketsLoaded = await ensureEventMarkets(match);
-  const oneXTwo = findMatchResultMarket(match);
-
-  if (phase === "prematch" || phase === "live_entry") {
-    if (!oneXTwo) {
-      log("WARN","live_waiting_for_1x2","LIVE fixture reached alert stage but current 1X2 is unavailable; retrying next cycle",{
-        eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],phase
-      });
-      return;
-    }
-
-    const oneXTwoLine = `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`;
-    const claimKey = key + ":LIVE";
-    const claim = await claimTelegramAlert(claimKey);
-    if (!claim.claimed) return;
-
-    const message = [
-      "⚽ LIVE",
-      "",
-      match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: " + home + "–" + away,
-      "", oneXTwoLine, "", "➡️ OPEN MATCH", match.url
-    ].join("\n");
-
-    try {
-      const sent = await sendTelegram(message, claim.replyToMessageId);
-      if (!sent.ok) throw new Error("Telegram not configured");
-      await saveTelegramMessageId(key + ":LIVE", sent.messageId);
-      oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
-      await markCandidateStartedSent(key);
-      log("INFO","live_alert_sent","First LIVE alert sent for soccer fixture found on Polymarket /sports/live",{
-        eventId:match.eventId,score:{home,away},telegramMessageId:sent.messageId
-      });
-    } catch (err) {
+  const key=match.eventId||match.slug;
+  const home=Number(match.live?.score?.home||0), away=Number(match.live?.score?.away||0);
+  const marketsLoaded=await ensureEventMarkets(match);
+  const oneXTwo=findMatchResultMarket(match);
+  if(!marketsLoaded||!oneXTwo){
+    log("WARN","live_waiting_for_1x2","Live Soccer fixture is waiting for current 1X2 market",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],phase});
+    return;
+  }
+  const oneXTwoLine=`1: ${Math.round(oneXTwo.homeProb*100)}% · X: ${Math.round(oneXTwo.drawProb*100)}% · 2: ${Math.round(oneXTwo.awayProb*100)}%`;
+  if(phase==="live_entry"){
+    const claimKey=key+":LIVE", claim=await claimTelegramAlert(claimKey);
+    if(!claim.claimed)return;
+    const message=["⚽ LIVE","",match.homeTeam+" vs "+match.awayTeam,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
+    try{
+      const sent=await sendTelegram(message,claim.replyToMessageId);
+      if(!sent.ok)throw new Error("Telegram not configured");
+      await saveTelegramMessageId(claimKey,sent.messageId);
+      log("INFO","live_alert_sent","First LIVE alert sent for Soccer fixture found on Polymarket /sports/live",{eventId:match.eventId,score:{home,away},telegramMessageId:sent.messageId});
+    }catch(err){
       await releaseTelegramAlert(claimKey);
-      log("ERROR","telegram_send_failed","LIVE alert send failed; claim released",{
-        eventId:match.eventId,message:err.message
-      });
+      log("ERROR","telegram_send_failed","LIVE alert send failed; claim released",{eventId:match.eventId,message:err.message});
     }
     return;
   }
-
-  if (phase === "started") {
-    const state = oneOneState.get(key);
-    if (!state?.prematchSeen || state?.startedSent) return;
-
-    // Refresh current markets so the LIVE reply carries the current 1X2
-    // and Exact Score 1:1 price. The reply is linked to the original BUY.
-    const marketsLoadedForLive = await ensureEventMarkets(match);
-    const liveOneXTwo = findMatchResultMarket(match);
-    if (!marketsLoadedForLive || !liveOneXTwo) {
-      log("WARN", "live_waiting_for_1x2", "Fixture started but current 1X2 is not available yet; LIVE reply will be retried", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam]
-      });
-      return;
-    }
-
-    const liveOneXTwoLine = `1: ${Math.round(liveOneXTwo.homeProb * 100)}% · X: ${Math.round(liveOneXTwo.drawProb * 100)}% · 2: ${Math.round(liveOneXTwo.awayProb * 100)}%`;
-    const exactScoreOneOne = findOneOneMarket(match);
-    if (!exactScoreOneOne || !Number.isFinite(exactScoreOneOne.price)) {
-      log("WARN", "live_waiting_for_one_one", "LIVE reply is waiting for the current Exact Score 1:1 YES price; retrying next cycle", {
-        eventId: match.eventId,
-        teams: [match.homeTeam, match.awayTeam],
-        retryRequired: true
-      });
-      return;
-    }
-    const exactScoreOneOneLine = `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`;
-
-    const claimKey = key + ":STARTED";
-    const claim = await claimTelegramAlert(claimKey);
-    if (!claim.claimed) return;
-
-    const message = [
-      "⚽ LIVE",
-      exactScoreOneOneLine,
-      "",
-      match.homeTeam + " vs " + match.awayTeam,
-      "SCORE: " + home + "–" + away,
-      "", liveOneXTwoLine, "", "➡️ OPEN MATCH", match.url
-    ].join("\n");
-
-    try {
-      const sent = await sendTelegram(message, claim.replyToMessageId);
-      if (!sent.ok) throw new Error("Telegram not configured");
-      await saveTelegramMessageId(key + ":LIVE", sent.messageId);
-      oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
-      await markCandidateStartedSent(key);
-      log("INFO", "match_started_alert_sent", "LIVE reply sent to original BUY alert", {
-        eventId: match.eventId, score: { home, away }, replyToMessageId: claim.replyToMessageId, telegramMessageId: sent.messageId
-      });
-    } catch (err) {
-      await releaseTelegramAlert(claimKey);
-      log("ERROR", "telegram_send_failed", "LIVE reply send failed; claim released", {
-        eventId: match.eventId, message: err.message
-      });
-    }
-    return;
-  }
-
-  const hasGoal = (home + away) > 0;
-  if (!hasGoal) return;
-
-  // Refresh the event markets immediately before SELL so the alert carries
-  // the current Exact Score 1:1 YES price from the live match.
-  await ensureEventMarkets(match);
-  const exactScoreOneOne = findOneOneMarket(match);
-  if (!exactScoreOneOne || !Number.isFinite(exactScoreOneOne.price)) {
-    log("WARN", "sell_waiting_for_current_one_one", "SELL is waiting for current Exact Score 1:1 YES price; retrying next cycle", {
-      eventId: match.eventId,
-      teams: [match.homeTeam, match.awayTeam],
-      currentPrice: exactScoreOneOne?.price ?? null
-    });
-    return;
-  }
-
-  let buyOneOnePrice = oneOneState.get(key)?.buyOneOnePrice;
-  if (!Number.isFinite(buyOneOnePrice)) {
-    try {
-      const persisted = await candidateRequest("/football/candidates/buy-price?key=" + encodeURIComponent(key));
-      buyOneOnePrice = Number(persisted?.buyOneOnePrice);
-      if (Number.isFinite(buyOneOnePrice)) {
-        oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true, buyOneOnePrice });
-        log("INFO", "sell_buy_price_restored", "Restored original BUY 1:1 YES price from persistent Convex state", {
-          eventId: match.eventId,
-          buyPrice: buyOneOnePrice
-        });
-      }
-    } catch (err) {
-      log("ERROR", "sell_buy_price_lookup_failed", "Persistent BUY 1:1 price lookup failed; SELL will retry next cycle", {
-        eventId: match.eventId,
-        message: err.message
-      });
-      return;
-    }
-  }
-
-  if (!Number.isFinite(buyOneOnePrice)) {
-    log("ERROR", "sell_buy_price_missing_persistent", "Persistent BUY 1:1 YES price is missing for an already admitted BUY; SELL will retry after state restoration", {
-      eventId: match.eventId,
-      teams: [match.homeTeam, match.awayTeam]
-    });
-    return;
-  }
-  const sellPriceLine = `${buyOneOnePrice.toFixed(2)}c ➡️ ${exactScoreOneOne.price.toFixed(2)}c`;
-  log("INFO", "exact_score_one_one_snapshot", "Captured BUY and current Exact Score 1:1 YES prices for SELL alert", {
-    eventId: match.eventId,
-    teams: [match.homeTeam, match.awayTeam],
-    buyPrice: buyOneOnePrice,
-    currentPrice: exactScoreOneOne.price,
-    outcome: exactScoreOneOne.outcome,
-    question: exactScoreOneOne.market?.question ?? null
-  });
-
-  const scoreKey = home + "-" + away;
-  const claimKey = key + ":SELL:" + scoreKey;
-  const claim = await claimTelegramAlert(claimKey);
-  if (!claim.claimed) return;
-
-  const message = [
-    "⚽ SELL",
-    sellPriceLine,
-    "",
-    match.homeTeam + " vs " + match.awayTeam,
-    "SCORE: " + home + "–" + away,
-    "", "➡️ OPEN MATCH", match.url
-  ].join("\n");
-
-  try {
-    const sent = await sendTelegram(message, claim.replyToMessageId);
-    if (!sent.ok) throw new Error("Telegram not configured");
-    await markCandidateSellSent(key);
-    log("INFO", "one_one_sell_alert_sent", "SELL alert sent as Telegram reply to BUY", {
-      eventId: match.eventId, score: { home, away }, goalDetected: hasGoal, replyToMessageId: claim.replyToMessageId
-    });
-  } catch (err) {
+  if(home+away<=0)return;
+  const claimKey=key+":SELL:"+home+"-"+away, claim=await claimTelegramAlert(claimKey);
+  if(!claim.claimed)return;
+  const message=["⚽ SELL","",match.homeTeam+" vs "+match.awayTeam,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
+  try{
+    const sent=await sendTelegram(message,claim.replyToMessageId);
+    if(!sent.ok)throw new Error("Telegram not configured");
+    log("INFO","one_one_sell_alert_sent","SELL alert sent as Telegram reply to LIVE",{eventId:match.eventId,score:{home,away},replyToMessageId:claim.replyToMessageId});
+  }catch(err){
     await releaseTelegramAlert(claimKey);
-    log("ERROR", "telegram_send_failed", "SELL alert send failed; claim released", {
-      eventId: match.eventId, message: err.message
-    });
+    log("ERROR","telegram_send_failed","SELL alert send failed; claim released",{eventId:match.eventId,message:err.message});
   }
 }
 
 async function tick() {
-  if (await stopIfSuperseded()) return;
+  if(await stopIfSuperseded())return;
   if(stopping||tick.running)return;
   tick.running=true; convexTickCount+=1;
   try{
     const tickStartedAt=Date.now();
-    log("INFO","stage_start","Polymarket discovery stage started",{stage:"polymarket_discovery",source:GAMMA_URL});
-    const discovered=await discoverPolymarket();
-    for (const match of discovered) {
-      const key=match.eventId||match.slug;
-    }
-    // The candidate set is a fresh snapshot of the current Polymarket /sports/live
-    // soccer page. Persistent alert state is kept separately in oneOneState/Convex.
-    // Never carry old prematch/line candidates into a new cycle.
-    const matches=discovered.slice();
-    const evaluationCandidates=matches;
-    const deferredCandidates=0;
-    const cycle={discovered:discovered.length,retainedCandidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
-    log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates});
-    log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
-    livePagePromise = loadPolymarketLivePage();
+    log("INFO","stage_start","Polymarket Soccer live discovery started",{stage:"polymarket_discovery",source:"https://polymarket.com/sports/live"});
+    const matches=await discoverPolymarket(), evaluationCandidates=matches;
+    const cycle={discovered:matches.length,evaluationCandidates:evaluationCandidates.length,live:0,liveZeroZero:0,evaluations:0,liveStateUnavailable:0};
+    log("INFO","stage_done","Current Polymarket Soccer live snapshot discovered",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,matches:matches.length,evaluationCandidates:evaluationCandidates.length});
+    livePagePromise=loadPolymarketLivePage();
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket live-page alert evaluation started",{stage:"evaluation",rule:"only currently LIVE soccer fixtures from /sports/live can alert; 1X2 is included in every alert",evaluationCandidates:evaluationCandidates.length,deferredCandidates});
+    log("INFO","stage_start","Polymarket live-page alert evaluation started",{stage:"evaluation",rule:"only currently LIVE Soccer fixtures from /sports/live can alert; 1X2 is included in every alert",evaluationCandidates:evaluationCandidates.length});
     const BATCH=20;
     for(let i=0;i<evaluationCandidates.length;i+=BATCH){
       await Promise.all(evaluationCandidates.slice(i,i+BATCH).map(async match=>{
         cycle.evaluations++;
-        const liveState=await refreshPolymarketLiveState(match);
-        const phase=classifyFixturePhase(match,liveState);
-        const isLive=phase==="live";
-        const isPrematch=phase==="prematch";
+        const liveState=await refreshPolymarketLiveState(match), isLive=classifyFixturePhase(match,liveState)==="live";
         const score=liveState?.score||{home:0,away:0};
-        const state=oneOneState.get(match.eventId||match.slug);
         if(isLive)cycle.live++;
         if(isLive&&score.home===0&&score.away===0)cycle.liveZeroZero++;
         if(!liveState)cycle.liveStateUnavailable++;
-
-        if(!isLive){
-          log("INFO","not_live_ignored","Fixture is not currently live; pre-match/line monitoring is disabled",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],phase});
-          return;
-        }
-        if(!state?.startedSent){
-          cycle.buyPassed++;
-          log("INFO","live_fixture_ready_for_alert","Already-started football fixture reached alert stage from Polymarket /sports/live",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
-          await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"live_entry");
-          return;
-        }
-        if((Number(score.home)+Number(score.away))>0){
-          cycle.sellEvaluated++;
-          await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"live");
-        } else {
-          log("INFO","live_fixture_waiting_for_score_change","Live fixture already alerted; waiting for score change",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
-        }
+        if(!isLive){log("INFO","not_live_ignored","Fixture is not currently live; ignored",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam]});return;}
+        const alertMatch={...match,live:{...(liveState||{}),status:"live",score}};
+        await maybeOneOneAlert(alertMatch,null,score.home===0&&score.away===0?"live_entry":"live");
       }));
     }
-    log("INFO","stage_done","Polymarket-only alert evaluation finished",{stage:"evaluation",elapsedMs:Date.now()-evalStarted,candidates:matches.length});
-    log("INFO","cycle_summary","Football monitor cycle summary",{elapsedMs:Date.now()-tickStartedAt,...cycle,note:"Polymarket only; discovered fixtures are retained across cycles until lifecycle resolution"});
+    log("INFO","stage_done","Polymarket-only live alert evaluation finished",{stage:"evaluation",elapsedMs:Date.now()-evalStarted,matches:matches.length});
+    log("INFO","cycle_summary","Football monitor cycle summary",{elapsedMs:Date.now()-tickStartedAt,...cycle,note:"Only the current Polymarket /sports/live Soccer snapshot is evaluated"});
     return matches.length;
-  }catch(err){
-    log("ERROR","discovery_failed","Football Polymarket-only tick failed; monitoring continues",{message:err.message});
-  }finally{livePagePromise=null;tick.running=false;await flushConvexLogs();}
+  }catch(err){log("ERROR","discovery_failed","Football Polymarket-only tick failed; monitoring continues",{message:err.message});}
+  finally{livePagePromise=null;tick.running=false;await flushConvexLogs();}
 }
 
 function teamSimilarity(a, b) {
@@ -924,83 +653,6 @@ async function refreshPolymarketLiveState(match) {
   }
 }
 
-async function candidateRequest(path, body = null) {
-  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
-  const response = await fetch(base.replace(/\/$/, "") + path, {
-    method: body === null ? "GET" : "POST",
-    headers: body === null ? undefined : { "content-type": "application/json" },
-    ...(body === null ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(3_000),
-  });
-  if (!response.ok) throw new Error("Convex candidate HTTP " + response.status);
-  return body === null ? response.json() : null;
-}
-
-async function loadPersistedCandidates() {
-  try {
-    const rows = await candidateRequest("/football/candidates");
-    let restored = 0;
-    for (const row of Array.isArray(rows) ? rows : []) {
-      try {
-        const match = JSON.parse(row.data);
-        if (!match?.eventId && !match?.slug) continue;
-        const key = row.key || match.eventId || match.slug;
-        prematchCandidates.set(key, match);
-        if (row.buySent || row.startedSent || row.sellSent) {
-          oneOneState.set(key, {
-            prematchSeen: true,
-            ...(Number.isFinite(Number(row.buyOneOnePrice)) ? { buyOneOnePrice: Number(row.buyOneOnePrice) } : {})
-          });
-        }
-        if (row.startedSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), startedSent: true });
-        if (row.sellSent) oneOneState.set(key, { ...(oneOneState.get(key) || {}), sellSent: true });
-        restored++;
-      } catch {}
-    }
-    log("INFO", "persistent_candidates_loaded", "Restored persisted football candidates", { restored });
-    return restored;
-  } catch (err) {
-    log("WARN", "persistent_candidates_load_failed", "Could not restore PRE-MATCH candidates; discovery continues", { message: err.message });
-    return 0;
-  }
-}
-
-async function persistPrematchCandidates(discovered) {
-  let admitted = 0;
-  const now = Date.now();
-  for (const match of discovered) {
-    const kickoff = Date.parse(match.startTime || "");
-    if (!Number.isFinite(kickoff) || kickoff <= now) continue;
-    const key = match.eventId || match.slug;
-    if (!key) continue;
-    try {
-      await candidateRequest("/football/candidates/admit", { key, data: JSON.stringify(match) });
-      admitted++;
-    } catch (err) {
-      log("WARN", "candidate_persist_failed", "Could not persist PRE-MATCH candidate", { eventId: match.eventId, message: err.message });
-    }
-  }
-  return admitted;
-}
-
-async function markCandidateStartedSent(key) {
-  try { await candidateRequest("/football/candidates/mark-started", { key }); }
-  catch (err) { log("WARN", "candidate_started_state_failed", "Could not persist STARTED state", { key, message: err.message }); }
-}
-
-async function markCandidateSellSent(key) {
-  try { await candidateRequest("/football/candidates/mark-sell", { key }); }
-  catch (err) { log("WARN", "candidate_sell_state_failed", "Could not persist SELL state", { key, message: err.message }); }
-}
-
-async function markCandidateBuySent(key, buyOneOnePrice) {
-  try {
-    await candidateRequest("/football/candidates/mark-buy", { key, buyOneOnePrice });
-  } catch (err) {
-    log("WARN", "candidate_buy_state_failed", "Could not persist BUY state", { key, message: err.message });
-  }
-}
-
 async function claimTelegramAlert(key) {
   const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
   try {
@@ -1095,7 +747,6 @@ async function main(){
     await flushConvexLogs();
     return;
   }
-  await loadPersistedCandidates();
   const deadline=Date.now()+RUN_MS;
   let cycle=0;
   while(!stopping && Date.now()<deadline){
