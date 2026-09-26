@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: polymarket-soccer-live-alerts
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
