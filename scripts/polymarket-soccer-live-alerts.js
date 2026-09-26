@@ -1,5 +1,5 @@
 // DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
-// Diagnostic probe: run the current LIVE pipeline end-to-end; no btc5m dependency.
+// Diagnostic probe: verify soccer-only classification and Telegram rate limiting end-to-end.
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
@@ -26,13 +26,14 @@ function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-
 function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
   if(/\/sports\/soccer\//i.test(h))return true;
+  if(/\/sports\/(?:cfb|nfl|mlb|nba|nhl|ufc|wta|atp|tennis|cricket|basketball|baseball|hockey)\//i.test(h))return false;
   const values=[];
   for(const k of ["sport","sports","category","subcategory","league","sportSlug","sport_slug","tagSlug","tag_slug","seriesSlug","series_slug","eventType","event_type","gameType","game_type"])values.push(event?.[k]);
   const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
   if(Array.isArray(tags))for(const z of tags)values.push(typeof z==="string"?z:(z?.slug||z?.label||z?.name));
-  if(values.filter(Boolean).some(v=>/soccer|football/i.test(String(v))))return true;
+  if(values.filter(Boolean).some(v=>/soccer/i.test(String(v))))return true;
   const slug=t(event?.slug||event?.eventSlug||event?.event_slug).toLowerCase();
-  if(/(^|[-_])(soccer|football)([-_]|$)/.test(slug))return true;
+  if(/(^|[-_])soccer([-_]|$)/.test(slug))return true;
   const title=t(event?.title||event?.question);
   if(!/\s(?:vs\.?|v\.?|versus)\s/i.test(title))return false;
   const markets=Array.isArray(event?.markets)?event.markets:[];
@@ -388,8 +389,12 @@ function buildAlertPages(x){
     "ALL ACTIVE MARKETS ("+rows.length+")"].join("\n");
   return splitPages(header,rows);
 }
+let telegramNextAt=0;
 async function sendTelegram(message,replyMarkup){
   const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
+  const wait=Math.max(0,telegramNextAt-Date.now());
+  if(wait>0)await new Promise(r=>setTimeout(r,wait));
+  telegramNextAt=Date.now()+1200;
   if(!token||!chat)throw new Error("Telegram credentials are missing");
   const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{
     method:"POST",headers:{"content-type":"application/json"},
