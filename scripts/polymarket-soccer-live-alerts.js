@@ -534,6 +534,7 @@ async function main(){
 process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
 
 // DIAGNOSTIC_RUN_TRIGGER
+// FORCE_DIAGNOSTIC_TRIGGER_2026_09_26
 // DIAGNOSTIC_RUN
 // DIAGNOSTIC_TRIGGER_2
 // DIAGNOSTIC_RUN
