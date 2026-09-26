@@ -531,12 +531,12 @@ async function tick() {
       await Promise.all(evaluationCandidates.slice(i,i+BATCH).map(async match=>{
         cycle.evaluations++;
         const liveState=await refreshPolymarketLiveState(match), isLive=classifyFixturePhase(match,liveState)==="live";
-        const score=liveState?.score||{home:0,away:0};
+        const score=liveState?.score||null;
         if(isLive)cycle.live++;
         if(isLive&&score.home===0&&score.away===0)cycle.liveZeroZero++;
         if(!liveState)cycle.liveStateUnavailable++;
         if(!isLive){log("INFO","not_live_ignored","Fixture is not currently live; ignored",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam]});return;}
-        const alertMatch={...match,live:{...(liveState||{}),status:"live",score}};
+        if(!liveState?.score || liveState.minute === null){ log("WARN","alert_blocked_missing_live_data","LIVE alert blocked because real score and minute are mandatory",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score:liveState?.score??null,minute:liveState?.minute??null}); return; } const alertMatch={...match,live:{...(liveState||{}),status:"live",score}};
         await maybeOneOneAlert(alertMatch,null,score.home===0&&score.away===0?"live_entry":"live");
       }));
     }
