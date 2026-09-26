@@ -731,7 +731,10 @@ async function discoverLiveZeroZero(){
     const effectiveStartMs=Number.isFinite(fixtureStarted)?fixtureStarted:sourceStarted;
     const fixtureStatus=t(fixture?.gameStatus||fixture?.game_status||fixture?.status||fixture?.state).toLowerCase();
     const sourceStatus=t(pm?.gameStatus||pm?.game_status||pm?.status||pm?.state).toLowerCase();
-    const ws=pm?.__sportsWs||null;\n    const wsStatus=t(ws?.status).toLowerCase();\n    const sourceLive=pm?.live===true||pm?.isLive===true||liveTypes.has(sourceStatus)||\n      ws?.live===true||ws?.live==="true"||ws?.live===1||ws?.live==="1"||liveTypes.has(wsStatus);
+    const ws=pm?.__sportsWs||null;
+    const wsStatus=t(ws?.status).toLowerCase();
+    const sourceLive=pm?.live===true||pm?.isLive===true||liveTypes.has(sourceStatus)||
+      ws?.live===true||ws?.live==="true"||ws?.live===1||ws?.live==="1"||liveTypes.has(wsStatus);
     const canonicalLive=fixture?.live===true||fixture?.isLive===true||liveTypes.has(fixtureStatus);
     const fixtureLive=Number.isFinite(effectiveStartMs)&&effectiveStartMs<=Date.now()&&(sourceLive||canonicalLive);
     if(!fixtureLive){
