@@ -39,6 +39,8 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: npx convex deploy
 
+      - name: Validate football monitor syntax
+        run: node --check scripts/polymarket-football-live.js
       - name: Run football monitor (20s cycle)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
