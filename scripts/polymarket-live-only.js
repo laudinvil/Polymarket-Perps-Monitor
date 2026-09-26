@@ -257,22 +257,27 @@ async function saveId(key,id){
 }
 async function discoverLiveZeroZero(){
   const live=await sofascoreLive(),events=arr(live?.events);
-  const zeroZero=events.filter(scoreZeroZero);
   const inprogress=events.filter(e=>e?.status?.type==="inprogress");
-  const eligible=events.filter(e=>e?.status?.type==="inprogress"&&scoreZeroZero(e)&&sofascoreMinute(e)>=1);
-  log(JSON.stringify({event:"sofascore_live_snapshot",total:events.length,inprogress:inprogress.length,zeroZero:zeroZero.length,eligibleZeroZero:eligible.length}));
+  log(JSON.stringify({event:"sofascore_live_snapshot",total:events.length,inprogress:inprogress.length}));
   const found=[];
-  for(const s of arr(live?.events)){
-    if(!s?.id||s?.status?.type!=="inprogress"||!scoreZeroZero(s)||sofascoreMinute(s)<1)continue;
-    const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name); if(!home||!away)continue;
+  for(const s of inprogress){
+    const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
+    if(!s?.id||!home||!away)continue;
     try{
-      const candidates=await polymarketSearch(home,away),pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
-      if(!pm){log(JSON.stringify({event:"sofascore_00_no_polymarket",teams:[home,away],minute:sofascoreMinute(s)}));continue;}
+      const minute=sofascoreMinute(s);
+      const score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
+      log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score}));
+      const candidates=await polymarketSearch(home,away);
+      const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
+      if(!pm){
+        log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute}));
+        continue;
+      }
       const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
       let full=pm;
       try{
-        if(polySlug) full=(await json(GAMMA+"/events/slug/"+encodeURIComponent(polySlug),5000))||pm;
-        else if(polyId) full=(await json(GAMMA+"/events/"+encodeURIComponent(polyId),5000))||pm;
+        if(polySlug)full=(await json(GAMMA+"/events/slug/"+encodeURIComponent(polySlug),5000))||pm;
+        else if(polyId)full=(await json(GAMMA+"/events/"+encodeURIComponent(polyId),5000))||pm;
       }catch(err){log(JSON.stringify({event:"polymarket_event_fetch_failed",teams:[home,away],message:err.message}));}
       if(polyId){
         try{
@@ -282,20 +287,40 @@ async function discoverLiveZeroZero(){
           log(JSON.stringify({event:"polymarket_markets_loaded",teams:[home,away],eventId:polyId,marketCount:markets.length}));
         }catch(err){log(JSON.stringify({event:"polymarket_markets_fetch_failed",teams:[home,away],eventId:polyId,message:err.message}));}
       }
-      log(JSON.stringify({event:"polymarket_match_found",teams:[home,away],eventId:polyId,slug:polySlug,candidateCount:candidates.length}));
-      const sofa=await sofascoreOdds(s.id),polyOne=parsePolyOneXTwo(full,home,away),polyExact=exactScore11Yes(full);
-      if(!sofa.one||sofa.exact==null||!polyOne||polyExact==null){log(JSON.stringify({event:"sofascore_poly_market_data_missing",teams:[home,away],minute:sofascoreMinute(s),sofa,polyOne,polyExact}));continue;}
-      const pass=approxPass(sofa,{one:polyOne,exact:polyExact}),maxDiff=Math.max(Math.abs(sofa.one.home-polyOne.home),Math.abs(sofa.one.draw-polyOne.draw),Math.abs(sofa.one.away-polyOne.away),Math.abs(sofa.exact-polyExact));
-      log(JSON.stringify({event:"sofascore_match_check",teams:[home,away],minute:sofascoreMinute(s),sofa,poly:{one:polyOne,exact:polyExact},maxDiff,pass}));
+      const sofa=await sofascoreOdds(s.id);
+      const polyOne=parsePolyOneXTwo(full,home,away),polyExact=exactScore11Yes(full);
+      log(JSON.stringify({event:"live_market_data",teams:[home,away],minute,score,sofa,polyOne,polyExact,slug:polySlug}));
+      if(!sofa.one||sofa.exact==null||!polyOne||polyExact==null){
+        log(JSON.stringify({event:"live_market_data_missing",teams:[home,away],minute,sofa,polyOne,polyExact}));
+        continue;
+      }
+      const maxDiff=Math.max(
+        Math.abs(sofa.one.home-polyOne.home),
+        Math.abs(sofa.one.draw-polyOne.draw),
+        Math.abs(sofa.one.away-polyOne.away),
+        Math.abs(sofa.exact-polyExact)
+      );
+      const pass=maxDiff<=APPROX_MAX_DIFF;
+      log(JSON.stringify({event:"live_filter_check",teams:[home,away],minute,sofa,poly:{one:polyOne,exact:polyExact},maxDiff,pass}));
       if(!pass)continue;
-      const key=t(pm.id||pm.eventId||pm.slug),tt=teamsFromEvent(pm);
-      const row={key,slug:t(pm.slug),href:polyEventUrl(pm),home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),odds:formatOne(polyOne),exact11First:polyExact,exact11Current:polyExact,nextSent:false};
-      tracked.set(key,row);found.push(row);
-      log(JSON.stringify({event:"sofascore_filter_passed",key,teams:[home,away],minute:sofascoreMinute(s),sofa,polyOne,polyExact}));
-    }catch(err){log(JSON.stringify({event:"sofascore_candidate_failed",teams:[home,away],message:err.message}));}
+      const key=polyId||polySlug;
+      const tt=teamsFromEvent(pm);
+      const row={
+        key,slug:polySlug,href:polyEventUrl(pm),
+        home:tt[0]||home,away:tt[1]||away,startMs:Date.now(),
+        odds:formatOne(polyOne),exact11First:polyExact,exact11Current:polyExact,
+        nextSent:false
+      };
+      tracked.set(key,row);
+      found.push(row);
+      log(JSON.stringify({event:"live_filter_passed",key,teams:[home,away],minute,score,maxDiff}));
+    }catch(err){
+      log(JSON.stringify({event:"sofascore_live_candidate_failed",teams:[home,away],message:err.message}));
+    }
   }
   return found;
 }
+
 async function sendNext(row,score){
   const alertKey=row.key+":NEXT",c=await claim(alertKey);
   if(!c.claimed)return false;
