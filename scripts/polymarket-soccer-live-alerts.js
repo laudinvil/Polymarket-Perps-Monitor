@@ -317,9 +317,22 @@ function liveHrefForTeams(home,away,links){
   return "";
 }
 
+function teamMatch(a,b){
+  const x=norm(a),y=norm(b);
+  if(!x||!y)return false;
+  if(x===y)return true;
+  const ax=new Set(x.split(" ").filter(Boolean)), by=new Set(y.split(" ").filter(Boolean));
+  const common=[...ax].filter(v=>by.has(v));
+  const ratio=common.length/Math.max(1,Math.min(ax.size,by.size));
+  return ratio>=0.75 && (x.includes(y)||y.includes(x)||ratio>=0.8);
+}
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
-  return (gh&&ga&&((nh===nx&&na===ny)||(nh===ny&&na===nx))) || t(g.eventId||g.event_id)===x.eventId || t(g.eventSlug||g.event_slug||g.slug)===x.slug;
+  const direct=teamMatch(nx,nh)&&teamMatch(ny,na);
+  const reversed=teamMatch(nx,na)&&teamMatch(ny,nh);
+  return (gh&&ga&&(direct||reversed)) ||
+    t(g.eventId||g.event_id)===x.eventId ||
+    t(g.eventSlug||g.event_slug||g.slug)===x.slug;
 }
 function orientGame(x,g){
   const [gh,ga]=gameTeams(g);
