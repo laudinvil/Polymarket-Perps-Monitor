@@ -270,40 +270,104 @@ async function ensureEventMarkets(match) {
   if (!match.eventId) return false;
 
   const startedAt = Date.now();
-  log("INFO", "event_markets_load_start", "Loading Polymarket event markets", {
+  const attempts = 6;
+  log("INFO", "event_markets_load_start", "Loading current Polymarket markets before BUY", {
     eventId: match.eventId,
-    teams: [match.homeTeam, match.awayTeam]
+    teams: [match.homeTeam, match.awayTeam],
+    attempts
   });
 
-  try {
-    const data = await getJson(GAMMA_URL + "/events/" + encodeURIComponent(match.eventId), { timeoutMs: 3_000 });
-    const event = data?.event || data;
-    const markets = Array.isArray(event?.markets) ? event.markets : [];
-    match.markets = markets.map(market => ({
-      marketId: text(market?.id || market?.marketId),
-      question: text(market?.question || market?.title),
-      outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
-      outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
-        ? parseJson(market?.outcomePrices || market?.outcome_prices)
-        : [],
-      active: market?.active !== false,
-      closed: market?.closed === true
-    }));
-    log("INFO", "event_markets_loaded", "Refreshed Polymarket event markets for active candidate", {
-      eventId: match.eventId,
-      marketCount: match.markets.length,
-      oneXTwoMarketAvailable: Boolean(findMatchResultMarket(match)),
-      elapsedMs: Date.now() - startedAt
-    });
-    return match.markets.length > 0;
-  } catch (err) {
-    log("WARN", "event_markets_load_failed", "Could not load event markets", {
-      eventId: match.eventId,
-      message: err.message,
-      elapsedMs: Date.now() - startedAt
-    });
-    return false;
+  const normalizeMarkets = markets => (Array.isArray(markets) ? markets : []).map(market => ({
+    marketId: text(market?.id || market?.marketId),
+    question: text(market?.question || market?.title),
+    outcomes: Array.isArray(parseJson(market?.outcomes)) ? parseJson(market.outcomes) : [],
+    outcomePrices: Array.isArray(parseJson(market?.outcomePrices || market?.outcome_prices))
+      ? parseJson(market?.outcomePrices || market?.outcome_prices)
+      : [],
+    active: market?.active !== false,
+    closed: market?.closed === true
+  }));
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      // Primary source: refresh the complete parent fixture event.
+      const data = await getJson(
+        GAMMA_URL + "/events/" + encodeURIComponent(match.eventId),
+        { timeoutMs: 3_000 }
+      );
+      const event = data?.event || data;
+      const eventMarkets = normalizeMarkets(event?.markets);
+
+      // Fallback source: query Gamma's markets endpoint directly for this event.
+      let directMarkets = [];
+      if (!findMatchResultMarket({ ...match, markets: eventMarkets })) {
+        try {
+          const marketData = await getJson(
+            GAMMA_URL + "/markets?event_id=" + encodeURIComponent(match.eventId) + "&active=true&closed=false&limit=500",
+            { timeoutMs: 3_000 }
+          );
+          directMarkets = normalizeMarkets(
+            Array.isArray(marketData) ? marketData : (marketData?.markets || marketData?.data || [])
+          );
+        } catch (directErr) {
+          log("WARN", "direct_markets_load_failed", "Direct Polymarket markets lookup failed", {
+            eventId: match.eventId,
+            attempt,
+            message: directErr.message
+          });
+        }
+      }
+
+      const byId = new Map();
+      for (const market of [...eventMarkets, ...directMarkets]) {
+        const key = market.marketId || JSON.stringify([market.question, market.outcomes]);
+        if (!byId.has(key)) byId.set(key, market);
+      }
+      match.markets = [...byId.values()];
+
+      const oneXTwo = findMatchResultMarket(match);
+      log("INFO", "event_markets_loaded", "Current Polymarket markets refreshed before BUY", {
+        eventId: match.eventId,
+        attempt,
+        marketCount: match.markets.length,
+        oneXTwoMarketAvailable: Boolean(oneXTwo),
+        oneXTwo: oneXTwo ? {
+          homeProb: oneXTwo.homeProb,
+          drawProb: oneXTwo.drawProb,
+          awayProb: oneXTwo.awayProb
+        } : null,
+        elapsedMs: Date.now() - startedAt
+      });
+
+      if (oneXTwo) return true;
+
+      log("WARN", "one_x_two_retry", "Current Polymarket event has not yielded a complete 1X2 yet; retrying before BUY", {
+        eventId: match.eventId,
+        attempt,
+        maxAttempts: attempts
+      });
+    } catch (err) {
+      log("WARN", "event_markets_load_failed", "Could not load current Polymarket event markets; retrying", {
+        eventId: match.eventId,
+        attempt,
+        maxAttempts: attempts,
+        message: err.message,
+        elapsedMs: Date.now() - startedAt
+      });
+    }
+
+    if (attempt < attempts) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
+
+  log("ERROR", "one_x_two_unavailable_after_retries", "Could not obtain a complete current 1X2 from Polymarket; BUY will not be sent with an empty 1X2", {
+    eventId: match.eventId,
+    teams: [match.homeTeam, match.awayTeam],
+    attempts,
+    elapsedMs: Date.now() - startedAt
+  });
+  return false;
 }
 
 function findOneOneMarket(match) {
@@ -361,23 +425,24 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   const home = Number(match.live?.score?.home || 0);
   const away = Number(match.live?.score?.away || 0);
 
-  // Refresh the parent fixture once more at BUY time so the 1X2 line is
-  // taken from the current event markets, not from a stale discovery copy.
-  await ensureEventMarkets(match);
+  // Refresh Polymarket immediately before BUY and do not permit an empty 1X2.
+  // ensureEventMarkets retries both the event endpoint and the direct markets endpoint.
+  const marketsLoaded = await ensureEventMarkets(match);
   const oneXTwo = findMatchResultMarket(match);
-  const oneXTwoLine = oneXTwo
-    ? `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`
-    : "1X2: —";
 
   if (phase === "prematch" || phase === "live_entry") {
-    // 1X2 is required for BUY and is used only as the approximate-strength filter.
-    // The 1:1 market remains completely outside the BUY gate.
-    if (!oneXTwo) {
-      log("INFO", "buy_blocked_no_1x2", "Fixture reached BUY but no usable 1X2 market was found", {
-        eventId: match.eventId, teams: [match.homeTeam, match.awayTeam], phase
+    if (!marketsLoaded || !oneXTwo) {
+      log("ERROR", "buy_waiting_for_1x2", "BUY reached the alert stage but current 1X2 is still unavailable; no Telegram message will be sent", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        phase,
+        marketsLoaded,
+        retryRequired: true
       });
       return;
     }
+
+    const oneXTwoLine = `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`;
     const difference = Math.abs(oneXTwo.homeProb - oneXTwo.awayProb);
     if (difference > BALANCE_MAX_DIFF) {
       log("INFO", "buy_blocked_unbalanced", "Fixture reached BUY but 1X2 home/away probabilities differ by more than the allowed threshold", {
