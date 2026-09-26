@@ -373,7 +373,7 @@ async function ensureEventMarkets(match) {
     }
   }
 
-  log("ERROR", "one_x_two_unavailable_after_retries", "Could not obtain a complete current 1X2 from Polymarket; BUY will not be sent with an empty 1X2", {
+  log("ERROR", "alert_markets_unavailable_after_retries", "Could not obtain both current 1X2 and Exact Score 1:1 from Polymarket; alert will not be sent with missing market data", {
     eventId: match.eventId,
     teams: [match.homeTeam, match.awayTeam],
     attempts,
