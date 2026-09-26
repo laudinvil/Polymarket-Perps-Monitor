@@ -169,20 +169,16 @@ async function nutmegRows() {
 
       const out = [];
       const probabilityRe =
-        /Home\s*win\\s*(\\d+(?:\\.\\d+)?)\s*%\s*Draw\s*(\\d+(?:\\.\\d+)?)\\s*%\s*Away\s*win\\s*(\\d+(?:\\.\\d+)?)\\s*%/gi;
+        /Home\s*win\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*(\d+(?:\.\d+)?)\s*%/gi;
 
-      // The rendered card layout is not stable enough to recover teams from
-      // a fixed-width prefix. Instead, locate probability blocks and search
-      // several nearby fixture formats independently.
       let m;
       while ((m = probabilityRe.exec(body))) {
         const prefix = body.slice(Math.max(0, m.index - 2500), m.index);
-        const team = "[\\\\p{L}\\\\p{N}.'’&()\\\\-]+(?:[ \\t]+[\\\\p{L}\\\\p{N}.'’&()\\\\-]+){0,12}";
-
+        const team = "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \t]+[\\p{L}\\p{N}.'’&()\\-]+){0,12}";
         const patterns = [
           new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(" + team + ")", "giu"),
           new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(" + team + ")", "giu"),
-          new RegExp("(" + team + ")\\s+(?:vs\\\\.?|v\\\\.?|versus)\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")", "giu"),
           new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")", "giu")
         ];
 
@@ -198,61 +194,50 @@ async function nutmegRows() {
         }
         if (!candidate) continue;
 
-        let home = candidate[1].trim();
-        let away = kind === "live" ? candidate[5].trim() : candidate[4]?.trim() || candidate[2].trim();
+        const home = candidate[1].trim();
+        const away = kind === "live" ? candidate[5].trim() : candidate[4]?.trim() || candidate[2].trim();
         let score = null;
         let minute = null;
-
         if (kind === "live") {
           score = { home: Number(candidate[2]), away: Number(candidate[3]) };
           minute = Number(String(candidate[4]).replace(/[^0-9]/g, ""));
         } else if (kind === "finished") {
           score = { home: Number(candidate[2]), away: Number(candidate[3]) };
         }
-
         if (!home || !away) continue;
 
         out.push({
-          home,
-          away,
+          home, away,
           homeProb: Number(m[1]) / 100,
           drawProb: Number(m[2]) / 100,
           awayProb: Number(m[3]) / 100,
           bttsProb: NaN,
           live: kind === "live",
           finished: kind === "finished",
-          score,
-          minute
+          score, minute
         });
       }
 
       successfulPages++;
       return out;
     } catch (err) {
-      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", {
-        page, message: err.message
-      });
+      log("WARN", "nutmeg_fetch_failed", "Nutmegly page fetch failed", { page, message: err.message });
       return [];
     }
   }));
 
   for (const part of results) rows.push(...part);
-
   const providerUnavailable = successfulPages === 0;
   nutmegCache = { at: Date.now(), rows, providerUnavailable };
 
   log("INFO", "nutmeg_refresh", "Nutmegly balance data refreshed", {
-    rows: rows.length,
-    successfulPages,
-    providerUnavailable
+    rows: rows.length, successfulPages, providerUnavailable
   });
-
   if (rows.length === 0 && successfulPages > 0) {
     log("WARN", "nutmeg_parse_zero", "Nutmegly pages loaded but no probability blocks were parsed", {
       pages: successfulPages
     });
   }
-
   return { rows, providerUnavailable };
 }
 
