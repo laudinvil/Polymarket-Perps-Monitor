@@ -116,36 +116,74 @@ async function discover(){
 function marketRows(event){
   return (Array.isArray(event.markets)?event.markets:[]).filter(m=>m&&m.active!==false&&m.closed!==true).map(m=>{
     const outcomes=parse(m.outcomes),prices=parse(m.outcomePrices||m.outcome_prices);
-    if(!Array.isArray(outcomes)||!Array.isArray(prices)||outcomes.length!==prices.length)return null;
-    return{question:t(m.question||m.title||m.groupItemTitle),group:t(m.groupItemTitle||m.groupItemTitle),outcomes:outcomes.map(t),prices:prices.map(Number),volume:Number(m.volumeNum??m.volume??0),liquidity:Number(m.liquidityNum??m.liquidity??0)};
+    if(!Array.isArray(outcomes))return null;
+    const ps=Array.isArray(prices)?prices.map(Number):[];
+    const normalizedOutcomes=outcomes.map(t);
+    const volume=Number(m.volumeNum??m.volume??m.volume24hr??0);
+    const liquidity=Number(m.liquidityNum??m.liquidity??0);
+    return{
+      id:t(m.id||m.conditionId||m.condition_id),
+      slug:t(m.slug||m.marketSlug||m.market_slug),
+      question:t(m.question||m.title||m.groupItemTitle||m.groupItemTitle),
+      group:t(m.groupItemTitle||m.groupItemTitle||""),
+      outcomes:normalizedOutcomes,
+      prices:ps,
+      volume:Number.isFinite(volume)?volume:0,
+      liquidity:Number.isFinite(liquidity)?liquidity:0
+    };
   }).filter(Boolean);
 }
-function pct(v){const n=Number(v);return Number.isFinite(n)?Math.round(n*100)+"%":"—";}
-function findMarket(rows,re){return rows.find(r=>re.test(r.question))||null;}
-function find1x2(rows){
-  return rows.find(r=>r.outcomes.length===3&&r.outcomes.some(o=>/^draw$|^x$/i.test(o))&&r.outcomes.filter(o=>/^draw$|^x$/i.test(o)).length===1) ||
-         rows.find(r=>/1x2|match result|match winner|who will win|winner|moneyline|result/i.test(r.question))||null;
-}
-function findTotal(rows){return rows.find(r=>/total|over.?under|goals/i.test(r.question)&&r.outcomes.some(o=>/over/i.test(o))&&r.outcomes.some(o=>/under/i.test(o)))||null;}
-function findHandicap(rows){return rows.find(r=>/spread|handicap|asian/i.test(r.question))||rows.find(r=>r.outcomes.some(o=>/[+-]\d/.test(o)))||null;}
-function line(row){return row?row.outcomes.map((o,i)=>t(o)+": "+pct(row.prices[i])).join(" · "):"—";}
+function pct(v){const n=Number(v);return Number.isFinite(n)?(n*100).toFixed(1).replace(/\\.0$/,"")+"%":"—";}
 function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:0}):"—";}
-function buildAlert(x){
+function marketText(r){
+  const vals=r.outcomes.map((o,i)=>{
+    const p=Number.isFinite(r.prices[i])?pct(r.prices[i]):"—";
+    return o+": "+p;
+  }).join(" · ");
+  const meta=["VOL "+money(r.volume),"LIQ "+money(r.liquidity)].join(" · ");
+  return "• "+(r.question||r.group||"Market")+"\\n  "+vals+"\\n  "+meta;
+}
+function splitPages(header,rows,maxLen=3600){
+  const pages=[];let current=header;
+  for(const row of rows){
+    const block=marketText(row);
+    if(current.length+2+block.length>maxLen&&current!==header){pages.push(current);current=header+"\\n\\n"+block;}
+    else current+= "\\n\\n"+block;
+  }
+  if(current!==header||pages.length===0)pages.push(current);
+  return pages;
+}
+function buildAlertPages(x){
   const e=x.event,rows=marketRows(e);
-  const marketVolume=rows.reduce((a,r)=>a+(Number.isFinite(r.volume)?r.volume:0),0);
-  const marketLiquidity=rows.reduce((a,r)=>a+(Number.isFinite(r.liquidity)?r.liquidity:0),0);
-  const one=find1x2(rows);
-  const total=findTotal(rows);
-  const spread=findHandicap(rows);
-  const sh=x.score?.[0]??e.homeScore??e.home_score??e.score?.home??null,sa=x.score?.[1]??e.awayScore??e.away_score??e.score?.away??null;
+  const sh=x.score?.[0]??e.homeScore??e.home_score??e.score?.home??null;
+  const sa=x.score?.[1]??e.awayScore??e.away_score??e.score?.away??null;
   const status=x.gameStatus||t(e.status||e.gameStatus||e.liveStatus||"LIVE");
   const start=t(e.startDate||e.start_date||e.startTime);
-  const vol=Number(e.volumeNum??e.volume??e.volume24hr??0)||marketVolume;const liq=Number(e.liquidityNum??e.liquidity??0)||marketLiquidity;
-  return ["⚽ LIVE FOUND","",x.home+" vs "+x.away,status?"STATUS: "+status:"STATUS: LIVE",x.minute?"MINUTE: "+x.minute:"MINUTE: —",sh!=null&&sa!=null?"SCORE: "+sh+"–"+sa:"SCORE: —","",
-    "1X2: "+line(one),"TOTAL: "+line(total),"HANDICAP: "+line(spread),"",
-    "VOLUME: "+money(vol),"LIQUIDITY: "+money(liq),start?"START: "+start:"START: —","",
-    "➡️ OPEN MATCH",x.url].join("\n");
+  const eventVolume=Number(e.volumeNum??e.volume??e.volume24hr??0);
+  const eventLiquidity=Number(e.liquidityNum??e.liquidity??0);
+  const header=["⚽ LIVE FOUND","",x.home+" vs "+x.away,status?"STATUS: "+status:"STATUS: LIVE",
+    x.minute?"MINUTE: "+x.minute:"MINUTE: —",
+    sh!=null&&sa!=null?"SCORE: "+sh+"–"+sa:"SCORE: —",
+    start?"START: "+start:"START: —",
+    "EVENT VOLUME: "+money(eventVolume),
+    "EVENT LIQUIDITY: "+money(eventLiquidity),
+    "",
+    "ALL ACTIVE MARKETS ("+rows.length+")"].join("\\n");
+  return splitPages(header,rows);
 }
+async function sendTelegram(message,replyMarkup){
+  const token=process.env.TELEGRAM_BOT_TOKEN||"",chat=process.env.TELEGRAM_CHAT_ID||"";
+  if(!token||!chat)throw new Error("Telegram credentials are missing");
+  const r=await fetch("https://api.telegram.org/bot"+token+"/sendMessage",{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({chat_id:chat,text:message,disable_web_page_preview:false,reply_markup:replyMarkup}),
+    signal:AbortSignal.timeout(10000)
+  });
+  if(!r.ok)throw new Error("Telegram HTTP "+r.status);
+  const b=await r.json();if(!b.ok)throw new Error("Telegram rejected message");
+  return b;
+}
+
 async function claimFootballMatch(slug){
   const siteUrl=t(process.env.CONVEX_SITE_URL||"");
   const deployKey=t(process.env.CONVEX_DEPLOY_KEY||"");
@@ -190,12 +228,17 @@ async function refreshEvent(x){
     fresh=byId?.event||byId;
   }
   if(fresh)x.event=fresh;
-  if(!Array.isArray(x.event?.markets)||x.event.markets.length===0){
-    try{
-      const ms=await json(GAMMA+"/markets?event_id="+encodeURIComponent(x.eventId)+"&active=true&closed=false&limit=100",{timeout:5000});
-      if(Array.isArray(ms)&&ms.length)x.event.markets=ms;
-    }catch{}
-  }
+  try{
+    const all=[];
+    for(let offset=0;offset<1000;offset+=100){
+      const ms=await json(GAMMA+"/markets?event_id="+encodeURIComponent(x.eventId)+"&active=true&closed=false&limit=100&offset="+offset,{timeout:7000});
+      const batch=Array.isArray(ms)?ms:(ms?.data||[]);
+      if(!Array.isArray(batch)||batch.length===0)break;
+      all.push(...batch);
+      if(batch.length<100)break;
+    }
+    if(all.length)x.event.markets=all;
+  }catch(e){console.log(JSON.stringify({level:"WARN",event:"markets_load_failed",eventId:x.eventId,slug:x.slug,message:e.message}));}
   return x.event;
 }
 async function cycle(){
@@ -208,7 +251,16 @@ async function cycle(){
       await refreshEvent(x);
       if(!(await claimFootballMatch(id))){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
       try {
-        await sendTelegram(buildAlert(x));alerted.add(id);
+        const pages=buildAlertPages(x);
+        for(let i=0;i<pages.length;i++){
+          const label="📄 "+(i+1)+"/"+pages.length;
+          const replyMarkup={inline_keyboard:[
+            [{text:"➡️ OPEN MATCH",url:x.url}],
+            [{text:"🌐 POLYMARKET LIVE",url:LIVE_PAGE}]
+          ]};
+          await sendTelegram(label+"\\n\\n"+pages[i],replyMarkup);
+        }
+        alerted.add(id);
       } catch(e) {
         try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",eventId:id,slug:x.slug,message:re.message})); }
         throw e;
