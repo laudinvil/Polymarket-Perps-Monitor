@@ -9,6 +9,64 @@ const CONVEX = (process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-wes
 
 let stopped = false;
 const tracked = new Map();
+const polymarketSportsLiveState = new Map();
+let sportsWs = null;
+let sportsWsReconnectTimer = null;
+
+function parseSportsWsMessage(raw){
+  if(typeof raw !== "string")return;
+  if(raw === "ping"){ try{sportsWs?.send("pong");}catch{} return; }
+  let msg;
+  try{msg=JSON.parse(raw);}catch{return;}
+  const type=t(msg?.type||msg?.event_type);
+  if(type && type!=="sport_result")return;
+  const p=msg?.payload && typeof msg.payload==="object" ? msg.payload : msg;
+  const slug=t(p?.slug);
+  if(!slug)return;
+  const league=t(p?.leagueAbbreviation||p?.league||p?.sport).toLowerCase();
+  if(league && !/soccer|football/.test(league))return;
+  polymarketSportsLiveState.set(slug,p);
+  log(JSON.stringify({
+    event:"polymarket_sports_ws_update",
+    slug,
+    league,
+    status:p?.status,
+    live:p?.live,
+    ended:p?.ended,
+    score:p?.score,
+    period:p?.period,
+    elapsed:p?.elapsed
+  }));
+}
+
+function startPolymarketSportsWs(){
+  if(typeof WebSocket!=="function"){
+    log(JSON.stringify({event:"polymarket_sports_ws_unavailable",reason:"global WebSocket is unavailable"}));
+    return;
+  }
+  const connect=()=>{
+    if(stopped)return;
+    try{
+      const ws=new WebSocket("wss://sports-api.polymarket.com/ws");
+      sportsWs=ws;
+      ws.onopen=()=>log(JSON.stringify({event:"polymarket_sports_ws_connected"}));
+      ws.onmessage=ev=>parseSportsWsMessage(String(ev.data||""));
+      ws.onerror=()=>log(JSON.stringify({event:"polymarket_sports_ws_error"}));
+      ws.onclose=()=>{
+        if(sportsWs===ws)sportsWs=null;
+        if(stopped)return;
+        log(JSON.stringify({event:"polymarket_sports_ws_closed"}));
+        clearTimeout(sportsWsReconnectTimer);
+        sportsWsReconnectTimer=setTimeout(connect,3000);
+      };
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_sports_ws_connect_failed",message:err.message}));
+      clearTimeout(sportsWsReconnectTimer);
+      sportsWsReconnectTimer=setTimeout(connect,3000);
+    }
+  };
+  connect();
+}
 const telemetry = [];
 let telemetryFlushPromise = null;
 
@@ -495,18 +553,24 @@ async function polymarketSportsLive(){
     }
   }
   const all=[...merged.values()];
-  const liveStatuses=new Set(["live","inprogress","in progress","halftime","paused","suspended","interrupted"]);
+  const liveStatuses=new Set(["live","inprogress","in progress","halftime","break","paused","suspended","interrupted"]);
 
-  // A live event is accepted only when it belongs to a soccer-derived tag
-  // AND has a live state. No generic sports fallback is allowed.
-  const live=all.filter(e=>{
-    const status=t(e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
+  // Gamma provides the football event/market universe; the dedicated
+  // Polymarket Sports WebSocket provides the authoritative live state.
+  // Do not infer LIVE merely because an event's scheduled start time passed.
+  const live=[];
+  for(const e of all){
+    const slug=t(e?.slug);
+    const ws=slug?polymarketSportsLiveState.get(slug):null;
+    const status=t(ws?.status||e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
     const started=startMs(e);
-    // A market can be marked live before the fixture starts. Never alert
-    // until the scheduled fixture start time has actually passed.
-    const startedNow=Number.isFinite(started)&&started<=Date.now();
-    return startedNow && (e?.live===true||e?.isLive===true||liveStatuses.has(status));
-  });
+    const startedNow=!Number.isFinite(started)||started<=Date.now();
+    const wsLive=ws?.live===true && ws?.ended!==true;
+    const gammaLive=e?.live===true||e?.isLive===true||liveStatuses.has(status);
+    if(startedNow && (wsLive||gammaLive)){
+      live.push(ws ? {...e,__sportsWs:ws} : e);
+    }
+  }
 
   log(JSON.stringify({
     event:"polymarket_live_snapshot",
@@ -896,6 +960,10 @@ async function scan(){
   }
 }
 async function main(){
+  startPolymarketSportsWs();
+  // Give the public Sports WebSocket a moment to deliver its initial
+  // active-event snapshot before the first discovery pass.
+  await new Promise(r=>setTimeout(r,1500));
   const end=Date.now()+RUN_MS;
   while(!stopped&&Date.now()<end){
     try{await scan();}catch(err){log(JSON.stringify({event:"scan_failed",message:err.message}));}
