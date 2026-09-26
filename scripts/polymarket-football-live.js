@@ -119,11 +119,14 @@ async function discoverPolymarket(){
   const groups=new Map();let eventScanned=0,footballEventFound=0,childMarketEventsGrouped=0;
   await checkpoint("discovery_start",{strategy:"football_fixture_first_v9",source:"soccer_tag",note:"Polymarket-only football fixture discovery; no external source matching"});
   const sources=[
-    {name:"soccer_schedule",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&limit=100&order=startDate&ascending=false"},
-    {name:"sports_schedule",baseUrl:GAMMA_URL+"/events?tag_id=100639&active=true&closed=false&limit=100&order=startDate&ascending=true"},
+  const nowIso = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const futureIso = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+  const sources=[
+    {name:"soccer_window",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&start_date_min="+encodeURIComponent(nowIso)+"&start_date_max="+encodeURIComponent(futureIso)+"&limit=100&order=startDate&ascending=true"},
+    {name:"soccer_live_window",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&start_date_min="+encodeURIComponent(new Date(Date.now()-6*60*60*1000).toISOString())+"&start_date_max="+encodeURIComponent(new Date().toISOString())+"&limit=100&order=startDate&ascending=true"},
     {name:"soccer_newest",baseUrl:GAMMA_URL+"/events?tag_slug=soccer&active=true&closed=false&limit=100&order=id&ascending=false"}
   ];
-  const pagePlan={soccer_schedule:4,sports_schedule:2,soccer_newest:2};
+  const pagePlan={soccer_window:5,soccer_live_window:3,soccer_newest:3};
   const sourcePages=sources.flatMap(source=>Array.from({length:pagePlan[source.name]??1},(_,page)=>({name:source.name,url:source.baseUrl+"&offset="+(page*100),page})));
   const results=await Promise.all(sourcePages.map(async source=>{try{const response=await fetch(source.url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10_000)}),body=await response.text();if(!response.ok)throw new Error("HTTP "+response.status+" for "+source.url);let data;try{data=JSON.parse(body);}catch(error){throw error;}const rows=Array.isArray(data)?data:(data?.events||data?.data||[]);log("INFO","event_source_response","Raw Polymarket football source response captured",{source:source.name,status:response.status,rowCount:rows.length,bodyBytes:Buffer.byteLength(body,"utf8")});return{name:source.name,rows,error:null};}catch(error){return{name:source.name,rows:[],error};}}));
   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_newest"||result.name==="soccer_live";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;if(!isPrimaryMatchEvent(event)){log("INFO","non_fixture_filtered","Football event has no recognizable fixture form; not passed to strategy",{eventId:text(event.id||event.eventId||event.event_id),title:text(event.title||event.question),source:result.name});continue;}const [home,away]=extractTeams(event);if(!home||!away){log("INFO","match_teams_missing","Football event has no recognizable teams",{eventId:text(event.id),title:text(event.title)});continue;}const startTime=event.startDate||event.start_date||event.startTime||null,endTime=event.endDate||event.end_date||event.endTime||null,eventId=text(event.id||event.eventId||event.event_id),slug=text(event.slug),key=eventId||slug;if(!key){log("WARN","match_identity_missing","Football match has teams but no event id/slug",{title:text(event.title||event.question),home,away});continue;}const nestedMarkets=Array.isArray(event.markets)?event.markets.map(market=>({marketId:text(market?.id||market?.marketId),question:text(market?.question||market?.title),outcomes:Array.isArray(parseJson(market?.outcomes))?parseJson(market.outcomes):[],outcomePrices:Array.isArray(parseJson(market?.outcomePrices||market?.outcome_prices))?parseJson(market?.outcomePrices||market?.outcome_prices):[],active:market?.active!==false,closed:market?.closed===true})):[];const groupKey=fixtureKey(home,away,startTime);
@@ -147,7 +150,7 @@ async function discoverPolymarket(){
         existing.relatedEventIds.push(eventId);
         log("INFO","fixture_event_grouped","Child/duplicate football market event grouped into existing fixture",{fixtureKey:groupKey,eventId,teams:[home,away],title:text(event.title||event.question),source:result.name,groupedEventCount:existing.relatedEventIds.length});
       } else {
-        groups.set(groupKey,{eventId,slug,url:eventUrl(event),title:text(event.title||event.question),homeTeam:home,awayTeam:away,startTime,endTime,markets:nestedMarkets,relatedEventIds:[eventId]});
+        groups.set(groupKey,{eventId,slug,url:eventUrl(event),title:text(event.title||event.question),homeTeam:home,awayTeam:away,startTime,endTime,active:event.active!==false,closed:event.closed===true,markets:nestedMarkets,relatedEventIds:[eventId]});
         log("INFO","match_discovery_passed","Unique football fixture passed discovery",{source:result.name,eventId,slug,fixtureKey:groupKey,teams:[home,away],startTime,active:event.active,closed:event.closed,marketCount:nestedMarkets.length});
       }}await checkpoint("event_source_done",{source:result.name,rows:result.rows.length,eventScanned,footballEventFound,uniqueFixtures:groups.size,childMarketEventsGrouped});}
   const matches=Array.from(groups.values());
@@ -196,18 +199,24 @@ function balancedFromPolymarket(market) {
   );
 }
 
-function isStrictPrematch(match, liveState) {
-  if (liveState?.status === "live") return false;
+function classifyFixturePhase(match, liveState) {
   const kickoff = Date.parse(match.startTime || "");
+  if (liveState?.status === "live") return "live";
   if (!Number.isFinite(kickoff)) {
-    log("INFO","prematch_time_unknown","No usable Polymarket kickoff; not admitted", {eventId:match.eventId,startTime:match.startTime||null});
-    return false;
+    log("INFO","fixture_time_unknown","No usable Polymarket kickoff; candidate kept for diagnostics", {eventId:match.eventId,startTime:match.startTime||null});
+    return "unknown";
   }
-  const future = kickoff > Date.now();
-  if (!future) log("INFO","kickoff_passed_not_prematch","Polymarket kickoff passed; no new BUY", {
-    eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime,kickoffPassedMs:Date.now()-kickoff
+  if (kickoff > Date.now()) return "prematch";
+  if (match.active !== false && match.closed !== true) {
+    log("INFO","active_kickoff_passed_treated_live","Active Polymarket fixture has passed kickoff; treating it as live candidate", {
+      eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime,kickoffPassedMs:Date.now()-kickoff
+    });
+    return "live";
+  }
+  log("INFO","kickoff_passed_not_active","Kickoff passed and event is not active; not a live candidate", {
+    eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],startTime:match.startTime
   });
-  return future;
+  return "finished";
 }
 
 async function ensureEventMarkets(match) {
@@ -307,7 +316,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 
   // BUY is created only while the fixture is still pre-match.
   // A match discovered for the first time already live is never a BUY candidate.
-  if (phase === "prematch") {
+  if (phase === "prematch" || phase === "live_entry") {
     oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
     const claimKey = key + ":BUY";
@@ -333,7 +342,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     const message = [
       "⚽ 1:1 · BUY", "",
       match.homeTeam + " vs " + match.awayTeam,
-      "PRE-MATCH",
+      phase === "live_entry" ? "LIVE" : "PRE-MATCH",
       "", "➡️ OPEN MATCH", match.url
     ].join("\n");
 
@@ -440,30 +449,34 @@ async function tick() {
     log("INFO","stage_done","Polymarket discovery stage finished",{stage:"polymarket_discovery",elapsedMs:Date.now()-tickStartedAt,candidates:matches.length});
     log("INFO","polymarket_source","Polymarket is the sole football source",{source:GAMMA_URL});
     const evalStarted=Date.now();
-    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"future PRE-MATCH football candidate = BUY; no market gate"});
+    log("INFO","stage_start","Polymarket-only alert evaluation started",{stage:"evaluation",rule:"active PRE-MATCH or active LIVE football fixture = BUY; no 1:1 market gate"});
     const BATCH=20;
     for(let i=0;i<matches.length;i+=BATCH){
       await Promise.all(matches.slice(i,i+BATCH).map(async match=>{
         cycle.evaluations++;
         const liveState=await refreshPolymarketLiveState(match);
-        const isLive=liveState?.status==="live";
-        const isPrematch=isStrictPrematch(match,liveState);
-        if(isPrematch){
-          cycle.preMatch++;
-          // A discovered future football fixture is already a strategy candidate.
-          // There is no additional market/price gate between candidate admission and BUY.
-          cycle.buyPassed++;
-          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime});
-          await maybeOneOneAlert({...match,live:{status:"scheduled",score:{home:0,away:0},minute:0}},null,"prematch");
-          return;
-        }
+        const phase=classifyFixturePhase(match,liveState);
+        const isLive=phase==="live";
+        const isPrematch=phase==="prematch";
         const score=liveState?.score||{home:0,away:0};
         const state=oneOneState.get(match.eventId||match.slug);
         if(isLive)cycle.live++;
         if(isLive&&score.home===0&&score.away===0)cycle.liveZeroZero++;
-        if(!liveState&&!isLive)cycle.liveStateUnavailable++;
-        if(state?.prematchSeen) await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"started");
-        log("INFO","live_fixture_not_entry","Already-live Polymarket fixture skipped as BUY entry",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score,previouslyAdmittedPrematch:Boolean(state?.prematchSeen)});
+        if(!liveState)cycle.liveStateUnavailable++;
+
+        if(isPrematch || (isLive && score.home===0 && score.away===0 && !state?.prematchSeen)){
+          cycle.buyPassed++;
+          log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime});
+          await maybeOneOneAlert({...match,live:{status:isLive?"live":"scheduled",score,minute:liveState?.minute||0}},null,isLive?"live_entry":"prematch");
+          return;
+        }
+
+        if(state?.prematchSeen && isLive && (Number(score.home)+Number(score.away))===0){
+          log("INFO","live_candidate_already_bought","Live candidate already has BUY state",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score});
+          return;
+        }
+
+        log("INFO","fixture_not_buy","Fixture did not reach BUY",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],score,previouslyAdmittedPrematch:Boolean(state?.prematchSeen)});
         if((Number(score.home)+Number(score.away))>0&&state?.prematchSeen){
           cycle.sellEvaluated++;
           await maybeOneOneAlert({...match,live:{...(liveState||{}),status:"live",score}},null,"live");
@@ -557,7 +570,7 @@ async function loadPersistedCandidates() {
         restored++;
       } catch {}
     }
-    log("INFO", "persistent_candidates_loaded", "Restored PRE-MATCH candidates from Convex", { restored });
+    log("INFO", "persistent_candidates_loaded", "Restored persisted football candidates", { restored });
     return restored;
   } catch (err) {
     log("WARN", "persistent_candidates_load_failed", "Could not restore PRE-MATCH candidates; discovery continues", { message: err.message });
