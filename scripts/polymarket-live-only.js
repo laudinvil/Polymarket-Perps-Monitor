@@ -610,21 +610,19 @@ async function sendLiveFound(home,away,minute,score,sofa,pm){
   }
 }
 async function sendDataCheck(home,away,minute,sofa,pm){
-  const polyId=t(pm?.id||pm?.eventId),key="DATA_CHECK:"+polyId;
-  const c=await claim(key);
-  if(!c.claimed)return false;
-  const href=polyEventUrl(pm);
-  const message=["⚠️ DATA CHECK","",home+" vs "+away,"LIVE · "+minute+"′","1X2: "+(sofa.one?formatOne(sofa.one):"—"),"1:1 YES: —","Причина: Sofascore не отдал live 1:1","➡️ OPEN MATCH","https://polymarket.com"+href].join("\n");
-  try{
-    const sent=await telegram(message,c.replyToMessageId??null);
-    await saveId(key,sent.message_id);
-    log(JSON.stringify({event:"telegram_alert_sent",type:"DATA_CHECK",key,teams:[home,away],messageId:sent.message_id}));
-    return true;
-  }catch(err){
-    await release(key);
-    log(JSON.stringify({event:"telegram_alert_failed",type:"DATA_CHECK",key,message:err.message}));
-    return false;
-  }
+  // Diagnostic only. Missing market data must never create a second Telegram
+  // message or turn a single fixture into alert spam.
+  log(JSON.stringify({
+    event:"data_check",
+    type:"DATA_CHECK",
+    teams:[home,away],
+    minute,
+    polyId:t(pm?.id||pm?.eventId),
+    has1X2:!!sofa?.one,
+    hasExact11:sofa?.exact!=null,
+    reason:"required_live_market_data_missing"
+  }));
+  return false;
 }
 async function sendNext(row,score){
   const alertKey=row.key+":NEXT",c=await claim(alertKey);
