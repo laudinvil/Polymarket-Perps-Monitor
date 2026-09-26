@@ -591,16 +591,16 @@ async function tick() {
     }
     const matches=Array.from(prematchCandidates.values());
     const now=Date.now();
-    // Keep every discovered candidate persisted, but never spend a full cycle
-    // refreshing thousands of future fixtures. Only LIVE/start-now candidates
-    // enter the expensive live-state + 1X2 evaluation path.
+    // Keep every discovered candidate persisted, but evaluate every fixture
+    // whose kickoff is recent (last 6h) or imminent (next 15m). Do not require
+    // the discovery payload to advertise live=true: refreshPolymarketLiveState()
+    // below is the authoritative LIVE check.
     const evaluationCandidates=matches.filter(match=>{
       const kickoff=Date.parse(match.startTime||"");
-      const liveHint=match.polymarketLiveHint===true;
-      const inLiveWindow=Number.isFinite(kickoff) &&
+      const inEvaluationWindow=Number.isFinite(kickoff) &&
         kickoff >= now - 6*60*60*1000 &&
         kickoff <= now + PREMATCH_WINDOW_MS;
-      return liveHint || inLiveWindow;
+      return inEvaluationWindow;
     });
     const deferredCandidates=matches.length-evaluationCandidates.length;
     const cycle={discovered:discovered.length,retainedCandidates:matches.length,evaluationCandidates:evaluationCandidates.length,deferredCandidates,preMatch:0,live:0,liveZeroZero:0,evaluations:0,buyPassed:0,buyRejected:0,sellEvaluated:0,liveStateUnavailable:0};
