@@ -676,6 +676,33 @@ async function polymarketSportsLive(){
     }
   }
 
+  // Fallback live discovery: use SofaScore only to establish that a
+  // match is actually live and to provide score/minute when Polymarket's
+  // live state is missing. Prices remain Polymarket-only.
+  try{
+    const sofa=await sofascoreLive();
+    for(const se of arr(sofa?.events)){
+      const st=t(se?.status?.type).toLowerCase();
+      if(!liveStatuses.has(st))continue;
+      const sh=t(se?.homeTeam?.name),sa=t(se?.awayTeam?.name);
+      if(!sh||!sa)continue;
+      const hit=all.find(e=>{
+        const [eh,ea]=teamsFromEvent(e);
+        return eh&&ea&&sameMatch({homeTeam:eh,awayTeam:ea},sh,sa);
+      });
+      if(!hit)continue;
+      const score={home:Number(se?.homeScore?.current),away:Number(se?.awayScore?.current)};
+      const minute=sofascoreMinute(se);
+      if(!Number.isFinite(score.home)||!Number.isFinite(score.away)||minute==null)continue;
+      const key=t(hit?.id||hit?.eventId||hit?.slug);
+      if(!key||live.some(e=>t(e?.id||e?.eventId||e?.slug)===key))continue;
+      live.push({...hit,__sportsWs:{live:true,status:st,homeScore:score.home,awayScore:score.away,minute,source:"sofascore"}});
+      log(JSON.stringify({event:"polymarket_live_fallback_sofascore",teams:[sh,sa],fixtureSlug:hit?.slug,score,minute,status:st}));
+    }
+  }catch(err){
+    log(JSON.stringify({event:"polymarket_live_fallback_sofascore_failed",message:err.message}));
+  }
+
   log(JSON.stringify({
     event:"polymarket_live_snapshot",
     sports:soccerSports.map(s=>({sport:s?.sport,name:s?.name,slug:s?.slug,tags:s?.tags,tagIds:s?.tagIds||s?.tag_ids})),
