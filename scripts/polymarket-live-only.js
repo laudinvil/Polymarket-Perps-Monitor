@@ -80,7 +80,7 @@ function links(html){
   const out=[];const re=/href=["'](\/sports\/([^"']+))["']/gi;let m;
   while((m=re.exec(html)))out.push({href:m[1],path:m[2]});
   return [...new Map(out.map(x=>[x.href,x])).values()]
-    .filter(x=>x.path!=="live" && x.path.startsWith("soccer/"));
+    .filter(x=>x.path!=="live" && x.path!=="games" && !x.path.includes("/games/") && /-[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x.path));
 }
 function teamsFromEvent(e){
   const title=t(e?.title||e?.question),h=t(e?.homeTeam||e?.home_team),a=t(e?.awayTeam||e?.away_team);
