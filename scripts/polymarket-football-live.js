@@ -566,116 +566,193 @@ function visiblePolymarketText(html) {
   const s=html.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<noscript[\s\S]*?<\/noscript>/gi," ");
   return decodeHtml(s.replace(/<[^>]+>/g," ").replace(/\s+/g," "));
 }
-function scoreAfterTeam(page, team) {
-  const normalizedPage = norm(page);
-  const normalizedTeam = norm(team);
-  if (!normalizedPage || !normalizedTeam) return null;
-  const escaped = normalizedTeam.replace(/[.*+?^\$\{\}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(escaped + "\\s+(\\d{1,2})-(\\d{1,2})(?=\\s|$)", "i");
-  const m = normalizedPage.match(re);
-  if (!m) return null;
-  const home = Number(m[1]), away = Number(m[2]);
-  if (![home, away].every(Number.isInteger) || home < 0 || away < 0 || home > 20 || away > 20) return null;
-  return {home, away};
+function finiteScore(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 20 ? n : null;
 }
 
-function findLivePageMatch(page, match) {
-  const normalizedPage = norm(page);
-  const homeTeam = norm(match.homeTeam);
-  const awayTeam = norm(match.awayTeam);
-  if (!normalizedPage || !homeTeam || !awayTeam) return null;
-  const homeAliases = [homeTeam, homeTeam.replace(/^cd\s+/, "")].filter(Boolean);
-  const awayAliases = [awayTeam, awayTeam.replace(/^cd\s+/, "")].filter(Boolean);
+function finiteMinute(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const m = String(v).match(/^\s*(\d{1,3})(?:\s*['′]|\s*(?:min|mins|minute|minutes))?\s*$/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isInteger(n) && n >= 0 && n <= 130 ? n : null;
+}
 
-  let from = 0;
-  while (from < normalizedPage.length) {
-    let found = null;
-    for (const h of homeAliases) {
-      const hi0 = normalizedPage.indexOf(h, from);
-      if (hi0 < 0) continue;
-      for (const a of awayAliases) {
-        const ai0 = normalizedPage.indexOf(a, hi0 + h.length);
-        if (ai0 >= 0 && ai0 - hi0 <= 900) { found = {h, a, hi: hi0, ai: ai0}; break; }
-      }
-      if (found) break;
-    }
-    if (!found) break;
-    const {h: matchedHome, a: matchedAway, hi, ai} = found;
-
-    const cardStart = Math.max(0, hi - 260);
-    const cardEnd = Math.min(normalizedPage.length, ai + awayTeam.length + 320);
-    const card = normalizedPage.slice(cardStart, cardEnd);
-    const liveStatus = /\b(?:1h|2h|ht|et|aet|live|in progress|playing|penalties|pen)\b/i.test(card);
-
-    if (liveStatus) {
-      // Polymarket's rendered live card does not always serialize a football
-      // score as "HOME 1-0 AWAY". Depending on the page payload it may appear
-      // as "HOME 1 AWAY 0", or the away score may be omitted from the extracted
-      // text altogether. LIVE membership must therefore not depend on one
-      // brittle score layout.
-      const betweenTeams = normalizedPage.slice(hi + homeTeam.length, ai);
-      const afterAway = normalizedPage.slice(ai + awayTeam.length, cardEnd);
-      const homeScoreMatch = betweenTeams.match(/\b(\d{1,2})\b/);
-      const awayScoreMatch = afterAway.match(/^\s*(\d{1,2})\b/);
-
-      let home = homeScoreMatch ? Number(homeScoreMatch[1]) : null;
-      let away = awayScoreMatch ? Number(awayScoreMatch[1]) : null;
-
-      if (home === null || away === null) {
-        const compact = normalizedPage.slice(hi, cardEnd);
-        const compactMatch = compact.match(
-          new RegExp(matchedHome + "\\s+(\\d{1,2})\\s+" + matchedAway + "\\s+(\\d{1,2})\\b", "i")
-        );
-        if (compactMatch) {
-          home = Number(compactMatch[1]);
-          away = Number(compactMatch[2]);
-        }
-      }
-
-      if (![home, away].every(Number.isInteger) || home < 0 || away < 0 || home > 20 || away > 20) {
-        log("WARN", "polymarket_live_score_unparsed", "Polymarket live card confirmed the fixture but its score layout could not be parsed; keeping LIVE state", {
-          teams: [match.homeTeam, match.awayTeam],
-          card: card.slice(0, 500)
-        });
-        home = 0;
-        away = 0;
-      }
-
-      return {
-        status: "live",
-        score: {home, away},
-        minute: 0
-      };
-    }
-
-    from = hi + matchedHome.length;
+function extractStructuredScore(row) {
+  const candidates = [
+    [row?.homeScore, row?.awayScore],
+    [row?.home_score, row?.away_score],
+    [row?.score?.home, row?.score?.away],
+    [row?.score?.homeScore, row?.score?.awayScore],
+    [row?.scores?.home, row?.scores?.away],
+    [row?.scores?.homeScore, row?.scores?.awayScore],
+    [row?.home?.score, row?.away?.score],
+    [row?.homeTeam?.score, row?.awayTeam?.score],
+    [row?.home_team?.score, row?.away_team?.score],
+  ];
+  for (const [h, a] of candidates) {
+    const home = finiteScore(h);
+    const away = finiteScore(a);
+    if (home !== null && away !== null) return { home, away };
   }
-
   return null;
 }
 
-async function loadPolymarketLivePage() {
-  const url="https://polymarket.com/sports/live";
+function extractStructuredMinute(row) {
+  const candidates = [
+    row?.minute, row?.minutes, row?.matchMinute, row?.match_minute,
+    row?.elapsed, row?.elapsedMinutes, row?.elapsed_minutes,
+    row?.clock?.minute, row?.clock?.minutes,
+    row?.status?.minute, row?.status?.elapsed,
+    row?.period?.minute
+  ];
+  for (const value of candidates) {
+    const minute = finiteMinute(value);
+    if (minute !== null) return minute;
+  }
+  return null;
+}
+
+function extractGameTeams(row) {
+  const pairs = [
+    [row?.homeTeam?.name, row?.awayTeam?.name],
+    [row?.home_team?.name, row?.away_team?.name],
+    [row?.home?.name, row?.away?.name],
+    [row?.teams?.home?.name, row?.teams?.away?.name],
+    [row?.teams?.homeTeam?.name, row?.teams?.awayTeam?.name],
+    [row?.home, row?.away],
+    [row?.homeTeam, row?.awayTeam]
+  ];
+  for (const [h, a] of pairs) {
+    const home = text(h);
+    const away = text(a);
+    if (home && away) return [home, away];
+  }
+  return null;
+}
+
+function isExplicitLiveGame(row) {
+  const statusValues = [
+    row?.status, row?.state, row?.gameStatus, row?.game_status,
+    row?.matchStatus, row?.match_status, row?.status?.type, row?.status?.short
+  ].map(text).filter(Boolean).map(v => v.toLowerCase());
+
+  if (statusValues.some(v => /^(live|inplay|in-play|playing|1h|2h|ht|et|aet|halftime|half-time|in progress)$/.test(v))) {
+    return true;
+  }
+
+  const minute = extractStructuredMinute(row);
+  const score = extractStructuredScore(row);
+  return minute !== null || score !== null;
+}
+
+function findStructuredLiveGame(rows, match) {
+  const targetHome = norm(match.homeTeam);
+  const targetAway = norm(match.awayTeam);
+  if (!targetHome || !targetAway) return null;
+
+  let best = null;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row !== "object") continue;
+    const teams = extractGameTeams(row);
+    if (!teams) continue;
+
+    const [home, away] = teams;
+    const direct = teamSimilarity(home, match.homeTeam) >= 0.8 &&
+      teamSimilarity(away, match.awayTeam) >= 0.8;
+    const reversed = teamSimilarity(home, match.awayTeam) >= 0.8 &&
+      teamSimilarity(away, match.homeTeam) >= 0.8;
+    if (!direct && !reversed) continue;
+    if (!isExplicitLiveGame(row)) continue;
+
+    const score = extractStructuredScore(row);
+    const minute = extractStructuredMinute(row);
+    const live = {
+      status: "live",
+      score: score || { home: null, away: null },
+      minute,
+      source: "gamma_games_structured"
+    };
+
+    if (!best || (score && !best.score?.home && !best.score?.away) || (minute !== null && best.minute === null)) {
+      best = live;
+    }
+
+    log("INFO", "gamma_games_match_candidate", "Structured /games row matched the Polymarket fixture", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      gameTeams: teams,
+      score,
+      minute,
+      status: row?.status ?? row?.state ?? null,
+      scoreSource: score ? "gamma_games_structured" : null,
+      minuteSource: minute !== null ? "gamma_games_structured" : null
+    });
+  }
+
+  return best;
+}
+
+async function loadGammaGames() {
+  const url = GAMMA_URL + "/games";
   try {
-    const r=await fetch(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketFootballMonitor/1.0)"},signal:AbortSignal.timeout(6000)});
-    if(!r.ok)throw new Error("HTTP "+r.status+" for "+url);
-    const html=await r.text(), page=visiblePolymarketText(html);
-    log("INFO","polymarket_live_page_loaded","Polymarket live sports page refreshed",{url,bodyBytes:Buffer.byteLength(html,"utf8"),textBytes:Buffer.byteLength(page,"utf8")});
-    return page;
-  } catch(err) {
-    log("WARN","polymarket_live_page_failed","Could not refresh Polymarket /sports/live page",{url,message:err.message});
-    return null;
+    const data = await getJson(url, { timeoutMs: 5_000 });
+    const rows = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.games)
+        ? data.games
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.data?.games)
+            ? data.data.games
+            : [];
+
+    log("INFO", "gamma_games_loaded", "Gamma /games structured LIVE source refreshed", {
+      url,
+      rows: rows.length
+    });
+
+    return rows;
+  } catch (err) {
+    log("WARN", "gamma_games_failed", "Gamma /games structured LIVE source failed", {
+      url,
+      message: err.message
+    });
+    return [];
   }
 }
+
 async function refreshPolymarketLiveState(match) {
   try {
-    if(!livePagePromise)livePagePromise=loadPolymarketLivePage();
-    const page=await livePagePromise; if(!page)return null;
-    const live=findLivePageMatch(page,match); if(!live)return null;
-    log("INFO","polymarket_live_match_found","Previously admitted football candidate found on Polymarket live page",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score:live.score,source:"https://polymarket.com/ru/sports/live"});
+    const games = await loadGammaGames();
+    const live = findStructuredLiveGame(games, match);
+
+    if (!live) {
+      log("INFO", "gamma_games_match_not_found", "No structured LIVE /games row matched the Polymarket fixture", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        scoreSource: null,
+        minuteSource: null
+      });
+      return null;
+    }
+
+    log("INFO", "gamma_games_live_match_found", "Structured /games LIVE data matched the Polymarket fixture", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      score: live.score,
+      minute: live.minute,
+      scoreSource: live.score?.home !== null && live.score?.away !== null ? live.source : null,
+      minuteSource: live.minute !== null ? live.source : null
+    });
+
     return live;
-  } catch(err) {
-    log("WARN","polymarket_live_state_failed","Could not determine live state from Polymarket /sports/live",{eventId:match.eventId,message:err.message});
+  } catch (err) {
+    log("WARN", "gamma_games_live_state_failed", "Could not determine LIVE state from structured Gamma /games", {
+      eventId: match.eventId,
+      message: err.message
+    });
     return null;
   }
 }
