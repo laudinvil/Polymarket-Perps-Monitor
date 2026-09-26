@@ -203,13 +203,60 @@ function parsePolyOneXTwo(e,home,away){
   for(const m of arr(e?.markets)){
     if(m?.active===false||m?.closed===true)continue;
     const os=arr(m?.outcomes),ps=arr(m?.outcomePrices??m?.outcome_prices).map(Number);
-    const i=os.findIndex(x=>norm(x)==="yes"),yes=ps[i]; if(i<0||!(yes>0&&yes<=1))continue;
-    const q=norm(m?.question||m?.title||m?.groupItemTitle||m?.slug);
-    if(q.includes("draw")||q.includes("tie"))out.draw=yes;
-    else if(q.includes(h))out.home=yes;
-    else if(q.includes(a))out.away=yes;
+    if(!os.length||os.length!==ps.length)continue;
+    const q=t(m?.question||m?.title||m?.groupItemTitle||m?.slug).toLowerCase();
+    const qn=norm(q);
+    const isOne=/1x2|match result|full time result|match winner|winner|moneyline/.test(qn)
+      || qn.includes(h) || qn.includes(a) || qn.includes("draw") || qn.includes("tie");
+    if(!isOne)continue;
+    for(let i=0;i<os.length;i++){
+      const raw=t(os[i]),n=norm(raw),price=ps[i];
+      if(!(price>0&&price<=1))continue;
+      if(n==="yes"||n==="no")continue;
+      if(n==="draw"||n==="tie"||raw.toUpperCase()==="X"||qn.includes("draw")&&n==="yes")out.draw=price;
+      else if(n==="1"||n==="home"||n===h||teamMatch(n,h))out.home=price;
+      else if(n==="2"||n==="away"||n===a||teamMatch(n,a))out.away=price;
+    }
+    // Some Polymarket markets expose YES/NO as separate child markets,
+    // where the team name is in the question and YES is the price.
+    const yi=os.findIndex(x=>norm(x)==="yes");
+    if(yi>=0&&ps[yi]>0&&ps[yi]<=1){
+      const yes=ps[yi];
+      if(qn.includes("draw")||qn.includes("tie"))out.draw=yes;
+      else if(qn.includes(h))out.home=yes;
+      else if(qn.includes(a))out.away=yes;
+    }
   }
   return out.home>0&&out.draw>0&&out.away>0?out:null;
+}
+
+async function loadPolyMarkets(...events){
+  const merged=new Map();
+  for(const e of events){
+    const id=t(e?.id||e?.eventId);
+    if(!id)continue;
+    // Keep inline markets first.
+    for(const m of arr(e?.markets)){
+      const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
+      if(mid)merged.set(mid,m);
+    }
+    try{
+      const data=await json(GAMMA+"/markets?event_id="+encodeURIComponent(id)+"&limit=500",4500);
+      const markets=Array.isArray(data)?data:arr(data?.markets);
+      for(const m of markets){
+        const mid=t(m?.id||m?.marketId||m?.conditionId||m?.slug);
+        if(mid)merged.set(mid,m);
+      }
+      log(JSON.stringify({event:"polymarket_markets_loaded",eventId:id,count:markets.length}));
+    }catch(err){
+      log(JSON.stringify({event:"polymarket_markets_fetch_failed",eventId:id,message:err.message}));
+    }
+  }
+  return [...merged.values()];
+}
+
+function exactScore11FromMarkets(markets){
+  return exactScore11Yes({markets});
 }
 function formatOne(p){return "1: "+pct(p.home)+" · X: "+pct(p.draw)+" · 2: "+pct(p.away);}
 function approxPass(sofa,poly){
@@ -477,8 +524,13 @@ async function discoverLiveZeroZero(){
 
     // LIVE_FOUND is a real alert, not a discovery ping. Require the
     // canonical fixture and both requested Polymarket market values.
-    const polyOne=parsePolyOneXTwo(fixture,phome,paway);
-    const polyExact=await exactScore11(pm);
+    // Polymarket often keeps the actual 1X2 / correct-score contracts
+    // in child markets rather than on the canonical fixture object.
+    // Load markets for BOTH the live child and canonical fixture.
+    const polyMarkets=await loadPolyMarkets(fixture,pm);
+    const polyMarketEvent={markets:polyMarkets};
+    const polyOne=parsePolyOneXTwo(polyMarketEvent,phome,paway);
+    const polyExact=exactScore11FromMarkets(polyMarkets);
     // The live-state source is the tagged Polymarket child event (pm).
     // fixtureParentEvent() is used only to recover the canonical fixture and
     // its URL/markets. The parent often has no live/status flags of its own,
