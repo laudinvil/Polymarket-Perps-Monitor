@@ -735,35 +735,19 @@ async function loadGammaGames() {
 function extractLiveCardData(page, match) {
   const p = norm(page), h = norm(match.homeTeam), a = norm(match.awayTeam);
   if (!p || !h || !a) return null;
-  const esc = v => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const aliases = v => [...new Set([v, v.replace(/\b(?:fc|cf|sc|afc|ac|cd)\b/g, "").replace(/\s+/g, " ").trim()].filter(Boolean))];
-  for (const hh of aliases(h)) {
-    let pos = 0;
-    while (true) {
-      const hi = p.indexOf(hh, pos); if (hi < 0) break;
-      for (const aa of aliases(a)) {
-        const ai = p.indexOf(aa, hi + hh.length);
-        if (ai < 0 || ai - hi > 1200) continue;
-        const card = p.slice(Math.max(0, hi - 500), Math.min(p.length, ai + aa.length + 500));
-        if (!/\b(?:live|1h|2h|ht|et|aet|playing|in progress)\b/i.test(card)) continue;
-        const local = p.slice(hi, Math.min(p.length, ai + aa.length + 500));
-        let score = null;
-        let m = local.match(new RegExp(esc(hh) + "\\s+(\\d{1,2})\\s*[–-]\\s*(\\d{1,2})\\s+" + esc(aa), "i"));
-        if (m) score = {home:Number(m[1]), away:Number(m[2])};
-        if (!score) {
-          m = local.match(new RegExp(esc(hh) + "\\s+(\\d{1,2})\\s+" + esc(aa) + "\\s+(\\d{1,2})\\b", "i"));
-          if (m) score = {home:Number(m[1]), away:Number(m[2])};
-        }
-        let minute = null;
-        for (const re of [/\b(\d{1,3})\s*[\x27′]/, /\b(\d{1,3})\s*(?:min|mins|minute|minutes)\b/i]) {
-          const x = local.match(re); if (x && Number(x[1]) <= 130) { minute=Number(x[1]); break; }
-        }
-        if (score && minute !== null && score.home <= 20 && score.away <= 20) return {status:"live",score,minute,scoreSource:"polymarket_live_card",minuteSource:"polymarket_live_card"};
-        log("INFO","live_card_incomplete","Matched fixture card lacks real score or minute",{eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],score,minute});
-      }
-      pos = hi + hh.length;
+
+  // Do not infer score/minute from arbitrary visible page text.
+  // The previous parser produced impossible values such as 18-45 and false minutes.
+  // Until the page exposes a structured fixture record, return no live state.
+  log("INFO", "live_card_unstructured_rejected",
+    "LIVE page contains no trusted structured score/minute record; arbitrary numbers are rejected",
+    {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      scoreSource: null,
+      minuteSource: null
     }
-  }
+  );
   return null;
 }
 
