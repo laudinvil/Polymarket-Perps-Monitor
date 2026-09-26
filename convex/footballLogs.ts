@@ -148,12 +148,19 @@ export const claimTelegramAlert = mutation({
     }
     if (existing) return { claimed: false, replyToMessageId: null };
     if (args.marketSlug.endsWith(":SELL")) {
-      const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
-      const buy = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
-      if (!buy) return { claimed: false, replyToMessageId: null };
-      if (!buy.telegramMessageId) return { claimed: false, replyToMessageId: null };
+      const baseKey = args.marketSlug.slice(0, -5);
+      const live = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":LIVE")).first();
+      if (!live || !live.telegramMessageId) return { claimed: false, replyToMessageId: null };
       if (existing) await ctx.db.patch(existing._id, { claimedAt: now });
-      else await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now });
+      else await ctx.db.insert("telegramDedupe", { monitor: MONITOR, marketSlug: args.marketSlug, claimedAt: now });
+      return { claimed: true, replyToMessageId: live.telegramMessageId };
+    }
+    if (args.marketSlug.endsWith(":STARTED")) {
+      const buyKey = args.marketSlug.slice(0, -8) + ":BUY";
+      const buy = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
+      if (!buy || !buy.telegramMessageId) return { claimed: false, replyToMessageId: null };
+      if (existing) return { claimed: false, replyToMessageId: null };
+      await ctx.db.insert("telegramDedupe", { monitor: MONITOR, marketSlug: args.marketSlug, claimedAt: now });
       return { claimed: true, replyToMessageId: buy.telegramMessageId };
     }
     if (args.marketSlug.endsWith(":FIRST_GOAL")) {
