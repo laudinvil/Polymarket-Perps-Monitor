@@ -305,14 +305,15 @@ async function discoverLiveZeroZero(){
       const minute=sofascoreMinute(s),score={home:Number(s?.homeScore?.current),away:Number(s?.awayScore?.current)};
       const sofa=await sofascoreOdds(s.id,home,away);
       log(JSON.stringify({event:"sofascore_live_candidate",teams:[home,away],id:s.id,minute,score,sofa}));
-      if(!sofa.one||sofa.exact==null){
-        log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
-        continue;
-      }
       const candidates=await polymarketSearch(home,away);
       const pm=candidates.find(e=>e?.active!==false&&e?.closed!==true&&sameMatch(e,home,away));
       if(!pm){
         log(JSON.stringify({event:"sofascore_live_no_polymarket",teams:[home,away],minute}));
+        continue;
+      }
+      if(!sofa.one||sofa.exact==null){
+        log(JSON.stringify({event:"sofascore_required_odds_missing",teams:[home,away],minute,has1x2:!!sofa.one,hasExact11:sofa.exact!=null,sofa}));
+        if(sofa.one&&sofa.exact==null)await sendDataCheck(home,away,minute,sofa,pm);
         continue;
       }
       const polyId=t(pm.id||pm.eventId),polySlug=t(pm.slug);
@@ -351,6 +352,23 @@ async function discoverLiveZeroZero(){
   return found;
 }
 
+async function sendDataCheck(home,away,minute,sofa,pm){
+  const polyId=t(pm?.id||pm?.eventId),key="DATA_CHECK:"+polyId;
+  const c=await claim(key);
+  if(!c.claimed)return false;
+  const href=polyEventUrl(pm);
+  const message=["⚠️ DATA CHECK","",home+" vs "+away,"LIVE · "+minute+"′","1X2: "+(sofa.one?formatOne(sofa.one):"—"),"1:1 YES: —","Причина: Sofascore не отдал live 1:1","➡️ OPEN MATCH","https://polymarket.com"+href].join("\n");
+  try{
+    const sent=await telegram(message,c.replyToMessageId??null);
+    await saveId(key,sent.message_id);
+    log(JSON.stringify({event:"telegram_alert_sent",type:"DATA_CHECK",key,teams:[home,away],messageId:sent.message_id}));
+    return true;
+  }catch(err){
+    await release(key);
+    log(JSON.stringify({event:"telegram_alert_failed",type:"DATA_CHECK",key,message:err.message}));
+    return false;
+  }
+}
 async function sendNext(row,score){
   const alertKey=row.key+":NEXT",c=await claim(alertKey);
   if(!c.claimed)return false;
