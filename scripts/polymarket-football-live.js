@@ -642,9 +642,11 @@ function isExplicitLiveGame(row) {
     return true;
   }
 
-  const minute = extractStructuredMinute(row);
-  const score = extractStructuredScore(row);
-  return minute !== null || score !== null;
+  const liveFlags = [row?.live, row?.isLive, row?.inPlay, row?.in_play, row?.is_live];
+  if (liveFlags.some(v => v === true || String(v).toLowerCase() === "true")) return true;
+
+  // A structured minute is also a valid LIVE signal. A bare final score is not.
+  return extractStructuredMinute(row) !== null;
 }
 
 function findStructuredLiveGame(rows, match) {
@@ -666,8 +668,10 @@ function findStructuredLiveGame(rows, match) {
     if (!direct && !reversed) continue;
     if (!isExplicitLiveGame(row)) continue;
 
-    const score = extractStructuredScore(row);
+    let score = extractStructuredScore(row);
     const minute = extractStructuredMinute(row);
+    if (score && reversed) score = { home: score.away, away: score.home };
+
     const live = {
       status: "live",
       score: score || { home: null, away: null },
