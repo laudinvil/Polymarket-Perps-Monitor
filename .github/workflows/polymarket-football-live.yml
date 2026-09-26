@@ -1,5 +1,5 @@
 name: Polymarket Football · Live Discovery
-# Restored full strategy pipeline; 20s continuous monitor
+# Restored full strategy pipeline; 15s continuous monitor
 # Ensure latest cycle-entry fix is executed
 # Run restored continuous entrypoint
 run-name: Football monitor · event-first scan
@@ -45,7 +45,7 @@ jobs:
 
       - name: Validate football monitor syntax
         run: node --check scripts/polymarket-football-live.js
-      - name: Run football monitor (20s cycle)
+      - name: Run football monitor (15s cycle)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
