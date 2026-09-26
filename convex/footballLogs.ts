@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-const MONITOR = "polymarket-football-1-1";
+const MONITOR = "polymarket-football";
 
 export const ingest = mutation({
   args: {
