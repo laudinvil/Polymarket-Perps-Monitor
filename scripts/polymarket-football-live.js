@@ -69,6 +69,83 @@ function text(v) {
 
 function norm(v) {
   return text(v).toLowerCase()
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/\b(fc|cf|sc|afc|ac|club|football club)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+const GAMMA_URL = "https://gamma-api.polymarket.com";
+
+const POLL_MS = 20_000;
+const MIN_EDGE = 0.01;
+const RUN_MS = 6 * 60 * 60 * 1000;
+const HISTORY_MS = 20 * 60 * 1000;
+const ALERT_BUCKET_MS = 60 * 1000;
+const PREMATCH_WINDOW_MS = Number.POSITIVE_INFINITY;
+const EARLY_WINDOW_MS = 45 * 60 * 1000;
+const NUTMEG_CACHE_MS = 5 * 60 * 1000;
+const BALANCE_MAX_DIFF = 0.15;
+const MIN_DRAW_PROB = 0.22;
+const MIN_BTTS_PROB = 0.45;
+
+let stopping = false;
+let timer = null;
+const known = new Map();
+const resolved = new Map();
+const history = new Map();
+const oneOneState = new Map();
+let nutmegCache = { at: 0, rows: [] };
+const convexLogBuffer = [];
+let convexTickCount = 0;
+
+function log(level, event, message, data = undefined) {
+  const entry = {
+    level, event, message,
+    ...(data === undefined ? {} : { data: JSON.stringify(data) }),
+    createdAt: Date.now(),
+  };
+  convexLogBuffer.push(entry);
+  console.log(JSON.stringify({
+    level,
+    event,
+    message,
+    ...(data === undefined ? {} : { data: JSON.stringify(data) })
+  }));
+}
+
+async function flushConvexLogs() {
+  if (!convexLogBuffer.length && !convexTickCount) return;
+  const batch = convexLogBuffer.splice(0, 100);
+  const ticks = convexTickCount;
+  convexTickCount = 0;
+  const base = process.env.CONVEX_SITE_URL || "https://brainy-canary-207.eu-west-1.convex.site";
+  try {
+    const response = await fetch(base.replace(/\/$/, "") + "/football/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ logs: batch, tickCount: ticks }),
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!response.ok) throw new Error("Convex HTTP " + response.status);
+  } catch (err) {
+    convexLogBuffer.unshift(...batch);
+    convexTickCount += ticks;
+    console.log(JSON.stringify({ level: "WARN", event: "convex_log_failed", message: err.message }));
+  }
+}
+
+async function checkpoint(event, data = {}) {
+  log("INFO", event, "football monitor checkpoint", data);
+  await flushConvexLogs();
+}
+
+function text(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function norm(v) {
+  return text(v).toLowerCase()
     .normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "")
     .replace(/&/g, "and")
     .replace(/\\b(fc|cf|sc|afc|ac|club|football club)\\b/g, " ")
@@ -163,13 +240,13 @@ async function nutmegRows() {
       const raw = await r.text();
       const body = stripHtml(raw)
         .replace(/\u00a0/g, " ")
-        .replace(/[ \\t]+/g, " ")
-        .replace(/\\n+/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n+/g, " ")
         .trim();
 
       const out = [];
       const probabilityRe =
-        /Home\\s*win\\s*(\\d+(?:\\.\\d+)?)\\s*%\\s*Draw\\s*(\\d+(?:\\.\\d+)?)\\s*%\\s*Away\\s*win\\s*(\\d+(?:\\.\\d+)?)\\s*%/gi;
+        /Home\s*win\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*(\d+(?:\.\d+)?)\s*%/gi;
 
       // The rendered card layout is not stable enough to recover teams from
       // a fixed-width prefix. Instead, locate probability blocks and search
@@ -177,13 +254,13 @@ async function nutmegRows() {
       let m;
       while ((m = probabilityRe.exec(body))) {
         const prefix = body.slice(Math.max(0, m.index - 2500), m.index);
-        const team = "[\\\\p{L}\\\\p{N}.'’&()\\\\-]+(?:[ \\t]+[\\\\p{L}\\\\p{N}.'’&()\\\\-]+){0,12}";
+        const team = "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \t]+[\\p{L}\\p{N}.'’&()\\-]+){0,12}";
 
         const patterns = [
-          new RegExp("(" + team + ")\\\\s+(\\\\d+)\\\\s*-\\\\s*(\\\\d+)\\\\s+(\\\\d{1,3})['’]\\\\s+(" + team + ")", "giu"),
-          new RegExp("(" + team + ")\\\\s+(\\\\d+)\\\\s*-\\\\s*(\\\\d+)\\\\s+(" + team + ")", "giu"),
-          new RegExp("(" + team + ")\\\\s+(?:vs\\\\.?|v\\\\.?|versus)\\\\s+(" + team + ")", "giu"),
-          new RegExp("(" + team + ")\\\\s+\\\\d{2}-\\\\d{2}\\\\s+\\\\d{2}:\\\\d{2}\\\\s+Kicking\\\\s+off\\\\s+soon\\\\s+(" + team + ")", "giu")
+          new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")", "giu")
         ];
 
         let candidate = null;
