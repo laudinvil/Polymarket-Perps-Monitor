@@ -327,8 +327,42 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
     ? `1: ${Math.round(oneXTwo.homeProb * 100)}% · X: ${Math.round(oneXTwo.drawProb * 100)}% · 2: ${Math.round(oneXTwo.awayProb * 100)}%`
     : "1X2: —";
 
-  // BUY is allowed only for fixtures starting now or already live.
+  // The 1X2 market is not the BUY market, but it is the required
+  // approximate-strength filter. A live fixture must have a usable 1X2
+  // market and the home/away win probabilities must be within 25pp.
+  const balanced = balancedFromPolymarket(oneXTwo);
   if (phase === "prematch" || phase === "live_entry") {
+    if (!oneXTwo) {
+      log("INFO", "buy_blocked_no_1x2", "Fixture reached BUY but no usable 1X2 market was found", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        phase
+      });
+      return;
+    }
+    if (!balanced) {
+      log("INFO", "buy_blocked_unbalanced", "Fixture reached BUY but home/away probabilities are not approximately equal", {
+        eventId: match.eventId,
+        teams: [match.homeTeam, match.awayTeam],
+        phase,
+        homeProb: oneXTwo.homeProb,
+        drawProb: oneXTwo.drawProb,
+        awayProb: oneXTwo.awayProb,
+        maxDifference: BALANCE_MAX_DIFF
+      });
+      return;
+    }
+    log("INFO", "buy_balance_passed", "Fixture passed approximate-strength filter", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      phase,
+      homeProb: oneXTwo.homeProb,
+      drawProb: oneXTwo.drawProb,
+      awayProb: oneXTwo.awayProb,
+      difference: Math.abs(oneXTwo.homeProb - oneXTwo.awayProb),
+      maxDifference: BALANCE_MAX_DIFF
+    });
+    oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
     oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
 
     const claimKey = key + ":BUY";
