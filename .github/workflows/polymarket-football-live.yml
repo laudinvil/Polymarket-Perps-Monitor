@@ -1,13 +1,10 @@
 name: Polymarket Football · Live Discovery
-# Restored full strategy pipeline; 15s continuous monitor
-# Ensure latest cycle-entry fix is executed
-# Run restored continuous entrypoint
-run-name: Football monitor · event-first scan
+run-name: Football monitor · live-only
 
 on:
   push:
     paths:
-      - 'scripts/polymarket-football-live.js'
+      - 'scripts/polymarket-live-only.js'
       - 'convex/http.ts'
       - 'convex/footballLogs.ts'
       - 'convex/schema.ts'
@@ -30,32 +27,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
       - name: Install dependencies
         run: npm install
-
       - name: Deploy Convex telemetry
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: npx convex deploy
-
-      - name: Validate football monitor syntax
-        run: node --check scripts/polymarket-football-live.js
-      - name: Run football monitor (15s cycle)
+      - name: Validate live-only monitor syntax
+        run: node --check scripts/polymarket-live-only.js
+      - name: Run live-only football monitor (15s cycle)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: https://brainy-canary-207.eu-west-1.convex.site
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/polymarket-football-live.js
-
-# trigger: BUY-first strategy correction
-
-# trigger: restore runCycle
-
-# trigger: Polymarket-only alert run
+        run: node scripts/polymarket-live-only.js
