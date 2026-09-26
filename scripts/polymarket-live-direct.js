@@ -27,15 +27,31 @@ function parseCandidate(href,raw){
   return {href:href.startsWith("http")?href:"https://polymarket.com"+href,home,away,minute,score};
 }
 async function fetchLive(){
-  const r=await fetch(LIVE_PAGE,{headers:{"user-agent":"Mozilla/5.0","accept":"text/html,application/xhtml+xml"},signal:AbortSignal.timeout(8000)});
-  const html=await r.text();
-  console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_FETCH",status:r.status,bytes:html.length}));
-  const anchors=[...html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,16000}?)<\/a>/gi)];
-  console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_ANCHORS",count:anchors.length}));
-  for(const a of anchors){const c=parseCandidate(a[1],a[2]);if(c)return c;}
-  const body=text(html);
-  const chunks=body.split(/(?=\b(?:1H|2H|HT)\b)/i);
-  for(const chunk of chunks.slice(0,200)){const c=parseCandidate("/sports/live",chunk.slice(0,4000));if(c)return c;}
+  const urls=[
+    "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=100",
+    "https://gamma-api.polymarket.com/events?live=true&active=true&closed=false&limit=100"
+  ];
+  for(const url of urls){
+    try{
+      const r=await fetch(url,{headers:{"accept":"application/json"},signal:AbortSignal.timeout(8000)});
+      const raw=await r.json();
+      const events=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
+      for(const e of events){
+        const title=String(e?.title||e?.question||"");
+        const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
+        if(!m)continue;
+        const slug=String(e?.slug||"").trim();
+        if(!slug)continue;
+        return {
+          href:"https://polymarket.com/event/"+slug,
+          home:m[1].trim(),
+          away:m[2].trim(),
+          minute:0,
+          score:[0,0]
+        };
+      }
+    }catch{}
+  }
   return null;
 }
 async function telegram(c){
