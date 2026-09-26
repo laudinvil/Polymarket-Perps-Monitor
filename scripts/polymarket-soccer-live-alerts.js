@@ -1,6 +1,8 @@
 // DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
 // Diagnostic probe: verify soccer-only classification and Telegram rate limiting end-to-end.
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
@@ -9,14 +11,14 @@ const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
 const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
 const RENDER_MODE = process.env.RENDER === "true" || process.env.RENDER === "1";
-const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : (RENDER_MODE ? Number.POSITIVE_INFINITY : 4 * 60 * 60 * 1000);
+const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : Number.POSITIVE_INFINITY;
 const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
 const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
 const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
 let stopping = false;
 
 function startHealthServer(){
-  const port=Number(process.env.PORT||10000);
+  const port=Number(process.env.PORT||3000);
   const server=http.createServer((req,res)=>{
     if(req.url==="/health"||req.url==="/"){
       res.writeHead(200,{"content-type":"application/json; charset=utf-8"});
@@ -500,59 +502,40 @@ async function sendTelegram(message,replyMarkup=null){
   throw new Error("Telegram rate limit persisted after retries");
 }
 
-const DEFAULT_CONVEX_SITE_URL="https://brainy-canary-207.eu-west-1.convex.site";
+const DEDUPE_DIR = process.env.DEDUPE_DIR || "/data";
+const DEDUPE_FILE = path.join(DEDUPE_DIR, "polymarket-soccer-alerts.json");
 
-async function convexMutation(path,args){
-  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
-  const convexUrl=siteUrl.replace(/\\.convex\\.site$/,".convex.cloud");
-  const r=await fetch(convexUrl+"/api/mutation",{
-    method:"POST",
-    headers:{"content-type":"application/json"},
-    body:JSON.stringify({path,args,format:"json"}),
-    signal:AbortSignal.timeout(8000)
-  });
-  if(!r.ok)throw new Error("Convex "+path+" HTTP "+r.status);
-  return r.json();
+function loadDedupe(){
+  try{
+    const raw=fs.readFileSync(DEDUPE_FILE,"utf8");
+    const parsed=JSON.parse(raw);
+    return new Set(Array.isArray(parsed)?parsed.filter(v=>typeof v==="string"):[]);
+  }catch{return new Set();}
 }
+function saveDedupe(set){
+  fs.mkdirSync(DEDUPE_DIR,{recursive:true});
+  const tmp=DEDUPE_FILE+".tmp";
+  fs.writeFileSync(tmp,JSON.stringify([...set]),"utf8");
+  fs.renameSync(tmp,DEDUPE_FILE);
+}
+const persistentAlerted=loadDedupe();
 
 // Persistent dedupe: the exact Polymarket event URL is the identity.
-// Once a URL is successfully claimed, every later cycle/run is blocked,
-// regardless of score, minute, alert phase, or slug changes.
+// The file lives on Deplexo's persistent /data volume and survives restarts.
 async function claimFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\/$/,"");
-  if(!key) return false;
-  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
-  try{
-    const r=await fetch(siteUrl+"/football/claim",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({monitor:"polymarket-soccer-live",marketSlug:key}),
-      signal:AbortSignal.timeout(8000)
-    });
-    if(r.status===409)return false;
-    if(!r.ok)throw new Error("Convex claim HTTP "+r.status);
-    const body=await r.json().catch(()=>({}));
-    return body?.claimed===true;
-  }catch(err){
-    console.log(JSON.stringify({level:"ERROR",event:"telegram_claim_failed",message:err.message,eventUrl:key}));
-    return false;
-  }
+  const key=t(eventUrl).replace(/\\/$/,"");
+  if(!key)return false;
+  if(persistentAlerted.has(key))return false;
+  persistentAlerted.add(key);
+  saveDedupe(persistentAlerted);
+  return true;
 }
 
 async function releaseFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\/$/,"");
+  const key=t(eventUrl).replace(/\\/$/,"");
   if(!key)return;
-  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
-  try{
-    await fetch(siteUrl+"/football/release",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({monitor:"polymarket-soccer-live",marketSlug:key}),
-      signal:AbortSignal.timeout(8000)
-    });
-  }catch(err){
-    console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",message:err.message,eventUrl:key}));
-  }
+  persistentAlerted.delete(key);
+  saveDedupe(persistentAlerted);
 }
 
 const alerted=new Set();
