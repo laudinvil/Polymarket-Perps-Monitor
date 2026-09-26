@@ -551,6 +551,14 @@ async function tick() {
 
         const kickoffMs = Date.parse(match.startTime || "");
         const startingNow = Number.isFinite(kickoffMs) && kickoffMs <= Date.now() + PREMATCH_WINDOW_MS && kickoffMs >= Date.now() - 6 * 60 * 60 * 1000 && match.active !== false && match.closed !== true;
+        const startsTooFarAhead = Number.isFinite(kickoffMs) && kickoffMs > Date.now() + PREMATCH_WINDOW_MS;
+        if(startsTooFarAhead && isPrematch){
+          log("INFO","prematch_too_early","Fixture is valid but kickoff is outside the starting-now window; no BUY yet",{
+            eventId:match.eventId,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,
+            minutesUntilKickoff:Math.round((kickoffMs-Date.now())/60000),prematchWindowMinutes:15
+          });
+          return;
+        }
         if((isLive && !state?.prematchSeen) || (isPrematch && startingNow)){
           cycle.buyPassed++;
           log("INFO","candidate_ready_for_buy","Football candidate reached BUY stage",{eventId:match.eventId,phase,teams:[match.homeTeam,match.awayTeam],kickoff:match.startTime,score});
