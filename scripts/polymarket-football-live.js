@@ -754,8 +754,8 @@ function scoreAfterTeam(page, team) {
   const normalizedPage = norm(page);
   const normalizedTeam = norm(team);
   if (!normalizedPage || !normalizedTeam) return null;
-  const escaped = normalizedTeam.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&");
-  const re = new RegExp(escaped + "\\s+(\\\\d{1,2})-(\\\\d{1,2})(?=\\\\s|$)", "i");
+  const escaped = normalizedTeam.replace(/[.*+?^${}()|[\\]\\]/g, "\\const escaped = normalizedTeam.replace(/[.*+?^()|[\\]\\\\]/g, "\\\\$&");");
+  const re = new RegExp(escaped + "\\s+(\\d{1,2})-(\\d{1,2})(?=\\s|$)", "i");
   const m = normalizedPage.match(re);
   if (!m) return null;
   const home = Number(m[1]), away = Number(m[2]);
