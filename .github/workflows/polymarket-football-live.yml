@@ -47,3 +47,5 @@ jobs:
 # trigger: BUY-first strategy correction
 
 # trigger: restore runCycle
+
+# trigger: Polymarket-only alert run
