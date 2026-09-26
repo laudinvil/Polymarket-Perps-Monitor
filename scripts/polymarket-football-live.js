@@ -191,6 +191,29 @@ async function getJson(url,options={}){const timeoutMs=options.timeoutMs ?? 5_00
 async function footballSeriesIds(){try{const data=await getJson(GAMMA_URL+"/sports"),rows=Array.isArray(data)?data:(data.sports||data.data||[]),ids=new Set();for(const row of rows){if(!/football|soccer/.test(JSON.stringify(row).toLowerCase()))continue;for(const key of ["series","series_id","seriesId"]){const id=text(row[key]);if(id)ids.add(id);}}return ids;}catch(err){log("WARN","sports_metadata_failed","Could not load sports metadata; using event text fallback",{message:err.message});return new Set();}}
 async function activeEventsBySeries(seriesId){const data=await getJson(GAMMA_URL+"/events?series_id="+encodeURIComponent(seriesId)+"&active=true&closed=false&limit=500");return Array.isArray(data)?data:(data.events||data.data||[]);}
 
+
+async function discoverLivePageFixtures() {
+  const url = "https://polymarket.com/ru/sports/live";
+  try {
+    const response = await fetch(url, {headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/150 Safari/537.36"},signal:AbortSignal.timeout(8_000)});
+    const html = await response.text();
+    if (!response.ok) throw new Error("HTTP " + response.status + " for " + url);
+    const hrefs = new Set();
+    const re = /href=["'](\\/ru\\/sports\\/[^"'#?\\s]+)["']/gi;
+    let m;
+    while ((m = re.exec(html))) hrefs.add(m[1]);
+    const slugs = Array.from(hrefs).map(href => href.split("/").filter(Boolean).pop()).filter(slug => slug && /-vs-|-v-|-versus-/i.test(slug));
+    const rows = [];
+    for (const slug of slugs.slice(0, 40)) {
+      try {
+        const event = await getJson(GAMMA_URL + "/events/slug/" + encodeURIComponent(slug), {timeoutMs:3_000});
+        if (event && event.active !== false && event.closed !== true && isPrimaryMatchEvent(event)) rows.push(event);
+      } catch (err) { log("WARN","live_page_event_load_failed","Could not load live-page football event from Gamma",{slug,message:err.message}); }
+    }
+    log("INFO","sports_live_page_discovery","Polymarket live sports page used as an additional football discovery source",{url,hrefCount:hrefs.size,footballSlugCount:slugs.length,eventCount:rows.length});
+    return rows;
+  } catch (err) { log("WARN","sports_live_page_discovery_failed","Could not discover football fixtures from Polymarket live sports page",{url,message:err.message}); return []; }
+}
 async function discoverPolymarket(){
   const groups=new Map();let eventScanned=0,footballEventFound=0,childMarketEventsGrouped=0;
   await checkpoint("discovery_start",{strategy:"football_fixture_first_v9",source:"soccer_tag",note:"Polymarket-only football fixture discovery; no external source matching"});
@@ -203,8 +226,10 @@ async function discoverPolymarket(){
   ];
   const pagePlan={soccer_newest:3,soccer_recent:5,soccer_live_window:3};
   const sourcePages=sources.flatMap(source=>Array.from({length:pagePlan[source.name]??1},(_,page)=>({name:source.name,url:source.baseUrl+"&offset="+(page*100),page})));
+   const livePageRows=await discoverLivePageFixtures();
   const results=await Promise.all(sourcePages.map(async source=>{try{const response=await fetch(source.url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10_000)}),body=await response.text();if(!response.ok)throw new Error("HTTP "+response.status+" for "+source.url);let data;try{data=JSON.parse(body);}catch(error){throw error;}const rows=Array.isArray(data)?data:(data?.events||data?.data||[]);log("INFO","event_source_response","Raw Polymarket football source response captured",{source:source.name,status:response.status,rowCount:rows.length,bodyBytes:Buffer.byteLength(body,"utf8")});return{name:source.name,rows,error:null};}catch(error){return{name:source.name,rows:[],error};}}));
-  for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
+  results.push({name:"sports_live_page",rows:livePageRows,error:null});
+   for(const result of results){if(result.error){log("WARN","event_source_failed","Polymarket football source failed",{source:result.name,message:result.error.message});continue;}eventScanned+=result.rows.length;for(const event of result.rows){if(!event||event.active===false||event.closed===true)continue;const hay=[event.sport,event.sportSlug,event.sport_slug,event.category,event.tags,event.title,event.question].flat(Infinity).map(text).join(" ");const footballSource=result.name==="soccer_window"||result.name==="soccer_live_window";if(!footballSource&&!/football|soccer|premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league/i.test(hay))continue;footballEventFound++;
       if(isStartingElevenEvent(event)){
         log("INFO","starting_eleven_filtered","Starting XI child event ignored; resolving its parent fixture event",{
           eventId:text(event.id||event.eventId||event.event_id),
