@@ -40,6 +40,18 @@ http.route({
 });
 
 http.route({
+  path: "/football/candidates/buy-price",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const key = url.searchParams.get("key") || "";
+    if (!key) return new Response("missing key", { status: 400 });
+    const price = await ctx.runQuery(internal.footballLogs.candidateBuyPrice, { key });
+    return Response.json({ buyOneOnePrice: price });
+  }),
+});
+
+http.route({
   path: "/football/candidates/mark-buy",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
