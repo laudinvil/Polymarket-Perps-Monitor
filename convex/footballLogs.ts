@@ -78,6 +78,40 @@ export const stats = query({
   },
 });
 
+export const admitCandidate = mutation({
+  args: { key: v.string(), data: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db.query("footballCandidates").withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key)).first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { data: args.data, updatedAt: now });
+    } else {
+      await ctx.db.insert("footballCandidates", { monitor: MONITOR, key: args.key, data: args.data, admittedAt: now, updatedAt: now, buySent: false });
+    }
+    return null;
+  },
+});
+
+export const markCandidateBuySent = mutation({
+  args: { key: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("footballCandidates").withIndex("by_monitor_key", q => q.eq("monitor", MONITOR).eq("key", args.key)).first();
+    if (row) await ctx.db.patch(row._id, { buySent: true, updatedAt: Date.now() });
+    return null;
+  },
+});
+
+export const admittedCandidates = query({
+  args: {},
+  returns: v.array(v.object({ key: v.string(), data: v.string(), buySent: v.boolean() })),
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("footballCandidates").withIndex("by_monitor", q => q.eq("monitor", MONITOR)).collect();
+    return rows.map(row => ({ key: row.key, data: row.data, buySent: row.buySent }));
+  },
+});
+
 export const claimTelegramAlert = mutation({
   args: { monitor: v.string(), marketSlug: v.string() },
   returns: v.object({ claimed: v.boolean(), replyToMessageId: v.union(v.number(), v.null()) }),
@@ -92,7 +126,7 @@ export const claimTelegramAlert = mutation({
       await ctx.db.insert("telegramDedupe", { monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now });
       return { claimed: true, replyToMessageId: buy.telegramMessageId };
     }
-    if (existing && now - existing.claimedAt < 5 * 60 * 1000) return { claimed: false, replyToMessageId: null };
+    if (existing) return { claimed: false, replyToMessageId: null };
     if (args.marketSlug.endsWith(":SELL")) {
       const buyKey = args.marketSlug.slice(0, -5) + ":BUY";
       const buy = await ctx.db.query("telegramDedupe").withIndex("by_monitor_market", (q) => q.eq("monitor", args.monitor).eq("marketSlug", buyKey)).first();
