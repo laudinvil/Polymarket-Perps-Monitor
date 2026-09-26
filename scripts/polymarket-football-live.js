@@ -641,3 +641,5 @@ main().catch(async(error)=>{
   await flushConvexLogs();
   process.exitCode=1;
 });
+
+// football-monitor-trigger
