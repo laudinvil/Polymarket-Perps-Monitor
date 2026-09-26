@@ -476,7 +476,9 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
     return;
   }
   const key=match.eventId||match.slug;
-  const home=Number(match.live?.score?.home||0), away=Number(match.live?.score?.away||0);
+  const liveHome=match.live?.score?.home, liveAway=match.live?.score?.away, liveMinute=match.live?.minute;
+  if (!Number.isInteger(liveHome) || !Number.isInteger(liveAway) || liveMinute === null || liveMinute === undefined) { log("WARN","alert_blocked_missing_live_data","Alert blocked: score and minute are mandatory",{eventId:match.eventId,score:match.live?.score??null,minute:liveMinute??null}); return; }
+  const home=liveHome, away=liveAway;
   const marketsLoaded=await ensureEventMarkets(match);
   const oneXTwo=findMatchResultMarket(match);
   if(!marketsLoaded||!oneXTwo){
@@ -487,7 +489,7 @@ async function maybeOneOneAlert(match, _priceSource, phase = "live_entry") {
   if(phase==="live_entry"){
     const claimKey=key+":LIVE", claim=await claimTelegramAlert(claimKey);
     if(!claim.claimed)return;
-    const message=["⚽ LIVE","",match.homeTeam+" vs "+match.awayTeam,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
+    const message=["⚽ LIVE","",match.homeTeam+" vs "+match.awayTeam,"MINUTE: "+liveMinute,"SCORE: "+home+"–"+away,"",oneXTwoLine,"","➡️ OPEN MATCH",match.url].join("\n");
     try{
       const sent=await sendTelegram(message,claim.replyToMessageId);
       if(!sent.ok)throw new Error("Telegram not configured");
