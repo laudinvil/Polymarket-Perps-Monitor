@@ -2,6 +2,8 @@ name: Polymarket Soccer Live Alerts
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 concurrency:
   group: polymarket-soccer-live-alerts
@@ -9,6 +11,7 @@ concurrency:
 
 jobs:
   monitor:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'DIAGNOSTIC_RUN'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     permissions:
