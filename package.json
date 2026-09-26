@@ -1,6 +1,9 @@
 {
   "name": "polymarket-perps-monitor",
   "private": true,
+  "scripts": {
+    "start": "node scripts/polymarket-soccer-live-alerts.js"
+  },
   "devDependencies": {
     "convex": "^1.27.3"
   }
