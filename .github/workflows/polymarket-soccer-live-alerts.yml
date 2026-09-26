@@ -28,6 +28,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CONVEX_SITE_URL: ${{ secrets.CONVEX_SITE_URL }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          MONITOR_MODE: ${{ github.event_name == 'push' && github.event.head_commit.message == 'DIAGNOSTIC_RUN' && 'diagnostic' || 'monitor' }}
         run: |
           set -o pipefail
           node scripts/polymarket-soccer-live-alerts.js 2>&1 | tee soccer-monitor.log
