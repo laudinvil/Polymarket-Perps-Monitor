@@ -163,72 +163,51 @@ async function nutmegRows() {
       const raw = await r.text();
       const body = stripHtml(raw)
         .replace(/\u00a0/g, " ")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n+/g, " ")
+        .replace(/[ \\t]+/g, " ")
+        .replace(/\\n+/g, " ")
         .trim();
 
       const out = [];
-
-      // Nutmegly's public fixture pages have changed their rendered spacing
-      // several times. Keep the probability parser independent of exact spaces
-      // and recover teams from the fixture text immediately before each block.
       const probabilityRe =
-        /Home\s*win\s*(\d+(?:\.\d+)?)\s*%\s*Draw\s*(\d+(?:\.\d+)?)\s*%\s*Away\s*win\s*(\d+(?:\.\d+)?)\s*%/gi;
+        /Home\\s*win\\s*(\\d+(?:\\.\\d+)?)\\s*%\\s*Draw\\s*(\\d+(?:\\.\\d+)?)\\s*%\\s*Away\\s*win\\s*(\\d+(?:\\.\\d+)?)\\s*%/gi;
 
+      // The rendered card layout is not stable enough to recover teams from
+      // a fixed-width prefix. Instead, locate probability blocks and search
+      // several nearby fixture formats independently.
       let m;
       while ((m = probabilityRe.exec(body))) {
-        const prefix = body.slice(Math.max(0, m.index - 1800), m.index);
-        const team = "[\\p{L}\\p{N}.'’&()\\-]+(?:[ \\t]+[\\p{L}\\p{N}.'’&()\\-]+){0,10}";
+        const prefix = body.slice(Math.max(0, m.index - 2500), m.index);
+        const team = "[\\\\p{L}\\\\p{N}.'’&()\\\\-]+(?:[ \\t]+[\\\\p{L}\\\\p{N}.'’&()\\\\-]+){0,12}";
 
-        // Match from the end of the prefix so navigation/previous cards do not
-        // become the selected fixture.
-        const liveMatches = [...prefix.matchAll(new RegExp(
-          "(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(" + team + ")\\s*$",
-          "giu"
-        ))];
+        const patterns = [
+          new RegExp("(" + team + ")\\\\s+(\\\\d+)\\\\s*-\\\\s*(\\\\d+)\\\\s+(\\\\d{1,3})['’]\\\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\\\s+(\\\\d+)\\\\s*-\\\\s*(\\\\d+)\\\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\\\s+(?:vs\\\\.?|v\\\\.?|versus)\\\\s+(" + team + ")", "giu"),
+          new RegExp("(" + team + ")\\\\s+\\\\d{2}-\\\\d{2}\\\\s+\\\\d{2}:\\\\d{2}\\\\s+Kicking\\\\s+off\\\\s+soon\\\\s+(" + team + ")", "giu")
+        ];
 
-        const finishedMatches = [...prefix.matchAll(new RegExp(
-          "(" + team + ")\\s+(\\d+)\\s*-\\s*(\\d+)\\s+(" + team + ")\\s*$",
-          "giu"
-        ))];
-
-        const upcomingMatches = [...prefix.matchAll(new RegExp(
-          "(" + team + ")\\s+\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+Kicking\\s+off\\s+soon\\s+(" + team + ")\\s*$",
-          "giu"
-        ))];
-
-        const vsMatches = [...prefix.matchAll(new RegExp(
-          "(" + team + ")\\s+(?:vs\\.?|v\\.?|versus)\\s+(" + team + ")\\s*$",
-          "giu"
-        ))];
-
-        const live = liveMatches.at(-1) || null;
-        const finished = finishedMatches.at(-1) || null;
-        const upcoming = upcomingMatches.at(-1) || null;
-        const vs = vsMatches.at(-1) || null;
-        const candidate = live || finished || upcoming || vs;
-        const prefixWindow = prefix.slice(Math.max(0, prefix.length - 900));
-        const nutmegLiveMarker = /\bLIVE\b/i.test(prefixWindow);
+        let candidate = null;
+        let kind = "";
+        for (const [idx, re] of patterns.entries()) {
+          const matches = [...prefix.matchAll(re)];
+          if (matches.length) {
+            candidate = matches[matches.length - 1];
+            kind = idx === 0 ? "live" : idx === 1 ? "finished" : idx === 2 ? "vs" : "upcoming";
+            break;
+          }
+        }
         if (!candidate) continue;
 
-        let home = "";
-        let away = "";
+        let home = candidate[1].trim();
+        let away = kind === "live" ? candidate[5].trim() : candidate[4]?.trim() || candidate[2].trim();
         let score = null;
         let minute = null;
 
-        if (candidate === live) {
-          home = live[1].trim();
-          away = live[5].trim();
-          score = { home: Number(live[2]), away: Number(live[3]) };
-          minute = Number(String(live[4]).replace(/[^0-9]/g, ""));
-        } else if (candidate === finished) {
-          home = finished[1].trim();
-          away = finished[4].trim();
-          score = { home: Number(finished[2]), away: Number(finished[3]) };
-          minute = null;
-        } else {
-          home = candidate[1].trim();
-          away = candidate[2].trim();
+        if (kind === "live") {
+          score = { home: Number(candidate[2]), away: Number(candidate[3]) };
+          minute = Number(String(candidate[4]).replace(/[^0-9]/g, ""));
+        } else if (kind === "finished") {
+          score = { home: Number(candidate[2]), away: Number(candidate[3]) };
         }
 
         if (!home || !away) continue;
@@ -240,8 +219,8 @@ async function nutmegRows() {
           drawProb: Number(m[2]) / 100,
           awayProb: Number(m[3]) / 100,
           bttsProb: NaN,
-          live: Boolean(score) && nutmegLiveMarker,
-          finished: Boolean(score) && !nutmegLiveMarker && minute == null,
+          live: kind === "live",
+          finished: kind === "finished",
           score,
           minute
         });
