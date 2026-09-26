@@ -355,15 +355,18 @@ async function polymarketSportsLive(){
     const name=t(s?.sport||s?.name||s?.slug).toLowerCase();
     return /soccer|football/.test(name);
   });
-  const tagIds=new Set(["100639"]);
+  // NEVER use a generic/hard-coded sports tag here: it can return esports and other sports.
+  // Only tags explicitly belonging to Polymarket's soccer/football sport definitions are allowed.
+  const tagIds=new Set();
   for(const s of soccerSports){
-    const raw=t(s?.tags||s?.tagIds||s?.tag_ids);
+    const raw=Array.isArray(s?.tags) ? s.tags.join(",") : t(s?.tags||s?.tagIds||s?.tag_ids);
     for(const id of raw.split(/[,\\s]+/).map(x=>x.trim()).filter(Boolean))tagIds.add(id);
   }
+
   const merged=new Map();
   for(const tagId of tagIds){
     try{
-      const page=await json(GAMMA+"/events?tag_id="+encodeURIComponent(tagId)+"&related_tags=true&closed=false&limit=100&order=volume24hr&ascending=false",5000);
+      const page=await json(GAMMA+"/events?tag_id="+encodeURIComponent(tagId)+"&related_tags=false&closed=false&limit=100&order=volume24hr&ascending=false",5000);
       for(const e of arr(page?.events||page)){
         const id=t(e?.id||e?.eventId||e?.slug);
         if(id)merged.set(id,e);
@@ -372,11 +375,25 @@ async function polymarketSportsLive(){
       log(JSON.stringify({event:"polymarket_sports_events_failed",tagId,message:err.message}));
     }
   }
+
   const all=[...merged.values()];
   const liveStatuses=new Set(["live","inprogress","in progress","halftime","paused","suspended","interrupted"]);
+  const footballWord=/soccer|football|premier league|champions league|europa league|conference league|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/i;
+
+  const isFootballEvent=e=>{
+    const fields=[
+      e?.sport,e?.sportName,e?.sport_name,e?.sportSlug,e?.sport_slug,
+      e?.league,e?.leagueName,e?.league_name,e?.leagueSlug,e?.league_slug,
+      e?.category,e?.categoryName,e?.category_name,e?.series,e?.seriesName,e?.series_name
+    ].map(t).join(" ");
+    const tags=Array.isArray(e?.tags)?e.tags.map(x=>typeof x==="string"?x:(x?.name||x?.slug||x?.label||"")).join(" "):t(e?.tags);
+    return footballWord.test(fields+" "+tags);
+  };
+
   const live=all.filter(e=>{
     const status=t(e?.gameStatus||e?.game_status||e?.status||e?.state).toLowerCase();
-    return e?.live===true||e?.isLive===true||liveStatuses.has(status);
+    return isFootballEvent(e) &&
+      (e?.live===true||e?.isLive===true||liveStatuses.has(status));
   });
   log(JSON.stringify({
     event:"polymarket_live_snapshot",
