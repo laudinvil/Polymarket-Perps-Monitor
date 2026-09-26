@@ -314,11 +314,13 @@ async function fetchLiveEvents(){
     if(e.ended===true||e.finished===true||e.final===true)continue;
     const [home,away]=teams(e);
     if(!home||!away)continue;
+    const score=gameScore(e);
+    const minute=gameMinute(e);
     live.push({
       id:t(e.id),gameId:t(e.gameId||e.game_id),
       slug:t(e.slug),homeTeam:home,awayTeam:away,
       status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
-      live:true,event:e
+      live:true,score,minute,event:e
     });
   }
   console.log(JSON.stringify({level:"INFO",event:"gamma_live_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
@@ -409,7 +411,7 @@ async function discover(){
     const rawTitle=t(event?.title||event?.question);
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
-    if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
+    if(!sourceConfirmed&&!liveConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const ended=event.ended===true||event.finished===true||event.final===true;
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
     // Team fields can be nested/structured; the parsed fixture pair above is
@@ -469,7 +471,7 @@ async function discover(){
       const event=Array.isArray(raw)?raw[0]:raw;
       if(event){
         console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND",gameId:sg.gameId,slug:sg.slug,eventId:event?.id,title:event?.title||event?.question}));
-        await addEvent(event,null,true,false);
+        await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item){
           item.gameStatus=sg.status||"InProgress";
@@ -489,7 +491,7 @@ async function discover(){
             const liveEvent=Array.isArray(rr)?rr[0]:rr;
             if(liveEvent){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_WS_TEAMS",gameId:sg.gameId,wsSlug:sg.slug,liveHref,liveSlug,eventId:liveEvent.id,title:liveEvent.title||liveEvent.question}));
-              await addEvent(liveEvent,liveHref,true,false);
+              await addEvent(liveEvent,liveHref,true,true);
               const item=candidates.find(x=>x.eventId===t(liveEvent.id)||x.slug===t(liveEvent.slug));
               if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
             }
@@ -506,7 +508,7 @@ async function discover(){
             const event2=er?.event||er;
             if(event2){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
-              await addEvent(event2,null,true,false);
+              await addEvent(event2,null,true,true);
               const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
               if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
             }
@@ -536,8 +538,13 @@ async function discover(){
       if(event){
         await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
-        if(item)attachGame(item,g);
-        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_EVENT",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question}));
+        if(item){
+          if(validScore(g.score))item.score=g.score;
+          if(validMinute(g.minute))item.minute=g.minute;
+          item.gameStatus=g.status||"InProgress";
+          attachGame(item,g);
+        }
+        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_EVENT",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question,score:g.score??null,minute:g.minute??null}));
       } else {
         console.log(JSON.stringify({level:"WARN",event:"LIVE_EVENT_LOOKUP_FAILED",gameId:gameId,slug:gameSlug,teams:gameTeams(g)}));
       }
