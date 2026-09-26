@@ -29,6 +29,8 @@ export default defineSchema({
     liveToday: v.optional(v.number()),
     unknownDate: v.optional(v.number()),
     childMarketFiltered: v.optional(v.number()),
+    // Legacy persisted field retained only for schema compatibility; monitor no longer uses prematch logic.
+    preMatchFuture: v.optional(v.number()),
     oneOneMarketFound: v.optional(v.number()),
     rejectedBuyFilter: v.optional(v.number()),
     candidates: v.number(), evaluations: v.number(), balanced: v.number(),
