@@ -88,7 +88,16 @@ function eventUrl(event){const slug=text(event.slug);return slug?"https://polyma
 const CHILD_MARKET_SUFFIX = /\s+-\s+(?:more markets|player props?|total (?:corners|goals|cards|shots)|first team to score|last team to score|exact score|half[- ]?time result|second half result|1st half result|2nd half result|match result|draw no bet|double chance|both teams to score|btts|to score|team totals?|alternate lines?|correct score|winning margin|clean sheet|win to nil|half[- ]?time|first half|second half).*$/i;
 
 function cleanFixtureSide(value){return text(value).replace(CHILD_MARKET_SUFFIX,"").trim();}
-function isPrimaryMatchEvent(event){const title=text(event.title||event.question);return /\s(?:vs\.?|v\.?|versus)\s/i.test(title);}
+function isPrimaryMatchEvent(event){
+  const title=text(event.title||event.question).trim();
+  if(!/\s(?:vs\.?|v\.?|versus)\s/i.test(title)) return false;
+  // Polymarket exposes many child events for the same fixture. Their titles
+  // append market-specific suffixes; those must never become the fixture identity.
+  if(/\s-\s(?:1st|2nd)\s+half\b/i.test(title)) return false;
+  if(/\s-\s(?:first|second)\s+half\b/i.test(title)) return false;
+  if(/\s-\s(?:exact\s+score|correct\s+score|first\s+team\s+to\s+score|team\s+to\s+score|total\s+goals|both\s+teams\s+to\s+score|btts|match\s+result|winner|moneyline)\b/i.test(title)) return false;
+  return true;
+}
 function extractTeams(event){
   const title=text(event.title||event.question);
   const candidates=[event.homeTeam&&event.awayTeam?[event.homeTeam,event.awayTeam]:null,event.home_team&&event.away_team?[event.home_team,event.away_team]:null].filter(Boolean);
@@ -120,6 +129,18 @@ async function discoverPolymarket(){
       const existing=groups.get(groupKey);
       if(existing){
         childMarketEventsGrouped++;
+        // Prefer the true fixture event over a child market event if both were
+        // returned for the same teams/date.
+        const currentTitle=text(existing.title||"");
+        const currentPrimary=isPrimaryMatchEvent({title:currentTitle});
+        if(!currentPrimary){
+          existing.eventId=eventId;
+          existing.slug=slug;
+          existing.url=eventUrl(event);
+          existing.title=text(event.title||event.question);
+          existing.startTime=startTime;
+          existing.endTime=endTime;
+        }
         const knownMarketIds=new Set(existing.markets.map(m=>m.marketId).filter(Boolean));
         for(const market of nestedMarkets) if(!market.marketId||!knownMarketIds.has(market.marketId)){existing.markets.push(market);if(market.marketId)knownMarketIds.add(market.marketId);}
         existing.relatedEventIds.push(eventId);
