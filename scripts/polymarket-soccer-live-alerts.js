@@ -165,15 +165,11 @@ async function fetchLiveSports(){
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
         const period=t(p?.period).toUpperCase();
         const elapsed=t(p?.elapsed);
-        const soccerPayload=wsSoccerConfirmed(p)||(
-          type==="sport_result" &&
-          (/^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed)||
-           /soccer|football|epl|premier|laliga|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/.test(league))
-        );
         const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout|live/.test(status)||
-          /^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed);
+          /^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed)||type==="sport_result";
+        // Do not require league/period fields to classify a sport_result.
+        // The Gamma event + fixture matching below performs the soccer gate.
         if(type&&type!=="sport_result"&&!liveFlag)return;
-        if(!soccerPayload)return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
         if(!liveFlag)return;
         if(live.length<3) console.log(JSON.stringify({level:"DEBUG",event:"sports_ws_payload",type,league,status,keys:Object.keys(p||{}),gameId:p?.gameId||p?.id||null,slug:p?.slug||null,home:p?.homeTeam||p?.home_team||p?.home||null,away:p?.awayTeam||p?.away_team||p?.away||null,score:p?.score||p?.scores||p?.scoreboard||null,period:p?.period||null,elapsed:p?.elapsed||null,live:p?.live??null,isLive:p?.isLive??null}));
@@ -361,7 +357,7 @@ async function discover(){
       const event=Array.isArray(raw)?raw[0]:raw;
       if(event){
         console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND",gameId:sg.gameId,slug:sg.slug,eventId:event?.id,title:event?.title||event?.question}));
-        await addEvent(event,null,true,true);
+        await addEvent(event,null,true,false);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item){
           item.gameStatus=sg.status||"InProgress";
@@ -381,7 +377,7 @@ async function discover(){
             const liveEvent=Array.isArray(rr)?rr[0]:rr;
             if(liveEvent){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_WS_TEAMS",gameId:sg.gameId,wsSlug:sg.slug,liveHref,liveSlug,eventId:liveEvent.id,title:liveEvent.title||liveEvent.question}));
-              await addEvent(liveEvent,liveHref,true,true);
+              await addEvent(liveEvent,liveHref,true,false);
               const item=candidates.find(x=>x.eventId===t(liveEvent.id)||x.slug===t(liveEvent.slug));
               if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
             }
@@ -398,7 +394,7 @@ async function discover(){
             const event2=er?.event||er;
             if(event2){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
-              await addEvent(event2,null,true,true);
+              await addEvent(event2,null,true,false);
               const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
               if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
             }
