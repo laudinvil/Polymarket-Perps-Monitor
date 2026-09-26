@@ -59,6 +59,55 @@ function attachGame(x,g){
   x.minute=gameMinute(g);
   x.gameStatus=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period);
 }
+async function fetchLiveSports(){
+  return await new Promise((resolve)=>{
+    const live=[];
+    const seen=new Set();
+    let ws;
+    let timer;
+    try{
+      ws=new WebSocket("wss://sports-api.polymarket.com/ws");
+      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},7000);
+      ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
+      ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
+      ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
+      ws.onmessage=(ev)=>{
+        const raw=typeof ev.data==="string"?ev.data:"";
+        if(raw==="ping"){try{ws.send("pong")}catch{};return;}
+        let m; try{m=JSON.parse(raw)}catch{return;}
+        const type=t(m?.type||m?.event_type);
+        const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
+        const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
+        const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
+        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
+        if(type&&type!=="sport_result"&&!liveFlag)return;
+        if(!/soccer|football/.test(league)&&!String(p?.slug||"").match(/^(?:soccer|football)-/i))return;
+        if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
+        if(!liveFlag)return;
+        const gameId=t(p?.gameId||p?.id);
+        const slug=t(p?.slug);
+        const home=t(p?.homeTeam||p?.home_team||p?.home);
+        const away=t(p?.awayTeam||p?.away_team||p?.away);
+        if(!gameId&&!slug||!home||!away)return;
+        const key=gameId||slug;
+        if(seen.has(key))return;
+        seen.add(key);
+        let score=null;
+        const s=p?.score;
+        if(typeof s==="string"){
+          const mm=s.match(/^(\d+)\s*[-–:]\s*(\d+)/); if(mm)score=[Number(mm[1]),Number(mm[2])];
+        } else if(s&&typeof s==="object"){
+          const h=s.home??s.homeScore??s.home_score, a=s.away??s.awayScore??s.away_score;
+          if(h!=null&&a!=null)score=[h,a];
+        }
+        live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),score});
+      };
+    }catch(e){
+      clearTimeout(timer); console.log(JSON.stringify({level:"WARN",event:"sports_ws_init_failed",message:e.message}));resolve(live);
+    }
+  });
+}
+
 async function fetchLiveGames(){
   const urls=[GAMES+"?live=true",GAMES+"?status=live",GAMES+"?active=true&sport=soccer"];
   const all=[];
@@ -87,6 +136,8 @@ async function discover(){
   const [liveHtml,soccerHtml,games]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE),fetchLiveGames()]);
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
+  const sportsLive=await fetchLiveSports();
+  console.log(JSON.stringify({level:"INFO",event:"sports_ws_snapshot",count:sportsLive.length,matches:sportsLive.map(x=>({gameId:x.gameId,slug:x.slug,teams:[x.home,x.away],status:x.status,period:x.period,elapsed:x.elapsed,score:x.score}))}));
   console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveGames:games.length}));
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
@@ -114,6 +165,36 @@ async function discover(){
       item.minute=gameMinute(event);
     }
     candidates.push(item);
+  }
+
+  // Primary live source: Polymarket Sports WebSocket. It provides actual kickoff/status/score.
+  for(const sg of sportsLive){
+    try{
+      let raw;
+      if(sg.slug){
+        try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(sg.slug),{timeout:5000}); }
+        catch{}
+      }
+      if(!raw && sg.gameId){
+        try{ raw=await json(GAMMA+"/events?game_id="+encodeURIComponent(sg.gameId),{timeout:5000}); }
+        catch{}
+      }
+      const event=Array.isArray(raw)?raw[0]:raw;
+      if(event){
+        await addEvent(event,null,true);
+        const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
+        if(item){
+          item.gameStatus=sg.status||"InProgress";
+          item.minute=sg.elapsed||sg.period||item.minute;
+          if(sg.score)item.score=sg.score;
+          item.sportsGame=sg;
+        }
+      } else {
+        console.log(JSON.stringify({level:"WARN",event:"sports_ws_event_lookup_failed",gameId:sg.gameId,slug:sg.slug,teams:[sg.home,sg.away]}));
+      }
+    }catch(e){
+      console.log(JSON.stringify({level:"WARN",event:"sports_ws_candidate_failed",gameId:sg.gameId,slug:sg.slug,message:e.message}));
+    }
   }
 
   // Primary gate: matches visible on Polymarket's live page.
