@@ -91,7 +91,20 @@ function isSoccerEvent(event,href=""){
   const text=markets.map(m=>t(m?.question||m?.title||m?.groupItemTitle)).join(" ").toLowerCase();
   return /both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance|draw no bet/.test(text);
 }
-function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
+function teams(event){
+  const title=t(event?.title||event?.question);
+  const pick=x=>t(typeof x==="string"?x:x?.name||x?.teamName||x?.title||x?.shortName||x?.displayName);
+  const home=pick(event?.homeTeam||event?.home_team||event?.home||event?.homeTeamName||event?.home_team_name);
+  const away=pick(event?.awayTeam||event?.away_team||event?.away||event?.awayTeamName||event?.away_team_name);
+  if(home&&away)return[home,away];
+  const list=Array.isArray(event?.teams)?event.teams:Array.isArray(event?.participants)?event.participants:[];
+  if(list.length>=2){
+    const h=pick(list[0]),a=pick(list[1]);
+    if(h&&a)return[h,a];
+  }
+  const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
+  return m?[m[1].trim(),m[2].trim()]:["",""];
+}
 
 async function fetchPage(url){
   const r=await get(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketLiveSoccerMonitor/1.0)"},timeout:8000});
