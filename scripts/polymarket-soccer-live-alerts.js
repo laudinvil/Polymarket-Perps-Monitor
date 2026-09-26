@@ -2,7 +2,7 @@ const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const POLL_MS = 5000;
-const RUN_MS = 5 * 60 * 60 * 1000;
+const RUN_MS = 4 * 60 * 60 * 60 * 1000;
 let stopping = false;
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
