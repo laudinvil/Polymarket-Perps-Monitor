@@ -83,14 +83,20 @@ function marketRows(event){
   }).filter(Boolean);
 }
 function pct(v){const n=Number(v);return Number.isFinite(n)?Math.round(n*100)+"%":"—";}
-function findMarket(rows,re){return rows.find(r=>re.test(r.question));}
+function findMarket(rows,re){return rows.find(r=>re.test(r.question))||null;}
+function find1x2(rows){
+  return rows.find(r=>r.outcomes.length===3&&r.outcomes.every(o=>/^(1|x|2|draw|home|away|win|tie)$/i.test(t(o))))||
+         rows.find(r=>/1x2|match result|match winner|who will win|winner|moneyline|result/i.test(r.question))||null;
+}
+function findTotal(rows){return rows.find(r=>/total|over.?under|goals/i.test(r.question)&&r.outcomes.some(o=>/over/i.test(o))&&r.outcomes.some(o=>/under/i.test(o)))||null;}
+function findHandicap(rows){return rows.find(r=>/spread|handicap|asian/i.test(r.question))||rows.find(r=>r.outcomes.some(o=>/[+-]\d/.test(o)))||null;}
 function line(row){return row?row.outcomes.map((o,i)=>t(o)+": "+pct(row.prices[i])).join(" · "):"—";}
 function money(v){const n=Number(v);return Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:0}):"—";}
 function buildAlert(x){
   const e=x.event,rows=marketRows(e);
-  const one=findMarket(rows,/1x2|match result|winner|moneyline|result/i);
-  const total=findMarket(rows,/total (goals|corners|cards|shots)|over.?under/i);
-  const spread=findMarket(rows,/spread|handicap/i);
+  const one=find1x2(rows);
+  const total=findTotal(rows);
+  const spread=findHandicap(rows);
   const sh=e.homeScore??e.home_score??e.score?.home??null,sa=e.awayScore??e.away_score??e.score?.away??null;
   const status=t(e.status||e.gameStatus||e.liveStatus||"LIVE");
   const start=t(e.startDate||e.start_date||e.startTime);
