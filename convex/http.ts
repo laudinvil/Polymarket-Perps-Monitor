@@ -18,6 +18,64 @@ http.route({
 });
 
 http.route({
+  path: "/football/candidates",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    const rows = await ctx.runQuery(internal.footballLogs.admittedCandidates, {});
+    return Response.json(rows);
+  }),
+});
+
+http.route({
+  path: "/football/candidates/admit",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const key = typeof body.key === "string" ? body.key : "";
+    const data = typeof body.data === "string" ? body.data : "";
+    if (!key || !data) return new Response("missing key/data", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.admitCandidate, { key, data });
+    return new Response("admitted", { status: 200 });
+  }),
+});
+
+http.route({
+  path: "/football/candidates/mark-buy",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const key = typeof body.key === "string" ? body.key : "";
+    if (!key) return new Response("missing key", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.markCandidateBuySent, { key });
+    return new Response("marked", { status: 200 });
+  }),
+});
+
+http.route({
+  path: "/football/candidates/mark-started",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const key = typeof body.key === "string" ? body.key : "";
+    if (!key) return new Response("missing key", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.markCandidateStartedSent, { key });
+    return new Response("marked", { status: 200 });
+  }),
+});
+
+http.route({
+  path: "/football/candidates/mark-sell",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json();
+    const key = typeof body.key === "string" ? body.key : "";
+    if (!key) return new Response("missing key", { status: 400 });
+    await ctx.runMutation(internal.footballLogs.markCandidateSellSent, { key });
+    return new Response("marked", { status: 200 });
+  }),
+});
+
+http.route({
   path: "/football/release",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
