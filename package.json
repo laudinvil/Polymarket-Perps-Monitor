@@ -5,6 +5,6 @@
     "start": "node scripts/polymarket-soccer-live-alerts.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
