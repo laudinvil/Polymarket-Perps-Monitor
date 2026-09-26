@@ -508,7 +508,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
       awayProb: oneXTwo?.awayProb ?? null
     });
 
-    oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true });
+    oneOneState.set(key, { ...(oneOneState.get(key) || {}), prematchSeen: true, buyOneOnePrice: exactScoreOneOne.price });
 
     const claimKey = key + ":BUY";
     log("INFO", "buy_attempt", "BUY candidate reached Telegram claim", {
@@ -620,15 +620,24 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
   // the current Exact Score 1:1 YES price from the live match.
   await ensureEventMarkets(match);
   const exactScoreOneOne = findOneOneMarket(match);
-  const exactScoreOneOneLine = exactScoreOneOne
-    ? `1:1 YES: ${exactScoreOneOne.price.toFixed(2)}`
-    : "1:1 YES: —";
-  log("INFO", "exact_score_one_one_snapshot", "Captured current Polymarket Exact Score 1:1 price for SELL alert", {
+  const buyOneOnePrice = oneOneState.get(key)?.buyOneOnePrice;
+  if (!exactScoreOneOne || !Number.isFinite(buyOneOnePrice)) {
+    log("WARN", "sell_waiting_for_one_one_prices", "SELL is waiting until both the original BUY 1:1 YES price and current 1:1 YES price are available", {
+      eventId: match.eventId,
+      teams: [match.homeTeam, match.awayTeam],
+      buyPrice: buyOneOnePrice ?? null,
+      currentPrice: exactScoreOneOne?.price ?? null
+    });
+    return;
+  }
+  const sellPriceLine = `${buyOneOnePrice.toFixed(2)}c ➡️ ${exactScoreOneOne.price.toFixed(2)}c`;
+  log("INFO", "exact_score_one_one_snapshot", "Captured BUY and current Exact Score 1:1 YES prices for SELL alert", {
     eventId: match.eventId,
     teams: [match.homeTeam, match.awayTeam],
-    price: exactScoreOneOne?.price ?? null,
-    outcome: exactScoreOneOne?.outcome ?? null,
-    question: exactScoreOneOne?.market?.question ?? null
+    buyPrice: buyOneOnePrice,
+    currentPrice: exactScoreOneOne.price,
+    outcome: exactScoreOneOne.outcome,
+    question: exactScoreOneOne.market?.question ?? null
   });
 
   const scoreKey = home + "-" + away;
@@ -638,7 +647,7 @@ async function maybeOneOneAlert(match, priceSource, phase = "live") {
 
   const message = [
     "⚽ SELL",
-    exactScoreOneOneLine,
+    sellPriceLine,
     "",
     match.homeTeam + " vs " + match.awayTeam,
     "SCORE: " + home + "–" + away,
