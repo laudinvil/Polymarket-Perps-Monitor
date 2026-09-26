@@ -83,26 +83,20 @@ export const claimTelegramAlert = mutation({
   returns: v.object({ claimed: v.boolean(), replyToMessageId: v.union(v.number(), v.null()) }),
   handler: async (ctx, args) => {
     const now = Date.now();
+    const key = args.marketSlug.trim().replace(/\\/$/, "");
+    if (!key) return { claimed: false, replyToMessageId: null };
+
+    // URL is the sole identity for a soccer LIVE alert.
+    // Keep using the historical football monitor namespace so records created
+    // before the monitor rename still block the exact same Polymarket URL.
+    const monitor = MONITOR;
     const existing = await ctx.db.query("telegramDedupe")
-      .withIndex("by_monitor_market", q => q.eq("monitor", args.monitor).eq("marketSlug", args.marketSlug))
+      .withIndex("by_monitor_market", q => q.eq("monitor", monitor).eq("marketSlug", key))
       .first();
     if (existing) return { claimed: false, replyToMessageId: null };
 
-    const sellScoreMatch = args.marketSlug.match(/^(.*):SELL:(\d+)-(\d+)$/);
-    if (sellScoreMatch) {
-      const baseKey = sellScoreMatch[1];
-      const live = await ctx.db.query("telegramDedupe")
-        .withIndex("by_monitor_market", q => q.eq("monitor", args.monitor).eq("marketSlug", baseKey + ":LIVE"))
-        .first();
-      if (!live?.telegramMessageId) return { claimed: false, replyToMessageId: null };
-      await ctx.db.insert("telegramDedupe", {
-        monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now
-      });
-      return { claimed: true, replyToMessageId: live.telegramMessageId };
-    }
-
     await ctx.db.insert("telegramDedupe", {
-      monitor: args.monitor, marketSlug: args.marketSlug, claimedAt: now
+      monitor, marketSlug: key, claimedAt: now
     });
     return { claimed: true, replyToMessageId: null };
   },
