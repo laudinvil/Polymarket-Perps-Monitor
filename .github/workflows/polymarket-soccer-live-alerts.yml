@@ -7,7 +7,7 @@ on:
       - ".github/workflows/polymarket-soccer-live-alerts.yml"
   workflow_dispatch:
   schedule:
-    - cron: "0 */5 * * *"
+    - cron: "0 */4 * * *"
 
 concurrency:
   group: polymarket-soccer-live-alerts
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 240
     permissions:
       contents: read
     steps:
