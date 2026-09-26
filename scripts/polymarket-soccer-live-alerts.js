@@ -41,6 +41,7 @@ function gameTeams(g){
   const away=t(g.awayTeam||g.away_team||g.away||g.awayTeamName||g.away_team_name);
   return [home,away];
 }
+function wsSoccerConfirmed(sg){return /soccer|football/i.test(t(sg?.league)||t(sg?.sport)||t(sg?.leagueAbbreviation)||t(sg?.sportSlug)) || !!sg?.gameId;}
 function gameLive(g){
   const status=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period).toLowerCase();
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
@@ -67,7 +68,7 @@ async function fetchLiveSports(){
     let timer;
     try{
       ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},7000);
+      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},15000);
       ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
       ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
       ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
@@ -143,11 +144,11 @@ async function discover(){
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
 
-  async function addEvent(event,href,liveConfirmed=false){
+  async function addEvent(event,href,liveConfirmed=false,sourceConfirmed=false){
     const rawTitle=t(event?.title||event?.question);
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
-    if(!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
+    if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const end=Date.parse(event.endDate||event.end_date||event.endTime||"");
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
     if(!isFixtureTitle(rawTitle)&&!(event.homeTeam&&event.awayTeam)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
@@ -165,6 +166,7 @@ async function discover(){
       item.minute=gameMinute(event);
     }
     candidates.push(item);
+    console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATE",slug:item.slug,eventId:item.eventId,teams:[item.home,item.away],status:item.gameStatus,minute:item.minute??null,score:item.score??null,source:sourceConfirmed?"sports_ws":"page_or_gamma"}));
   }
 
   // Primary live source: Polymarket Sports WebSocket. It provides actual kickoff/status/score.
@@ -181,7 +183,8 @@ async function discover(){
       }
       const event=Array.isArray(raw)?raw[0]:raw;
       if(event){
-        await addEvent(event,null,true);
+        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND",gameId:sg.gameId,slug:sg.slug,eventId:event?.id,title:event?.title||event?.question}));
+        await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item){
           item.gameStatus=sg.status||"InProgress";
@@ -189,6 +192,23 @@ async function discover(){
           if(sg.score)item.score=sg.score;
           item.sportsGame=sg;
         }
+      } else if(sg.gameId){
+        try{
+          const ms=await json(GAMMA+"/markets?game_id="+encodeURIComponent(sg.gameId)+"&active=true&closed=false&limit=100",{timeout:5000});
+          const markets=Array.isArray(ms)?ms:(ms?.data||[]);
+          const eventId=t(markets[0]?.eventId||markets[0]?.event_id);
+          if(eventId){
+            const er=await json(GAMMA+"/events/"+encodeURIComponent(eventId),{timeout:5000});
+            const event2=er?.event||er;
+            if(event2){
+              console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
+              await addEvent(event2,null,true,true);
+              const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
+              if(item){item.gameStatus=sg.status||"InProgress";item.minute=sg.elapsed||sg.period||item.minute;if(sg.score)item.score=sg.score;item.sportsGame=sg;}
+            }
+          }
+        }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_game_id_lookup_failed",gameId:sg.gameId,message:e.message}));}
+        if(!candidates.some(x=>x.eventId===t(event?.id)||x.slug===t(event?.slug))) console.log(JSON.stringify({level:"WARN",event:"sports_ws_event_lookup_failed",gameId:sg.gameId,slug:sg.slug,teams:[sg.home,sg.away]}));
       } else {
         console.log(JSON.stringify({level:"WARN",event:"sports_ws_event_lookup_failed",gameId:sg.gameId,slug:sg.slug,teams:[sg.home,sg.away]}));
       }
@@ -367,7 +387,9 @@ async function cycle(){
     try{
       await refreshEvent(x);
       console.log(JSON.stringify({level:"INFO",event:"CANDIDATE_BEFORE_CLAIM",slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null,markets:Array.isArray(x.event?.markets)?x.event.markets.length:0}));
-      if(!(await claimFootballMatch(id))){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
+      const claimAllowed=await claimFootballMatch(id);
+      console.log(JSON.stringify({level:"INFO",event:claimAllowed?"CLAIM_ALLOWED":"CLAIM_BLOCKED",eventId:id,slug:x.slug}));
+      if(!claimAllowed){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
       try {
         const pages=buildAlertPages(x);
         for(let i=0;i<pages.length;i++){
@@ -383,7 +405,7 @@ async function cycle(){
         try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",eventId:id,slug:x.slug,message:re.message})); }
         throw e;
       }
-      console.log(JSON.stringify({level:"INFO",event:"alert_sent",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
+      console.log(JSON.stringify({level:"INFO",event:"TELEGRAM_SENT",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
     }catch(e){console.log(JSON.stringify({level:"ERROR",event:"alert_failed",eventId:id,slug:x.slug,message:e.message}));}
     finally{alerting.delete(id);}
   }
