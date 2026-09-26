@@ -191,21 +191,24 @@ function eventFinished(e){
 }
 function oneXTwo(e,home,away){
   const markets=arr(e?.markets);
+  const h=norm(home),a=norm(away);
   for(const m of markets){
     if(m?.active===false||m?.closed===true)continue;
     const os=arr(m?.outcomes),ps=arr(m?.outcomePrices??m?.outcome_prices).map(Number);
     if(os.length<3||ps.length!==os.length||ps.some(x=>!Number.isFinite(x)))continue;
-    const q=norm(m.question||m.groupItemTitle||m.title);
-    if(!/(1x2|match result|winner|moneyline|result)/.test(q)&&!q.includes(norm(home))&&!q.includes(norm(away)))continue;
+    const q=norm(m.question||m.groupItemTitle||m.title||m.slug);
     let hi=-1,di=-1,ai=-1;
     os.forEach((x,i)=>{
       const o=norm(x);
-      if(["draw","tie","x"].includes(o))di=i;
-      else if(o==="1"||o==="home"||o===norm(home)||o.includes(norm(home)))hi=i;
-      else if(o==="2"||o==="away"||o===norm(away)||o.includes(norm(away)))ai=i;
+      if(o==="1"||o==="home"||o===h||o.includes(h)||o.endsWith(" "+h))hi=i;
+      else if(o==="2"||o==="away"||o===a||o.includes(a)||o.endsWith(" "+a))ai=i;
+      else if(o==="x"||o==="draw"||o==="tie"||o.includes("draw")||o.includes("tie"))di=i;
     });
-    if(hi>=0&&di>=0&&ai>=0&&ps[hi]>0&&ps[di]>0&&ps[ai]>0)
+    const titleLooks1X2=/(1x2|1 x 2|match result|full time result|result|winner|moneyline)/.test(q);
+    const labelsLook1X2=hi>=0&&di>=0&&ai>=0;
+    if((titleLooks1X2||labelsLook1X2)&&hi>=0&&di>=0&&ai>=0&&ps[hi]>=0&&ps[di]>=0&&ps[ai]>=0){
       return "1: "+Math.round(ps[hi]*100)+"% · X: "+Math.round(ps[di]*100)+"% · 2: "+Math.round(ps[ai]*100)+"%";
+    }
   }
   return null;
 }
@@ -245,6 +248,7 @@ async function discoverUpcoming(page){
     const teams=teamsFromEvent(e),home=teams[0],away=teams[1],key=t(e.id||e.eventId||e.slug);
     if(!key||tracked.has(key))continue;
     const odds=oneXTwo(e,home,away);
+    if(!odds)log(JSON.stringify({event:"one_x_two_parse_failed",key,teams:[home,away],markets:arr(e?.markets).map(m=>({question:m?.question||m?.title||m?.groupItemTitle,outcomes:arr(m?.outcomes)})).slice(0,30)}));
     const exact11=await exactScore11(e);
     const row={key,slug,href:item.href,home,away,startMs:start,odds,exact11First:exact11,exact11Current:exact11,nextSent:false};
     tracked.set(key,row);found.push(row);
