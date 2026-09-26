@@ -606,9 +606,30 @@ async function discoverLiveZeroZero(){
         const home=t(s?.homeTeam?.name),away=t(s?.awayTeam?.name);
         return sameMatch({homeTeam:home,awayTeam:away},phome,paway);
       });
-      const score=eventScore(pm)||
-        (sofaEvent?{home:Number(sofaEvent?.homeScore?.current),away:Number(sofaEvent?.awayScore?.current)}:{home:0,away:0});
-      const minute=sofaEvent?sofascoreMinute(sofaEvent):0;
+      const polyScore=eventScore(pm);
+      const sofaScore=sofaEvent ? {
+        home:Number(sofaEvent?.homeScore?.current),
+        away:Number(sofaEvent?.awayScore?.current)
+      } : null;
+      const score=polyScore || (
+        sofaScore && Number.isFinite(sofaScore.home) && Number.isFinite(sofaScore.away) &&
+        sofaScore.home>=0 && sofaScore.away>=0 ? sofaScore : null
+      );
+      const minute=sofaEvent?sofascoreMinute(sofaEvent):null;
+      if(!score || minute==null){
+        log(JSON.stringify({
+          event:"live_alert_blocked_missing_live_state",
+          teams:[phome,paway],
+          sourceSlug:pm?.slug,
+          fixtureSlug:fixture?.slug,
+          sofascoreMatched:!!sofaEvent,
+          polyScore,
+          sofaScore,
+          minute,
+          reason:"no_verified_score_or_minute"
+        }));
+        continue;
+      }
       let sofa={one:null,exact:null};
       if(sofaEvent){
         sofa=await sofascoreOdds(sofaEvent.id,phome,paway);
