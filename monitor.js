@@ -193,13 +193,13 @@ async function handleGame(m) {
   }
 
   const status = String(m.status || "").toLowerCase().trim();
+  const liveFlag = String(m.live).toLowerCase() === "true";
+  const liveStatus = ["inprogress", "running", "live", "break", "halftime", "penaltyshootout"].includes(status);
+
   const soccerLive =
     soccer &&
     !m.ended &&
-    (
-      m.live === true ||
-      ["inprogress", "break", "penaltyshootout"].includes(status)
-    );
+    (liveFlag || liveStatus);
 
   if (soccerLive) {
     soccerAccepted++;
