@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:42:49.059Z",
+  "updatedAt": "2026-09-27T15:42:50.578Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1056,
+    "events": 1066,
     "polls": 4,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1684181",
+  "matchId": "1714222",
   "teams": [
-    "Nemiga",
-    "Color"
+    "PARTIZAN",
+    "Chaos Enforcers"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 30,
+    "matchedPoly": 32,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -457,6 +457,16 @@
         "matchId": "1696342",
         "teamA": "M80",
         "teamB": "DENDELE CS",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1684181",
+        "teamA": "Nemiga",
+        "teamB": "Color",
         "seriesScore": [
           0,
           0
