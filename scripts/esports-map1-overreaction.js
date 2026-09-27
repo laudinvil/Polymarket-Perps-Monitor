@@ -721,6 +721,8 @@ async function poll() {
     upcoming: 0,
     running: 0,
     bo3: 0,
+    bo5: 0,
+    firstTo3: 0,
     skippedFuture: 0,
     missingTeams: 0,
     polyEvents: 0,
@@ -776,7 +778,9 @@ await publishHeartbeat("PANDASCORE_OK", {
 });
 
 const candidates = [...upcoming, ...running].filter(m => supportedSeries(m));
-diag.bo3 = candidates.length;
+diag.bo3 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "best_of" && Number(m.number_of_games) === 3).length;
+diag.bo5 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "best_of" && Number(m.number_of_games) === 5).length;
+diag.firstTo3 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "first_to" && Number(m.number_of_games) === 3).length;
 const polyEvents = await loadPolyEvents();
 diag.polyEvents = polyEvents.length;
 await publishHeartbeat("POLYMARKET_OK", {
@@ -785,7 +789,7 @@ await publishHeartbeat("POLYMARKET_OK", {
   diagnostics:diag
 });
 log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
-log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
+log("PANDASCORE_SERIES", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length,bo3:diag.bo3,bo5:diag.bo5,firstTo3:diag.firstTo3}));
 
 for (const match of candidates) {
   const ts = beginAt(match);
