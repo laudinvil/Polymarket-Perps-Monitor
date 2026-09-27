@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:30:22.541Z",
+  "updatedAt": "2026-09-27T14:30:23.843Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 964,
+    "events": 974,
     "polls": 3,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1688997",
+  "matchId": "1702599",
   "teams": [
-    "NIP",
-    "magic"
+    "METANOIA WOLVES",
+    "MIBR fe"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,8 +32,8 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 224,
-    "matchedPoly": 2,
-    "noPolyMatch": -1,
+    "matchedPoly": 4,
+    "noPolyMatch": -2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -92,6 +92,42 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T15:00:00Z"
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
       }
     ],
     "rejects": [
@@ -100,6 +136,16 @@
         "matchId": "1710864",
         "teamA": "G2 Ares",
         "teamB": "FC Famalicão Esports",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic",
         "seriesScore": [
           0,
           0
