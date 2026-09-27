@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: polymarket-live-soccer-monitor
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
