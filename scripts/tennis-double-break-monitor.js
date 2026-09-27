@@ -127,11 +127,16 @@ function isMatchWinnerMarket(m) {
   const primary = norm([m.question, m.title].filter(Boolean).join(" "));
   if (!primary) return false;
 
-  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap/.test(primary)) {
+  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap|set winner|win set/.test(primary)) {
     return false;
   }
 
-  return /advances against|advance against|win the match|match winner|winner of the match|who will win/.test(primary);
+  // A tennis main-market question can be phrased as "Will X win?" without
+  // explicitly containing "match winner". If it has exactly the two match
+  // players as outcomes, accept it unless it is clearly a set/prop market.
+  if (/advances against|advance against|win the match|match winner|winner of the match|who will win/.test(primary)) return true;
+  const names = marketPlayerNames(m);
+  return names.length === 2;
 }
 
 function matchMarket(m, e) {
