@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:25:37.755Z",
+  "updatedAt": "2026-09-27T15:25:38.850Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 616,
+    "events": 617,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700585",
+  "matchId": "1712147",
   "teams": [
-    "LAG Gaming",
-    "regain"
+    "Teletubisie",
+    "Eternal Fire Academy"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 2,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 5,
+    "noPolyMatch": 6,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -331,6 +331,12 @@
         "matchId": "1700598",
         "teamA": "FarmVille",
         "teamB": "Marsborne"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700585",
+        "teamA": "LAG Gaming",
+        "teamB": "regain"
       }
     ]
   }
