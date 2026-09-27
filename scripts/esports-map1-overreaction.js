@@ -117,7 +117,7 @@ function isMatchWinnerMarket(m, teamA, teamB) {
   return outcomeMatch && /(win|winner|match)/i.test(q);
 }
 
-async function findPolyEvent(teamA, teamB) {
+async function loadPolyEvents() {
   const urls = [
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=esports",
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=cs2",
@@ -129,7 +129,11 @@ async function findPolyEvent(teamA, teamB) {
       if (Array.isArray(x.data)) events.push(...x.data);
     } catch (e) { console.log("POLY_DISCOVERY_ERROR", String(e)); }
   }
-  events = [...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
+  return [...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
+}
+
+function findPolyEvent(events, teamA, teamB) {
+  events = Array.isArray(events) ? events : [];
   let best = null;
   for (const e of events) {
     const et = eventTeams(e);
@@ -250,6 +254,8 @@ const upcoming = await ps("/csgo/matches/upcoming?per_page=100");
 const running = await ps("/csgo/matches/running?per_page=100");
 
 const candidates = [...upcoming, ...running].filter(m => bo3(m));
+const polyEvents = await loadPolyEvents();
+console.log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
 console.log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
 
 for (const match of candidates) {
@@ -263,7 +269,7 @@ for (const match of candidates) {
     id:key, teamA, teamB, beginAt:ts, pre:null, alerted:false, lastSeries:null
   };
 
-  const poly = await findPolyEvent(teamA,teamB);
+  const poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
     console.log("NO_POLY_MATCH", JSON.stringify({key,teamA,teamB}));
     continue;
