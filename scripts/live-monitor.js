@@ -1,5 +1,6 @@
 const LIVE_URL="https://sportscore.com/api/v1/fixtures/?sport=football&status=live&limit=200";
 const POLY_BASE="https://gamma-api.polymarket.com/events?active=true&closed=false&live=true&limit=500";
+const SPORTSCORE_MATCH="https://sportscore.com/api/widget/match/?sport=football&slug=";
 const WS_URL="wss://sports-api.polymarket.com/ws";
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -31,6 +32,34 @@ function value(v){
   if(typeof v==="object")return v.current??v.display??v.value??v.goals??v.score??v.total??null;
   return null;
 }
+function parseMinute(v){
+  if(v==null)return null;
+  if(typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=130)return Math.floor(v);
+  const s=String(v).trim();
+  let m=s.match(/(?:^|\b)(\d{1,3})\s*(?:[:'′]|min|minute)/i);
+  if(m)return Number(m[1]);
+  m=s.match(/(?:2H|1H|HT)\s*[-–:]\s*(\d{1,3})/i);
+  if(m)return Number(m[1]);
+  if(/^\d{1,3}$/.test(s)){
+    const n=Number(s); if(n>=0&&n<=130)return n;
+  }
+  return null;
+}
+function scoreFromAny(root){
+  if(!root||typeof root!=="object")return "—";
+  const pairs=[
+    [root.home_score,root.away_score],[root.homeScore,root.awayScore],
+    [root.home?.score,root.away?.score],[root.home?.goals,root.away?.goals],
+    [root.score?.home,root.score?.away],[root.scores?.home,root.scores?.away]
+  ];
+  for(const [h,a] of pairs){
+    const hh=value(h),aa=value(a);
+    if(hh!=null&&aa!=null&&/^\d+$/.test(String(hh))&&/^\d+$/.test(String(aa)))return String(hh)+"–"+String(aa);
+  }
+  const s=root.score??root.result??root.current_score;
+  if(typeof s==="string"&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(s))return s.replace(/[-:]/g,"–");
+  return "—";
+}
 function extractLive(root,out=[]){
   if(root==null)return out;
   if(Array.isArray(root)){for(const x of root)extractLive(x,out);return out}
@@ -38,12 +67,24 @@ function extractLive(root,out=[]){
   const h=root.home?.name??root.homeTeam?.name??root.homeTeamName??root.home;
   const a=root.away?.name??root.awayTeam?.name??root.awayTeamName??root.away;
   const st=root.status;
-  const live=root.live===true||root.isLive===true||(typeof st==="string"&&/live|in.?progress|halftime|break/i.test(st));
+  const live=root.live===true||root.isLive===true||(typeof st==="string"&&/live|in.?progress|halftime|break/i.test(st))||(typeof root.status_text==="string"&&/live|\d+\s*(?:min|minute|\')/i.test(root.status_text));
   const finished=st&&typeof st==="object"?st.finished===true:false;
   if(h&&a&&live&&!finished){
-    const sh=value(root.home?.score)??value(root.homeScore)??value(root.score?.home)??value(root.scoreHome)??value(root.scores?.home)??value(root.home?.goals);
-    const sa=value(root.away?.score)??value(root.awayScore)??value(root.score?.away)??value(root.scoreAway)??value(root.scores?.away)??value(root.away?.goals);
-    out.push({home:String(h),away:String(a),score:sh!=null&&sa!=null?String(sh)+"–"+String(sa):"—"});
+    const candidates=[
+      root.status_text,root.statusText,root.elapsed,root.minute,root.currentMinute,
+      root.gameMinute,root.clockMinute,root.clock,root.matchTime,root.time,
+      root.period
+    ];
+    let minute=null;
+    for(const c of candidates){const n=parseMinute(c);if(n!=null){minute=n;break}}
+    out.push({
+      home:String(h),away:String(a),
+      score:scoreFromAny(root),
+      minute,
+      slug:String(root.slug??root.matchSlug??root.fixtureSlug??""),
+      id:String(root.id??root.matchId??root.fixtureId??""),
+      statusText:String(root.status_text??root.statusText??"")
+    });
   }
   for(const v of Object.values(root))if(v&&typeof v==="object")extractLive(v,out);
   return out;
@@ -86,15 +127,8 @@ function parseSportsRows(rows){
   for(const d of rows){
     if(!d||typeof d!=="object")continue;
     if(d.type==="sport_result"||d.gameId!=null||d.slug){
-      let elapsed=d.elapsed??d.minute??null;
-      let minute=null;
-      if(typeof elapsed==="number"&&Number.isFinite(elapsed))minute=Math.floor(elapsed);
-      else if(typeof elapsed==="string"){
-        const m=elapsed.match(/^(\d+)\s*:/);
-        if(m)minute=Number(m[1]);
-        else if(/^\d+$/.test(elapsed.trim()))minute=Number(elapsed.trim());
-      }
-      out.push({gameId:d.gameId!=null?String(d.gameId):"",slug:String(d.slug??"").toLowerCase(),home:String(d.homeTeam??""),away:String(d.awayTeam??""),score:d.score??null,period:d.period??null,status:d.status??null,minute});
+      const minute=parseMinute(d.elapsed??d.minute??d.clock??d.period);
+      out.push({gameId:d.gameId!=null?String(d.gameId):"",slug:String(d.slug??"").toLowerCase(),home:String(d.homeTeam??d.home??""),away:String(d.awayTeam??d.away??""),score:d.score??null,period:d.period??null,status:d.status??null,minute});
     }
   }
   return out;
@@ -106,7 +140,7 @@ async function sportsSnapshot(){
     const finish=()=>{if(done)return;done=true;try{ws?.close()}catch{};resolve(parseSportsRows(rows))};
     try{
       ws=new WebSocket(WS_URL);
-      const timer=setTimeout(finish,8000);
+      const timer=setTimeout(finish,5000);
       ws.onmessage=ev=>{
         try{
           const raw=String(ev.data??"");
@@ -123,6 +157,24 @@ async function sportsSnapshot(){
 function wsFor(e,rows){
   const gid=gameId(e),slug=String(e?.slug??"").toLowerCase();
   return rows.find(x=>(gid&&x.gameId===gid)||(slug&&x.slug===slug))??null;
+}
+function sportScoreFor(live){
+  if(!live?.slug)return null;
+  return json(SPORTSCORE_MATCH+encodeURIComponent(live.slug)).catch(()=>null);
+}
+function detailExtract(root){
+  const candidates=[];
+  const walk=v=>{
+    if(v==null)return;
+    if(Array.isArray(v)){for(const x of v)walk(x);return}
+    if(typeof v!=="object")return;
+    const minute=parseMinute(v.status_text??v.statusText??v.elapsed??v.minute??v.currentMinute??v.clockMinute??v.clock??v.matchTime??v.period);
+    const score=scoreFromAny(v);
+    if(minute!=null||score!=="—")candidates.push({minute,score,statusText:v.status_text??v.statusText??null,period:v.period??v.status??null});
+    for(const x of Object.values(v))if(x&&typeof x==="object")walk(x);
+  };
+  walk(root);
+  return candidates.find(x=>x.minute!=null)||candidates.find(x=>x.score!=="—")||null;
 }
 async function sendTelegram(text){
   const token=process.env.TELEGRAM_BOT_TOKEN;
@@ -165,8 +217,12 @@ for(let cycle=1;cycle<=8;cycle++){
 
     if(found){
       const ws=wsFor(found.e,polySports);
-      let minute=ws?.minute!=null?String(ws.minute):"—";
-      let score=ws?.score&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(String(ws.score))?String(ws.score).replace(/[-:]/g,"–"):scoreFromEvent(found.e);
+      let detail=null;
+      if(found.l.slug)detail=detailExtract(await sportScoreFor(found.l));
+      const minute=detail?.minute!=null?String(detail.minute):(ws?.minute!=null?String(ws.minute):(found.l.minute!=null?String(found.l.minute):"—"));
+      const score=detail?.score!=="—"?detail.score:(ws?.score&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(String(ws.score))?String(ws.score).replace(/[-:]/g,"–"):(found.l.score!=="—"?found.l.score:scoreFromEvent(found.e)));
+      console.log("SPORTSCORE_LIVE",JSON.stringify(found.l));
+      console.log("SPORTSCORE_DETAIL",JSON.stringify(detail));
       console.log("POLY_SPORTS_MATCH",JSON.stringify(ws));
       console.log("BEST_MATCH",JSON.stringify({home:found.l.home,away:found.l.away,matchScore:found.matchScore,id:found.e.id,slug:found.e.slug,gameId:gameId(found.e),minute,score,period:ws?.period??found.e.period??null}));
       const key=String(found.e.id);
