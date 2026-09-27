@@ -558,9 +558,17 @@ async function poll() {
     const body = await getJson(CFG.sofaUrl, "sofa");
     const events = body.events || [];
     state.liveMatches = events.length;
+    log("SOFA_LIVE", { liveMatches: events.length });
     for (const e of events) {
       if (e?.status?.type !== "inprogress") continue;
       const sets = scoreSets(e);
+      log("LIVE_MATCH", {
+        eventId: e.id,
+        home: e.homeTeam?.name || null,
+        away: e.awayTeam?.name || null,
+        sets,
+        firstToServe: firstServer(e)
+      });
       if (!sets.length || !e.homeTeam?.name || !e.awayTeam?.name) continue;
       const id = String(e.id);
       const prev = matches.get(id);
