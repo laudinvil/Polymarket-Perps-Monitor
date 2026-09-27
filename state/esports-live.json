@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:51.531Z",
+  "updatedAt": "2026-09-27T15:37:52.913Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
@@ -7,18 +7,18 @@
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 152,
+    "events": 171,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1688997",
+  "matchId": "1714922",
   "teams": [
-    "NIP",
-    "magic"
+    "Galatasaray Esports",
+    "Pcific Esports"
   ],
-  "status": "running",
+  "status": "not_started",
   "seriesScore": [
     0,
     0
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 14,
+    "matchedPoly": 16,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
@@ -357,6 +357,16 @@
         "matchId": "1702958",
         "teamA": "Daxak Team",
         "teamB": "Rostik Team",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic",
         "seriesScore": [
           0,
           0
