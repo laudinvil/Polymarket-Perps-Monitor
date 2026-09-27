@@ -180,23 +180,31 @@ function minute(m) {
 }
 
 function score(m) {
-  const s = String(m.score ?? "").trim();
-  if (!s) return "—";
+  const candidates = [
+    m.score,
+    m.currentScore,
+    m.gameScore,
+    m.homeScore != null && m.awayScore != null
+      ? `${m.homeScore}-${m.awayScore}`
+      : ""
+  ];
 
-  // Polymarket sports feeds can append set/period scores:
-  // "2-1|0-0|..." — use only the match score.
-  const main = s.split("|")[0].trim();
+  for (const value of candidates) {
+    const s = String(value ?? "").trim();
+    if (!s) continue;
 
-  // Only accept a real home-away score. Do not turn unrelated values
-  // such as "18:45" into "18–45".
-  const match = main.match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
-  if (!match) return "—";
+    // Polymarket can append period/set scores after the main score.
+    const main = s.split("|")[0].trim();
 
-  // Normalize zero-padded soccer scores such as "00-01".
-  const home = String(Number(match[1]));
-  const away = String(Number(match[2]));
+    // Accept only a genuine home-away score. Never interpret a clock,
+    // timestamp, or unrelated numeric field as a score.
+    const match = main.match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
+    if (!match) continue;
 
-  return `${home}–${away}`;
+    return `${Number(match[1])}–${Number(match[2])}`;
+  }
+
+  return "—";
 }
 
 function title(m) {
