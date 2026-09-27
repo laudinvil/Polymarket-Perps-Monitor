@@ -139,20 +139,9 @@ function matchMarket(m, e) {
 }
 
 function marketUrl(m) {
-  // Prefer the parent event slug: /event/{slug} is the stable public
-  // Polymarket page for a tennis match. A market slug is only a fallback.
-  const nestedEvent = Array.isArray(m.events) ? m.events.find(x => x && x.slug) : null;
-  const slug =
-    m.eventSlug ||
-    m.event?.slug ||
-    nestedEvent?.slug ||
-    (typeof m.event === "string" ? m.event : null) ||
-    null;
-  if (slug) return `https://polymarket.com/event/${slug}`;
-
-  // Last-resort fallback for older Gamma payloads that expose only a slug.
-  if (m.slug) return `https://polymarket.com/event/${m.slug}`;
-  return "https://polymarket.com/tennis";
+  const slug = m.eventSlug || m.event?.slug ||
+    (Array.isArray(m.events) ? m.events.find(x => x?.slug)?.slug : null);
+  return slug ? `https://polymarket.com/event/${slug}` : "https://polymarket.com/tennis";
 }
 
 function parseJsonField(v) {
