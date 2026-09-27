@@ -1,6 +1,7 @@
 const LIVE_URL = "https://sportscore.com/api/v1/fixtures/?sport=football&status=live&limit=200";
 const POLY_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&tag_slug=soccer&limit=500";
 const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/&/g," and ").replace(/[^a-z0-9]+/g," ").replace(/\b(fc|afc|cf|sc|ac|club|women|w|u19|u20|u21|u23)\b/g," ").replace(/\s+/g," ").trim();
+const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const sim=(a,b)=>{const A=new Set(norm(a).split(" ").filter(x=>x.length>2)),B=new Set(norm(b).split(" ").filter(x=>x.length>2));if(!A.size||!B.size)return 0;let h=0;for(const x of A)if(B.has(x))h++;return h/Math.max(A.size,B.size)};
 const startMs=o=>{const v=o?.startTime??o?.start_time??o?.startDate??o?.start_date??o?.startsAt??o?.starts_at??o?.commenceTime??o?.commence_time??o?.start??o?.start_at??o?.startAt??o?.date??o?.datetime;if(v==null)return null;const n=Number(v);if(Number.isFinite(n))return n<1e12?n*1000:n;const d=Date.parse(String(v));return Number.isFinite(d)?d:null};
 const minuteKey=ms=>ms==null?null:Math.floor(ms/60000);
@@ -78,10 +79,10 @@ const saveState=async(state)=>{
 const explicitMinute=v=>{
   if(v==null)return null;
   const s=String(v).trim();
-  if(/^\\d{1,3}\\+\\d+$/.test(s))return s;
-  const m=s.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
+  if(/^\d{1,3}\+\d+$/.test(s))return s;
+  const m=s.match(/(?:2H|1H|ET|AET)\s*[-–:]?\s*(\d{1,3})(?:\+(\d+))?/i);
   if(m)return m[1]+(m[2]?"+"+m[2]:"");
-  const n=s.match(/^\\d{1,3}$/);
+  const n=s.match(/^\d{1,3}$/);
   return n?n[0]:null;
 };
 const enrichLive=async(l)=>{
