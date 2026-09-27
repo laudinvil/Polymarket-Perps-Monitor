@@ -208,7 +208,47 @@ function currentGameScore(sets) {
   return sets.length ? sets[sets.length - 1] : [0,0];
 }
 
-function processBreaks(e, nowSets) {
+async function getCompletedGameFromPointFeed(eventId) {
+  const data = await getJson(
+    `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
+    "sofa-pbp"
+  );
+  const sets = Array.isArray(data?.pointByPoint) ? data.pointByPoint
+    : Array.isArray(data) ? data
+    : [];
+  const games = [];
+  for (const set of sets) {
+    for (const game of Array.isArray(set?.games) ? set.games : []) {
+      const score = game?.score || {};
+      if (Number.isFinite(Number(score.homeScore)) && Number.isFinite(Number(score.awayScore))) {
+        games.push({
+          set: Number(set.set || set.period || 0),
+          game: Number(game.game || 0),
+          home: Number(score.homeScore),
+          away: Number(score.awayScore),
+          serving: Number(score.serving)
+        });
+      }
+    }
+  }
+  if (!games.length) return null;
+  games.sort((a, b) => a.set - b.set || a.game - b.game);
+  const last = games[games.length - 1];
+  const previous = games.length > 1 ? games[games.length - 2] : null;
+  let winner = null;
+  if (!previous || previous.set !== last.set) {
+    if (last.home === 1 && last.away === 0) winner = 1;
+    else if (last.home === 0 && last.away === 1) winner = 2;
+  } else {
+    const dh = last.home - previous.home;
+    const da = last.away - previous.away;
+    if (dh === 1 && da === 0) winner = 1;
+    if (da === 1 && dh === 0) winner = 2;
+  }
+  return { ...last, winner };
+}
+
+async function processBreaks(e, nowSets) {
   const id = String(e.id);
   const prev = matches.get(id);
   const first = firstServer(e);
@@ -267,19 +307,45 @@ function processBreaks(e, nowSets) {
     return [];
   }
   for (let k = 0; k < count; k++) {
-    let initialServer = prev.firstToServe;
-    if (initialServer !== 1 && initialServer !== 2) {
-      // The live endpoint can omit firstToServe for matches already in progress.
-      // Do not disable the monitor permanently; use a deterministic provisional
-      // sequence and mark the assumption for diagnostics.
-      initialServer = 1;
-      prev.firstToServe = 1;
-      log("SERVER_FALLBACK", { eventId: id, totalGames: gameNo, assumed: "HOME" });
-    }
-    const server = ((gameNo + (initialServer - 1)) % 2) + 1;
     const before = gameNo;
     gameNo++;
-    const winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
+
+    // Use SofaScore point-by-point data for the completed game. It explicitly
+    // identifies the server and the cumulative game score, eliminating the
+    // fragile need to reconstruct serving order from firstToServe.
+    let feedGame = null;
+    try {
+      feedGame = await getCompletedGameFromPointFeed(id);
+      if (feedGame) {
+        log("PBP_GAME", {
+          eventId: id,
+          set: feedGame.set,
+          game: feedGame.game,
+          server: feedGame.serving === 1 ? "HOME" : feedGame.serving === 2 ? "AWAY" : null,
+          winner: feedGame.winner === 1 ? "HOME" : feedGame.winner === 2 ? "AWAY" : null,
+          score: [feedGame.home, feedGame.away]
+        });
+      }
+    } catch (err) {
+      log("PBP_ERROR", { eventId: id, error: String(err) });
+    }
+
+    let server = feedGame?.serving;
+    let winner = feedGame?.winner;
+
+    if (server !== 1 && server !== 2) {
+      let initialServer = prev.firstToServe;
+      if (initialServer !== 1 && initialServer !== 2) {
+        initialServer = 1;
+        prev.firstToServe = 1;
+        log("SERVER_FALLBACK", { eventId: id, totalGames: before, assumed: "HOME" });
+      }
+      server = ((before + (initialServer - 1)) % 2) + 1;
+    }
+
+    if (winner !== 1 && winner !== 2) {
+      winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
+    }
     log("GAME_CHANGE", {
       eventId: id,
       beforeTotal: before,
@@ -621,7 +687,7 @@ async function poll() {
         matches.set(id, { sets, firstToServe: firstServer(e), breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
         continue;
       }
-      const breaks = processBreaks(e, sets);
+      const breaks = await processBreaks(e, sets);
       for (const brokenSide of breaks) {
         const side = recordSignal(e, brokenSide);
         if (side !== null) {
