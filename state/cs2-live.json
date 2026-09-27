@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:24:24.161Z",
+  "updatedAt": "2026-09-27T15:24:26.706Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 262,
+    "events": 287,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700623",
+  "matchId": "1696341",
   "teams": [
-    "Galorys",
-    "Procyon Gaming"
+    "Liquid",
+    "Wildcard"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 2,
     "polyEvents": 224,
-    "matchedPoly": 18,
+    "matchedPoly": 20,
     "noPolyMatch": 2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -299,6 +299,16 @@
         "matchId": "1700638",
         "teamA": "Yawara Esports",
         "teamB": "Turma do Pagode",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700623",
+        "teamA": "Galorys",
+        "teamB": "Procyon Gaming",
         "seriesScore": [
           0,
           0
