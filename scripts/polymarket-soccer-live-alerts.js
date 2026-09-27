@@ -135,7 +135,8 @@ async function fetchLiveSports(){
         const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
         const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
-        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
+        const period=t(p?.period||p?.currentPeriod||p?.phase).toLowerCase();
+        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout|1h|2h|extra|stoppage/.test(status)||/^(1h|2h|ot|et|extra|halftime|half)$/.test(period);
         if(type&&type!=="sport_result"&&!liveFlag)return;
         if(!/soccer|football/.test(league))return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
