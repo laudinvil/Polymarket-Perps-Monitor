@@ -242,8 +242,8 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
   // SofaScore may return the game-level server/winner directly on each game.
   // Prefer those fields over inference from cumulative game scores.
   const directGameResult = (game) => {
-    const serving = Number(game?.serving ?? game?.score?.serving);
-    const scoring = Number(game?.scoring ?? game?.score?.scoring);
+    const serving = Number(game?.serving ?? game?.score?.serving ?? game?.server ?? game?.score?.server);
+    const scoring = Number(game?.scoring ?? game?.score?.scoring ?? game?.winner ?? game?.score?.winner);
     return {
       serving: serving === 1 || serving === 2 ? serving : null,
       winner: scoring === 1 || scoring === 2 ? scoring : null
