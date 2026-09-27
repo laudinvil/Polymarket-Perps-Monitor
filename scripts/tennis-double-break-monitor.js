@@ -456,7 +456,13 @@ async function evaluate(e, brokenSide) {
   const m = findMarketForPlayer(e, player);
   if (!m) {
     state.marketMisses++;
-    log("MARKET_MISS", { eventId: e.id, player });
+    log("MARKET_MISS", {
+      eventId: e.id,
+      player,
+      home: e.homeTeam?.name || null,
+      away: e.awayTeam?.name || null,
+      marketsLoaded: markets.size
+    });
     return;
   }
   const outcomes = parseJsonField(m.outcomes);
