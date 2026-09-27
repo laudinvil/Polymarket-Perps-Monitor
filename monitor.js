@@ -336,15 +336,16 @@ function connect() {
 
     if (m && m.type === "sport_result" && m.payload) m = m.payload;
 
-    if (!m || !m.gameId) return;
+    const sportId = String(m?.gameId || m?.slug || m?.id || "").trim();
+    if (!m || !sportId) return;
 
     console.log(
       "SPORT RESULT",
-      m.gameId,
+      sportId,
       m.leagueAbbreviation || "",
-      m.homeTeam || "",
+      m.homeTeam || m.homeTeamName || "",
       "vs",
-      m.awayTeam || "",
+      m.awayTeam || m.awayTeamName || "",
       "status=" + (m.status || ""),
       "live=" + String(m.live),
       "score=" + String(m.score || ""),
