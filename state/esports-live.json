@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:08.163Z",
+  "updatedAt": "2026-09-27T15:37:09.324Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 867,
+    "events": 868,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700598",
+  "matchId": "1700585",
   "teams": [
-    "FarmVille",
-    "Marsborne"
+    "LAG Gaming",
+    "regain"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 7,
+    "noPolyMatch": 8,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
