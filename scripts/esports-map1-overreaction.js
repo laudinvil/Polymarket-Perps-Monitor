@@ -532,11 +532,32 @@ for (const match of candidates) {
     "NEXT MAP CANDIDATE: <b>"+loser+"</b>\n" +
     "CURRENT: "+Math.round(loserProb*100)+"%";
 
-  const marketUrl = String(poly.market?.url || "").trim();
+  // Prefer Polymarket's explicit market URL. If Gamma does not provide it,
+  // build the exact market deep-link from the event slug + market slug.
+  // Polymarket market URLs use: /event/{event-slug}/{market-slug}.
+  const explicitMarketUrl = String(poly.market?.url || "").trim();
+  const eventSlug = String(poly.event?.slug || "").trim();
+  const marketSlug = String(poly.market?.slug || "").trim();
+  const marketUrl = explicitMarketUrl ||
+    (eventSlug && marketSlug
+      ? "https://polymarket.com/event/" + encodeURIComponent(eventSlug) + "/" + encodeURIComponent(marketSlug)
+      : "");
   if (!marketUrl) {
-    log("NO_MARKET_URL", {marketId:String(poly.market?.id || ""),eventSlug:String(poly.event?.slug || "")});
+    log("NO_MARKET_URL", {
+      marketId:String(poly.market?.id || ""),
+      eventSlug,
+      marketSlug,
+      hasExplicitUrl:Boolean(explicitMarketUrl)
+    });
     continue;
   }
+  log("MARKET_URL_RESOLVED", {
+    source: explicitMarketUrl ? "market.url" : "event_slug+market_slug",
+    marketId:String(poly.market?.id || ""),
+    eventSlug,
+    marketSlug,
+    url:marketUrl
+  });
   await telegram(text + "\\n\\n" + marketUrl);
 
   entry.alerted = true;
