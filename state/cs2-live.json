@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:19:36.416Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:19:37.431Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36329118616",
   "runAttempt": "1",
   "sha": "60b4517743f00901c2a2e222391666b7bfadea95",
   "pid": 2291,
   "telemetry": {
     "startedAt": "2026-09-27T15:19:32.394Z",
-    "events": 15,
+    "events": 17,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 224,
+  "matchId": "1688997",
+  "teams": [
+    "NIP",
+    "magic"
+  ],
+  "status": "not_started",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 89,
   "diagnostics": {
     "startedAt": "2026-09-27T15:19:32.400Z",
@@ -38,7 +47,17 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:20:00Z"
+      }
+    ],
     "rejects": []
   }
 }\n
