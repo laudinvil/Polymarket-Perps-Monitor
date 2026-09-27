@@ -2,6 +2,8 @@ name: LIVE CHAIN TEST
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   test:
@@ -21,86 +23,17 @@ jobs:
           node <<'NODE'
           const LIVE_URL = "https://football-live-api.vercel.app/api/matches/live";
           const POLY_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500";
-
-          const norm = s => String(s || "").toLowerCase()
-            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-            .replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ")
-            .replace(/\b(fc|afc|cf|sc|ac|club|women|w|u19|u20|u21|u23)\b/g, " ")
-            .replace(/\s+/g, " ").trim();
-
-          const sim = (a,b) => {
-            const A = new Set(norm(a).split(" ").filter(x=>x.length>2));
-            const B = new Set(norm(b).split(" ").filter(x=>x.length>2));
-            if (!A.size || !B.size) return 0;
-            let hit=0; for (const x of A) if(B.has(x)) hit++;
-            return hit/Math.max(A.size,B.size);
-          };
-
-          const extract = (node, out=[]) => {
-            if (!node || typeof node !== "object") return out;
-            if (Array.isArray(node)) { for (const x of node) extract(x,out); return out; }
-            const home=node.home?.name||node.homeTeam?.name||node.homeTeamName||node.home;
-            const away=node.away?.name||node.awayTeam?.name||node.awayTeamName||node.away;
-            const st=node.status, so=st&&typeof st==="object"?st:{};
-            const live=node.live===true||node.isLive===true||(typeof st==="string"&&/live|in.?progress|halftime|break/i.test(st));
-            const started=so.started===true||node.started===true;
-            const finished=so.finished===true||node.finished===true;
-            if(home&&away&&!finished&&(live||started)){
-              const sh=node.home?.score??node.homeScore??node.score?.home??node.scoreHome;
-              const sa=node.away?.score??node.awayScore??node.score?.away??node.scoreAway;
-              const raw=node.minute??node.elapsed??node.time??so.minute??so.elapsed??"—";
-              out.push({home:String(home),away:String(away),score:sh!=null&&sa!=null?sh+"–"+sa:"—",minute:String(raw)});
-              return out;
-            }
-            for(const v of Object.values(node)) extract(v,out);
-            return out;
-          };
-
-          const json = async url => {
-            const r=await fetch(url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(15000)});
-            console.log("HTTP",r.status,url);
-            if(!r.ok) throw new Error(url+" HTTP "+r.status);
-            return r.json();
-          };
-
-          const [liveData,polyData]=await Promise.all([json(LIVE_URL),json(POLY_URL)]);
-          const live=extract(liveData);
-          const events=Array.isArray(polyData)?polyData:(polyData.events||[]);
-          console.log("LIVE_COUNT",live.length);
-          console.log("POLY_EVENT_COUNT",events.length);
-
-          let found=null;
-          for(const l of live){
-            for(const e of events){
-              const text=JSON.stringify(e).toLowerCase();
-              if(!/soccer|football|epl|premier league|la liga|bundesliga|serie a|ligue 1|mls|champions league/.test(text)) continue;
-              const h=e.homeTeamName||e.homeTeam||"", a=e.awayTeamName||e.awayTeam||"";
-              if(!h||!a) continue;
-              const score=Math.max(sim(l.home,h)+sim(l.away,a),sim(l.home,a)+sim(l.away,h));
-              if(!found||score>found.score) found={l,e,score};
-            }
-          }
-
-          console.log("BEST_MATCH", found ? JSON.stringify({
-            live:found.l, title:found.e.title, id:found.e.id, slug:found.e.slug, score:found.score
-          }) : "NONE");
-
-          if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID) throw new Error("GitHub Telegram secrets are missing");
-
-          const escape=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-          const link=found?.e?.slug ? "https://polymarket.com/event/"+found.e.slug : "https://polymarket.com/sports/soccer";
-          const body={
-            chat_id:process.env.TELEGRAM_CHAT_ID,
-            parse_mode:"HTML",
-            text:found && found.score>=1.25
-              ? "⚽ <b>CHAIN TEST</b>\n\n"+escape(found.l.home)+" vs "+escape(found.l.away)+"\nLIVE\nMINUTE: "+escape(found.l.minute)+"\nSCORE: "+escape(found.l.score)+"\n\n<a href=\""+escape(link)+"\">ОТКРЫТЬ POLYMARKET</a>"
-              : "⚠️ <b>CHAIN TEST</b>\n\nExternal LIVE or Polymarket match was not found.\nLIVE: "+live.length+"\nPOLYMARKET EVENTS: "+events.length
-          };
-
-          const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{
-            method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)
-          });
-          const tj=await tr.json();
-          console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));
-          if(!tj.ok) throw new Error("Telegram rejected: "+JSON.stringify(tj));
+          const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/&/g," and ").replace(/[^a-z0-9]+/g," ").replace(/\b(fc|afc|cf|sc|ac|club|women|w|u19|u20|u21|u23)\b/g," ").replace(/\s+/g," ").trim();
+          const sim=(a,b)=>{const A=new Set(norm(a).split(" ").filter(x=>x.length>2)),B=new Set(norm(b).split(" ").filter(x=>x.length>2));if(!A.size||!B.size)return 0;let h=0;for(const x of A)if(B.has(x))h++;return h/Math.max(A.size,B.size)};
+          const extract=(n,o=[])=>{if(!n||typeof n!=="object")return o;if(Array.isArray(n)){for(const x of n)extract(x,o);return o}const h=n.home?.name||n.homeTeam?.name||n.homeTeamName||n.home,a=n.away?.name||n.awayTeam?.name||n.awayTeamName||n.away,st=n.status,so=st&&typeof st==="object"?st:{},live=n.live===true||n.isLive===true||(typeof st==="string"&&/live|in.?progress|halftime|break/i.test(st)),started=so.started===true||n.started===true,finished=so.finished===true||n.finished===true;if(h&&a&&!finished&&(live||started)){const sh=n.home?.score??n.homeScore??n.score?.home??n.scoreHome,sa=n.away?.score??n.awayScore??n.score?.away??n.scoreAway,raw=n.minute??n.elapsed??n.time??so.minute??so.elapsed??"—";o.push({home:String(h),away:String(a),score:sh!=null&&sa!=null?sh+"–"+sa:"—",minute:String(raw)});return o}for(const v of Object.values(n))extract(v,o);return o};
+          const json=async u=>{const r=await fetch(u,{headers:{accept:"application/json"},signal:AbortSignal.timeout(15000)});console.log("HTTP",r.status,u);if(!r.ok)throw Error(u+" HTTP "+r.status);return r.json()};
+          const [ld,pd]=await Promise.all([json(LIVE_URL),json(POLY_URL)]),live=extract(ld),events=Array.isArray(pd)?pd:(pd.events||[]);
+          console.log("LIVE_COUNT",live.length); console.log("POLY_EVENT_COUNT",events.length);
+          let found=null; for(const l of live)for(const e of events){const t=JSON.stringify(e).toLowerCase();if(!/soccer|football|epl|premier league|la liga|bundesliga|serie a|ligue 1|mls|champions league/.test(t))continue;const h=e.homeTeamName||e.homeTeam||"",a=e.awayTeamName||e.awayTeam||"";if(!h||!a)continue;const score=Math.max(sim(l.home,h)+sim(l.away,a),sim(l.home,a)+sim(l.away,h));if(!found||score>found.score)found={l,e,score}};
+          console.log("BEST_MATCH",found?JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score}):"NONE");
+          if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)throw Error("GitHub Telegram secrets are missing");
+          const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+          const link=found?.e?.slug?"https://polymarket.com/event/"+found.e.slug:"https://polymarket.com/sports/soccer";
+          const text=found&&found.score>=1.25?"⚽ <b>CHAIN TEST</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>":"⚠️ <b>CHAIN TEST</b>\n\nExternal LIVE or Polymarket match was not found.\nLIVE: "+live.length+"\nPOLYMARKET EVENTS: "+events.length;
+          const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
           NODE
