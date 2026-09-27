@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:25:02.296Z",
+  "updatedAt": "2026-09-27T15:25:04.755Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 444,
+    "events": 469,
     "polls": 0,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710864",
+  "matchId": "1688997",
   "teams": [
-    "G2 Ares",
-    "FC Famalicão Esports"
+    "NIP",
+    "magic"
   ],
   "status": "running",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 49,
     "missingTeams": 10,
     "polyEvents": 224,
-    "matchedPoly": 34,
+    "matchedPoly": 36,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 7,
