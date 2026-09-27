@@ -281,6 +281,24 @@ const server = http.createServer((req, res) => {
   }));
 });
 
+async function sendStartupTest() {
+  try {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const testMessage =
+      `🧪 <b>TEST ALERT</b>\\n\\n` +
+      `External LIVE → Polymarket → Telegram\\n` +
+      `TEST MATCH: Manchester City vs Arsenal\\n` +
+      `MINUTE: 67\\n` +
+      `SCORE: 2–1\\n\\n` +
+      `<a href="https://polymarket.com/sports/soccer">ОТКРЫТЬ POLYMARKET</a>`;
+    await telegram(testMessage);
+    console.log("STARTUP TEST ALERT SENT");
+  } catch (e) {
+    lastError = String(e.message || e);
+    console.log("STARTUP TEST ALERT ERROR", lastError);
+  }
+}
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log("HEALTH LISTENING", PORT);
   console.log("MONITOR STARTING");
@@ -289,6 +307,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log("POLL INTERVAL", POLL_MS);
 });
 
+sendStartupTest();
 poll();
 const timer = setInterval(poll, POLL_MS);
 
