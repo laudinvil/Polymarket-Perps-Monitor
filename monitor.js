@@ -144,15 +144,12 @@ function minute(m) {
     const s = String(value ?? "").trim();
     if (!s) continue;
 
-    // "65", "65'", "65 min", and "65:30" -> 65.
+    // "65", "65'", and "65 min" -> 65.
     const direct = s.match(/^(\d{1,3})(?:['’]|\s*(?:min|mins|minute|minutes))?$/i);
     if (direct) return direct[1];
 
-    const clock = s.match(/^(\d{1,3})\s*:\s*\d{1,2}$/);
-    if (clock) return clock[1];
-
-    // A plain HH:MM-looking value can be an unrelated timestamp. Only
-    // accept colon clocks from explicit elapsed/period fields.
+    // A colon clock is accepted only from an explicit elapsed/clock/period
+    // field, so timestamps such as "18:45" are never mistaken for minutes.
     const isExplicitClockField =
       value === m.elapsed ||
       value === m.matchMinute ||
