@@ -155,6 +155,16 @@ function processBreaks(e, nowSets) {
     return [];
   }
 
+  // A single poll should normally advance by one completed game.
+  // If several games appeared between polls, the intermediate winners are
+  // unknowable from the cumulative set score, so do not fabricate breaks.
+  if (newTotal - oldTotal > 1) {
+    log("GAME_GAP", { eventId: id, gamesSkipped: newTotal - oldTotal });
+    prev.sets = nowSets;
+    if (first) prev.firstToServe = first;
+    return [];
+  }
+
   const breaks = [];
   let gameNo = oldTotal;
   const count = Math.min(newTotal - oldTotal, 8);
