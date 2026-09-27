@@ -485,7 +485,10 @@ function map1Info(match) {
   const teamIds = o.map(x => String(x?.opponent?.id ?? ""));
   const teamNames = o.map(x => x?.opponent?.name || x?.opponent?.acronym || "");
 
-  const directWinner=directMapWinner(match);\n  if(directWinner!=null)return {winner:directWinner,loser:1-directWinner,series:seriesScore(match)||(directWinner===0?[1,0]:[0,1]),margin:null,source:"map_winner"};\n\n  const games = Array.isArray(match.games) ? match.games : [];
+  const directWinner=directMapWinner(match);
+  if(directWinner!=null)return {winner:directWinner,loser:1-directWinner,series:seriesScore(match)||(directWinner===0?[1,0]:[0,1]),margin:null,source:"map_winner"};
+
+  const games = Array.isArray(match.games) ? match.games : [];
   const finishedGames = games.filter(g => {
     const status = String(g?.status || g?.state || "").toLowerCase();
     return ["finished","completed","complete","ended"].includes(status) ||
