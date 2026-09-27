@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:43:07.504Z",
+  "updatedAt": "2026-09-27T15:43:08.700Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1168,
+    "events": 1169,
     "polls": 4,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712062",
+  "matchId": "1700598",
   "teams": [
-    "Hong Kong",
-    "Malaysia"
+    "FarmVille",
+    "Marsborne"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 6,
+    "noPolyMatch": 7,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
