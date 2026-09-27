@@ -220,9 +220,6 @@ function inferWinnerForGame(oldSets, newSets, beforeTotal, afterTotal) {
     const awChanged = as[1] - bs[1];
     if (hChanged > 0 && awChanged === 0) return 1;
     if (awChanged > 0 && hChanged === 0) return 2;
-    // If more than one game was missed, use the final increment as the winner.
-    if (hChanged > awChanged) return 1;
-    if (awChanged > hChanged) return 2;
     b += steps;
   }
   return null;
