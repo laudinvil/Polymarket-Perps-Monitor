@@ -268,6 +268,42 @@ async function fetchGameDetails(match, game){
     return detail||game;
   }catch(e){log("GAME_DETAILS_ERROR",{matchId:String(match?.id||""),gameId:String(game.id),error:String(e)});return game;}
 }
+async function fetchCSRoundScore(gameId,diag){
+  if(!gameId)return null;
+  const urls=[
+    "/csgo/games/"+encodeURIComponent(String(gameId))+"/rounds",
+    "/csgo/games/"+encodeURIComponent(String(gameId))+"/rounds?per_page=100"
+  ];
+  for(const path of urls){
+    try{
+      const data=await ps(path);
+      const rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:(Array.isArray(data?.rounds)?data.rounds:[]));
+      if(!rows.length)continue;
+      const counts=[0,0];
+      for(const round of rows){
+        const winner=String(round?.winner?.side??round?.winner_side??round?.winning_side??round?.winner?.name??"").toLowerCase();
+        if(winner==="counter-terrorist"||winner==="counter_terrorists"||winner==="ct"||winner==="counterterrorist")counts[0]++;
+        else if(winner==="terrorist"||winner==="terrorists"||winner==="t")counts[1]++;
+        else{
+          const results=Array.isArray(round?.results)?round.results:[];
+          if(results.length>=2){
+            const vals=results.map(x=>Number(x?.score??x?.result??x?.value));
+            if(vals.every(Number.isFinite)&&vals[0]!==vals[1]){
+              if(vals[0]>vals[1])counts[0]++;else counts[1]++;
+            }
+          }
+        }
+      }
+      if(counts[0]+counts[1]>=3&&counts[0]!==counts[1]){
+        diag.map1ScoreSource="pandascore-rounds";
+        diag.map1ScoreFound=(diag.map1ScoreFound||0)+1;
+        return{score:counts,marginValue:Math.abs(counts[0]-counts[1]),marginRatio:Math.abs(counts[0]-counts[1])/Math.max(...counts),source:"pandascore-rounds"};
+      }
+    }catch(e){log("CS_ROUNDS_ERROR",{gameId:String(gameId),error:String(e)})}
+  }
+  diag.map1ScoreUnavailable=(diag.map1ScoreUnavailable||0)+1;
+  return null;
+}
 const bo3Cache=new Map();
 async function bo3Map1Fallback(teamA,teamB,diag){
   const cacheKey=norm(teamA)+"|"+norm(teamB),cached=bo3Cache.get(cacheKey);
@@ -536,8 +572,12 @@ async function map1InfoAsync(match,diag){
   if(score.type==="winner_only"){
     diag.gameWinnerFound=(diag.gameWinnerFound||0)+1;
     diag.marginUnavailable=(diag.marginUnavailable||0)+1;
+    const roundScore=await fetchCSRoundScore(g?.id,diag);
     const winner=score.winnerIndex;
     const loser=winner===0?1:0;
+    if(roundScore){
+      return{winner,loser,series:roundScore.score,margin:roundScore.score,marginValue:roundScore.marginValue,marginRatio:roundScore.marginRatio,source:roundScore.source};
+    }
     return{winner,loser,series:null,margin:null,marginValue:null,marginRatio:null,source:"pandascore-winner-only"};
   }else if(Number.isFinite(score.value)){
     diag.gameScoreFound=(diag.gameScoreFound||0)+1;
@@ -550,7 +590,7 @@ async function map1InfoAsync(match,diag){
   return{winner,loser,series:score.score,margin:score.score,marginValue:score.value,marginRatio:score.value/Math.max(...score.score)};
 }
 
-function diagInit(){return{events:0,candidates:0,livesFetched:0,liveScoresObserved:0, hltvFallbackMatches:0,hltvFallbackMisses:0,hltvFallbackErrors:0,hltvResultsMatches:0,hltvResultsMisses:0,hltvResultsErrors:0,bo3FallbackMatches:0,bo3FallbackMisses:0,bo3FallbackErrors:0,polyHydrateAttempts:0,polyFastMatched:0,polySearchCalls:0,matchedPoly:0,finishedGamesFound:0,map1Finished:0,gameDetailsRequested:0,gameDetailsWinnerOnlyRequested:0,gameScoreFound:0,gameWinnerFound:0,winnerOnlyRejected:0,marginUnavailable:0,signalChecks:0,fallbackSignalPass:0,balancedPrePass:0,movePass:0,postRangePass:0,mapFilterPass:0,signalPass:0,alertsSent:0,alreadyAlerted:0,noMarketUrl:0,rejects:[]};}function sample(arr,v,max=20){if(arr.length<max)arr.push(v)}function pushStageLog(diag,key,stage,extra={}){sample(diag.rejects,{reason:stage,matchId:key,...extra},20)}function mapMarginPass(info){if(!CFG.requireMapMargin&&!Number.isFinite(info?.marginValue))return true;if(!Number.isFinite(info?.marginValue))return false;/* Ignore 0-0, 1-0 and 0-1; analysis starts at a 2-round minimum margin. */return info.marginValue>=CFG.minMapMargin&&Number.isFinite(info.marginRatio)&&info.marginRatio>=CFG.minMapMarginRatio;}
+function diagInit(){return{events:0,candidates:0,livesFetched:0,liveScoresObserved:0,map1ScoreFound:0,map1ScoreUnavailable:0,map1ScoreSource:null, hltvFallbackMatches:0,hltvFallbackMisses:0,hltvFallbackErrors:0,hltvResultsMatches:0,hltvResultsMisses:0,hltvResultsErrors:0,bo3FallbackMatches:0,bo3FallbackMisses:0,bo3FallbackErrors:0,polyHydrateAttempts:0,polyFastMatched:0,polySearchCalls:0,matchedPoly:0,finishedGamesFound:0,map1Finished:0,gameDetailsRequested:0,gameDetailsWinnerOnlyRequested:0,gameScoreFound:0,gameWinnerFound:0,winnerOnlyRejected:0,marginUnavailable:0,signalChecks:0,fallbackSignalPass:0,balancedPrePass:0,movePass:0,postRangePass:0,mapFilterPass:0,signalPass:0,alertsSent:0,alreadyAlerted:0,noMarketUrl:0,rejects:[]};}function sample(arr,v,max=20){if(arr.length<max)arr.push(v)}function pushStageLog(diag,key,stage,extra={}){sample(diag.rejects,{reason:stage,matchId:key,...extra},20)}function mapMarginPass(info){if(!CFG.requireMapMargin&&!Number.isFinite(info?.marginValue))return true;if(!Number.isFinite(info?.marginValue))return false;/* Ignore 0-0, 1-0 and 0-1; analysis starts at a 2-round minimum margin. */return info.marginValue>=CFG.minMapMargin&&Number.isFinite(info.marginRatio)&&info.marginRatio>=CFG.minMapMarginRatio;}
 async function assertCurrentRun(){const runId=String(process.env.GITHUB_RUN_ID||""),sha=String(process.env.GITHUB_SHA||"");if(!runId||!sha)return;const r=await fetch("https://api.github.com/repos/"+GH_REPO+"/actions/runs/"+runId,{headers:{accept:"application/vnd.github+json",authorization:"Bearer "+GH_TOKEN,"x-github-api-version":"2022-11-28"},signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error("RUN_GUARD_HTTP_"+r.status);const j=await r.json();if(String(j.head_sha||"")!==sha||String(j.status||"")!=="in_progress")throw new Error("STALE_RUN_BLOCKED");}
 async function telegram(text){const r=await fetch("https://api.telegram.org/bot"+TG_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:TG_CHAT,text,parse_mode:"HTML",disable_web_page_preview:false}),signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error("TELEGRAM_HTTP_"+r.status);}
 async function claimAlertStrict(key,meta={}){const path="state/esports-alert-dedupe.json",apiFor=p=>"https://api.github.com/repos/"+GH_REPO+"/contents/"+p,headers={accept:"application/vnd.github+json",authorization:"Bearer "+GH_TOKEN,"x-github-api-version":"2022-11-28"},canonicalKey="ESPORTS_MAP1:"+String(meta.matchId||key).replace(/^.*:/,"");for(let attempt=1;attempt<=7;attempt++){const rr=await fetch(apiFor(path),{headers,signal:AbortSignal.timeout(5000)}),j=rr.status===404?{sha:null,content:null}:await rr.json();if(!rr.ok&&rr.status!==404)throw new Error("DEDUPE_READ_HTTP_"+rr.status);const data=j.content?JSON.parse(Buffer.from(j.content.replace(/\n/g,""),"base64").toString("utf8")):{version:2,alerts:{}};data.alerts||={};const existing=data.alerts[canonicalKey];if(existing?.sentAt)return false;data.alerts[canonicalKey]={claimedAt:new Date().toISOString(),runId:process.env.GITHUB_RUN_ID||null,matchId:String(meta.matchId||""),teamA:meta.teamA||null,teamB:meta.teamB||null,sentAt:null};const body={message:"Claim esports Map 1 alert "+canonicalKey,content:Buffer.from(JSON.stringify(data,null,2)+"\n").toString("base64"),branch:"main"};if(j.sha)body.sha=j.sha;const w=await fetch(apiFor(path),{method:"PUT",headers:{...headers,"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});if(w.ok)return true;if(w.status===409||w.status===422){await sleep(250*attempt);continue;}throw new Error("DEDUPE_WRITE_HTTP_"+w.status);}throw new Error("STRICT_DEDUPE_UNAVAILABLE");}
