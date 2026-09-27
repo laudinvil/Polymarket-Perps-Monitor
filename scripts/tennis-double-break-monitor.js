@@ -103,13 +103,6 @@ function marketPlayerNames(m) {
   return [];
 }
 
-function namesFromMarket(m) {
-  const q = String(m.question || "");
-  const title = String(m.title || "");
-  const slug = String(m.slug || m.eventSlug || "");
-  const outcomes = marketPlayerNames(m);
-  return { q, title, slug, outcomes, text: norm(q + " " + title + " " + slug + " " + outcomes.join(" ")) };
-}
 
 function matchMarket(m, e) {
   const home = e.homeTeam?.name;
