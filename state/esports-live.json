@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:35:17.312Z",
+  "updatedAt": "2026-09-27T15:35:19.071Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 248,
+    "events": 267,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1662352",
+  "matchId": "1706604",
   "teams": [
-    "LOUD",
-    "LOS"
+    "Infinite",
+    "Rebels Gaming"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 22,
+    "matchedPoly": 24,
     "noPolyMatch": 2,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
@@ -411,6 +411,16 @@
         "matchId": "1681152",
         "teamA": "Black Phoenix",
         "teamB": "ex-RUSTEC"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1662352",
+        "teamA": "LOUD",
+        "teamB": "LOS",
+        "seriesScore": [
+          0,
+          0
+        ]
       }
     ]
   }
