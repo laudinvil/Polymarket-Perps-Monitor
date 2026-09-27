@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:10.113Z",
+  "updatedAt": "2026-09-27T15:33:13.447Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 414,
+    "events": 439,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1662461",
+  "matchId": "1700638",
   "teams": [
-    "Cloud9",
-    "Team Liquid"
+    "Yawara Esports",
+    "Turma do Pagode"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 28,
+    "matchedPoly": 30,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -358,6 +358,16 @@
         "matchId": "1702600",
         "teamA": "BESTIA Academy",
         "teamB": "Procyon Gaming",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1662461",
+        "teamA": "Cloud9",
+        "teamB": "Team Liquid",
         "seriesScore": [
           0,
           0
