@@ -516,9 +516,9 @@ function mapMarginFromMatch(match) {
   if (!g) return {value:null,type:"unavailable",score:null};
   for (const s of [g?.score,g?.map_score,g?.game_score,g?.results]) {
     let a,b;
-    if (Array.isArray(s) && s.length >= 2) { a=Number(s[0]); b=Number(s[1]); }
+    if (Array.isArray(s) && s.length >= 2) { a=typeof s[0]==="object"?Number(s[0]?.score??s[0]?.result??s[0]?.value):Number(s[0]); b=typeof s[1]==="object"?Number(s[1]?.score??s[1]?.result??s[1]?.value):Number(s[1]); }
     else if (s && typeof s==="object") {
-      a=Number(s.home??s.team1??s.a); b=Number(s.away??s.team2??s.b);
+      a=Number(s.home??s.team1??s.a??s.home_score??s.team1_score); b=Number(s.away??s.team2??s.b??s.away_score??s.team2_score);
     }
     if (Number.isFinite(a)&&Number.isFinite(b)&&a!==b) {
       if (Math.max(a,b)<=1) return {value:null,type:"binary",score:[a,b]};
