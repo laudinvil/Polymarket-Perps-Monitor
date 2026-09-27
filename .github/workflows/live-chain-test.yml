@@ -93,6 +93,32 @@ jobs:
                 console.log("MINUTE_DETAIL",JSON.stringify({slug,minute:found.l.minute,source:found.l.minuteSource||"none"}));
               }
             } catch(e){console.log("MINUTE_DETAIL_ERROR",String(e));}
+            // SofaScore live event feed: explicit live status/clock only; never calculate from kickoff time.
+            try {
+              const today=new Date().toISOString().slice(0,10);
+              const sp=await json("https://api.sofascore.com/api/v1/sport/football/scheduled-events/"+today);
+              const se=Array.isArray(sp.events)?sp.events:[];
+              const sm=se.map(ev=>{
+                const h=ev.homeTeam?.name||"", a=ev.awayTeam?.name||"";
+                const s=Math.max(sim(found.l.home,h)+sim(found.l.away,a),sim(found.l.home,a)+sim(found.l.away,h));
+                return {ev,s};
+              }).filter(x=>x.s>=1.25).sort((a,b)=>b.s-a.s)[0];
+              if(sm){
+                const ev=sm.ev;
+                const detail=await json("https://api.sofascore.com/api/v1/event/"+ev.id);
+                const e=detail.event||detail;
+                console.log("SOFASCORE_MATCH",JSON.stringify({id:e.id,home:e.homeTeam?.name,away:e.awayTeam?.name,status:e.status,homeScore:e.homeScore,awayScore:e.awayScore,time:e.time}));
+                const hs=e.homeScore?.current, as=e.awayScore?.current;
+                if(hs!=null&&as!=null) found.l.score=String(hs)+"–"+String(as);
+                const st=e.status||{};
+                const clock=String(st.description||st.period||st.type||"");
+                const candidates=[st.elapsed,st.currentPeriodStartTimestamp,e.time?.currentPeriodStartTimestamp,e.time?.periodStartTimestamp].filter(v=>v!=null);
+                let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
+                if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*['’]?(?:\\s*min)?\\b/i);
+                if(m){found.l.minute=m[1]+(m[2]?"+"+m[2]:"");found.l.minuteSource="SofaScore";}
+                else if(Number.isFinite(Number(st.elapsed))){found.l.minute=String(Math.floor(Number(st.elapsed)));found.l.minuteSource="SofaScore";}
+              } else console.log("SOFASCORE_MATCH","NONE");
+            } catch(e){console.log("SOFASCORE_ERROR",String(e));}
             // FotMob is used only for authoritative live state/clock. Never derive minute from kickoff time.
             try {
               const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
