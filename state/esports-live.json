@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:16.966Z",
+  "updatedAt": "2026-09-27T15:33:19.961Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 464,
+    "events": 489,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700623",
+  "matchId": "1696341",
   "teams": [
-    "Galorys",
-    "Procyon Gaming"
+    "Liquid",
+    "Wildcard"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 32,
+    "matchedPoly": 34,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
