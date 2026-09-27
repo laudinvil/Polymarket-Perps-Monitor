@@ -221,25 +221,35 @@ async function loadPolyEvents() {
 
 function findPolyEvent(events, teamA, teamB) {
   events = Array.isArray(events) ? events : [];
+  const a = norm(teamA), b = norm(teamB);
   let best = null;
   for (const e of events) {
     const et = eventTeams(e);
     const title = String(e.title || e.name || "");
-    const titleScore = Math.max(
-      sim(title, teamA + " " + teamB),
-      sim(title, teamB + " " + teamA),
-      sim(title.replace(/\b(vs?|versus|v)\b/gi, " "), teamA + " " + teamB),
-      sim(title.replace(/\b(vs?|versus|v)\b/gi, " "), teamB + " " + teamA)
-    );
+    const markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
+    const texts = [title];
+    for (const m of markets) {
+      texts.push(String(m?.question || m?.title || ""));
+      const parsed = parseMarket(m);
+      if (parsed) texts.push(parsed.map(x => x.name).join(" vs "));
+    }
+    let titlePairScore = 0;
+    for (const t of texts) {
+      const nt = norm(t);
+      const hasA = a && (nt.includes(a) || sim(t, teamA) >= 0.60);
+      const hasB = b && (nt.includes(b) || sim(t, teamB) >= 0.60);
+      if (hasA && hasB) { titlePairScore = 1; break; }
+      titlePairScore = Math.max(titlePairScore, (sim(t, teamA) + sim(t, teamB)) / 2);
+    }
     let teamScore = 0;
     if (et.length >= 2) teamScore = Math.max(
-      sim(teamA,et[0]) + sim(teamB,et[1]),
-      sim(teamA,et[1]) + sim(teamB,et[0])
+      (sim(teamA,et[0]) + sim(teamB,et[1])) / 2,
+      (sim(teamA,et[1]) + sim(teamB,et[0])) / 2
     );
-    const score = Math.max(teamScore, titleScore);
+    const score = Math.max(teamScore, titlePairScore);
     if (!best || score > best.score) best = { event:e, score };
   }
-  if (!best || best.score < 0.70) return null;
+  if (!best || best.score < 0.60) return null;
   const e = best.event;
   const markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
   for (const m of markets) {
