@@ -33,6 +33,11 @@ jobs:
       - name: Install HLTV fallback
         run: npm install --no-save hltv@3.5.0
 
+      - name: Verify target commit
+        run: |
+          echo "VERIFY_COMMIT=$(git rev-parse HEAD)"
+          echo "VERIFY_TARGET=6f829d37af05cc202402f069921f54f4acddfdca"
+
       - name: Run all-esports map-1 overreaction monitor
         env:
           PANDASCORE_API_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
@@ -41,4 +46,3 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/esports-map1-overreaction.js
-
