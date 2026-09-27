@@ -584,9 +584,7 @@ async function map1InfoAsync(match,diag){
     const gameSpecificScore=await fetchGameSpecificScore(match,g,diag);
     if(!gameSpecificScore){
       diag.map1ScoreUnavailable=(diag.map1ScoreUnavailable||0)+1;
-      // Winner is verified by PandaScore, but numeric Map 1 score is unavailable.
-      // Keep the winner-only fact and let the existing Polymarket gates decide.
-      return{winner:score.winner,loser:score.winner===0?1:0,series:null,margin:null,marginValue:null,marginRatio:null,source:"pandascore-winner-only"};
+      return null;
     }
     const winner=gameSpecificScore.score[0]>gameSpecificScore.score[1]?0:1;
     const loser=winner===0?1:0;
