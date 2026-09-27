@@ -4,7 +4,7 @@ const CFG = {
   gammaMs: 30000,
   requestTimeoutMs: 5000,
   telegramMinMs: 1000,
-  cooldownMs: 20 * 60 * 1000,
+  cooldownMs: 5 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
   gammaUrl: "https://gamma-api.polymarket.com/events?tag_id=864&active=true&closed=false&limit=500&order=endDate&ascending=true",
