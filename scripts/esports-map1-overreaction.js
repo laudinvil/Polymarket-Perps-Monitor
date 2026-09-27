@@ -94,7 +94,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // PandaScore Free/Fixtures limit: 1,000 REST requests/hour.
 // Keep a hard local budget so polling cannot exhaust the plan.
 const PS_HOURLY_LIMIT = 1000;
-const PS_SAFETY_LIMIT = 900;
+const PS_SAFETY_LIMIT = Math.floor(PS_HOURLY_LIMIT * 0.9);
 const psRequestTimes = [];
 let psUpcomingCache = { at: 0, data: [] };
 let psRunningCache = { at: 0, data: [] };
@@ -226,8 +226,8 @@ function isMatchWinnerMarket(m, teamA, teamB) {
   const outcomeMatch = (names.some(x => sim(x,a) >= .5) && names.some(x => sim(x,b) >= .5));
   if (!outcomeMatch) return false;
   // We need the series/match-winner market, not Map 1/2/3 markets.
-  if (/\bmap\s*[123]\b/i.test(q)) return false;
-  if (/\b(total|over|under|spread|handicap|rounds?|kills?|first\s+map|map\s+winner)\b/i.test(q)) return false;
+  if (/\bmap\s*\d+\b/i.test(q)) return false;
+  if (/\b(total|over|under|spread|handicap|rounds?|kills?|first\s+map|map\s+winner|game\s*\d+)\b/i.test(q)) return false;
   // Polymarket's current CS2 match-winner questions are not consistent:
   // some use "winner", others expose only the two team outcomes.
   return true;
@@ -555,6 +555,8 @@ for (const match of candidates) {
     continue;
   }
   sample(diag.samples, {matchId:String(match.id),teams:[teamA,teamB],status:match.status,beginAt:match.begin_at || match.scheduled_at}, 12);
+
+  const key = String(match.id);
   await publishHeartbeat("MATCH_PROGRESS", {
     matchId:key,
     teams:[teamA,teamB],
@@ -563,8 +565,6 @@ for (const match of candidates) {
     candidates:candidates.length,
     diagnostics:diag
   });
-
-  const key = String(match.id);
   const entry = state.value.matches[key] ||= {
     id:key, teamA, teamB, beginAt:ts, pre:null, alerted:false, lastSeries:null
   };
