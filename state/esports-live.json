@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:39:18.277Z",
+  "updatedAt": "2026-09-27T15:39:21.444Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 14,
+    "events": 34,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700719",
+  "matchId": "1712164",
   "teams": [
-    "Team Yandex",
-    "Natus Vincere"
+    " Phantom Academy",
+    "ILLYRIANS"
   ],
   "status": "running",
   "seriesScore": [
-    2,
-    0
+    1,
+    1
   ],
   "candidates": 67,
   "diagnostics": {
@@ -34,18 +34,18 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 0,
+    "matchedPoly": 2,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
-    "prematchCaptured": 0,
-    "map1Finished": 0,
+    "prematchCaptured": 1,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 0,
-    "balancedPrePass": 0,
-    "movePass": 0,
+    "signalChecks": 1,
+    "balancedPrePass": 1,
+    "movePass": 1,
     "postRangePass": 0,
-    "mapFilterPass": 0,
+    "mapFilterPass": 1,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
@@ -59,8 +59,73 @@
         ],
         "status": "running",
         "beginAt": "2026-09-27T12:53:06Z"
+      },
+      {
+        "matchId": "1700719",
+        "teams": [
+          "Team Yandex",
+          "Natus Vincere"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091446",
+        "polyEventSlug": "dota2-ty-navi-2026-09-27",
+        "marketId": "5027152",
+        "marketSlug": "dota2-ty-navi-2026-09-27",
+        "marketQuestion": "Dota 2: Team Yandex vs Natus Vincere (BO5) - PGL Wallachia Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1700719",
+        "teams": [
+          "Team Yandex",
+          "Natus Vincere"
+        ],
+        "polyEventId": "1091446",
+        "polyEventSlug": "dota2-ty-navi-2026-09-27",
+        "marketId": "5027152",
+        "marketSlug": "dota2-ty-navi-2026-09-27",
+        "marketQuestion": "Dota 2: Team Yandex vs Natus Vincere (BO5) - PGL Wallachia Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1712164",
+        "game": "Counter-Strike",
+        "teams": [
+          " Phantom Academy",
+          "ILLYRIANS"
+        ],
+        "status": "running",
+        "beginAt": "2026-09-27T13:51:52Z"
       }
     ],
-    "rejects": []
+    "rejects": [
+      {
+        "reason": "signal_rejected",
+        "matchId": "1700719",
+        "teams": [
+          "Team Yandex",
+          "Natus Vincere"
+        ],
+        "series": [
+          2,
+          0
+        ],
+        "margin": null,
+        "marginValue": null,
+        "marginRatio": null,
+        "pre": [
+          0.5,
+          0.5
+        ],
+        "post": [
+          0.9945,
+          0.0055
+        ],
+        "move": 0.49450000000000005,
+        "reasons": [
+          "post_range"
+        ]
+      }
+    ]
   }
 }\n
