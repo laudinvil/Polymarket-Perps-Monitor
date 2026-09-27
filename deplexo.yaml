@@ -1,0 +1,4 @@
+framework: node
+install: npm ci
+start: node scripts/deplexo-log-server.js
+port: 3000
