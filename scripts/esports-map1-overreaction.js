@@ -460,31 +460,82 @@ function identifySides(prices, teamA, teamB) {
 }
 
 function map1Info(match) {
-  // PandaScore match.score is the series score. The REST match object does not
-  // reliably expose a separate "Map 1 finished" flag. A series score of 1-0
-  // or 0-1 is therefore the reliable fixture-level signal that Map 1 ended.
-  const s = seriesScore(match);
-  if (!s || (s[0] + s[1]) < 1) return null;
-  const winner = s[0] === 1 && s[1] === 0 ? 0 : s[1] === 1 && s[0] === 0 ? 1 : null;
-  if (winner == null) return null;
+  const o = opponents(match);
+  const teamIds = o.map(x => String(x?.opponent?.id ?? ""));
+  const teamNames = o.map(x => x?.opponent?.name || x?.opponent?.acronym || "");
 
-  let margin = null;
-  const candidates = [
-    match.map_score, match.current_game_score, match.currentGameScore,
-    match.game_score, match.gameScore, match.round_score, match.roundScore
-  ];
-  for (const c of candidates) {
-    if (Array.isArray(c) && c.length >= 2) {
-      const x=Number(c[0]), y=Number(c[1]);
-      if (Number.isFinite(x)&&Number.isFinite(y)) margin=Math.abs(x-y);
-    } else if (c && typeof c === "object") {
-      const x=Number(c.home ?? c.team1 ?? c.a), y=Number(c.away ?? c.team2 ?? c.b);
-      if (Number.isFinite(x)&&Number.isFinite(y)) margin=Math.abs(x-y);
+  const games = Array.isArray(match.games) ? match.games : [];
+  const finishedGames = games.filter(g => {
+    const status = String(g?.status || g?.state || "").toLowerCase();
+    return ["finished","completed","complete","ended"].includes(status) ||
+      Boolean(g?.complete || g?.completed || g?.finished || g?.end_at || g?.ended_at);
+  });
+
+  if (finishedGames.length >= 1) {
+    const g = finishedGames[0];
+    let winner = null;
+    const winnerId = g?.winner?.id ?? g?.winner_id ?? g?.winner?.opponent?.id;
+    if (winnerId != null) {
+      const idx = teamIds.indexOf(String(winnerId));
+      if (idx >= 0) winner = idx;
+    }
+    if (winner == null) {
+      const wn = g?.winner?.name || g?.winner?.acronym || g?.winner_name;
+      if (wn) {
+        const idx = teamNames.findIndex(n => sim(n, wn) >= .5);
+        if (idx >= 0) winner = idx;
+      }
+    }
+    if (winner == null && g?.results) {
+      const gr = Array.isArray(g.results) ? g.results : [];
+      if (gr.length >= 2) {
+        const a=Number(gr[0]?.score ?? gr[0]?.result), b=Number(gr[1]?.score ?? gr[1]?.result);
+        if (Number.isFinite(a)&&Number.isFinite(b)&&a!==b) winner=a>b?0:1;
+      }
+    }
+    let margin = null;
+    for (const c of [g?.score,g?.map_score,g?.game_score,g?.results]) {
+      if (Array.isArray(c) && c.length >= 2) {
+        const x=Number(c[0]),y=Number(c[1]);
+        if (Number.isFinite(x)&&Number.isFinite(y)) { margin=Math.abs(x-y); break; }
+      } else if (c && typeof c==="object") {
+        const x=Number(c.home??c.team1??c.a),y=Number(c.away??c.team2??c.b);
+        if (Number.isFinite(x)&&Number.isFinite(y)) { margin=Math.abs(x-y); break; }
+      }
+    }
+    if (winner != null) return {winner,loser:1-winner,series:seriesScore(match)||(winner===0?[1,0]:[0,1]),margin,source:"games"};
+  }
+
+  const s=seriesScore(match);
+  if (s && ((s[0]===1&&s[1]===0)||(s[1]===1&&s[0]===0))) {
+    let margin=null;
+    for (const c of [match.map_score,match.current_game_score,match.currentGameScore,match.game_score,match.gameScore,match.round_score,match.roundScore]) {
+      if (Array.isArray(c)&&c.length>=2) {
+        const x=Number(c[0]),y=Number(c[1]);
+        if (Number.isFinite(x)&&Number.isFinite(y)) {margin=Math.abs(x-y);break;}
+      } else if(c&&typeof c==="object"){
+        const x=Number(c.home??c.team1??c.a),y=Number(c.away??c.team2??c.b);
+        if(Number.isFinite(x)&&Number.isFinite(y)){margin=Math.abs(x-y);break;}
+      }
+    }
+    const winner=s[0]===1?0:1;
+    return {winner,loser:1-winner,series:s,margin,source:"series_score"};
+  }
+
+  const status=String(match.status||"").toLowerCase();
+  const explicitComplete=Boolean(match.complete||match.completed||match.finished)||["finished","completed","complete","ended"].includes(status);
+  if(explicitComplete){
+    const r=Array.isArray(match.results)?match.results:[];
+    if(r.length>=2){
+      const a=Number(r[0]?.score??r[0]?.result),b=Number(r[1]?.score??r[1]?.result);
+      if(Number.isFinite(a)&&Number.isFinite(b)&&a+b===1){
+        const winner=a===1?0:1;
+        return {winner,loser:1-winner,series:[a,b],margin:null,source:"completed_result"};
+      }
     }
   }
-  return { winner, loser:1-winner, series:s, margin };
+  return null;
 }
-
 function loadState() {
   const path = "state/esports-map1-overreaction.json";
   try {
