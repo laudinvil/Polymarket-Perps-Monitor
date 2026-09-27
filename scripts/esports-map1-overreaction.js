@@ -60,13 +60,13 @@ async function ps(path){return(await getJson(PS_BASE+path,{authorization:"Bearer
 function opponents(match){return Array.isArray(match.opponents)?match.opponents:[]}function teams(match){return opponents(match).map(x=>x?.opponent?.name||x?.opponent?.acronym).filter(Boolean).slice(0,2)}function seriesScore(match){const o=opponents(match);if(o.length>=2){const a=Number(o[0]?.score),b=Number(o[1]?.score);if(Number.isFinite(a)&&Number.isFinite(b))return[a,b];}const r=Array.isArray(match.results)?match.results:[];if(r.length>=2){const a=Number(r[0]?.score??r[0]?.result),b=Number(r[1]?.score??r[1]?.result);if(Number.isFinite(a)&&Number.isFinite(b))return[a,b];}for(const c of [match.score,match.series_score,match.seriesScore]){if(Array.isArray(c)&&c.length>=2){const a=Number(c[0]),b=Number(c[1]);if(Number.isFinite(a)&&Number.isFinite(b))return[a,b];}else if(c&&typeof c==="object"){const a=Number(c.home??c.team1??c.a),b=Number(c.away??c.team2??c.b);if(Number.isFinite(a)&&Number.isFinite(b))return[a,b];}}return null;}
 function supportedSeries(match){const type=String(match.match_type||"").toLowerCase(),games=Number(match.number_of_games);return(type==="best_of"&&(games===3||games===5))||(type==="first_to"&&games===3)||(type==="red_bull_home_ground"&&games===5)}function beginAt(match){const t=Date.parse(match.begin_at||match.scheduled_at||"");return Number.isFinite(t)?t:null}function parseJsonMaybe(v){if(typeof v!=="string")return v;try{return JSON.parse(v)}catch{return v}}
 function eventTeams(event){const out=[];const add=v=>{if(typeof v==="string"&&v.trim())out.push(v.trim());else if(v&&typeof v==="object"){const n=v.name||v.teamName||v.title;if(n)out.push(String(n));}};add(event.homeTeam);add(event.awayTeam);add(event.homeTeamName);add(event.awayTeamName);if(Array.isArray(event.teams))event.teams.forEach(add);return[...new Set(out)];}
-function parseMarket(m){if(!m||typeof m!=="object")return null;const outcomes=parseJsonMaybe(m.outcomes),ids=parseJsonMaybe(m.clobTokenIds),prices=parseJsonMaybe(m.outcomePrices);if(!Array.isArray(outcomes)||outcomes.length!==2)return null;const metaPrice=Number.isFinite(Number(m.lastTradePrice))?Number(m.lastTradePrice):Number.isFinite(Number(m.bestBid))&&Number.isFinite(Number(m.bestAsk))?(Number(m.bestBid)+Number(m.bestAsk))/2:null;return outcomes.map((name,i)=>({name:String(name),tokenId:Array.isArray(ids)&&ids[i]!=null?String(ids[i]):"",gammaPrice:Array.isArray(prices)&&prices[i]!=null?Number(prices[i]):null,marketPrice:metaPrice}));}
+function parseMarket(m){if(!m||typeof m!=="object")return null;const outcomes=parseJsonMaybe(m.outcomes),ids=parseJsonMaybe(m.clobTokenIds),prices=parseJsonMaybe(m.outcomePrices);if(!Array.isArray(outcomes)||outcomes.length!==2)return null;return outcomes.map((name,i)=>({name:String(name),tokenId:Array.isArray(ids)&&ids[i]!=null?String(ids[i]):"",gammaPrice:Array.isArray(prices)&&prices[i]!=null?Number(prices[i]):null}));}
 function isMatchWinnerMarket(m,teamA,teamB){const q=String(m.question||m.title||"").toLowerCase(),p=parseMarket(m);if(!p||p.length!==2)return false;const names=p.map(x=>norm(x.name)),a=norm(teamA),b=norm(teamB);if(!(names.some(x=>sim(x,a)>=.5)&&names.some(x=>sim(x,b)>=.5)))return false;if(/\bmap\s*\d+\b/i.test(q))return false;if(/\b(total|over|under|spread|handicap|rounds?|kills?|first\s+map|map\s+winner|game\s*\d+)\b/i.test(q))return false;return true;}
 async function loadPolyEvents(){const urls=[GAMMA+"/events?active=true&closed=false&limit=500&tag_slug=esports",GAMMA+"/events?active=true&closed=false&limit=500&order=startDate&ascending=true"];let events=[];for(const u of urls){try{const x=await getJson(u);if(Array.isArray(x.data))events.push(...x.data)}catch(e){log("POLY_DISCOVERY_ERROR",String(e))}}return[...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()]}
 const polySearchCache=new Map();async function searchPolyForMatch(teamA,teamB){const cacheKey=norm(teamA)+"|"+norm(teamB);if(polySearchCache.has(cacheKey))return polySearchCache.get(cacheKey);const queries=[teamA+" "+teamB,teamA,teamB],found=[];for(const q of queries){try{const x=await getJson(GAMMA+"/public-search?q="+encodeURIComponent(q)+"&limit_per_type=20&page=1&keep_closed_markets=0");const data=x.data||{};for(const e of Array.isArray(data.events)?data.events:[])found.push(e);for(const m of Array.isArray(data.markets)?data.markets:[])if(m?.event)found.push(m.event)}catch(e){log("POLY_SEARCH_ERROR",{teamA,teamB,error:String(e)})}}const result=[...new Map(found.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];polySearchCache.set(cacheKey,result);return result;}
 async function hydratePolyEvent(candidate,teamA,teamB){if(!candidate?.event)return null;const e=candidate.event;let markets=Array.isArray(e.markets)?e.markets:[];if(!markets.length&&e.id){try{const x=await getJson(GAMMA+"/events/"+encodeURIComponent(String(e.id)));markets=Array.isArray(x.data?.markets)?x.data.markets:[]}catch(err){log("POLY_EVENT_ERROR",{eventId:e.id,error:String(err)})}}const m=markets.find(x=>isMatchWinnerMarket(x,teamA,teamB));return m?{event:e,market:m}:null;}
 const priceCache=new Map();async function price(tokenId){const c=priceCache.get(tokenId);if(c&&Date.now()-c.at<30000)return c.value;try{const x=await getJson(CLOB+"/price?token_id="+encodeURIComponent(tokenId)+"&side=BUY");const v=Number(x.data?.price);if(!Number.isFinite(v))return null;priceCache.set(tokenId,{at:Date.now(),value:v});return v}catch{return null;}}
-const polyPriceCache=new Map();async function marketPrices(poly){if(!poly?.market)return null;const parsed=parseMarket(poly.market);if(!parsed)return null;const cacheKey=String(poly.market.id||parsed.map(x=>x.tokenId).join("|")),cached=polyPriceCache.get(cacheKey);if(cached&&Date.now()-cached.at<30000)return cached.data;const vals=await Promise.all(parsed.map(async o=>{const clob=o.tokenId?await price(o.tokenId):null;const fallback=Number.isFinite(o.marketPrice)?o.marketPrice:o.gammaPrice;return{...o,price:Number.isFinite(clob)?clob:fallback};}));if(vals.some(x=>!Number.isFinite(x.price)))return null;const total=vals[0].price+vals[1].price;if(total<=0)return null;const data=vals.map(x=>({...x,prob:x.price/total}));polyPriceCache.set(cacheKey,{at:Date.now(),data});return data;}
+const polyPriceCache=new Map();async function marketPrices(poly){if(!poly?.market)return null;const parsed=parseMarket(poly.market);if(!parsed)return null;const cacheKey=String(poly.market.id||parsed.map(x=>x.tokenId).join("|")),cached=polyPriceCache.get(cacheKey);if(cached&&Date.now()-cached.at<30000)return cached.data;const vals=await Promise.all(parsed.map(async o=>{if(Number.isFinite(o.gammaPrice))return{...o,price:o.gammaPrice};const clob=o.tokenId?await price(o.tokenId):null;return{...o,price:Number.isFinite(clob)?clob:null};}));if(vals.some(x=>!Number.isFinite(x.price)))return null;const total=vals[0].price+vals[1].price;if(total<=0)return null;const data=vals.map(x=>({...x,prob:x.price/total}));polyPriceCache.set(cacheKey,{at:Date.now(),data});return data;}
 function identifySides(prices,teamA,teamB){const pa=prices.find(x=>sim(x.name,teamA)>=.5),pb=prices.find(x=>sim(x.name,teamB)>=.5);return{a:pa||prices[0],b:pb||prices[1]};}
 async function psLives(){try{return await psPaged("/lives",3)}catch(e){log("PANDASCORE_LIVES_ERROR",{error:String(e)});return[];}}
 function liveMatchId(x){return String(x?.match_id??x?.matchId??x?.match?.id??x?.id??"");}
@@ -135,41 +135,41 @@ async function fetchGameDetails(match, game){
   }catch(e){log("GAME_DETAILS_ERROR",{matchId:String(match?.id||""),gameId:String(game.id),error:String(e)});return game;}
 }
 async function map1InfoAsync(match,diag){
+  const games=Array.isArray(match?.games)?match.games:[];
+  const finished=games.filter(gameFinished).sort((a,b)=>Number(a?.position??a?.number??a?.id??0)-Number(b?.position??b?.number??b?.id??0));
+  if(finished.length)diag.finishedGamesFound=(diag.finishedGamesFound||0)+1;
+  const g=finished[0]||null;
   const series=seriesScore(match);
-  if(!series||series[0]===series[1])return null;
-  const g=firstFinishedGame(match);
-  const seriesHasMap1=series.some(Number.isFinite)&&Math.min(series[0],series[1])===0&&Math.max(series[0],series[1])>=1;
-  if(!g&&!seriesHasMap1)return null;
-  diag.map1Finished++;
   if(!g){
+    if(!series||series[0]===series[1])return null;
+    const seriesHasMap1=Math.min(series[0],series[1])===0&&Math.max(series[0],series[1])>=1;
+    if(!seriesHasMap1)return null;
     diag.map1DetectedFromSeries=(diag.map1DetectedFromSeries||0)+1;
-    const embedded=parseGameScore(match?.__live)||parseGameScore(match);
-    if(Number.isFinite(embedded.value)){
-      const winner=series[0]>series[1]?0:1,loser=winner===0?1:0;
-      const marginRatio=embedded.score?embedded.value/Math.max(...embedded.score):null;
-      diag.gameScoreFound=(diag.gameScoreFound||0)+1;
-      return{winner,loser,series,margin:embedded.score,marginValue:embedded.value,marginRatio};
-    }
-    diag.marginUnavailable=(diag.marginUnavailable||0)+1;
     return null;
   }
+  diag.map1Finished++;
   let score=parseGameScore(g);
-  if(!Number.isFinite(score.value)){
+  if(!Number.isFinite(score.value)&&g?.id){
     diag.gameDetailsRequested=(diag.gameDetailsRequested||0)+1;
     const detail=await fetchGameDetails(match,g);
     score=parseGameScore(detail);
-    if(Number.isFinite(score.value))diag.gameScoreFound=(diag.gameScoreFound||0)+1;
-    else diag.marginUnavailable=(diag.marginUnavailable||0)+1;
-  }else{
-    diag.gameScoreFound=(diag.gameScoreFound||0)+1;
   }
-  const winner=series[0]>series[1]?0:1,loser=winner===0?1:0;
-  if(!Number.isFinite(score.value))return null;
-  const marginRatio=score.score?score.value/Math.max(...score.score):null;
-  return{winner,loser,series,margin:score.score,marginValue:score.value,marginRatio};
+  if(!Number.isFinite(score.value)){
+    diag.marginUnavailable=(diag.marginUnavailable||0)+1;
+    return null;
+  }
+  diag.gameScoreFound=(diag.gameScoreFound||0)+1;
+  const winner=score.score[0]>score.score[1]?0:1;
+  const loser=winner===0?1:0;
+  const derivedSeries=[1,0];
+  derivedSeries[winner]=1;
+  derivedSeries[loser]=0;
+  const finalSeries=series&&series[0]!==series[1]?series:derivedSeries;
+  const marginRatio=score.value/Math.max(...score.score);
+  return{winner,loser,series:finalSeries,margin:score.score,marginValue:score.value,marginRatio};
 }
 
-function diagInit(){return{events:0,candidates:0,livesFetched:0,matchedPoly:0,map1Finished:0,gameDetailsRequested:0,gameScoreFound:0,marginUnavailable:0,signalChecks:0,fallbackSignalPass:0,balancedPrePass:0,movePass:0,postRangePass:0,mapFilterPass:0,signalPass:0,alertsSent:0,alreadyAlerted:0,noMarketUrl:0,rejects:[]};}function sample(arr,v,max=20){if(arr.length<max)arr.push(v)}function pushStageLog(diag,key,stage,extra={}){sample(diag.rejects,{reason:stage,matchId:key,...extra},20)}function mapMarginPass(info){if(!Number.isFinite(info?.marginValue))return false;return info.marginValue>=CFG.minMapMargin&&Number.isFinite(info.marginRatio)&&info.marginRatio>=CFG.minMapMarginRatio;}
+function diagInit(){return{events:0,candidates:0,livesFetched:0,matchedPoly:0,finishedGamesFound:0,map1Finished:0,gameDetailsRequested:0,gameScoreFound:0,marginUnavailable:0,signalChecks:0,fallbackSignalPass:0,balancedPrePass:0,movePass:0,postRangePass:0,mapFilterPass:0,signalPass:0,alertsSent:0,alreadyAlerted:0,noMarketUrl:0,rejects:[]};}function sample(arr,v,max=20){if(arr.length<max)arr.push(v)}function pushStageLog(diag,key,stage,extra={}){sample(diag.rejects,{reason:stage,matchId:key,...extra},20)}function mapMarginPass(info){if(!Number.isFinite(info?.marginValue))return false;return info.marginValue>=CFG.minMapMargin&&Number.isFinite(info.marginRatio)&&info.marginRatio>=CFG.minMapMarginRatio;}
 async function assertCurrentRun(){const runId=String(process.env.GITHUB_RUN_ID||""),sha=String(process.env.GITHUB_SHA||"");if(!runId||!sha)return;const r=await fetch("https://api.github.com/repos/"+GH_REPO+"/actions/runs/"+runId,{headers:{accept:"application/vnd.github+json",authorization:"Bearer "+GH_TOKEN,"x-github-api-version":"2022-11-28"},signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error("RUN_GUARD_HTTP_"+r.status);const j=await r.json();if(String(j.head_sha||"")!==sha||String(j.status||"")!=="in_progress")throw new Error("STALE_RUN_BLOCKED");}
 async function telegram(text){const r=await fetch("https://api.telegram.org/bot"+TG_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:TG_CHAT,text,parse_mode:"HTML",disable_web_page_preview:false}),signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error("TELEGRAM_HTTP_"+r.status);}
 async function claimAlertStrict(key,meta={}){const path="state/esports-alert-dedupe.json",apiFor=p=>"https://api.github.com/repos/"+GH_REPO+"/contents/"+p,headers={accept:"application/vnd.github+json",authorization:"Bearer "+GH_TOKEN,"x-github-api-version":"2022-11-28"},canonicalKey="ESPORTS_MAP1:"+String(meta.matchId||key).replace(/^.*:/,"");for(let attempt=1;attempt<=7;attempt++){const rr=await fetch(apiFor(path),{headers,signal:AbortSignal.timeout(5000)}),j=rr.status===404?{sha:null,content:null}:await rr.json();if(!rr.ok&&rr.status!==404)throw new Error("DEDUPE_READ_HTTP_"+rr.status);const data=j.content?JSON.parse(Buffer.from(j.content.replace(/\n/g,""),"base64").toString("utf8")):{version:2,alerts:{}};data.alerts||={};if(data.alerts[canonicalKey])return false;data.alerts[canonicalKey]={claimedAt:new Date().toISOString(),runId:process.env.GITHUB_RUN_ID||null,matchId:String(meta.matchId||""),teamA:meta.teamA||null,teamB:meta.teamB||null};const body={message:"Strict esports Map 1 alert claim "+canonicalKey,content:Buffer.from(JSON.stringify(data,null,2)+"\n").toString("base64"),branch:"main"};if(j.sha)body.sha=j.sha;const w=await fetch(apiFor(path),{method:"PUT",headers:{...headers,"content-type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});if(w.ok)return true;if(w.status===409||w.status===422){await sleep(250*attempt);continue;}throw new Error("DEDUPE_WRITE_HTTP_"+w.status);}throw new Error("STRICT_DEDUPE_UNAVAILABLE");}
