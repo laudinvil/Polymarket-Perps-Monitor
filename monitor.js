@@ -21,57 +21,60 @@ async function sendTelegram(text){
     headers:{"content-type":"application/json"},
     body:JSON.stringify({chat_id:CHAT_ID,text,disable_web_page_preview:false})
   });
-  if(!r.ok) throw new Error(`Telegram HTTP ${r.status}: ${await r.text()}`);
+  if(!r.ok) throw new Error(`Telegram HTTP ${r.status}`);
 }
 
 function clean(s){
-  return s
-    .replace(/<script[\\s\\S]*?<\\/script>/gi," ")
-    .replace(/<style[\\s\\S]*?<\\/style>/gi," ")
-    .replace(/<[^>]+>/g," ")
+  return s.replace(/<[^>]*>/g," ")
     .replace(/&nbsp;/gi," ")
     .replace(/&amp;/gi,"&")
     .replace(/&quot;/gi,'"')
     .replace(/&#39;/gi,"'")
-    .replace(/\\s+/g," ")
-    .trim();
+    .replace(/\\s+/g," ").trim();
 }
 
 function extractLiveCards(html){
-  const out=[];
-  const re=/<a\\b[^>]*href=["']([^"']*\\/sports\\/soccer\\/games\\/[^"']*)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
-  let m;
-  while((m=re.exec(html))){
-    const href=new URL(m[1],SOURCE).href;
-    const text=clean(m[2]);
-    if(/\\bLIVE\\b/i.test(text)) out.push({href,text});
+  const result=[];
+  const marker="/sports/soccer/games/";
+  let pos=0;
+  while((pos=html.indexOf(marker,pos))!==-1){
+    const start=Math.max(0,html.lastIndexOf("<a",pos));
+    const end=html.indexOf("</a>",pos);
+    if(start<0||end<0||end-start>20000){pos+=marker.length;continue;}
+    const chunk=html.slice(start,end+4);
+    const hrefMatch=chunk.match(/href=["']([^"']*\/sports\/soccer\/games\/[^"']*)["']/i);
+    if(hrefMatch && /\\bLIVE\\b/i.test(clean(chunk))){
+      const href=new URL(hrefMatch[1],SOURCE).href;
+      result.push({href,text:clean(chunk)});
+    }
+    pos=pos+marker.length;
   }
-  return [...new Map(out.map(x=>[x.href,x])).values()];
+  return [...new Map(result.map(x=>[x.href,x])).values()];
 }
 
 async function scan(){
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),12000);
+  const timer=setTimeout(()=>controller.abort(),10000);
   try{
     const r=await fetch(SOURCE,{
       signal:controller.signal,
       headers:{
-        "user-agent":"Mozilla/5.0 (compatible; PolymarketLiveMonitor/1.0)",
+        "user-agent":"Mozilla/5.0",
         "accept":"text/html,application/xhtml+xml"
       }
     });
     if(!r.ok) throw new Error(`Polymarket HTTP ${r.status}`);
     const html=await r.text();
+    console.log("FETCHED BYTES:",html.length);
     const live=extractLiveCards(html);
     status={...status,scans:status.scans+1,live:live.length,lastError:null};
-    console.log(`SCAN: html=${html.length} live=${live.length}`);
+    console.log(`SCAN: live=${live.length}`);
     for(const item of live){
       if(seen.has(item.href)) continue;
       const title=item.text.replace(/\\bLIVE\\b/ig,"").replace(/\\s+/g," ").trim();
       console.log("NEW LIVE:",item.href);
       await sendTelegram(`⚽ LIVE FOUND\\n\\n${title}\\n\\n${item.href}`);
       seen.add(item.href);
-      console.log("TELEGRAM SENT:",item.href);
     }
   }finally{
     clearTimeout(timer);
@@ -81,9 +84,8 @@ async function scan(){
 async function main(){
   console.log("MONITOR STARTING");
   console.log("SOURCE:",SOURCE);
-  console.log("POLL_MS:",POLL_MS);
-  console.log("MODE: DIRECT HTTP FETCH (NO BROWSER)");
-  console.log("TELEGRAM CONFIG:",TOKEN?"TOKEN=SET":"TOKEN=MISSING",CHAT_ID?"CHAT_ID=SET":"CHAT_ID=MISSING");
+  console.log("MODE: LOW-MEMORY HTTP");
+  console.log("TELEGRAM:",TOKEN&&CHAT_ID?"CONFIGURED":"MISSING");
   while(true){
     try{await scan();}
     catch(e){status.lastError=e?.stack||String(e);console.error("SCAN ERROR:",status.lastError);}
