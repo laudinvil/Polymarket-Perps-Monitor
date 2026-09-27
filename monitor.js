@@ -296,16 +296,17 @@ async function handleGame(m) {
   const currentMinute = minute(m);
   const currentScore = score(m);
 
-  // The Polymarket sports feed can announce a LIVE match before its first
-  // score update. A 0-0 state is valid, but an unknown score is not.
-  if (currentScore === "—") {
+  // Never block the first LIVE alert because score/minute data is temporarily
+  // missing. "0–0" is a real score; "—" means the provider has not supplied it.
+  // The alert is sent immediately and later feed updates remain available for
+  // diagnostics instead of silently producing zero alerts.
+  if (currentScore === "—" || currentMinute === "—") {
     console.log(
-      "LIVE WAITING FOR SCORE",
+      "LIVE DATA PARTIAL — SENDING ALERT",
       id,
       "MINUTE=" + currentMinute,
       "SCORE=" + currentScore
     );
-    return;
   }
 
   console.log("LIVE READY FOR TELEGRAM", JSON.stringify({
