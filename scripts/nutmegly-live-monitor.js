@@ -7,13 +7,13 @@ const seen = new Map();
 const TTL_MS = 24 * 60 * 60 * 1000;
 
 function clean(s) {
-  return String(s ?? "").replace(/\\s+/g, " ").trim();
+  return String(s ?? "").replace(/\s+/g, " ").trim();
 }
 
 function htmlToText(html) {
   return clean(html
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -24,7 +24,7 @@ function htmlToText(html) {
 function parseLiveMatches(html) {
   const text = htmlToText(html);
   const out = [];
-  const re = /LIVE\\s+([^\\n]{2,100}?)\\s+(\\d+)\\s*[-–]\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+([^\\n]{2,100}?)(?=\\s+(?:UEFA|Premier League|La Liga|Serie A|Bundesliga|Ligue 1|Major League Soccer|MLS|Eredivisie|Primeira|Championship|League|Regular Season|[0-9]{2}:[0-9]{2})|$)/gi;
+  const re = /LIVE\s+([^\n]{2,100}?)\s+(\d+)\s*[-–]\s*(\d+)\s+(\d{1,3})['’]\s+([^\n]{2,100}?)(?=\s+(?:UEFA|Premier League|La Liga|Serie A|Bundesliga|Ligue 1|Major League Soccer|MLS|Eredivisie|Primeira|Championship|League|Regular Season|[0-9]{2}:[0-9]{2})|$)/gi;
   for (const m of text.matchAll(re)) {
     const home = clean(m[1]);
     const scoreHome = Number(m[2]);
@@ -40,7 +40,7 @@ function parseLiveMatches(html) {
   let pos = 0;
   while ((pos = text.indexOf(marker, pos)) !== -1) {
     const chunk = text.slice(pos, pos + 500);
-    const sm = chunk.match(/^LIVE\\s+(.{2,80}?)\\s+(\\d+)\\s*[-–]\\s*(\\d+)\\s+(\\d{1,3})['’]\\s+(.{2,80}?)(?:\\s+(?:UEFA|Premier League|La Liga|Serie A|Bundesliga|Ligue 1|Major League Soccer|MLS|Eredivisie|Primeira|Championship|League)|$)/i);
+    const sm = chunk.match(/^LIVE\s+(.{2,80}?)\s+(\d+)\s*[-–]\s*(\d+)\s+(\d{1,3})['’]\s+(.{2,80}?)(?:\s+(?:UEFA|Premier League|La Liga|Serie A|Bundesliga|Ligue 1|Major League Soccer|MLS|Eredivisie|Primeira|Championship|League)|$)/i);
     if (sm) {
       const item = {home:clean(sm[1]), away:clean(sm[5]), scoreHome:+sm[2], scoreAway:+sm[3], minute:+sm[4]};
       if (item.home && item.away && !out.some(x => x.home===item.home && x.away===item.away)) out.push(item);
@@ -88,7 +88,7 @@ async function poll() {
       "",
       "NUTMEGLY",
       NUTMEGLY_URL
-    ].join("\\n");
+    ].join("\n");
     await telegram(msg);
     seen.set(key, now);
   }
