@@ -12,6 +12,12 @@ let lastError = null;
 let liveCount = 0;
 let alertsSent = 0;
 let wsState = "disconnected";
+let eventsReceived = 0;
+let soccerCandidates = 0;
+let soccerAccepted = 0;
+let soccerRejected = 0;
+let lastEvent = null;
+let lastSoccerCandidate = null;
 let wsRef = null;
 let shuttingDown = false;
 const games = new Map();
@@ -77,6 +83,24 @@ function isSoccer(m) {
   return false;
 }
 
+function eventSnapshot(m) {
+  return {
+    gameId: String(m.gameId || ""),
+    league: m.leagueAbbreviation || m.league || "",
+    sport: m.sport || m.sportSlug || "",
+    home: m.homeTeam || "",
+    away: m.awayTeam || "",
+    status: m.status || "",
+    live: m.live,
+    ended: m.ended,
+    period: m.period || "",
+    elapsed: m.elapsed || "",
+    minute: m.minute ?? "",
+    score: m.score || "",
+    slug: m.slug || ""
+  };
+}
+
 function minute(m) {
   const candidates = [
     m.elapsed,
@@ -117,7 +141,30 @@ function title(m) {
 async function handleGame(m) {
   if (!m || !m.gameId) return;
 
-  if (m.live === true && !m.ended && isSoccer(m)) {
+  eventsReceived++;
+  lastEvent = eventSnapshot(m);
+
+  const soccer = isSoccer(m);
+  if (soccer) {
+    soccerCandidates++;
+    lastSoccerCandidate = eventSnapshot(m);
+  } else {
+    soccerRejected++;
+  }
+
+  if (eventsReceived % 50 === 0) {
+    console.log("DIAGNOSTIC", JSON.stringify({
+      eventsReceived,
+      soccerCandidates,
+      soccerAccepted,
+      soccerRejected,
+      lastEvent,
+      lastSoccerCandidate
+    }));
+  }
+
+  if (m.live === true && !m.ended && soccer) {
+    soccerAccepted++;
     games.set(String(m.gameId), m);
   } else if (m.ended || String(m.status || "").toLowerCase() === "final") {
     games.delete(String(m.gameId));
@@ -125,7 +172,7 @@ async function handleGame(m) {
 
   liveCount = games.size;
 
-  if (!(m.live === true && !m.ended && isSoccer(m))) return;
+  if (!(m.live === true && !m.ended && soccer)) return;
 
   const id = String(m.gameId);
   if (alerted.has(id)) return;
@@ -233,8 +280,14 @@ const server = http.createServer((req, res) => {
     wsState,
     liveCount,
     alertsSent,
+    eventsReceived,
+    soccerCandidates,
+    soccerAccepted,
+    soccerRejected,
     lastMessageAt,
-    lastError
+    lastError,
+    lastEvent,
+    lastSoccerCandidate
   }));
 });
 
@@ -252,7 +305,11 @@ const heartbeat = setInterval(() => {
     "uptime=" + Math.floor(process.uptime()) + "s",
     "ws=" + wsState,
     "live=" + liveCount,
-    "alerts=" + alertsSent
+    "alerts=" + alertsSent,
+    "events=" + eventsReceived,
+    "soccerCandidates=" + soccerCandidates,
+    "soccerAccepted=" + soccerAccepted,
+    "soccerRejected=" + soccerRejected
   );
 }, 10000);
 
