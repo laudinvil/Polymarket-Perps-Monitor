@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:39:50.123Z",
+  "updatedAt": "2026-09-27T15:39:51.514Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 277,
+    "events": 287,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706603",
+  "matchId": "1700705",
   "teams": [
-    "Fluxo W7M",
-    "SAW"
+    "Imperial",
+    "paiN"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 24,
-    "noPolyMatch": 3,
+    "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
@@ -425,6 +425,12 @@
         "matchId": "1706604",
         "teamA": "Infinite",
         "teamB": "Rebels Gaming"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1706603",
+        "teamA": "Fluxo W7M",
+        "teamB": "SAW"
       }
     ]
   }
