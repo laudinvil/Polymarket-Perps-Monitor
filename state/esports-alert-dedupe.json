@@ -32,6 +32,13 @@
       "teamA": "Eternal Fire",
       "teamB": "K27",
       "migratedFrom": "CS2_MAP1:1706431"
+    },
+    "ESPORTS_MAP1:1700464": {
+      "claimedAt": "2026-09-27T15:45:17.647Z",
+      "runId": "36330323125",
+      "matchId": "1700464",
+      "teamA": "Spirit Academy",
+      "teamB": "megoshort"
     }
   }
 }
