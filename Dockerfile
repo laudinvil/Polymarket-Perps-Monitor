@@ -14,4 +14,4 @@ ENV HOME=/tmp
 
 EXPOSE 3000
 
-CMD ["sh","-c","while true; do echo '=== MONITOR PROCESS START ==='; node monitor.js; code=$?; echo "=== MONITOR EXIT CODE: $code ==="; sleep 5; done"]
+CMD ["node","monitor.js"]
