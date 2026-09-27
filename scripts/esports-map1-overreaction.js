@@ -352,15 +352,68 @@ function persistRemoteState(force = false) {
   }
 }
 
+async function publishHeartbeat(stage, extra = {}) {
+  if (!GH_TOKEN || !GH_REPO) return;
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    stage,
+    runId: process.env.GITHUB_RUN_ID || null,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
+    sha: process.env.GITHUB_SHA || null,
+    pid: process.pid,
+    telemetry: {
+      startedAt: telemetry.startedAt,
+      events: telemetry.events,
+      polls: telemetry.polls,
+      alerts: telemetry.alerts,
+      errors: telemetry.errors,
+      lastError: telemetry.lastError
+    },
+    ...extra
+  };
+  const path = "state/cs2-live.json";
+  try {
+    const api = "https://api.github.com/repos/" + GH_REPO + "/contents/" + path;
+    const headers = {
+      accept:"application/vnd.github+json",
+      authorization:"Bearer " + GH_TOKEN,
+      "x-github-api-version":"2022-11-28"
+    };
+    let sha = null;
+    const current = await fetch(api, {headers, signal:AbortSignal.timeout(5000)});
+    if (current.ok) {
+      const j = await current.json();
+      sha = j.sha || null;
+    }
+    const body = {
+      message: "CS2 monitor heartbeat",
+      content: Buffer.from(JSON.stringify(payload,null,2)+"\\n").toString("base64"),
+      branch: "main"
+    };
+    if (sha) body.sha = sha;
+    const r = await fetch(api, {
+      method:"PUT",
+      headers:{...headers,"content-type":"application/json"},
+      body:JSON.stringify(body),
+      signal:AbortSignal.timeout(5000)
+    });
+    if (!r.ok) throw new Error("GitHub heartbeat HTTP " + r.status);
+  } catch (e) {
+    nativeConsoleLog("HEARTBEAT_ERROR", JSON.stringify({stage,error:String(e)}));
+  }
+}
+
 async function poll() {
   const now = Date.now();
-
+  await publishHeartbeat("POLL_START", {now:new Date(now).toISOString()});
 
 const upcoming = await ps("/csgo/matches/upcoming?per_page=100");
 const running = await ps("/csgo/matches/running?per_page=100");
+await publishHeartbeat("PANDASCORE_OK", {upcoming:upcoming.length,running:running.length});
 
 const candidates = [...upcoming, ...running].filter(m => bo3(m));
 const polyEvents = await loadPolyEvents();
+await publishHeartbeat("POLYMARKET_OK", {polyEvents:polyEvents.length});
 log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
 log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
 
