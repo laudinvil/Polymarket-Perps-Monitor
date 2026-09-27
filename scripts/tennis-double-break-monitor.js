@@ -312,14 +312,11 @@ async function processBreaks(e, nowSets) {
     return [];
   }
 
-  // A single poll should normally advance by one completed game.
-  // If several games appeared between polls, the intermediate winners are
-  // unknowable from the cumulative set score, so do not fabricate breaks.
+  // PBP gives us the exact completed games, so a poll may safely
+  // contain more than one completed game. Process every transition that
+  // can be matched to the live cumulative score.
   if (newTotal - oldTotal > 1) {
-    log("GAME_GAP", { eventId: id, gamesSkipped: newTotal - oldTotal });
-    prev.sets = nowSets;
-    // Keep the match's initial server fixed.
-    return [];
+    log("GAME_GAP", { eventId: id, gamesSkipped: newTotal - oldTotal, action: "PROCESS_PBP" });
   }
 
   const breaks = [];
