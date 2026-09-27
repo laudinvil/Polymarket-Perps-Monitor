@@ -1,29 +1,18 @@
 {
-  "updatedAt": "2026-09-27T15:10:46.764Z",
-  "stage": "MATCH_PROGRESS",
+  "updatedAt": "2026-09-27T15:10:49.199Z",
+  "stage": "POLL_RESULT",
   "runId": "36328535144",
   "runAttempt": "1",
   "sha": "5da20423ec13a971a9e01c332a33edc687e3c5da",
   "pid": 2113,
   "telemetry": {
     "startedAt": "2026-09-27T15:09:54.105Z",
-    "events": 474,
+    "events": 499,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710864",
-  "teams": [
-    "G2 Ares",
-    "FC Famalicão Esports"
-  ],
-  "status": "running",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 91,
   "diagnostics": {
     "startedAt": "2026-09-27T15:09:54.111Z",
     "upcoming": 100,
@@ -32,7 +21,7 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 36,
+    "matchedPoly": 38,
     "noPolyMatch": 13,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -353,5 +342,17 @@
         "teamB": "Eternal Fire Academy"
       }
     ]
-  }
+  },
+  "config": {
+    "minPreFavorite": 0.35,
+    "maxPreFavorite": 0.65,
+    "minMove": 0.15,
+    "minPostFavorite": 0.6,
+    "maxPostFavorite": 0.95,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 40,
+  "alerts": 0
 }\n
