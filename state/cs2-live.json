@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T13:59:54.697Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T14:00:06.574Z",
+  "stage": "POLL_RESULT",
   "runId": "36324111840",
   "runAttempt": "1",
   "sha": "ee818709a06694367d65886bba0d92c91ef29d99",
   "pid": 2152,
   "telemetry": {
     "startedAt": "2026-09-27T13:56:26.565Z",
-    "events": 5494,
+    "events": 6079,
     "polls": 9,
     "alerts": 0,
     "errors": 3,
@@ -17,18 +17,16 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "polyEvents": 224,
-  "candidates": 90,
   "diagnostics": {
     "startedAt": "2026-09-27T13:59:51.458Z",
     "upcoming": 100,
     "running": 9,
     "bo3": 90,
-    "skippedFuture": 0,
-    "missingTeams": 0,
+    "skippedFuture": 46,
+    "missingTeams": 10,
     "polyEvents": 224,
-    "matchedPoly": 0,
-    "noPolyMatch": 0,
+    "matchedPoly": 54,
+    "noPolyMatch": 7,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -42,7 +40,290 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
-    "rejects": []
-  }
+    "samples": [
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091743",
+        "polyEventSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketId": "5029449",
+        "marketSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketQuestion": "Counter-Strike: Metizport vs Inner Circle Academy (BO3) - Tipsport Cup Open #2 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "polyEventId": "1091743",
+        "polyEventSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketId": "5029449",
+        "marketSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketQuestion": "Counter-Strike: Metizport vs Inner Circle Academy (BO3) - Tipsport Cup Open #2 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088001",
+        "polyEventSlug": "cs2-ef1-k271-2026-09-27",
+        "marketId": "5001609",
+        "marketSlug": "cs2-ef1-k271-2026-09-27",
+        "marketQuestion": "Counter-Strike: Eternal Fire vs K27 (BO3) - Stake Ranked Episode 5: Closed Qualifier Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "polyEventId": "1088001",
+        "polyEventSlug": "cs2-ef1-k271-2026-09-27",
+        "marketId": "5001609",
+        "marketSlug": "cs2-ef1-k271-2026-09-27",
+        "marketQuestion": "Counter-Strike: Eternal Fire vs K27 (BO3) - Stake Ranked Episode 5: Closed Qualifier Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088259",
+        "polyEventSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketId": "5003772",
+        "marketSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketQuestion": "Counter-Strike: Spirit Academy vs megoshort (BO3) - CCT Europe Closed Qualifier: Series #10 Play-In",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "polyEventId": "1088259",
+        "polyEventSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketId": "5003772",
+        "marketSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketQuestion": "Counter-Strike: Spirit Academy vs megoshort (BO3) - CCT Europe Closed Qualifier: Series #10 Play-In",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1684180",
+        "teams": [
+          "BBL",
+          "Sinners"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1684180",
+        "teams": [
+          "BBL",
+          "Sinners"
+        ],
+        "source": "public-search",
+        "polyEventId": "1087999",
+        "polyEventSlug": "cs2-bbl1-sin2-2026-09-27",
+        "marketId": "5001590",
+        "marketSlug": "cs2-bbl1-sin2-2026-09-27",
+        "marketQuestion": "Counter-Strike: BBL vs Sinners (BO3) - NODWIN Clutch Series Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1684180",
+        "teams": [
+          "BBL",
+          "Sinners"
+        ],
+        "polyEventId": "1087999",
+        "polyEventSlug": "cs2-bbl1-sin2-2026-09-27",
+        "marketId": "5001590",
+        "marketSlug": "cs2-bbl1-sin2-2026-09-27",
+        "marketQuestion": "Counter-Strike: BBL vs Sinners (BO3) - NODWIN Clutch Series Playoffs",
+        "matchScore": 1
+      }
+    ],
+    "rejects": [
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1707300",
+        "teamA": "Metizport",
+        "teamB": "Inner Circle Academy"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1707300",
+        "teamA": "Metizport",
+        "teamB": "Inner Circle Academy",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1706431",
+        "teamA": "Eternal Fire",
+        "teamB": "K27"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1706431",
+        "teamA": "Eternal Fire",
+        "teamB": "K27",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700464",
+        "teamA": "Spirit Academy",
+        "teamB": "megoshort"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700464",
+        "teamA": "Spirit Academy",
+        "teamB": "megoshort",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1684180",
+        "teamA": "BBL",
+        "teamB": "Sinners"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1684180",
+        "teamA": "BBL",
+        "teamB": "Sinners",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe",
+        "seriesScore": null
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1681152",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706604",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706603",
+        "opponents": 1
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse"
+      }
+    ]
+  },
+  "config": {
+    "minPreFavorite": 0.4,
+    "maxPreFavorite": 0.6,
+    "minMove": 0.25,
+    "minPostFavorite": 0.75,
+    "maxPostFavorite": 0.9,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 38,
+  "alerts": 0
 }\n
