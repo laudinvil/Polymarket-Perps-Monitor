@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:10:20.161Z",
+  "updatedAt": "2026-09-27T15:10:21.994Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328535144",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2113,
   "telemetry": {
     "startedAt": "2026-09-27T15:09:54.105Z",
-    "events": 262,
+    "events": 287,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700638",
+  "matchId": "1700623",
   "teams": [
-    "Yawara Esports",
-    "Turma do Pagode"
+    "Galorys",
+    "Procyon Gaming"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 2,
     "polyEvents": 224,
-    "matchedPoly": 18,
+    "matchedPoly": 20,
     "noPolyMatch": 2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -297,6 +297,16 @@
         "matchId": "1702600",
         "teamA": "BESTIA Academy",
         "teamB": "Procyon Gaming",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700638",
+        "teamA": "Yawara Esports",
+        "teamB": "Turma do Pagode",
         "seriesScore": [
           0,
           0
