@@ -352,7 +352,7 @@ async function processBreaks(e, nowSets) {
     // fragile need to reconstruct serving order from firstToServe.
     let feedGame = null;
     try {
-      feedGame = await getCompletedGameFromPointFeed(id, newTotal);
+      feedGame = await getCompletedGameFromPointFeed(id, before + 1);
       if (feedGame) {
         log("PBP_GAME", {
           eventId: id,
