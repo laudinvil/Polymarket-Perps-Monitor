@@ -173,3 +173,9 @@ jobs:
           const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
           console.log("ALERT_SENT",found.e.id,found.e.slug);process.exit(10);
           NODE
+            status=$?
+            set -e
+            if [ "$status" -eq 10 ]; then exit 0; fi
+            if [ "$status" -ne 0 ]; then exit "$status"; fi
+            if [ "$attempt" -lt 10 ]; then sleep 15; fi
+          done
