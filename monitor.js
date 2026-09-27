@@ -142,6 +142,10 @@ function minute(m) {
     const periodClock = s.match(/(?:1H|2H|ET)\s*(\d{1,3})\s*:\s*\d{1,2}/i);
     if (periodClock) return periodClock[1];
 
+    // Also accept "1ST HALF 37:42" / "2ND HALF 12:03".
+    const namedPeriodClock = s.match(/(?:1ST|2ND)\s*HALF\s*(\d{1,3})\s*:\s*\d{1,2}/i);
+    if (namedPeriodClock) return namedPeriodClock[1];
+
     // Some feeds expose only a minute number inside a longer status string.
     const embedded = s.match(/(?:minute|elapsed|clock)\D{0,8}(\d{1,3})/i);
     if (embedded) return embedded[1];
