@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:38.887Z",
+  "updatedAt": "2026-09-27T15:33:40.086Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 526,
+    "events": 527,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1713028",
+  "matchId": "1711997",
   "teams": [
-    "Please Not Hero Ban",
-    "Lazuli"
+    "ЯЧЁ123",
+    "InterActive Philippines"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 2,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 17,
+    "noPolyMatch": 18,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
