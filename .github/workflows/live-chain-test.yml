@@ -2,10 +2,15 @@ name: LIVE CHAIN TEST
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
   schedule:
     - cron: "* * * * *"
+
+concurrency:
+  group: live-chain-test
+  cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   test:
@@ -19,6 +24,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+            GITHUB_TOKEN: ${{ github.token }}
+            GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set +e
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
