@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:16.040Z",
+  "updatedAt": "2026-09-27T15:37:17.111Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 874,
+    "events": 875,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712147",
+  "matchId": "1684183",
   "teams": [
-    "Teletubisie",
-    "Eternal Fire Academy"
+    "BET-M 33",
+    "Sinners"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,10 +32,10 @@
     "bo5": 10,
     "firstTo3": 3,
     "skippedFuture": 0,
-    "missingTeams": 0,
+    "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 14,
+    "noPolyMatch": 15,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
