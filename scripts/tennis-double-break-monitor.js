@@ -511,12 +511,23 @@ async function evaluate(e, brokenSide) {
   const m = findMarketForPlayer(e, player);
   if (!m) {
     state.marketMisses++;
+    const candidates = Array.from(markets.values())
+      .filter(isMatchWinnerMarket)
+      .slice(0, 10)
+      .map(x => ({
+        id: x.id,
+        question: x.question || x.title || null,
+        eventSlug: x.eventSlug || null,
+        outcomes: marketPlayerNames(x)
+      }));
     log("MARKET_MISS", {
       eventId: e.id,
       player,
       home: e.homeTeam?.name || null,
       away: e.awayTeam?.name || null,
-      marketsLoaded: markets.size
+      marketsLoaded: markets.size,
+      winnerMarkets: Array.from(markets.values()).filter(isMatchWinnerMarket).length,
+      sampleWinnerMarkets: candidates
     });
     return;
   }
