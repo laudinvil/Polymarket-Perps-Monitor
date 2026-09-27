@@ -241,6 +241,13 @@ function processBreaks(e, nowSets) {
 
   const breaks = [];
   let gameNo = oldTotal;
+  log("GAME_PROGRESS", {
+    eventId: id,
+    oldTotal,
+    newTotal,
+    initialServer: prev.firstToServe === 1 ? "HOME" : prev.firstToServe === 2 ? "AWAY" : null,
+    currentScore: nowSets
+  });
   const count = Math.min(newTotal - oldTotal, 8);
 
   // 6-6 -> 7-6 / 6-7 is a completed tiebreak, not a normal service game.
