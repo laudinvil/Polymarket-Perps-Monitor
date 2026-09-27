@@ -459,12 +459,33 @@ function identifySides(prices, teamA, teamB) {
   return { a, b };
 }
 
+function directMapWinner(match) {
+  const candidates = [
+    match?.map_winner, match?.mapWinner,
+    match?.current_map?.winner, match?.currentMap?.winner,
+    match?.last_map?.winner, match?.lastMap?.winner,
+    match?.map?.winner
+  ].filter(Boolean);
+  const o=opponents(match);
+  const names=o.map(x=>x?.opponent?.name||x?.opponent?.acronym||"");
+  const ids=o.map(x=>String(x?.opponent?.id??""));
+  for(const w of candidates){
+    const id=w?.id??w?.team_id??w?.opponent?.id;
+    if(id!=null){const idx=ids.indexOf(String(id));if(idx>=0)return idx;}
+    const name=typeof w==="string"?w:(w?.name||w?.acronym||w?.team_name);
+    if(name){const idx=names.findIndex(n=>sim(n,name)>=.5);if(idx>=0)return idx;}
+  }
+  for(const id of [match?.map_winner_id,match?.mapWinnerId,match?.winner_id]){
+    if(id!=null){const idx=ids.indexOf(String(id));if(idx>=0)return idx;}
+  }
+  return null;
+}
 function map1Info(match) {
   const o = opponents(match);
   const teamIds = o.map(x => String(x?.opponent?.id ?? ""));
   const teamNames = o.map(x => x?.opponent?.name || x?.opponent?.acronym || "");
 
-  const games = Array.isArray(match.games) ? match.games : [];
+  const directWinner=directMapWinner(match);\n  if(directWinner!=null)return {winner:directWinner,loser:1-directWinner,series:seriesScore(match)||(directWinner===0?[1,0]:[0,1]),margin:null,source:"map_winner"};\n\n  const games = Array.isArray(match.games) ? match.games : [];
   const finishedGames = games.filter(g => {
     const status = String(g?.status || g?.state || "").toLowerCase();
     return ["finished","completed","complete","ended"].includes(status) ||
