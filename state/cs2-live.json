@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T14:05:47.748Z",
-  "stage": "PANDASCORE_OK",
+  "updatedAt": "2026-09-27T14:05:49.057Z",
+  "stage": "POLYMARKET_OK",
   "runId": "36324111840",
   "runAttempt": "1",
   "sha": "ee818709a06694367d65886bba0d92c91ef29d99",
   "pid": 2152,
   "telemetry": {
     "startedAt": "2026-09-27T13:56:26.565Z",
-    "events": 14520,
+    "events": 14529,
     "polls": 24,
     "alerts": 0,
     "errors": 8,
@@ -17,16 +17,16 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "upcoming": 100,
-  "running": 9,
+  "polyEvents": 224,
+  "candidates": 90,
   "diagnostics": {
     "startedAt": "2026-09-27T14:05:45.573Z",
     "upcoming": 100,
     "running": 9,
-    "bo3": 0,
+    "bo3": 90,
     "skippedFuture": 0,
     "missingTeams": 0,
-    "polyEvents": 0,
+    "polyEvents": 224,
     "matchedPoly": 0,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
