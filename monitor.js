@@ -263,6 +263,20 @@ async function handleGame(m) {
     !endedFlag &&
     (liveFlag || liveStatus || soccerStatus);
 
+  if (soccer) {
+    console.log("SOCCER CHECK", JSON.stringify({
+      id,
+      title: title(m),
+      status,
+      live: liveFlag,
+      ended: endedFlag,
+      period: m.period || "",
+      minute: minute(m),
+      score: score(m),
+      soccerLive
+    }));
+  }
+
   if (soccerLive) {
     soccerAccepted++;
     games.set(id, m);
@@ -293,6 +307,13 @@ async function handleGame(m) {
     );
     return;
   }
+
+  console.log("LIVE READY FOR TELEGRAM", JSON.stringify({
+    id,
+    title: title(m),
+    minute: currentMinute,
+    score: currentScore
+  }));
 
   // Keep the first alert one-time per game, but only mark it as consumed
   // after Telegram confirms delivery.
