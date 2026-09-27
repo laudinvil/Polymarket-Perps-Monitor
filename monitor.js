@@ -1,698 +1,262 @@
-import https from "node:https";
 import { execFile } from "node:child_process";
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 3000);
-const WS_URL = "wss://sports-api.polymarket.com/ws";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const RECONNECT_MS = 3000;
-const GAMMA_URLS = [
-  "https://gamma-api.polymarket.com/events?active=true&closed=false&tag_slug=soccer&limit=500",
-  "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500"
-];
-const GAMMA_POLL_MS = 5000;
+const LIVE_URL = "https://football-live-api.vercel.app/api/matches/live";
+const POLYMARKET_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500";
+const POLL_MS = 30000;
 const STARTED_AT = new Date().toISOString();
-const DIAGNOSTIC_INTERVAL_MS = 30000;
 
-let lastMessageAt = null;
-let lastError = null;
-let liveCount = 0;
+let polls = 0;
+let liveExternal = 0;
+let polyEvents = 0;
+let matchesFound = 0;
 let alertsSent = 0;
-let wsState = "disconnected";
-let eventsReceived = 0;
-let soccerCandidates = 0;
-let soccerAccepted = 0;
-let soccerRejected = 0;
-let lastEvent = null;
-let lastSoccerCandidate = null;
-let lastGammaEvent = null;
-let lastGammaError = null;
-let gammaPolls = 0;
-let gammaLiveCount = 0;
-let gammaPolling = false;
-let gammaTimer = null;
-let diagnosticTimer = null;
-let wsRef = null;
-let shuttingDown = false;
-const games = new Map();
+let lastError = null;
+let lastExternal = null;
+let lastMatch = null;
 const alerted = new Set();
-let testAlertSent = false;
+let stopping = false;
 
-process.on("SIGTERM", () => {
-  console.log("PROCESS SIGTERM RECEIVED", new Date().toISOString());
-  shutdown("SIGTERM");
-});
+function normalizeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(fc|afc|cf|sc|ac|club|women|w|u19|u20|u21|u23)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-process.on("SIGINT", () => {
-  console.log("PROCESS SIGINT RECEIVED", new Date().toISOString());
-  shutdown("SIGINT");
-});
+function tokens(value) {
+  return new Set(normalizeName(value).split(" ").filter(x => x.length > 2));
+}
 
-process.on("uncaughtException", (err) => {
-  console.error("UNCAUGHT EXCEPTION", err?.stack || err);
-});
+function similarity(a, b) {
+  const aa = tokens(a);
+  const bb = tokens(b);
+  if (!aa.size || !bb.size) return 0;
+  let hit = 0;
+  for (const x of aa) if (bb.has(x)) hit++;
+  return hit / Math.max(aa.size, bb.size);
+}
 
-process.on("unhandledRejection", (err) => {
-  console.error("UNHANDLED REJECTION", err?.stack || err);
-});
+function extractLiveMatches(node, out = []) {
+  if (!node || typeof node !== "object") return out;
+
+  if (Array.isArray(node)) {
+    for (const item of node) extractLiveMatches(item, out);
+    return out;
+  }
+
+  const home = node.home?.name || node.homeTeam?.name || node.homeTeamName || node.home;
+  const away = node.away?.name || node.awayTeam?.name || node.awayTeamName || node.away;
+  const status = node.status;
+  const statusObj = status && typeof status === "object" ? status : {};
+  const started = statusObj.started === true || node.started === true;
+  const finished = statusObj.finished === true || node.finished === true;
+  const live = node.live === true || node.isLive === true ||
+    (typeof status === "string" && /live|in.?progress|halftime|break/i.test(status));
+
+  if (home && away && !finished && (live || started)) {
+    const scoreHome = node.home?.score ?? node.homeScore ?? node.score?.home ?? node.scoreHome;
+    const scoreAway = node.away?.score ?? node.awayScore ?? node.score?.away ?? node.scoreAway;
+    const score = scoreHome != null && scoreAway != null ? `${scoreHome}–${scoreAway}` :
+      typeof node.score === "string" ? node.score.replace(/-/g, "–") : "—";
+
+    const minute = node.minute ?? node.elapsed ?? node.time ?? node.status?.minute ?? node.status?.elapsed ?? "—";
+    const id = String(node.id ?? node.matchId ?? node.eventId ?? `${home}|${away}`);
+    out.push({
+      id,
+      home: String(home),
+      away: String(away),
+      score,
+      minute: String(minute),
+      league: String(node.league?.name || node.leagueName || node.tournament?.name || ""),
+      raw: node
+    });
+    return out;
+  }
+
+  for (const value of Object.values(node)) extractLiveMatches(value, out);
+  return out;
+}
+
+async function getJson(url) {
+  const response = await fetch(url, {
+    headers: { accept: "application/json", "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
+  return response.json();
+}
 
 async function telegram(text) {
   if (!TOKEN || !CHAT_ID) throw new Error("Telegram env vars missing");
+  const body = JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true });
 
-  const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
-  const body = JSON.stringify({
-    chat_id: CHAT_ID,
-    text,
-    disable_web_page_preview: true
+  await new Promise((resolve, reject) => {
+    execFile("curl", [
+      "--silent", "--show-error", "--max-time", "10", "--connect-timeout", "5",
+      "-X", "POST", `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+      "-H", "content-type: application/json", "--data-binary", body
+    ], { timeout: 12000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) return reject(new Error(`Telegram curl: ${error.message}; ${stderr.slice(0,300)}`));
+      let data;
+      try { data = JSON.parse(stdout); } catch { return reject(new Error(`Telegram non-JSON: ${stdout.slice(0,300)}`)); }
+      console.log("TELEGRAM RESPONSE", stdout.slice(0,500));
+      if (!data.ok) return reject(new Error(`Telegram rejected: ${stdout.slice(0,500)}`));
+      resolve();
+    });
   });
+}
 
-  const result = await new Promise((resolve, reject) => {
-    execFile(
-      "curl",
-      [
-        "--silent", "--show-error", "--max-time", "10",
-        "--connect-timeout", "5",
-        "-X", "POST", url,
-        "-H", "content-type: application/json",
-        "--data-binary", body
-      ],
-      { timeout: 12000, maxBuffer: 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`curl Telegram failed: ${error.message}; stderr=${stderr.slice(0,300)}`));
-          return;
-        }
-        console.log("TELEGRAM CURL RESPONSE", stdout.slice(0, 500));
-        let parsed;
-        try { parsed = JSON.parse(stdout); } catch {
-          throw new Error("Telegram returned non-JSON: " + stdout.slice(0,300));
-        }
-        if (!parsed.ok) throw new Error("Telegram API rejected: " + stdout.slice(0,500));
-        resolve(parsed);
+function eventTeams(event) {
+  let home = event.homeTeamName || event.homeTeam || "";
+  let away = event.awayTeamName || event.awayTeam || "";
+  if ((!home || !away) && event.title) {
+    const m = String(event.title).match(/^(.+?)\s+(?:vs\.?|v)\s+(.+?)(?:\s+-\s+.*)?$/i);
+    if (m) { home ||= m[1].trim(); away ||= m[2].trim(); }
+  }
+  return { home, away };
+}
+
+function eventLink(event) {
+  const market = Array.isArray(event.markets)
+    ? event.markets.find(x => x && (x.slug || x.marketSlug || x.id))
+    : null;
+  const slug = event.slug || event.eventSlug;
+  if (slug) return `https://polymarket.com/event/${slug}`;
+  if (market?.slug) return `https://polymarket.com/event/${market.slug}`;
+  return "https://polymarket.com/sports/soccer";
+}
+
+function isSoccerEvent(event) {
+  const text = JSON.stringify({
+    title: event.title,
+    slug: event.slug,
+    sport: event.sport,
+    tags: event.tags,
+    series: event.series
+  }).toLowerCase();
+  return /soccer|football|epl|premier league|la liga|bundesliga|serie a|ligue 1|mls|champions league/.test(text) &&
+    !/cs2|valorant|mlbb|dota|esports|tennis/.test(text);
+}
+
+function matchPolymarket(live, events) {
+  let best = null;
+  let bestScore = 0;
+  for (const event of events) {
+    if (!isSoccerEvent(event)) continue;
+    const { home, away } = eventTeams(event);
+    if (!home || !away) continue;
+    const direct = similarity(live.home, home) + similarity(live.away, away);
+    const reverse = similarity(live.home, away) + similarity(live.away, home);
+    const score = Math.max(direct, reverse);
+    if (score > bestScore) { bestScore = score; best = event; }
+  }
+  return bestScore >= 1.25 ? { event: best, score: bestScore } : null;
+}
+
+async function poll() {
+  if (stopping) return;
+  polls++;
+  try {
+    const [liveData, polyData] = await Promise.all([
+      getJson(LIVE_URL),
+      getJson(POLYMARKET_URL)
+    ]);
+
+    const liveMatches = extractLiveMatches(liveData);
+    const events = Array.isArray(polyData) ? polyData : (Array.isArray(polyData.events) ? polyData.events : []);
+    liveExternal = liveMatches.length;
+    polyEvents = events.length;
+    lastExternal = liveMatches.slice(0, 10);
+
+    console.log("LIVE SOURCE", JSON.stringify({ polls, live: liveMatches.length, polymarketEvents: events.length }));
+
+    for (const live of liveMatches) {
+      const found = matchPolymarket(live, events);
+      if (!found) {
+        console.log("NO POLYMARKET MATCH", live.home, "vs", live.away, "score=" + live.score);
+        continue;
       }
-    );
-  });
 
-  return result;
-}
+      matchesFound++;
+      const event = found.event;
+      const key = String(event.id || event.slug || `${live.home}|${live.away}`);
+      lastMatch = { live, polymarketId: key, title: event.title, matchScore: found.score, link: eventLink(event) };
+      console.log("POLYMARKET MATCH", JSON.stringify(lastMatch));
 
-function isSoccer(m) {
-  const league = String(m.leagueAbbreviation || m.league || "").toLowerCase().trim();
-  const sport = String(m.sport || m.sportSlug || "").toLowerCase().trim();
-  const slug = String(m.slug || "").toLowerCase();
+      if (alerted.has(key)) continue;
 
-  const text = [league, sport, slug].join(" ");
+      const message =
+        `⚽ LIVE FOUND\n\n` +
+        `${live.home} vs ${live.away}\n` +
+        `LIVE\n` +
+        `MINUTE: ${live.minute}\n` +
+        `SCORE: ${live.score}\n\n` +
+        `[ОТКРЫТЬ POLYMARKET](${eventLink(event)})`;
 
-  // Reject non-soccer sports explicitly.
-  if (/(cs2|counter[- ]?strike|valorant|r6siege|rainbow ?six|mlbb|dota|league of legends|lol esports|starcraft|esports|tennis|nba|nfl|nhl|mlb|cfb|ncaa)/i.test(text)) {
-    return false;
-  }
-
-  // Direct identification when Polymarket supplies the sport/league.
-  if (/(soccer|football)/i.test(text)) return true;
-
-  // Polymarket also uses competition abbreviations for soccer leagues.
-  // Keep this explicit so EPL/MLS/etc. are not rejected just because the
-  // payload does not literally contain the word "soccer".
-  const soccerLeagues = new Set([
-    "SOCCER",
-    "EPL",
-    "MLS",
-    "UCL",
-    "UEL",
-    "LALIGA",
-    "LA LIGA",
-    "BUNDESLIGA",
-    "SERIEA",
-    "SERIE A",
-    "LIGUE1",
-    "LIGUE 1"
-  ]);
-  const leagueCode = String(m.leagueAbbreviation || m.league || "").toUpperCase().trim();
-  if (soccerLeagues.has(leagueCode)) return true;
-
-  const period = String(m.period || "").toUpperCase().trim();
-  const status = String(m.status || "").toLowerCase().trim();
-
-  // The official sports feed uses these soccer period/status values.
-  // This is deliberately based on provider metadata, not team names or
-  // score shape, so esports cannot be mistaken for soccer.
-  if (/^(1H|2H|HT|ET|PEN|FT|FT OT|FT NR)$/.test(period)) return true;
-  if (/^(1ST|2ND)\s+HALF$/.test(period)) return true;
-  if (/^(FIRST|SECOND)\s+HALF$/.test(period)) return true;
-  if (/^(inprogress|break|penaltyshootout)$/.test(status)) return true;
-
-  return false;
-}
-
-function eventSnapshot(m) {
-  return {
-    gameId: String(m.gameId || m.slug || m.id || ""),
-    league: m.leagueAbbreviation || m.league || "",
-    sport: m.sport || m.sportSlug || "",
-    home: m.homeTeam || m.homeTeamName || "",
-    away: m.awayTeam || m.awayTeamName || "",
-    status: m.status || "",
-    live: m.live,
-    ended: m.ended,
-    period: m.period || "",
-    elapsed: m.elapsed || "",
-    minute: minute(m),
-    score: score(m),
-    slug: m.slug || ""
-  };
-}
-
-function minute(m) {
-  const candidates = [
-    m.elapsed,
-    m.minute,
-    m.matchMinute,
-    m.gameMinute,
-    m.clock,
-    m.period
-  ];
-
-  for (const value of candidates) {
-    const s = String(value ?? "").trim();
-    if (!s) continue;
-
-    // "65", "65'", and "65 min" -> 65.
-    const direct = s.match(/^(\d{1,3})(?:['’]|\s*(?:min|mins|minute|minutes))?$/i);
-    if (direct) return direct[1];
-
-    // A colon clock is accepted only from an explicit elapsed/clock/period
-    // field, so timestamps such as "18:45" are never mistaken for minutes.
-    const isExplicitClockField =
-      value === m.elapsed ||
-      value === m.matchMinute ||
-      value === m.gameMinute ||
-      value === m.clock ||
-      value === m.period;
-
-    const clock = s.match(/^(\d{1,3})\s*:\s*\d{1,2}$/);
-    if (clock && isExplicitClockField) return clock[1];
-
-    // Polymarket period clocks: "1H 37:42", "2H 12:03", etc.
-    const periodClock = s.match(/(?:1H|2H|ET)\s*(\d{1,3})\s*:\s*\d{1,2}/i);
-    if (periodClock) return periodClock[1];
-
-    // Also accept "1ST HALF 37:42" / "2ND HALF 12:03".
-    const namedPeriodClock = s.match(/(?:1ST|2ND)\s*HALF\s*(\d{1,3})\s*:\s*\d{1,2}/i);
-    if (namedPeriodClock) return namedPeriodClock[1];
-
-    // Some feeds expose only a minute number inside a longer status string.
-    const embedded = s.match(/(?:minute|elapsed|clock)\D{0,8}(\d{1,3})/i);
-    if (embedded) return embedded[1];
-  }
-
-  return "—";
-}
-
-function score(m) {
-  const candidates = [
-    m.score,
-    m.currentScore,
-    m.gameScore,
-    m.homeScore != null && m.awayScore != null
-      ? `${m.homeScore}-${m.awayScore}`
-      : ""
-  ];
-
-  for (const value of candidates) {
-    const s = String(value ?? "").trim();
-    if (!s) continue;
-
-    // Polymarket can append period/set scores after the main score.
-    const main = s.split("|")[0].trim();
-
-    // Accept only a genuine home-away score. Never interpret a clock,
-    // timestamp, or unrelated numeric field as a score.
-    const match = main.match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
-    if (!match) continue;
-
-    return `${Number(match[1])}–${Number(match[2])}`;
-  }
-
-  return "—";
-}
-
-function title(m) {
-  const home = String(m.homeTeam || m.homeTeamName || "").trim();
-  const away = String(m.awayTeam || m.awayTeamName || "").trim();
-  if (home && away) return `${home} vs ${away}`;
-  return String(m.slug || `game ${m.gameId}`);
-}
-
-async function handleGame(m) {
-  const id = String(m?.gameId || m?.slug || m?.id || "").trim();
-  if (!m || !id) return;
-
-  eventsReceived++;
-  lastEvent = eventSnapshot(m);
-
-  const soccer = isSoccer(m);
-  if (soccer) {
-    soccerCandidates++;
-    lastSoccerCandidate = eventSnapshot(m);
-  } else {
-    soccerRejected++;
-  }
-
-  if (eventsReceived % 50 === 0) {
-    console.log("DIAGNOSTIC", JSON.stringify({
-      eventsReceived,
-      soccerCandidates,
-      soccerAccepted,
-      soccerRejected,
-      lastEvent,
-      lastSoccerCandidate
-    }));
-  }
-
-  const status = String(m.status || "").toLowerCase().trim();
-  const liveFlag = String(m.live).toLowerCase() === "true";
-  const endedFlag = String(m.ended).toLowerCase() === "true";
-  const liveStatus = [
-    "inprogress",
-    "running",
-    "live",
-    "break",
-    "halftime",
-    "penaltyshootout"
-  ].includes(status);
-
-  // Polymarket's documented soccer statuses are InProgress, Break and
-  // PenaltyShootout. A live flag is also authoritative when present.
-  const soccerStatus =
-    ["inprogress", "break", "penaltyshootout"].includes(status);
-
-  // WS payloads may encode booleans as strings. Never let "false"
-  // become truthy and block an otherwise valid LIVE event.
-  const soccerLive =
-    soccer &&
-    !endedFlag &&
-    (liveFlag || liveStatus || soccerStatus);
-
-  if (soccer) {
-    console.log("SOCCER CHECK", JSON.stringify({
-      id,
-      title: title(m),
-      status,
-      live: liveFlag,
-      ended: endedFlag,
-      period: m.period || "",
-      minute: minute(m),
-      score: score(m),
-      soccerLive
-    }));
-  }
-
-  if (soccerLive) {
-    soccerAccepted++;
-    games.set(id, m);
-
-    // One-time startup proof: send the first qualifying LIVE soccer event
-    // immediately, even if optional match metadata is unavailable.
-    if (!testAlertSent && !alerted.has(id)) {
-      const proof = `⚽ LIVE FOUND\\n\\n${title(m)}\\nLIVE\\nMINUTE: ${minute(m)}\\nSCORE: ${score(m)}`;
       try {
-        await telegram(proof);
-        testAlertSent = true;
-        alerted.add(id);
+        await telegram(message);
+        alerted.add(key);
         alertsSent++;
-        lastMessageAt = new Date().toISOString();
-        console.log("FIRST LIVE ALERT SENT", id, title(m));
+        console.log("ALERT SENT", key, live.home, "vs", live.away);
       } catch (e) {
         lastError = String(e.message || e);
-        console.log("FIRST LIVE ALERT ERROR", lastError);
+        console.log("TELEGRAM ERROR", lastError);
       }
     }
-  } else if (
-    endedFlag ||
-    ["final", "awarded", "canceled", "postponed"].includes(status)
-  ) {
-    games.delete(id);
-  }
 
-  liveCount = games.size;
-
-  if (!soccerLive) return;
-
-  if (alerted.has(id)) return;
-
-  // For the first successful test/production alert, do not require score,
-  // minute, period, or any other optional live metadata. LIVE + soccer +
-  // unique game id is sufficient.
-  console.log("LIVE CANDIDATE ACCEPTED", JSON.stringify({
-    id,
-    title: title(m),
-    source: m.source || "sports/gamma",
-    status,
-    live: liveFlag,
-    ended: endedFlag
-  }));
-
-  const currentMinute = minute(m);
-  const currentScore = score(m);
-
-  // Never block the first LIVE alert because score/minute data is temporarily
-  // missing. "0–0" is a real score; "—" means the provider has not supplied it.
-  // The alert is sent immediately and later feed updates remain available for
-  // diagnostics instead of silently producing zero alerts.
-  if (currentScore === "—" || currentMinute === "—") {
-    console.log(
-      "LIVE DATA PARTIAL — SENDING ALERT",
-      id,
-      "MINUTE=" + currentMinute,
-      "SCORE=" + currentScore
-    );
-  }
-
-  console.log("LIVE READY FOR TELEGRAM", JSON.stringify({
-    id,
-    title: title(m),
-    minute: currentMinute,
-    score: currentScore
-  }));
-
-  // Keep the first alert one-time per game, but only mark it as consumed
-  // after Telegram confirms delivery.
-  const message =
-    `⚽ LIVE FOUND\n\n` +
-    `${title(m)}\n` +
-    `LIVE\n` +
-    `MINUTE: ${currentMinute}\n` +
-    `SCORE: ${currentScore}`;
-
-  try {
-    await telegram(message);
-    alerted.add(id);
-    alertsSent++;
-    lastMessageAt = new Date().toISOString();
-    console.log("ALERT SENT", id, title(m), "MINUTE", currentMinute, "SCORE", currentScore);
+    lastError = null;
   } catch (e) {
     lastError = String(e.message || e);
-    console.log("TELEGRAM ERROR", lastError);
+    console.log("POLL ERROR", lastError);
   }
-  return;
-
-
-}
-
-async function pollGammaSoccer() {
-  if (shuttingDown || gammaPolling) return;
-  gammaPolling = true;
-  gammaPolls++;
-
-  try {
-    let data = null;
-    let source = "";
-    let lastErr = null;
-
-    for (const url of GAMMA_URLS) {
-      try {
-        const response = await fetch(url, {
-          headers: {
-            "accept": "application/json",
-            "cache-control": "no-cache",
-            "user-agent": "Polymarket-Live-Soccer-Monitor/2.0"
-          },
-          signal: AbortSignal.timeout(5000)
-        });
-        if (!response.ok) throw new Error("Gamma HTTP " + response.status);
-        const parsed = await response.json();
-        data = parsed;
-        source = url;
-        break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-
-    if (!data) throw lastErr || new Error("Gamma unavailable");
-
-    const events = Array.isArray(data)
-      ? data
-      : Array.isArray(data.events)
-        ? data.events
-        : [];
-
-    const liveEvents = events.filter(e => {
-      if (!e) return false;
-      if (String(e.ended).toLowerCase() === "true") return false;
-
-      const live = String(e.live).toLowerCase() === "true";
-      const status = String(e.gameStatus || e.status || "").toLowerCase().trim();
-
-      return live || [
-        "inprogress",
-        "break",
-        "penaltyshootout",
-        "live",
-        "halftime"
-      ].includes(status);
-    });
-
-    gammaLiveCount = liveEvents.length;
-    lastGammaError = null;
-    console.log("GAMMA POLL", JSON.stringify({
-      source,
-      events: events.length,
-      live: liveEvents.length
-    }));
-
-    for (const e of liveEvents) {
-      const market = Array.isArray(e.markets)
-        ? e.markets.find(m => m && m.gameId != null)
-        : null;
-
-      const gameId = String(
-        market?.gameId ?? e.gameId ?? e.id ?? e.slug ?? ""
-      );
-      if (!gameId) continue;
-
-      const rawTitle = String(e.title || "").trim();
-      const home = String(e.homeTeamName || e.homeTeam || "").trim();
-      const away = String(e.awayTeamName || e.awayTeam || "").trim();
-      const match = rawTitle.match(/^(.+?)\s+vs\.?\s+(.+?)(?:\s+-\s+.*)?$/i);
-
-      const normalized = {
-        gameId,
-        leagueAbbreviation: "soccer",
-        sport: "soccer",
-        sportSlug: "soccer",
-        slug: e.slug || "",
-        homeTeam: home || (match ? match[1].trim() : rawTitle),
-        awayTeam: away || (match ? match[2].trim() : ""),
-        status: e.gameStatus || e.status || "InProgress",
-        live: true,
-        ended: false,
-        source: "gamma",
-        score: String(e.score || "").trim(),
-        period: String(e.period || "").trim(),
-        elapsed: String(e.elapsed || e.clock || e.minute || "").trim(),
-        minute: String(e.elapsed || e.clock || e.minute || "").trim()
-      };
-
-      lastGammaEvent = eventSnapshot(normalized);
-      await handleGame(normalized);
-    }
-  } catch (e) {
-    lastGammaError = String(e.message || e);
-    console.log("GAMMA ERROR", lastGammaError);
-  } finally {
-    gammaPolling = false;
-  }
-}
-function connect() {
-  if (shuttingDown) return;
-
-  wsState = "connecting";
-  console.log("SPORTS WS CONNECTING", WS_URL);
-
-  const ws = new WebSocket(WS_URL);
-  wsRef = ws;
-
-  ws.onopen = () => {
-    wsState = "connected";
-    lastError = null;
-    console.log("SPORTS WS CONNECTED");
-  };
-
-  ws.onmessage = async (event) => {
-    const raw = String(event.data || "");
-
-    if (raw.toLowerCase() === "ping") {
-      try { ws.send("pong"); } catch {}
-      return;
-    }
-
-    let m;
-    try {
-      m = JSON.parse(raw);
-    } catch {
-      return;
-    }
-
-    if (m && m.type === "sport_result" && m.payload) m = m.payload;
-
-    // Some Sports WS messages are wrapped as {type:"sport_result", data:{...}}
-    // while others are already the result object.
-    if (m && m.type === "sport_result" && m.data && typeof m.data === "object") {
-      m = m.data;
-    }
-
-    const sportId = String(m?.gameId || m?.slug || m?.id || "").trim();
-    if (!m || !sportId) return;
-
-    console.log(
-      "SPORT RESULT",
-      sportId,
-      m.leagueAbbreviation || "",
-      m.homeTeam || m.homeTeamName || "",
-      "vs",
-      m.awayTeam || m.awayTeamName || "",
-      "status=" + (m.status || ""),
-      "live=" + String(m.live),
-      "score=" + String(m.score || ""),
-      "period=" + String(m.period || ""),
-      "elapsed=" + String(m.elapsed || "")
-    );
-
-    await handleGame(m);
-  };
-
-  ws.onerror = () => {
-    wsState = "error";
-    lastError = "Sports WS error";
-    console.log("SPORTS WS ERROR");
-  };
-
-  ws.onclose = (event) => {
-    wsState = "disconnected";
-    console.log(
-      "SPORTS WS CLOSED",
-      "code=" + String(event?.code ?? ""),
-      "reason=" + String(event?.reason ?? ""),
-      "shuttingDown=" + String(shuttingDown)
-    );
-
-    if (!shuttingDown) setTimeout(connect, RECONNECT_MS);
-  };
 }
 
 const server = http.createServer((req, res) => {
-  res.writeHead(200, {"content-type":"application/json"});
+  res.writeHead(200, { "content-type": "application/json" });
   res.end(JSON.stringify({
     ok: true,
     service: "polymarket-live-soccer-monitor",
-    source: WS_URL,
+    liveSource: LIVE_URL,
+    polymarketSource: POLYMARKET_URL,
     startedAt: STARTED_AT,
-    pid: process.pid,
     uptimeSeconds: Math.floor(process.uptime()),
-    wsState,
-    liveCount,
+    polls,
+    liveExternal,
+    polyEvents,
+    matchesFound,
     alertsSent,
-    eventsReceived,
-    soccerCandidates,
-    soccerAccepted,
-    soccerRejected,
-    lastMessageAt,
     lastError,
-    lastEvent,
-    lastSoccerCandidate,
-    gammaPolls,
-    gammaLiveCount,
-    lastGammaEvent,
-    lastGammaError
+    lastExternal,
+    lastMatch
   }));
 });
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("HEALTH LISTENING", PORT);
-  console.log("PROCESS PID", process.pid);
-  console.log("PROCESS STARTED", STARTED_AT);
+  console.log("MONITOR STARTING");
+  console.log("LIVE SOURCE", LIVE_URL);
+  console.log("POLYMARKET SOURCE", POLYMARKET_URL);
+  console.log("POLL INTERVAL", POLL_MS);
 });
 
-const heartbeat = setInterval(() => {
-  console.log(
-    "HEARTBEAT",
-    new Date().toISOString(),
-    "pid=" + process.pid,
-    "uptime=" + Math.floor(process.uptime()) + "s",
-    "ws=" + wsState,
-    "live=" + liveCount,
-    "alerts=" + alertsSent,
-    "events=" + eventsReceived,
-    "soccerCandidates=" + soccerCandidates,
-    "soccerAccepted=" + soccerAccepted,
-    "soccerRejected=" + soccerRejected
-  );
-}, 10000);
-
-const diagnosticTimerStart = setInterval(() => {
-  console.log("DIAGNOSTIC STATE", JSON.stringify({
-    startedAt: STARTED_AT,
-    pid: process.pid,
-    wsState,
-    eventsReceived,
-    soccerCandidates,
-    soccerAccepted,
-    soccerRejected,
-    liveCount,
-    alertsSent,
-    gammaPolls,
-    gammaLiveCount,
-    lastEvent,
-    lastSoccerCandidate,
-    lastGammaEvent,
-    lastGammaError,
-    lastError
-  }));
-}, DIAGNOSTIC_INTERVAL_MS);
-diagnosticTimer = diagnosticTimerStart;
+poll();
+const timer = setInterval(poll, POLL_MS);
 
 function shutdown(signal) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  clearInterval(heartbeat);
-  clearInterval(gammaTimer);
-  clearInterval(diagnosticTimer);
-  wsState = "shutting_down";
-
-  try { wsRef?.close(); } catch {}
-  server.close(() => {
-    console.log("PROCESS SHUTDOWN COMPLETE", signal);
-    process.exit(0);
-  });
-
-  setTimeout(() => {
-    console.log("PROCESS SHUTDOWN TIMEOUT", signal);
-    process.exit(0);
-  }, 5000).unref();
+  if (stopping) return;
+  stopping = true;
+  clearInterval(timer);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref();
 }
-
-console.log("MONITOR STARTING");
-console.log("TELEGRAM CONFIG", JSON.stringify({
-  tokenPresent: Boolean(TOKEN),
-  tokenLength: TOKEN ? TOKEN.length : 0,
-  chatIdPresent: Boolean(CHAT_ID)
-}));
-console.log("SOURCE", WS_URL);
-console.log("GAMMA SOURCES", GAMMA_URLS.join(" | "));
-
-(async () => {
-  await new Promise(resolve => setTimeout(resolve, 3000));
-  try {
-    await telegram("🔧 MONITOR TEST\n\nTelegram connection OK");
-    console.log("STARTUP TEST ALERT SENT");
-  } catch (e) {
-    lastError = String(e.message || e);
-    console.log("STARTUP TEST ALERT ERROR", lastError);
-  }
-  connect();
-  pollGammaSoccer();
-})();
-gammaTimer = setInterval(pollGammaSoccer, GAMMA_POLL_MS);
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
