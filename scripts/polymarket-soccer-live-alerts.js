@@ -8,7 +8,6 @@ const TELEGRAM_MAX = 3900;
 const DIAGNOSTIC_MODE = false;
 const RUN_MS = Number.POSITIVE_INFINITY;
 const MAX_CYCLES = Number.POSITIVE_INFINITY;
-const SPORTS_WS_TIMEOUT_MS = 25000;
 const MAX_SPORTS_WS_LOOKUPS = Number.POSITIVE_INFINITY;
 let stopping = false;
 
@@ -115,56 +114,6 @@ function attachGame(x,g){
   x.minute=gameMinute(g);
   x.gameStatus=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period);
 }
-async function fetchLiveSports(){
-  return await new Promise((resolve)=>{
-    const live=[];
-    const seen=new Set();
-    let ws;
-    let timer;
-    try{
-      ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},SPORTS_WS_TIMEOUT_MS);
-      ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
-      ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
-      ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
-      ws.onmessage=(ev)=>{
-        const raw=typeof ev.data==="string"?ev.data:"";
-        if(raw==="ping"){try{ws.send("pong")}catch{};return;}
-        let m; try{m=JSON.parse(raw)}catch{return;}
-        const type=t(m?.type||m?.event_type);
-        const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
-        const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
-        const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
-        const period=t(p?.period||p?.currentPeriod||p?.phase).toLowerCase();
-        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout|1h|2h|extra|stoppage/.test(status)||/^(1h|2h|ot|et|extra|halftime|half)$/.test(period);
-        if(type&&type!=="sport_result"&&!liveFlag)return;
-        if(!/soccer|football/.test(league))return;
-        if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
-        if(!liveFlag)return;
-        const gameId=t(p?.gameId||p?.id);
-        const slug=t(p?.slug);
-        const home=t(p?.homeTeam||p?.home_team||p?.home);
-        const away=t(p?.awayTeam||p?.away_team||p?.away);
-        if(!gameId&&!slug||!home||!away)return;
-        const key=gameId||slug;
-        if(seen.has(key))return;
-        seen.add(key);
-        let score=null;
-        const s=p?.score;
-        if(typeof s==="string"){
-          const mm=s.match(/^(\d+)\s*[-–:]\s*(\d+)/); if(mm)score=[Number(mm[1]),Number(mm[2])];
-        } else if(s&&typeof s==="object"){
-          const h=s.home??s.homeScore??s.home_score, a=s.away??s.awayScore??s.away_score;
-          if(h!=null&&a!=null)score=[h,a];
-        }
-        live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),score});
-      };
-    }catch(e){
-      clearTimeout(timer); console.log(JSON.stringify({level:"WARN",event:"sports_ws_init_failed",message:e.message}));resolve(live);
-    }
-  });
-}
-
 async function fetchLiveEvents(){
   const live=[];
   const seen=new Set();
@@ -258,8 +207,6 @@ async function discover(){
   const [liveHtml,soccerHtml,liveEvents]=await Promise.all([safePage(LIVE_PAGE),safePage(SOCCER_PAGE),fetchLiveEvents().catch(e=>{console.log(JSON.stringify({level:"WARN",event:"live_events_fetch_failed",message:e.message}));return [];})]);
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
-  const sportsLive=await fetchLiveSports();
-  console.log(JSON.stringify({level:"INFO",event:"sports_ws_snapshot",count:sportsLive.length,matches:sportsLive.map(x=>({gameId:x.gameId,slug:x.slug,teams:[x.home,x.away],status:x.status,period:x.period,elapsed:x.elapsed,score:x.score}))}));
   console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveEvents:liveEvents.length}));
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
@@ -280,9 +227,7 @@ async function discover(){
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
     const game=liveEvents.find(g=>matchGame(item,g));
-    const wsGame=sportsLive.find(g=>matchGame(item,g));
     if(game)attachGame(item,game);
-    else if(wsGame)attachGame(item,wsGame);
     else {
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
       const sc=gameScore(event); if(sc)item.score=sc;
@@ -296,56 +241,6 @@ async function discover(){
     }
     candidates.push(item);
     console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATE",slug:item.slug,eventId:item.eventId,teams:[item.home,item.away],status:item.gameStatus,minute:item.minute??null,score:item.score??null,source:sourceConfirmed?"sports_ws":"page_or_gamma"}));
-  }
-
-  // Primary live source: Polymarket Sports WebSocket. It provides actual kickoff/status/score.
-  const sportsLookupList=sportsLive.slice(0,MAX_SPORTS_WS_LOOKUPS);
-  if(sportsLive.length>sportsLookupList.length)console.log(JSON.stringify({level:"WARN",event:"sports_ws_lookup_capped",total:sportsLive.length,processed:sportsLookupList.length,diagnostic:DIAGNOSTIC_MODE}));
-  for(const sg of sportsLookupList){
-    try{
-      let raw;
-      if(sg.slug){
-        try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(sg.slug),{timeout:5000}); }
-        catch{}
-      }
-      if(!raw && sg.gameId){
-        try{ raw=await json(GAMMA+"/events?game_id="+encodeURIComponent(sg.gameId),{timeout:5000}); }
-        catch{}
-      }
-      const event=Array.isArray(raw)?raw[0]:raw;
-      if(event){
-        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND",gameId:sg.gameId,slug:sg.slug,eventId:event?.id,title:event?.title||event?.question}));
-        await addEvent(event,null,true,true);
-        const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
-        if(item){
-          item.gameStatus=sg.status||"InProgress";
-          item.minute=sg.elapsed||sg.period||item.minute;
-          if(sg.score)item.score=sg.score;
-          item.sportsGame=sg;
-        }
-      } else if(sg.gameId){
-        try{
-          const ms=await json(GAMMA+"/markets?game_id="+encodeURIComponent(sg.gameId)+"&active=true&closed=false&limit=100",{timeout:5000});
-          const markets=Array.isArray(ms)?ms:(ms?.data||[]);
-          const eventId=t(markets[0]?.eventId||markets[0]?.event_id);
-          if(eventId){
-            const er=await json(GAMMA+"/events/"+encodeURIComponent(eventId),{timeout:5000});
-            const event2=er?.event||er;
-            if(event2){
-              console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
-              await addEvent(event2,null,true,true);
-              const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
-              if(item){item.gameStatus=sg.status||"InProgress";item.minute=sg.elapsed||sg.period||item.minute;if(sg.score)item.score=sg.score;item.sportsGame=sg;}
-            }
-          }
-        }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_game_id_lookup_failed",gameId:sg.gameId,message:e.message}));}
-        if(!candidates.some(x=>x.eventId===t(event?.id)||x.slug===t(event?.slug))) console.log(JSON.stringify({level:"WARN",event:"sports_ws_event_lookup_failed",gameId:sg.gameId,slug:sg.slug,teams:[sg.home,sg.away]}));
-      } else {
-        console.log(JSON.stringify({level:"WARN",event:"sports_ws_event_lookup_failed",gameId:sg.gameId,slug:sg.slug,teams:[sg.home,sg.away]}));
-      }
-    }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"sports_ws_candidate_failed",gameId:sg.gameId,slug:sg.slug,message:e.message}));
-    }
   }
 
   // Secondary authoritative source: active Gamma /events. Keep this bounded so a
