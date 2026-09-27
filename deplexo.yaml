@@ -3,8 +3,10 @@ install: npm ci
 start: node scripts/deplexo-log-server.js
 port: 3000
 
+
 # STRICT DEDUPE RULE — HIGHEST PRIORITY
-# No CS2 Map 1 alert may be sent unless Deplexo atomically claims the match key.
-# One key only: CS2_MAP1:<PandaScore match id>. A key may be claimed once ever.
-# Duplicate claims return HTTP 409. If Deplexo is unavailable, FAIL CLOSED: send ZERO alerts.
-# This overrides local state, GitHub Actions concurrency, retries, and process restarts.
+# Deplexo is diagnostics only and MUST NOT be a dependency of alert delivery.
+# The monitor claims CS2_MAP1:<PandaScore match id> in GitHub state before Telegram.
+# One successful claim is permanent; duplicate claims are rejected.
+# If the GitHub claim cannot be completed, only that alert is held and retried later.
+# No external log server can block the monitor or cause a global alert blackout.
