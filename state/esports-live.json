@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:51.251Z",
+  "updatedAt": "2026-09-27T15:33:54.291Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,20 +7,20 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 536,
+    "events": 556,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700719",
+  "matchId": "1712164",
   "teams": [
-    "Team Yandex",
-    "Natus Vincere"
+    " Phantom Academy",
+    "ILLYRIANS"
   ],
   "status": "running",
   "seriesScore": [
-    2,
+    1,
     0
   ],
   "candidates": 68,
@@ -34,16 +34,16 @@
     "skippedFuture": 6,
     "missingTeams": 8,
     "polyEvents": 200,
-    "matchedPoly": 36,
+    "matchedPoly": 38,
     "noPolyMatch": 27,
     "noPolyPrice": 0,
-    "prematchCaptured": 0,
-    "map1Finished": 0,
+    "prematchCaptured": 1,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 0,
-    "balancedPrePass": 0,
-    "movePass": 0,
+    "signalChecks": 1,
+    "balancedPrePass": 1,
+    "movePass": 1,
     "postRangePass": 0,
     "mapFilterPass": 0,
     "signalPass": 0,
