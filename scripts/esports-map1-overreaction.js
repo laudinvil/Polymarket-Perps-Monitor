@@ -450,16 +450,25 @@ async function price(tokenId) {
   return Number.isFinite(p) ? p : null;
 }
 
+const polyPriceCache = new Map();
+
 async function marketPrices(poly) {
   if (!poly?.market) return null;
   const parsed = parseMarket(poly.market);
   if (!parsed) return null;
-  const vals = [];
-  for (const o of parsed) vals.push({ ...o, price: await price(o.tokenId) });
+  const cacheKey = String(poly.market.id || parsed.map(x => x.tokenId).join("|"));
+  const cached = polyPriceCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < 30000) return cached.data;
+
+  // Fetch both outcome prices concurrently so one poll is not blocked by
+  // dozens of sequential CLOB requests.
+  const vals = await Promise.all(parsed.map(async o => ({ ...o, price: await price(o.tokenId) })));
   if (vals.some(x => x.price == null)) return null;
   const total = vals[0].price + vals[1].price;
   if (total <= 0) return null;
-  return vals.map(x => ({ ...x, prob: x.price / total }));
+  const data = vals.map(x => ({ ...x, prob: x.price / total }));
+  polyPriceCache.set(cacheKey, {at:Date.now(), data});
+  return data;
 }
 
 function identifySides(prices, teamA, teamB) {
@@ -832,7 +841,22 @@ await publishHeartbeat("POLYMARKET_OK", {
 log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
 log("PANDASCORE_SERIES", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length,bo3:diag.bo3,bo5:diag.bo5,firstTo3:diag.firstTo3,allEsports:true}));
 
-for (const match of candidates) {
+// Process live/just-started/finished series first. Future fixtures are
+// still tracked for pre-match baselines, but must not block live detection.
+const prioritizedCandidates = [...candidates].sort((a,b) => {
+  const score = m => {
+    const status = String(m?.status || "").toLowerCase();
+    const t = beginAt(m);
+    if (["running","live","in_progress"].includes(status)) return 0;
+    if (t != null && t <= Date.now()) return 1;
+    const games = Array.isArray(m?.games) ? m.games : [];
+    if (games.some(g => ["finished","completed","complete","ended"].includes(String(g?.status || g?.state || "").toLowerCase()))) return 2;
+    return 3;
+  };
+  return score(a) - score(b);
+});
+
+for (const match of prioritizedCandidates) {
   const ts = beginAt(match);
   if (ts && ts - now > CFG.maxUpcomingHours*3600000) {
     diag.skippedFuture++;
@@ -1097,6 +1121,7 @@ for (const match of candidates) {
 
 
 saveState(state);
+telemetry.polls++;
 await publishHeartbeat("POLL_RESULT", {
   diagnostics:diag,
   config:{
