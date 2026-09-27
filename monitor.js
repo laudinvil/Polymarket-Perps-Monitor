@@ -5,7 +5,7 @@ const WS_URL = "wss://sports-api.polymarket.com/ws";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const RECONNECT_MS = 3000;
-const GAMMA_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&live=true&tag_slug=soccer&limit=500";
+const GAMMA_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&tag_slug=soccer&limit=500";
 const GAMMA_POLL_MS = 10000;
 const STARTED_AT = new Date().toISOString();
 
