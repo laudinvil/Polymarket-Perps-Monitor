@@ -206,13 +206,23 @@ async function refreshMarkets() {
   const data = await getJson(CFG.gammaUrl);
   const arr = Array.isArray(data) ? data : (data.data || data.markets || []);
   markets.clear();
+  const tokenIds = [];
   for (const m of arr) {
     if (!m || m.closed === true || m.active === false) continue;
     const q = String(m.question || m.title || "");
     if (!/tennis/i.test(q) && String(m.sportsMarketType || "") !== "tennis") continue;
     markets.set(String(m.id), m);
+    for (const id of parseJsonField(m.clobTokenIds)) tokenIds.push(String(id));
   }
+  state.matchedMarkets = markets.size;
   state.lastGammaAt = new Date().toISOString();
+  if (ws?.readyState === WebSocket.OPEN && tokenIds.length) {
+    ws.send(JSON.stringify({
+      operation: "subscribe",
+      assets_ids: [...new Set(tokenIds)].slice(0, 500),
+      custom_feature_enabled: true
+    }));
+  }
 }
 
 function findMarketForPlayer(e, playerName) {
