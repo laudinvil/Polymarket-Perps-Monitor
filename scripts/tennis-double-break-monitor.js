@@ -482,7 +482,9 @@ async function refreshMarkets() {
   markets.clear();
   for (const event of events) {
     if (!event || event.closed === true || event.active === false) continue;
-    const eventMarkets = Array.isArray(event.markets) ? event.markets : [];
+    const eventMarkets = Array.isArray(event.markets)
+      ? event.markets
+      : parseJsonField(event.markets);
     if (eventMarkets.length) eventsWithMarkets++;
     for (const m of eventMarkets) {
       if (!m || m.closed === true || m.active === false) continue;
