@@ -10,7 +10,6 @@ const CFG = {
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
   gammaUrl: "https://gamma-api.polymarket.com/markets?tag_id=864&active=true&closed=false&limit=100&order=endDate&ascending=true",
-  wsUrl: "wss://ws-subscriptions-clob.polymarket.com/ws/market",
 };
 
 const state = {
@@ -23,15 +22,11 @@ const state = {
   alertsSent: 0,
   telegramErrors: 0,
   sourceErrors: 0,
-  wsConnected: false,
-  wsMessages: 0,
-  wsBestAsks: 0,
   lastError: null,
 };
 
 const matches = new Map();
 const markets = new Map();
-const prices = new Map();
 const alerted = new Map();
 let lastSofaRequest = 0;
 let lastGammaRequest = 0;
@@ -212,23 +207,15 @@ async function refreshMarkets() {
   const data = await getJson(CFG.gammaUrl, "gamma");
   const arr = Array.isArray(data) ? data : (data.data || data.markets || []);
   markets.clear();
-  const tokenIds = [];
   for (const m of arr) {
     if (!m || m.closed === true || m.active === false) continue;
     const q = String(m.question || m.title || "");
     if (!/tennis/i.test(q) && String(m.sportsMarketType || "") !== "tennis") continue;
     markets.set(String(m.id), m);
-    for (const id of parseJsonField(m.clobTokenIds)) tokenIds.push(String(id));
+    
   }
   state.matchedMarkets = markets.size;
   state.lastGammaAt = new Date().toISOString();
-  if (ws?.readyState === WebSocket.OPEN && tokenIds.length) {
-    ws.send(JSON.stringify({
-      operation: "subscribe",
-      assets_ids: [...new Set(tokenIds)].slice(0, 500),
-      custom_feature_enabled: true
-    }));
-  }
 }
 
 function findMarketForPlayer(e, playerName) {
@@ -313,7 +300,8 @@ async function telegram(text, url) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chat = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
-  const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);\n  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));\n  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));\n  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -322,7 +310,7 @@ async function telegram(text, url) {
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
-    signal: AbortSignal.timeout(9000),
+    signal: AbortSignal.timeout(CFG.requestTimeoutMs),
   });
   if (!r.ok) throw new Error(`telegram ${r.status}`);
 }
@@ -332,9 +320,11 @@ async function evaluate(e, brokenSide) {
   if (!player) return;
   const m = findMarketForPlayer(e, player);
   if (!m) return;
-  const clob = yesToken(m, player);
-  if (!clob) return;
-  const px = prices.get(clob.id) || { ask: null, depth: 0 };
+  const outcomes = parseJsonField(m.outcomes);
+  const prices0 = parseJsonField(m.outcomePrices);
+  const idx = outcomes.findIndex(x => String(x).toLowerCase() === String(player).toLowerCase());
+  const initialAsk = idx >= 0 ? Number(prices0[idx]) : Number(prices0[0]);
+  const px = { ask: Number.isFinite(initialAsk) ? initialAsk : null, depth: 0 };
   const liq = marketLiquidity(m);
 
   const key = `${e.id}:${player}`;
@@ -408,7 +398,6 @@ const server = http.createServer((req, res) => {
 server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
 
 await refreshMarkets().catch(err => { state.lastError = String(err); log("GAMMA_ERROR", { error: String(err) }); });
-connectWs();
 setInterval(() => refreshMarkets().catch(err => log("GAMMA_ERROR", { error: String(err) })), CFG.gammaMs);
 await poll();
 setInterval(poll, CFG.pollMs);
