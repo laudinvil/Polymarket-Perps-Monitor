@@ -311,7 +311,7 @@ async function pollGammaSoccer() {
         slug: e.slug || "",
         homeTeam: home || (match ? match[1].trim() : rawTitle),
         awayTeam: away || (match ? match[2].trim() : ""),
-        status: e.gameStatus || e.status || (e.live === true ? "InProgress" : ""),
+        status: e.gameStatus || e.status || (String(e.live).toLowerCase() === "true" ? "InProgress" : ""),
         live: String(e.live).toLowerCase() === "true",
         ended: String(e.ended).toLowerCase() === "true",
         score: String(e.score || "").trim(),
