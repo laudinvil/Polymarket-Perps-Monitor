@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:39:39.053Z",
+  "updatedAt": "2026-09-27T15:39:40.798Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 171,
+    "events": 190,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714922",
+  "matchId": "1714921",
   "teams": [
-    "Galatasaray Esports",
-    "Pcific Esports"
+    "Misa Esports",
+    "Fear Never Ends"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 16,
+    "matchedPoly": 18,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
@@ -363,6 +363,16 @@
         "matchId": "1688997",
         "teamA": "NIP",
         "teamB": "magic",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714922",
+        "teamA": "Galatasaray Esports",
+        "teamB": "Pcific Esports",
         "seriesScore": [
           0,
           0
