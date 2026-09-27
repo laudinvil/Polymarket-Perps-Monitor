@@ -153,8 +153,9 @@ function title(m) {
   return String(m.slug || `game ${m.gameId}`);
 }
 
-async function handleGame(m) {
-  if (!m || !m.gameId) return;
+async async function handleGame(m) {
+  const id = String(m?.gameId || m?.slug || m?.id || "").trim();
+  if (!m || !id) return;
 
   eventsReceived++;
   lastEvent = eventSnapshot(m);
@@ -189,19 +190,18 @@ async function handleGame(m) {
 
   if (soccerLive) {
     soccerAccepted++;
-    games.set(String(m.gameId), m);
+    games.set(id, m);
   } else if (
     m.ended ||
     ["final", "awarded", "canceled", "postponed"].includes(status)
   ) {
-    games.delete(String(m.gameId));
+    games.delete(id);
   }
 
   liveCount = games.size;
 
   if (!soccerLive) return;
 
-  const id = String(m.gameId);
   if (alerted.has(id)) return;
 
   alerted.add(id);
