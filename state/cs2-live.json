@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:32:15.284Z",
+  "updatedAt": "2026-09-27T14:32:16.256Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 1541,
+    "events": 1542,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683303",
+  "matchId": "1704623",
   "teams": [
-    "Bushido Wildcats",
-    "Leo Team"
+    "THUNDER dOWNUNDER",
+    "Ground Zero"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 6,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": -3,
+    "noPolyMatch": -2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
