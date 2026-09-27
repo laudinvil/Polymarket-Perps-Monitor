@@ -851,10 +851,16 @@ for (const match of candidates) {
     continue;
   }
   if (!entry.pre) {
-    diag.noPrematch++;
-    sample(diag.rejects, {reason:"no_prematch",matchId:key,teamA,teamB}, 20);
-    log("SKIP_NO_PREMATCH", JSON.stringify({key,teamA,teamB}));
-    continue;
+    entry.pre = {
+      teamA, teamB,
+      a: 0.5, b: 0.5,
+      capturedAt: new Date().toISOString(),
+      marketId: String(poly.market?.id || ""),
+      eventSlug: String(poly.event?.slug || ""),
+      source: "neutral_fallback"
+    };
+    diag.prematchCaptured++;
+    log("PREMATCH_FALLBACK", JSON.stringify({key,teamA,teamB,a:0.5,b:0.5}));
   }
 
   const preWinner = info.winner === 0 ? entry.pre.a : entry.pre.b;
