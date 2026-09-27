@@ -330,6 +330,41 @@ async function searchPolyForMatch(teamA, teamB) {
   return result;
 }
 
+async function hydratePolyEvent(candidate, teamA, teamB) {
+  if (!candidate?.event) return null;
+  const e = candidate.event;
+  let markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
+  if (!markets.length && e.id != null) {
+    try {
+      const x = await getJson(GAMMA + "/markets?event_id=" + encodeURIComponent(String(e.id)) + "&active=true&closed=false&limit=100");
+      markets = Array.isArray(x) ? x : (Array.isArray(x.data) ? x.data : []);
+    } catch (err) {
+      log("POLY_MARKET_LOOKUP_ERROR", {eventId:String(e.id), teamA, teamB, error:String(err)});
+    }
+  }
+  for (const m of markets) {
+    if (isMatchWinnerMarket(m, teamA, teamB)) {
+      return { ...candidate, market:m };
+    }
+  }
+  return null;
+}
+
+async function findPolyMatch(events, teamA, teamB) {
+  const candidate = findPolyEvent(events, teamA, teamB);
+  if (candidate) {
+    const hydrated = await hydratePolyEvent(candidate, teamA, teamB);
+    if (hydrated) return hydrated;
+  }
+  const searched = await searchPolyForMatch(teamA, teamB);
+  const fallback = findPolyEvent(searched, teamA, teamB);
+  if (fallback) {
+    const hydrated = await hydratePolyEvent(fallback, teamA, teamB);
+    if (hydrated) return hydrated;
+  }
+  return null;
+}
+
 function findPolyEvent(events, teamA, teamB) {
   events = Array.isArray(events) ? events : [];
   let best = null;
