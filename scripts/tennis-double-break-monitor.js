@@ -414,7 +414,7 @@ async function processBreaks(e, nowSets) {
     });
     if (isBreak) {
       const broken = server === 1 ? 0 : 1;
-      breaks.push(broken);
+      breaks.push({ side: broken, gameNo });
     }
   }
 
@@ -449,29 +449,59 @@ function inferWinnerForGame(oldSets, newSets, beforeTotal, afterTotal) {
   return null;
 }
 
-function recordSignal(e, brokenSide) {
+function recordSignal(e, breakInfo) {
   const id = String(e.id);
   const prev = matches.get(id);
   if (!prev) return null;
+
+  const brokenSide = breakInfo?.side;
+  const gameNo = Number(breakInfo?.gameNo);
+  if (brokenSide !== 0 && brokenSide !== 1) return null;
+
   const seq = prev.breakSeq || [];
-  seq.push({ side: brokenSide, ts: Date.now() });
-  while (seq.length > 4) seq.shift();
+  seq.push({ side: brokenSide, gameNo: Number.isFinite(gameNo) ? gameNo : null, ts: Date.now() });
+  while (seq.length > 8) seq.shift();
   prev.breakSeq = seq;
+
   if (seq.length < 2) {
     log("BREAK_SEQUENCE", { eventId: id, count: seq.length, result: "WAITING_FOR_SECOND_BREAK" });
     return null;
   }
-  const a = seq[seq.length - 2], b = seq[seq.length - 1];
-  if (a.side !== b.side) {
-    log("BREAK_SEQUENCE", { eventId: id, first: a.side, second: b.side, result: "DIFFERENT_PLAYERS" });
+
+  const current = seq[seq.length - 1];
+  const prior = [...seq].reverse().slice(1).find(x => x.side === brokenSide);
+  if (!prior) {
+    log("BREAK_SEQUENCE", { eventId: id, playerSide: brokenSide, result: "WAITING_FOR_SAME_PLAYER" });
     return null;
   }
-  if (b.ts - a.ts > 30 * 60 * 1000) {
-    log("BREAK_SEQUENCE", { eventId: id, first: a.side, second: b.side, result: "TOO_OLD" });
+
+  // A player's service games are separated by exactly one opponent service game.
+  // Therefore two breaks of the same player's serve are consecutive for that
+  // player only when their game numbers differ by 2.
+  if (current.gameNo != null && prior.gameNo != null && current.gameNo - prior.gameNo !== 2) {
+    log("BREAK_SEQUENCE", {
+      eventId: id,
+      firstGame: prior.gameNo,
+      secondGame: current.gameNo,
+      playerSide: brokenSide,
+      result: "NOT_CONSECUTIVE_SERVICE_GAMES"
+    });
     return null;
   }
-  log("BREAK_SEQUENCE", { eventId: id, playerSide: a.side, result: "TWO_CONSECUTIVE_BREAKS" });
-  return a.side;
+
+  if (current.ts - prior.ts > 30 * 60 * 1000) {
+    log("BREAK_SEQUENCE", { eventId: id, first: prior.side, second: current.side, result: "TOO_OLD" });
+    return null;
+  }
+
+  log("BREAK_SEQUENCE", {
+    eventId: id,
+    playerSide: brokenSide,
+    firstGame: prior.gameNo,
+    secondGame: current.gameNo,
+    result: "TWO_CONSECUTIVE_SERVICE_BREAKS"
+  });
+  return brokenSide;
 }
 
 async function refreshMarkets() {
@@ -749,8 +779,8 @@ async function poll() {
         continue;
       }
       const breaks = await processBreaks(e, sets);
-      for (const brokenSide of breaks) {
-        const side = recordSignal(e, brokenSide);
+      for (const breakInfo of breaks) {
+        const side = recordSignal(e, breakInfo);
         if (side !== null) {
           state.signals++;
           state.twoBreakCandidates++;
