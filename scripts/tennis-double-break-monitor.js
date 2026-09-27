@@ -385,6 +385,8 @@ async function processBreaks(e, nowSets) {
       winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
       if (winner === 1 || winner === 2) {
         log("WINNER_FALLBACK", { eventId: id, game: gameNo, winner: winner === 1 ? "HOME" : "AWAY" });
+      } else {
+        log("WINNER_UNKNOWN", { eventId: id, game: gameNo });
       }
     }
     log("GAME_CHANGE", {
