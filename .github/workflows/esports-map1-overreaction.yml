@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install HLTV fallback
+        run: npm install --no-save hltv@3.5.0
+
       - name: Run all-esports map-1 overreaction monitor
         env:
           PANDASCORE_API_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
