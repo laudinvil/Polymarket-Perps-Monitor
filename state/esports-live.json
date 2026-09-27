@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:46:56.755Z",
+  "updatedAt": "2026-09-27T15:46:57.998Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1916,
+    "events": 1926,
     "polls": 10,
     "alerts": 1,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702599",
+  "matchId": "1681152",
   "teams": [
-    "METANOIA WOLVES",
-    "MIBR fe"
+    "Black Phoenix",
+    "ex-RUSTEC"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -366,6 +366,16 @@
         "matchId": "1714921",
         "teamA": "Misa Esports",
         "teamB": "Fear Never Ends",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe",
         "seriesScore": [
           0,
           0
