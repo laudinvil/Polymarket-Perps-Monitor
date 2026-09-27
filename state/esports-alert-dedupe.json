@@ -90,6 +90,14 @@
       "teamB": "Team Liquid",
       "sentAt": "2026-09-27T22:21:38.376Z",
       "sentRunId": "36354983936"
+    },
+    "ESPORTS_MAP1:1700638": {
+      "claimedAt": "2026-09-27T22:21:39.857Z",
+      "runId": "36354983936",
+      "matchId": "1700638",
+      "teamA": "Yawara Esports",
+      "teamB": "Turma do Pagode",
+      "sentAt": null
     }
   }
 }
