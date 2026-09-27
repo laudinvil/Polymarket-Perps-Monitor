@@ -764,6 +764,19 @@ async function poll() {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.url === "/test-alert") {
+    sendTestAlert()
+      .then(sent => {
+        res.writeHead(sent === false ? 502 : 200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: sent !== false, testAlert: true }));
+      })
+      .catch(err => {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: String(err) }));
+      });
+    return;
+  }
+
   if (req.url === "/health" || req.url === "/") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, strategy: "two-consecutive-service-breaks", state }, null, 2));
@@ -775,11 +788,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
 
-// Temporary startup verification: send one Telegram test after deployment.
-if (!globalThis.__TEST_ALERT_SENT__) {
-  globalThis.__TEST_ALERT_SENT__ = true;
-  await sendTestAlert().catch(err => log("TEST_ALERT_ERROR", { error: String(err) }));
-}
+// Telegram test is exposed through /test-alert so deployment restarts do not spam Telegram.
+
 
 await refreshMarkets().catch(err => { state.lastError = String(err); log("GAMMA_ERROR", { error: String(err) }); });
 setInterval(() => refreshMarkets().catch(err => log("GAMMA_ERROR", { error: String(err) })), CFG.gammaMs);
