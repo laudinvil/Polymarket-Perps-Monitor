@@ -1,22 +1,17 @@
 {
-  "updatedAt": "2026-09-27T13:38:44.481Z",
-  "stage": "PANDASCORE_OK",
-  "runId": "36323016651",
+  "updatedAt": "2026-09-27T13:38:51.665Z",
+  "stage": "POLL_START",
+  "runId": "36323098748",
   "runAttempt": "1",
-  "sha": "5b0c60c91499b494e94273aef6b6fc518261a590",
-  "pid": 2274,
+  "sha": "366b5292cafa089834bb7a020378f700fc46d3f1",
+  "pid": 2025,
   "telemetry": {
-    "startedAt": "2026-09-27T13:38:01.582Z",
-    "events": 113,
-    "polls": 2,
+    "startedAt": "2026-09-27T13:38:51.654Z",
+    "events": 0,
+    "polls": 0,
     "alerts": 0,
-    "errors": 1,
-    "lastError": {
-      "ts": "2026-09-27T13:38:11.256Z",
-      "event": "STATE_PUSH_ERROR",
-      "data": "{\"error\":\"Error: Command failed: git push\"}"
-    }
+    "errors": 0,
+    "lastError": null
   },
-  "upcoming": 100,
-  "running": 7
+  "now": "2026-09-27T13:38:51.665Z"
 }\n
