@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:40.086Z",
+  "updatedAt": "2026-09-27T15:33:41.368Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 527,
+    "events": 528,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1711997",
+  "matchId": "1704623",
   "teams": [
-    "ЯЧЁ123",
-    "InterActive Philippines"
+    "THUNDER dOWNUNDER",
+    "Ground Zero"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 2,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 18,
+    "noPolyMatch": 19,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
