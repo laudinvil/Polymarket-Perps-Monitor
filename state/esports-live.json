@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:57.088Z",
+  "updatedAt": "2026-09-27T15:36:58.379Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 795,
+    "events": 805,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714932",
+  "matchId": "1714931",
   "teams": [
-    "Trigon Titans",
-    "Mix My Miks"
+    "Eternal Fire",
+    "NKVT"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 38,
+    "matchedPoly": 40,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
