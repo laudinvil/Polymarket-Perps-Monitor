@@ -3,5 +3,5 @@
   "private":true,
   "type":"module",
   "scripts":{"start":"node monitor.js"},
-  "dependencies":{"playwright":"^1.55.0"}
+  "dependencies":{"playwright":"1.55.0"}
 }
