@@ -111,20 +111,17 @@ function namesFromMarket(m) {
 }
 
 function isMatchWinnerMarket(m) {
-  const text = norm([
-    m.question,
-    m.title,
-    m.description,
-    m.rules
-  ].filter(Boolean).join(" "));
+  // Classify primarily from the market question/title. Descriptions and rules
+  // often contain generic words such as "over" or "under" that can incorrectly
+  // disqualify an otherwise valid match-winner contract.
+  const primary = norm([m.question, m.title].filter(Boolean).join(" "));
+  if (!primary) return false;
 
-  // Tennis strategy targets only the primary match-winner/advances contract.
-  // Explicit secondary contract terms always exclude the market.
-  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap/.test(text)) {
+  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap/.test(primary)) {
     return false;
   }
 
-  return /advances against|advance against|win the match|match winner|winner of the match|who will win/.test(text);
+  return /advances against|advance against|win the match|match winner|winner of the match|who will win/.test(primary);
 }
 
 function matchMarket(m, e) {
