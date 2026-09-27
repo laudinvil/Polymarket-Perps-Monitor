@@ -82,13 +82,7 @@ function isSoccer(m) {
   const period = String(m.period || "").toUpperCase().trim();
   const score = String(m.score || "").trim().split("|")[0].trim();
 
-  // Soccer-specific fields from Polymarket Gamma/Sports WS.
-  if (
-    m.homeTeamName || m.awayTeamName ||
-    m.homeTeam || m.awayTeam
-  ) {
-    return true;
-  }
+  // Team-name fields are present on esports too, so they cannot identify soccer.
 
   // Do not classify by score alone: esports feeds also use scores such as
   // "8-8|0-0|Bo3", and that caused false soccer detections.
