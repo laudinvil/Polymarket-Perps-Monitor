@@ -172,9 +172,26 @@ function teams(match) {
 }
 function seriesScore(match) {
   const o = opponents(match);
-  if (o.length < 2) return null;
-  const a = Number(o[0]?.score), b = Number(o[1]?.score);
-  return Number.isFinite(a) && Number.isFinite(b) ? [a,b] : null;
+  if (o.length >= 2) {
+    const a = Number(o[0]?.score), b = Number(o[1]?.score);
+    if (Number.isFinite(a) && Number.isFinite(b)) return [a,b];
+  }
+  const r = Array.isArray(match.results) ? match.results : [];
+  if (r.length >= 2) {
+    const a = Number(r[0]?.score ?? r[0]?.result), b = Number(r[1]?.score ?? r[1]?.result);
+    if (Number.isFinite(a) && Number.isFinite(b)) return [a,b];
+  }
+  const candidates = [match.score, match.series_score, match.seriesScore];
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length >= 2) {
+      const a = Number(c[0]), b = Number(c[1]);
+      if (Number.isFinite(a) && Number.isFinite(b)) return [a,b];
+    } else if (c && typeof c === "object") {
+      const a = Number(c.home ?? c.team1 ?? c.a), b = Number(c.away ?? c.team2 ?? c.b);
+      if (Number.isFinite(a) && Number.isFinite(b)) return [a,b];
+    }
+  }
+  return null;
 }
 function supportedSeries(match) {
   const type = String(match.match_type || "").toLowerCase();
@@ -571,14 +588,12 @@ for (const match of candidates) {
 
   let poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
-    diag.noPolyMatch++;
-    sample(diag.rejects, {reason:"no_polymarket_match",matchId:key,teamA,teamB}, 20);
+    const fallbackNearStart = !ts || ts <= now + 6 * 3600000;
     log("NO_POLY_MATCH", {key,teamA,teamB,action:"search_fallback"});
     // Do not let three sequential public-search calls for every upcoming fixture
     // stall the entire 20-second polling loop. Use fallback search only for
     // matches that are already running or start within the next 6 hours.
-    const nearStart = !ts || ts <= now + 6 * 3600000;
-    const searched = nearStart ? await searchPolyForMatch(teamA,teamB) : [];
+    const searched = fallbackNearStart ? await searchPolyForMatch(teamA,teamB) : [];
     poly = findPolyEvent(searched,teamA,teamB);
     if (poly) {
       diag.noPolyMatch--;
@@ -595,7 +610,11 @@ for (const match of candidates) {
       log("POLY_SEARCH_MATCH", {key,teamA,teamB,eventId:String(poly.event?.id || ""),eventSlug:String(poly.event?.slug || ""),marketId:String(poly.market?.id || "")});
     }
   }
-  if (!poly) continue;
+  if (!poly) {
+    diag.noPolyMatch++;
+    sample(diag.rejects, {reason:"no_polymarket_match",matchId:key,teamA,teamB}, 20);
+    continue;
+  }
   diag.matchedPoly++;
   sample(diag.samples, {
     matchId:key,
@@ -635,7 +654,11 @@ for (const match of candidates) {
     key,teamA,teamB,status:match.status,matchType:match.match_type,numberOfGames:match.number_of_games,
     seriesScore:entry.lastSeries,map1Detected:Boolean(info),
     complete:match.complete,detailedStats:match.detailed_stats,liveSupported:match.live_supported,
+    results:Array.isArray(match.results) ? match.results : null,
+    scoreField:match.score ?? null,
+    seriesScoreField:match.series_score ?? match.seriesScore ?? null,
     hasGames:Array.isArray(match.games),gamesCount:Array.isArray(match.games) ? match.games.length : null,
+    topLevelKeys:Object.keys(match).filter(k => /score|game|result|winner|complete|live/i.test(k)).sort(),
     rawOpponentScores:opponents(match).map(x => ({
       id:x?.opponent?.id ?? null,
       name:x?.opponent?.name ?? x?.opponent?.acronym ?? null,
