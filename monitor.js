@@ -82,11 +82,19 @@ function isSoccer(m) {
   const period = String(m.period || "").toUpperCase().trim();
   const score = String(m.score || "").trim().split("|")[0].trim();
 
+  // Soccer-specific fields from Polymarket Gamma/Sports WS.
+  if (
+    m.homeTeamName || m.awayTeamName ||
+    m.homeTeam || m.awayTeam
+  ) {
+    return true;
+  }
+
   // Soccer match score is the first pair. Accept 0-0 and en/em dashes.
-  if (!/^\d+\s*[-–—:]\s*\d+$/.test(score)) return false;
+  if (/^\d+\s*[-–—:]\s*\d+$/.test(score)) return true;
 
   // Polymarket soccer live states.
-  if (["inprogress", "break", "penaltyshootout"].includes(status)) return true;
+  if (["inprogress", "running", "live", "break", "halftime", "penaltyshootout"].includes(status)) return true;
 
   // Fallback for feeds that expose period but omit the sport label.
   if (/^(1H|2H|HT|ET|PEN)$/i.test(period)) return true;
