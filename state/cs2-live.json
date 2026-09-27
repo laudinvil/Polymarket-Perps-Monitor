@@ -1,28 +1,31 @@
 {
-  "updatedAt": "2026-09-27T14:24:10.285Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T14:24:25.515Z",
+  "stage": "POLL_START",
   "runId": "36325750738",
   "runAttempt": "1",
   "sha": "2a48143e4b8270b334428cf43b95f7fb7c3a3147",
   "pid": 2249,
   "telemetry": {
     "startedAt": "2026-09-27T14:24:05.503Z",
-    "events": 15,
+    "events": 19,
     "polls": 0,
     "alerts": 0,
-    "errors": 0,
-    "lastError": null
+    "errors": 1,
+    "lastError": {
+      "ts": "2026-09-27T14:24:11.717Z",
+      "event": "POLL_ERROR",
+      "data": "{\"error\":\"ReferenceError: Cannot access 'key' before initialization\",\"stack\":\"ReferenceError: Cannot access 'key' before initialization\\n    at poll (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:559:13)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\\n    at async file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:796:5\"}"
+    }
   },
-  "polyEvents": 224,
-  "candidates": 94,
+  "now": "2026-09-27T14:24:25.515Z",
   "diagnostics": {
-    "startedAt": "2026-09-27T14:24:05.509Z",
-    "upcoming": 100,
-    "running": 13,
-    "bo3": 94,
+    "startedAt": "2026-09-27T14:24:25.515Z",
+    "upcoming": 0,
+    "running": 0,
+    "bo3": 0,
     "skippedFuture": 0,
     "missingTeams": 0,
-    "polyEvents": 224,
+    "polyEvents": 0,
     "matchedPoly": 0,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
