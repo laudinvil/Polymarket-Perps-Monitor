@@ -68,14 +68,17 @@ function extractLiveMatches(node, out = []) {
     const score = scoreHome != null && scoreAway != null ? `${scoreHome}–${scoreAway}` :
       typeof node.score === "string" ? node.score.replace(/-/g, "–") : "—";
 
-    const minute = node.minute ?? node.elapsed ?? node.time ?? node.status?.minute ?? node.status?.elapsed ?? "—";
+    const rawMinute = node.minute ?? node.elapsed ?? node.time ?? node.status?.minute ?? node.status?.elapsed ?? "—";
+    const minute = typeof rawMinute === "object"
+      ? String(rawMinute.display ?? rawMinute.value ?? rawMinute.minute ?? "—")
+      : String(rawMinute);
     const id = String(node.id ?? node.matchId ?? node.eventId ?? `${home}|${away}`);
     out.push({
       id,
       home: String(home),
       away: String(away),
       score,
-      minute: String(minute),
+      minute,
       league: String(node.league?.name || node.leagueName || node.tournament?.name || ""),
       raw: node
     });
@@ -95,9 +98,22 @@ async function getJson(url) {
   return response.json();
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 async function telegram(text) {
   if (!TOKEN || !CHAT_ID) throw new Error("Telegram env vars missing");
-  const body = JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true });
+  const body = JSON.stringify({
+    chat_id: CHAT_ID,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: false
+  });
 
   await new Promise((resolve, reject) => {
     execFile("curl", [
@@ -126,12 +142,14 @@ function eventTeams(event) {
 }
 
 function eventLink(event) {
-  const market = Array.isArray(event.markets)
-    ? event.markets.find(x => x && (x.slug || x.marketSlug || x.id))
-    : null;
   const slug = event.slug || event.eventSlug;
   if (slug) return `https://polymarket.com/event/${slug}`;
-  if (market?.slug) return `https://polymarket.com/event/${market.slug}`;
+
+  const market = Array.isArray(event.markets)
+    ? event.markets.find(x => x && x.slug)
+    : null;
+  if (market?.slug) return `https://polymarket.com/market/${market.slug}`;
+
   return "https://polymarket.com/sports/soccer";
 }
 
@@ -154,17 +172,26 @@ function matchPolymarket(live, events) {
     if (!isSoccerEvent(event)) continue;
     const { home, away } = eventTeams(event);
     if (!home || !away) continue;
+
     const direct = similarity(live.home, home) + similarity(live.away, away);
     const reverse = similarity(live.home, away) + similarity(live.away, home);
     const score = Math.max(direct, reverse);
-    if (score > bestScore) { bestScore = score; best = event; }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = event;
+    }
   }
+
+  // Exact/near-exact team-name matches only. This prevents an unrelated
+  // Polymarket event from receiving a live alert.
   return bestScore >= 1.25 ? { event: best, score: bestScore } : null;
 }
 
 async function poll() {
   if (stopping) return;
   polls++;
+
   try {
     const [liveData, polyData] = await Promise.all([
       getJson(LIVE_URL),
@@ -172,12 +199,19 @@ async function poll() {
     ]);
 
     const liveMatches = extractLiveMatches(liveData);
-    const events = Array.isArray(polyData) ? polyData : (Array.isArray(polyData.events) ? polyData.events : []);
+    const events = Array.isArray(polyData)
+      ? polyData
+      : (Array.isArray(polyData.events) ? polyData.events : []);
+
     liveExternal = liveMatches.length;
     polyEvents = events.length;
     lastExternal = liveMatches.slice(0, 10);
 
-    console.log("LIVE SOURCE", JSON.stringify({ polls, live: liveMatches.length, polymarketEvents: events.length }));
+    console.log("LIVE SOURCE", JSON.stringify({
+      polls,
+      live: liveMatches.length,
+      polymarketEvents: events.length
+    }));
 
     for (const live of liveMatches) {
       const found = matchPolymarket(live, events);
@@ -189,24 +223,31 @@ async function poll() {
       matchesFound++;
       const event = found.event;
       const key = String(event.id || event.slug || `${live.home}|${live.away}`);
-      lastMatch = { live, polymarketId: key, title: event.title, matchScore: found.score, link: eventLink(event) };
+      const link = eventLink(event);
+      lastMatch = {
+        live,
+        polymarketId: key,
+        title: event.title,
+        matchScore: found.score,
+        link
+      };
       console.log("POLYMARKET MATCH", JSON.stringify(lastMatch));
 
       if (alerted.has(key)) continue;
 
       const message =
-        `⚽ LIVE FOUND\n\n` +
-        `${live.home} vs ${live.away}\n` +
+        `⚽ <b>LIVE FOUND</b>\n\n` +
+        `<b>${escapeHtml(live.home)} vs ${escapeHtml(live.away)}</b>\n` +
         `LIVE\n` +
-        `MINUTE: ${live.minute}\n` +
-        `SCORE: ${live.score}\n\n` +
-        `[ОТКРЫТЬ POLYMARKET](${eventLink(event)})`;
+        `MINUTE: ${escapeHtml(live.minute)}\n` +
+        `SCORE: ${escapeHtml(live.score)}\n\n` +
+        `<a href="${escapeHtml(link)}">ОТКРЫТЬ POLYMARKET</a>`;
 
       try {
         await telegram(message);
         alerted.add(key);
         alertsSent++;
-        console.log("ALERT SENT", key, live.home, "vs", live.away);
+        console.log("ALERT SENT", key, live.home, "vs", live.away, "link=" + link);
       } catch (e) {
         lastError = String(e.message || e);
         console.log("TELEGRAM ERROR", lastError);
