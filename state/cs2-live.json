@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:01:57.759Z",
+  "updatedAt": "2026-09-27T15:01:59.953Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328007264",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2272,
   "telemetry": {
     "startedAt": "2026-09-27T15:01:42.659Z",
-    "events": 92,
+    "events": 102,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1681152",
+  "matchId": "1700705",
   "teams": [
-    "Black Phoenix",
-    "ex-RUSTEC"
+    "Imperial",
+    "paiN"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -30,10 +30,10 @@
     "running": 9,
     "bo3": 90,
     "skippedFuture": 0,
-    "missingTeams": 0,
+    "missingTeams": 2,
     "polyEvents": 224,
     "matchedPoly": 6,
-    "noPolyMatch": 0,
+    "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -164,6 +164,15 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1700705",
+        "teams": [
+          "Imperial",
+          "paiN"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T17:00:00Z"
       }
     ],
     "rejects": [
@@ -196,6 +205,22 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1681152",
+        "teamA": "Black Phoenix",
+        "teamB": "ex-RUSTEC"
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706604",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706603",
+        "opponents": 1
       }
     ]
   }
