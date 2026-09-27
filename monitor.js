@@ -168,7 +168,11 @@ function score(m) {
   const match = main.match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
   if (!match) return "—";
 
-  return `${match[1]}–${match[2]}`;
+  // Normalize zero-padded soccer scores such as "00-01".
+  const home = String(Number(match[1]));
+  const away = String(Number(match[2]));
+
+  return `${home}–${away}`;
 }
 
 function title(m) {
