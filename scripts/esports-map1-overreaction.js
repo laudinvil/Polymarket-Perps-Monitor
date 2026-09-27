@@ -7,7 +7,7 @@ const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const GH_TOKEN = process.env.GITHUB_TOKEN;
 const GH_REPO = process.env.GITHUB_REPOSITORY || "laudinvil/Polymarket-Perps-Monitor";
 
-const DEPLEXO_LOG_URL = process.env.DEPLEXO_LOG_URL || "https://polymarket-perps-monitor.deplexo.app/api/logs";
+const DEPLEXO_LOG_URL = process.env.DEPLEXO_LOG_URL || "https://polymarket.blitz.cloud/api/logs";
 const DEPLEXO_LOG_TOKEN = process.env.DEPLEXO_LOG_TOKEN || "";
 const nativeConsoleLog = console.log.bind(console);
 const logQueue = [];
