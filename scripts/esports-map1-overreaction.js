@@ -319,13 +319,30 @@ async function bo3Map1Fallback(teamA,teamB,diag){
 
 let hltvLibPromise=null;
 const hltvCache=new Map();
-async function getHltv(){if(!hltvLibPromise)hltvLibPromise=import("hltv").then(m=>m.default||m.HLTV||m).catch(e=>{log("HLTV_LOAD_ERROR",{error:String(e)});return null;});return hltvLibPromise;}
+async function getHltv(){
+  if(!hltvLibPromise){
+    hltvLibPromise=import("hltv").then(m=>{
+      const h=m?.default||m?.HLTV||m;
+      log("HLTV_LOADED",{getResults:typeof h?.getResults==="function",getMatch:typeof h?.getMatch==="function",getMatches:typeof h?.getMatches==="function"});
+      return h;
+    }).catch(e=>{log("HLTV_LOAD_ERROR",{error:String(e)});return null;});
+  }
+  return hltvLibPromise;
+}
 async function hltvResultsFallback(teamA,teamB,diag){
   try{
     const HLTV=await getHltv();
-    if(!HLTV?.getResults)return null;
-    const now=new Date(), start=new Date(now.getTime()-24*3600000), end=new Date(now.getTime()+3600000);
-    const rows=await HLTV.getResults({startDate:start.toISOString().slice(0,10),endDate:end.toISOString().slice(0,10),bestOfX:[3,5],delayBetweenPageRequests:0});
+    if(!HLTV?.getResults||!HLTV?.getMatch){
+      diag.hltvResultsErrors=(diag.hltvResultsErrors||0)+1;
+      log("HLTV_RESULTS_UNAVAILABLE",{teamA,teamB});
+      return null;
+    }
+    const now=new Date(), start=new Date(now.getTime()-2*86400000), end=new Date(now.getTime()+86400000);
+    const rows=await HLTV.getResults({
+      startDate:start.toISOString().slice(0,10),
+      endDate:end.toISOString().slice(0,10),
+      delayBetweenPageRequests:0
+    });
     const arr=Array.isArray(rows)?rows:(Array.isArray(rows?.results)?rows.results:[]);
     const ranked=arr.map(r=>{
       const n1=String(r?.team1?.name||r?.teams?.[0]?.name||r?.team1Name||"");
@@ -333,17 +350,27 @@ async function hltvResultsFallback(teamA,teamB,diag){
       return{r,n1,n2,score:Math.max(nameScore(n1,teamA)+nameScore(n2,teamB),nameScore(n1,teamB)+nameScore(n2,teamA))};
     }).filter(x=>x.score>=1.25).sort((a,b)=>b.score-a.score);
     for(const hit of ranked.slice(0,5)){
-      const r=hit.r, maps=Array.isArray(r?.maps)?r.maps:(Array.isArray(r?.games)?r.games:[]);
-      const m=maps[0];
-      const a=Number(m?.team1Score??m?.team1_score??m?.score?.team1??m?.result?.team1);
-      const b=Number(m?.team2Score??m?.team2_score??m?.score?.team2??m?.result?.team2);
+      const id=Number(hit.r?.id||hit.r?.matchId||0);
+      if(!id)continue;
+      const detail=await HLTV.getMatch({id});
+      const maps=Array.isArray(detail?.maps)?detail.maps:[];
+      const m=maps[0], a=Number(m?.result?.team1TotalRounds), b=Number(m?.result?.team2TotalRounds);
       if(!Number.isFinite(a)||!Number.isFinite(b)||a===b||Math.max(a,b)<=1)continue;
-      const forward=nameScore(hit.n1,teamA)+nameScore(hit.n2,teamB),reverse=nameScore(hit.n1,teamB)+nameScore(hit.n2,teamA),score=reverse>forward?[b,a]:[a,b];
-      const value={score,marginValue:Math.abs(score[0]-score[1]),marginRatio:Math.abs(score[0]-score[1])/Math.max(...score),source:"hltv-results"};
-      diag.hltvResultsMatches=(diag.hltvResultsMatches||0)+1;log("HLTV_RESULTS_MAP1_FOUND",{teamA,teamB,...value});return value;
+      const forward=nameScore(hit.n1,teamA)+nameScore(hit.n2,teamB);
+      const reverse=nameScore(hit.n1,teamB)+nameScore(hit.n2,teamA);
+      const score=reverse>forward?[b,a]:[a,b];
+      const value={score,marginValue:Math.abs(score[0]-score[1]),marginRatio:Math.abs(score[0]-score[1])/Math.max(...score),source:"hltv-results",hltvMatchId:String(id),mapName:m?.name||null};
+      diag.hltvResultsMatches=(diag.hltvResultsMatches||0)+1;
+      log("HLTV_RESULTS_MAP1_FOUND",{teamA,teamB,...value});
+      return value;
     }
-    diag.hltvResultsMisses=(diag.hltvResultsMisses||0)+1;return null;
-  }catch(e){diag.hltvResultsErrors=(diag.hltvResultsErrors||0)+1;log("HLTV_RESULTS_ERROR",{teamA,teamB,error:String(e)});return null;}
+    diag.hltvResultsMisses=(diag.hltvResultsMisses||0)+1;
+    return null;
+  }catch(e){
+    diag.hltvResultsErrors=(diag.hltvResultsErrors||0)+1;
+    log("HLTV_RESULTS_ERROR",{teamA,teamB,error:String(e)});
+    return null;
+  }
 }
 
 async function hltvMap1Fallback(teamA,teamB,diag){
