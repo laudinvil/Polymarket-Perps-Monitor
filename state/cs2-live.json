@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:51:25.053Z",
+  "updatedAt": "2026-09-27T14:51:27.742Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 831,
+    "events": 861,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700464",
+  "matchId": "1707300",
   "teams": [
-    "Spirit Academy",
-    "megoshort"
+    "Metizport",
+    "Inner Circle Academy"
   ],
   "status": "running",
   "seriesScore": [
     0,
-    1
+    0
   ],
   "candidates": 92,
   "diagnostics": {
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 30,
+    "matchedPoly": 36,
     "noPolyMatch": 14,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 4,
+    "map1Finished": 6,
     "alreadyAlerted": 0,
-    "noPrematch": 4,
+    "noPrematch": 6,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
