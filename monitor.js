@@ -134,6 +134,14 @@ function minute(m) {
 
     const range = s.match(/^(\d{1,3})\s*[-:]\s*(\d{1,2})$/);
     if (range) return range[1];
+
+    // Polymarket may provide a period clock such as "1H 37:42".
+    const periodClock = s.match(/(?:1H|2H|ET)\s*(\d{1,3})\s*:\s*\d{1,2}/i);
+    if (periodClock) return periodClock[1];
+
+    // Some feeds expose only a minute number inside a longer status string.
+    const embedded = s.match(/(?:minute|elapsed|clock)\D{0,8}(\d{1,3})/i);
+    if (embedded) return embedded[1];
   }
 
   return "—";
