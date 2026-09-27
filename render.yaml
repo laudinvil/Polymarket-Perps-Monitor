@@ -3,7 +3,7 @@ services:
     name: polymarket-live-soccer-monitor
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npx playwright install --with-deps chromium
     startCommand: npm start
     healthCheckPath: /
     envVars:
