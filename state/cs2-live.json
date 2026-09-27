@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:31:24.867Z",
+  "updatedAt": "2026-09-27T14:31:25.805Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 1298,
+    "events": 1299,
     "polls": 4,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700598",
+  "matchId": "1700585",
   "teams": [
-    "FarmVille",
-    "Marsborne"
+    "LAG Gaming",
+    "regain"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 4,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": -6,
+    "noPolyMatch": -5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -337,6 +337,12 @@
         "matchId": "1702601",
         "teamA": "ALKA GAMING",
         "teamB": "Mira"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700598",
+        "teamA": "FarmVille",
+        "teamB": "Marsborne"
       }
     ]
   }
