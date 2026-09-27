@@ -140,15 +140,21 @@ function findPolyEvent(events, teamA, teamB) {
   for (const e of events) {
     const et = eventTeams(e);
     const title = String(e.title || e.name || "");
-    const titleScore = Math.max(sim(title, teamA + " " + teamB), sim(title, teamB + " " + teamA));
+    const titleScore = Math.max(
+      sim(title, teamA + " " + teamB),
+      sim(title, teamB + " " + teamA),
+      sim(title.replace(/\b(vs?|versus|v)\b/gi, " "), teamA + " " + teamB),
+      sim(title.replace(/\b(vs?|versus|v)\b/gi, " "), teamB + " " + teamA)
+    );
     let teamScore = 0;
     if (et.length >= 2) teamScore = Math.max(
       sim(teamA,et[0]) + sim(teamB,et[1]),
       sim(teamA,et[1]) + sim(teamB,et[0])
     );
-    if (!best || teamScore > best.score) best = { event:e, score:teamScore };
+    const score = Math.max(teamScore, titleScore);
+    if (!best || score > best.score) best = { event:e, score };
   }
-  if (!best || best.score < 0.85) return null;
+  if (!best || best.score < 0.70) return null;
   const e = best.event;
   const markets = Array.isArray(e.markets) ? e.markets : [];
   for (const m of markets) {
