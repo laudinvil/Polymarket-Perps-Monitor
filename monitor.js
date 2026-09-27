@@ -206,18 +206,21 @@ async function handleGame(m) {
 
   const status = String(m.status || "").toLowerCase().trim();
   const liveFlag = String(m.live).toLowerCase() === "true";
+  const endedFlag = String(m.ended).toLowerCase() === "true";
   const liveStatus = ["inprogress", "running", "live", "break", "halftime", "penaltyshootout"].includes(status);
 
+  // WS payloads may encode booleans as strings. Never let "false"
+  // become truthy and block an otherwise valid LIVE event.
   const soccerLive =
     soccer &&
-    !m.ended &&
+    !endedFlag &&
     (liveFlag || liveStatus);
 
   if (soccerLive) {
     soccerAccepted++;
     games.set(id, m);
   } else if (
-    m.ended ||
+    endedFlag ||
     ["final", "awarded", "canceled", "postponed"].includes(status)
   ) {
     games.delete(id);
