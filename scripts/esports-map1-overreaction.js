@@ -223,7 +223,11 @@ async function loadPolyEvents() {
   return [...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
 }
 
+const polySearchCache = new Map();
+
 async function searchPolyForMatch(teamA, teamB) {
+  const cacheKey = norm(teamA) + "|" + norm(teamB);
+  if (polySearchCache.has(cacheKey)) return polySearchCache.get(cacheKey);
   const queries = [teamA + " " + teamB, teamA, teamB];
   const found = [];
   for (const q of queries) {
@@ -240,7 +244,9 @@ async function searchPolyForMatch(teamA, teamB) {
       log("POLY_SEARCH_ERROR", {teamA,teamB,error:String(e)});
     }
   }
-  return [...new Map(found.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
+  const result = [...new Map(found.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
+  polySearchCache.set(cacheKey, result);
+  return result;
 }
 
 function findPolyEvent(events, teamA, teamB) {
@@ -505,6 +511,14 @@ for (const match of candidates) {
     continue;
   }
   sample(diag.samples, {matchId:String(match.id),teams:[teamA,teamB],status:match.status,beginAt:match.begin_at || match.scheduled_at}, 12);
+  await publishHeartbeat("MATCH_PROGRESS", {
+    matchId:key,
+    teams:[teamA,teamB],
+    status:match.status,
+    seriesScore:seriesScore(match),
+    candidates:candidates.length,
+    diagnostics:diag
+  });
 
   const key = String(match.id);
   const entry = state.value.matches[key] ||= {
@@ -516,7 +530,11 @@ for (const match of candidates) {
     diag.noPolyMatch++;
     sample(diag.rejects, {reason:"no_polymarket_match",matchId:key,teamA,teamB}, 20);
     log("NO_POLY_MATCH", {key,teamA,teamB,action:"search_fallback"});
-    const searched = await searchPolyForMatch(teamA,teamB);
+    // Do not let three sequential public-search calls for every upcoming fixture
+    // stall the entire 20-second polling loop. Use fallback search only for
+    // matches that are already running or start within the next 6 hours.
+    const nearStart = !ts || ts <= now + 6 * 3600000;
+    const searched = nearStart ? await searchPolyForMatch(teamA,teamB) : [];
     poly = findPolyEvent(searched,teamA,teamB);
     if (poly) {
       diag.noPolyMatch--;
@@ -572,7 +590,13 @@ for (const match of candidates) {
   log("MATCH_STATE", {
     key,teamA,teamB,status:match.status,matchType:match.match_type,numberOfGames:match.number_of_games,
     seriesScore:entry.lastSeries,map1Detected:Boolean(info),
-    complete:match.complete,detailedStats:match.detailed_stats,liveSupported:match.live_supported
+    complete:match.complete,detailedStats:match.detailed_stats,liveSupported:match.live_supported,
+    hasGames:Array.isArray(match.games),gamesCount:Array.isArray(match.games) ? match.games.length : null,
+    rawOpponentScores:opponents(match).map(x => ({
+      id:x?.opponent?.id ?? null,
+      name:x?.opponent?.name ?? x?.opponent?.acronym ?? null,
+      score:x?.score ?? null
+    }))
   });
 
   if (!info) {
