@@ -1,4 +1,6 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 const CFG = {
   pollMs: 5000,
   gammaMs: 30000,
@@ -10,7 +12,48 @@ const CFG = {
   gammaUrl: "https://gamma-api.polymarket.com/events?tag_id=864&active=true&closed=false&limit=500&order=endDate&ascending=true",
 };
 
+const STATS_FILE = path.join(process.env.DEPEXLO_DATA_DIR || process.env.DATA_DIR || "/data", "tennis-double-break-stats.json");
+
+function loadPersistentStats() {
+  try {
+    if (!fs.existsSync(STATS_FILE)) return {};
+    const parsed = JSON.parse(fs.readFileSync(STATS_FILE, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (err) {
+    console.log(JSON.stringify({ type: "PERSISTENT_STATS_LOAD_ERROR", error: String(err), file: STATS_FILE }));
+    return {};
+  }
+}
+
+function savePersistentStats() {
+  try {
+    fs.mkdirSync(path.dirname(STATS_FILE), { recursive: true });
+    const snapshot = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      totalPolls: state.totalPolls,
+      liveMatchesSeen: state.liveMatchesSeen,
+      breaksDetected: state.breaksDetected,
+      twoBreakCandidates: state.twoBreakCandidates,
+      alertsSent: state.alertsSent,
+      telegramErrors: state.telegramErrors,
+      sourceErrors: state.sourceErrors,
+      sofa429: state.sofa429,
+      gamma429: state.gamma429,
+      marketMisses: state.marketMisses,
+      cooldownBlocked: state.cooldownBlocked,
+      signals: state.signals,
+      lastAlertAt: state.lastAlertAt || null
+    };
+    fs.writeFileSync(STATS_FILE, JSON.stringify(snapshot, null, 2), "utf8");
+  } catch (err) {
+    console.log(JSON.stringify({ type: "PERSISTENT_STATS_SAVE_ERROR", error: String(err), file: STATS_FILE }));
+  }
+}
+
 const state = {
+  totalPolls: 0,
+  liveMatchesSeen: 0,
   startedAt: new Date().toISOString(),
   lastPollAt: null,
   lastGammaAt: null,
@@ -25,7 +68,10 @@ const state = {
   breaksDetected: 0,
   twoBreakCandidates: 0,
   marketMisses: 0,
-  cooldownBlocked: 0,
+  co
+
+Object.assign(state, loadPersistentStats());
+oldownBlocked: 0,
   lastError: null,
 };
 
@@ -805,6 +851,8 @@ COMEBACK CANDIDATE`;
     if (sent !== false) {
       alerted.set(key, Date.now());
       state.alertsSent++;
+      state.lastAlertAt = new Date().toISOString();
+      savePersistentStats();
       log("ALERT_SENT", { eventId: e.id, player, fallback: true });
     }
     return;
@@ -863,6 +911,8 @@ COMEBACK CANDIDATE`;
   if (sent !== false) {
     alerted.set(key, Date.now());
     state.alertsSent++;
+    state.lastAlertAt = new Date().toISOString();
+    savePersistentStats();
     log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
   } else {
     state.alertsSent = Math.max(0, state.alertsSent - 1);
@@ -872,9 +922,12 @@ COMEBACK CANDIDATE`;
 
 async function poll() {
   try {
+    state.totalPolls++;
+
     const body = await getJson(CFG.sofaUrl, "sofa");
     const events = body.events || [];
     state.liveMatches = events.length;
+    state.liveMatchesSeen += events.length;
     log("SOFA_LIVE", { liveMatches: events.length });
     for (const e of events) {
       if (e?.status?.type !== "inprogress") continue;
@@ -905,10 +958,12 @@ async function poll() {
       }
     }
     state.lastPollAt = new Date().toISOString();
+    savePersistentStats();
   } catch (err) {
     state.sourceErrors++;
     state.lastError = String(err);
     log("SOFA_ERROR", { error: String(err) });
+    savePersistentStats();
   }
 }
 
@@ -923,6 +978,16 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: String(err) }));
       });
+    return;
+  }
+
+  if (req.url === "/stats") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      ok: true,
+      persistentFile: STATS_FILE,
+      stats: loadPersistentStats()
+    }, null, 2));
     return;
   }
 
