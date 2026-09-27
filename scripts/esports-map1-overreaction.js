@@ -999,3 +999,5 @@ while (true) {
   await sleep(wait);
 }
 
+
+// Trigger fresh GitHub Actions run on the corrected Map 1 detection code.
