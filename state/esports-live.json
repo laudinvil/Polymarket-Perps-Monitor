@@ -100,6 +100,20 @@
         "eventSlug": "cs2-nemi1-color-2026-09-27"
       }
     },
+    "1684183": {
+      "matchId": "1684183",
+      "teamA": "Sinners",
+      "teamB": "BET-M 33",
+      "pre": {
+        "teamA": "Sinners",
+        "teamB": "BET-M 33",
+        "a": 0.5,
+        "b": 0.5,
+        "capturedAt": "2026-09-27T20:33:57.802Z",
+        "marketId": "5051971",
+        "eventSlug": "cs2-sin2-33-2026-09-28"
+      }
+    },
     "1684184": {
       "matchId": "1684184",
       "teamA": "FOKUS",
@@ -552,38 +566,36 @@
     }
   },
   "alerts": [],
-  "updatedAt": "2026-09-27T20:22:07.929Z",
+  "updatedAt": "2026-09-27T20:34:22.622Z",
   "stage": "POLL_RESULT",
-  "runId": "36347717315",
-  "sha": "5333e2f26224ec8f19baea76f6331ca16b74113e",
+  "runId": "36348463772",
+  "sha": "2a46f360217db1116fad63458e25acfc7e05ee7e",
   "telemetry": {
-    "startedAt": "2026-09-27T20:21:25.192Z",
-    "events": 455,
+    "startedAt": "2026-09-27T20:33:35.433Z",
+    "events": 404,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 146,
-      "HTTP_RESPONSE": 146,
-      "HTTP_JSON": 138,
-      "HTTP_NONRETRYABLE": 8,
-      "HTTP_ERROR": 8,
-      "GAME_DETAILS_ERROR": 8
+      "HTTP_REQUEST": 132,
+      "HTTP_RESPONSE": 132,
+      "HTTP_JSON": 132,
+      "MATCH_SCORE_ERROR": 7
     },
     "recent": [
       {
-        "ts": "2026-09-27T20:22:00.582Z",
+        "ts": "2026-09-27T20:34:11.270Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports%20FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 279
+          "elapsedMs": 376
         }
       },
       {
-        "ts": "2026-09-27T20:22:00.583Z",
+        "ts": "2026-09-27T20:34:11.272Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports%20FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -591,7 +603,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:00.583Z",
+        "ts": "2026-09-27T20:34:11.272Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -599,17 +611,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:00.986Z",
+        "ts": "2026-09-27T20:34:11.688Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 403
+          "elapsedMs": 416
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.004Z",
+        "ts": "2026-09-27T20:34:11.709Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -617,7 +629,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.004Z",
+        "ts": "2026-09-27T20:34:11.709Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -625,17 +637,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.325Z",
+        "ts": "2026-09-27T20:34:12.285Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 321
+          "elapsedMs": 576
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.430Z",
+        "ts": "2026-09-27T20:34:12.324Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -643,7 +655,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.434Z",
+        "ts": "2026-09-27T20:34:12.327Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -651,17 +663,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.711Z",
+        "ts": "2026-09-27T20:34:13.016Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 277
+          "elapsedMs": 689
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.712Z",
+        "ts": "2026-09-27T20:34:13.017Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -669,7 +681,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:01.712Z",
+        "ts": "2026-09-27T20:34:13.017Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -677,17 +689,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.016Z",
+        "ts": "2026-09-27T20:34:14.250Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 304
+          "elapsedMs": 1232
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.018Z",
+        "ts": "2026-09-27T20:34:14.252Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -695,7 +707,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.018Z",
+        "ts": "2026-09-27T20:34:14.252Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -703,17 +715,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.330Z",
+        "ts": "2026-09-27T20:34:15.154Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 312
+          "elapsedMs": 902
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.336Z",
+        "ts": "2026-09-27T20:34:15.160Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -721,7 +733,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.339Z",
+        "ts": "2026-09-27T20:34:15.163Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -729,17 +741,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.659Z",
+        "ts": "2026-09-27T20:34:15.596Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 320
+          "elapsedMs": 433
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.665Z",
+        "ts": "2026-09-27T20:34:15.642Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -747,7 +759,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.666Z",
+        "ts": "2026-09-27T20:34:15.642Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -755,17 +767,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.962Z",
+        "ts": "2026-09-27T20:34:16.070Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 296
+          "elapsedMs": 428
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.968Z",
+        "ts": "2026-09-27T20:34:16.090Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -773,7 +785,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:02.968Z",
+        "ts": "2026-09-27T20:34:16.090Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -781,17 +793,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:03.233Z",
+        "ts": "2026-09-27T20:34:16.464Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 265
+          "elapsedMs": 374
         }
       },
       {
-        "ts": "2026-09-27T20:22:03.236Z",
+        "ts": "2026-09-27T20:34:16.467Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -799,7 +811,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:03.241Z",
+        "ts": "2026-09-27T20:34:16.472Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends%20Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -807,147 +819,147 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:03.489Z",
+        "ts": "2026-09-27T20:34:16.851Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends%20Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 248
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:03.490Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends%20Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:03.490Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:03.738Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 248
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:03.739Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:03.739Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.035Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 296
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.069Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.076Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.359Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 282
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.362Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.362Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.671Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 309
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.674Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:04.674Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T20:22:05.053Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
           "elapsedMs": 379
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.062Z",
+        "ts": "2026-09-27T20:34:16.851Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends%20Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:16.851Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.120Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 269
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.120Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Fear%20Never%20Ends&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.120Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.583Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 462
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.602Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pcific%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.614Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.975Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 361
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.977Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:17.977Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:18.387Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 410
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:18.391Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:18.391Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:18.746Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 355
+        }
+      },
+      {
+        "ts": "2026-09-27T20:34:18.752Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -955,7 +967,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.068Z",
+        "ts": "2026-09-27T20:34:18.756Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING%20Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -963,17 +975,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.321Z",
+        "ts": "2026-09-27T20:34:19.129Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING%20Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 253
+          "elapsedMs": 373
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.324Z",
+        "ts": "2026-09-27T20:34:19.134Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING%20Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -981,7 +993,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.324Z",
+        "ts": "2026-09-27T20:34:19.134Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -989,17 +1001,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.344Z",
+        "ts": "2026-09-27T20:34:19.169Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 20
+          "elapsedMs": 34
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.347Z",
+        "ts": "2026-09-27T20:34:19.171Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=ALKA%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1007,7 +1019,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.347Z",
+        "ts": "2026-09-27T20:34:19.171Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1015,17 +1027,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.617Z",
+        "ts": "2026-09-27T20:34:19.561Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 270
+          "elapsedMs": 390
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.625Z",
+        "ts": "2026-09-27T20:34:19.570Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Semente%20do%20Mal&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1033,7 +1045,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.629Z",
+        "ts": "2026-09-27T20:34:19.574Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1041,17 +1053,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.918Z",
+        "ts": "2026-09-27T20:34:19.951Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 289
+          "elapsedMs": 377
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.919Z",
+        "ts": "2026-09-27T20:34:19.953Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1059,7 +1071,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:05.919Z",
+        "ts": "2026-09-27T20:34:19.953Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1067,17 +1079,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.245Z",
+        "ts": "2026-09-27T20:34:20.298Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 326
+          "elapsedMs": 345
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.285Z",
+        "ts": "2026-09-27T20:34:20.322Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1085,7 +1097,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.285Z",
+        "ts": "2026-09-27T20:34:20.322Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1093,17 +1105,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.552Z",
+        "ts": "2026-09-27T20:34:20.665Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 267
+          "elapsedMs": 343
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.553Z",
+        "ts": "2026-09-27T20:34:20.667Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1111,7 +1123,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.557Z",
+        "ts": "2026-09-27T20:34:20.671Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1119,17 +1131,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.795Z",
+        "ts": "2026-09-27T20:34:20.970Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 238
+          "elapsedMs": 299
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.797Z",
+        "ts": "2026-09-27T20:34:20.972Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1137,7 +1149,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:06.797Z",
+        "ts": "2026-09-27T20:34:20.972Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1145,17 +1157,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.044Z",
+        "ts": "2026-09-27T20:34:21.352Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 247
+          "elapsedMs": 380
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.046Z",
+        "ts": "2026-09-27T20:34:21.354Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1163,7 +1175,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.046Z",
+        "ts": "2026-09-27T20:34:21.354Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1171,17 +1183,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.300Z",
+        "ts": "2026-09-27T20:34:21.720Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 254
+          "elapsedMs": 366
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.310Z",
+        "ts": "2026-09-27T20:34:21.722Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1189,7 +1201,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.313Z",
+        "ts": "2026-09-27T20:34:21.726Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1197,17 +1209,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.578Z",
+        "ts": "2026-09-27T20:34:22.084Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 265
+          "elapsedMs": 358
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.589Z",
+        "ts": "2026-09-27T20:34:22.086Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1215,7 +1227,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.589Z",
+        "ts": "2026-09-27T20:34:22.086Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1223,17 +1235,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.606Z",
+        "ts": "2026-09-27T20:34:22.121Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 17
+          "elapsedMs": 35
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.617Z",
+        "ts": "2026-09-27T20:34:22.137Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1241,7 +1253,7 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.617Z",
+        "ts": "2026-09-27T20:34:22.137Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1249,17 +1261,17 @@
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.922Z",
+        "ts": "2026-09-27T20:34:22.570Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 305
+          "elapsedMs": 433
         }
       },
       {
-        "ts": "2026-09-27T20:22:07.928Z",
+        "ts": "2026-09-27T20:34:22.622Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1269,18 +1281,19 @@
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-27T20:22:07.928Z"
+    "updatedAt": "2026-09-27T20:34:22.622Z"
   },
   "diagnostics": {
-    "events": 511,
-    "candidates": 406,
+    "events": 508,
+    "candidates": 404,
     "livesFetched": 0,
-    "matchedPoly": 32,
-    "finishedGamesFound": 8,
-    "map1Finished": 8,
-    "gameDetailsRequested": 8,
+    "matchedPoly": 31,
+    "finishedGamesFound": 7,
+    "map1Finished": 7,
+    "gameDetailsRequested": 0,
     "gameScoreFound": 0,
-    "marginUnavailable": 8,
+    "gameWinnerFound": 7,
+    "marginUnavailable": 0,
     "signalChecks": 0,
     "fallbackSignalPass": 0,
     "balancedPrePass": 0,
