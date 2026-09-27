@@ -316,8 +316,8 @@ async function pollGammaSoccer() {
         ended: String(e.ended).toLowerCase() === "true",
         score: String(e.score || "").trim(),
         period: String(e.period || "").trim(),
-        elapsed: String(e.elapsed || "").trim(),
-        minute: String(e.elapsed || "").trim()
+        elapsed: String(e.elapsed || e.clock || e.minute || "").trim(),
+        minute: String(e.elapsed || e.clock || e.minute || "").trim()
       };
 
       lastGammaEvent = eventSnapshot(normalized);
