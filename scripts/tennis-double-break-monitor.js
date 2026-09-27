@@ -467,24 +467,37 @@ async function processBreaks(e, nowSets) {
 }
 
 function inferWinnerForGame(oldSets, newSets, beforeTotal, afterTotal) {
-  const beforeBySet = oldSets.map(x => [...x]);
-  const afterBySet = newSets.map(x => [...x]);
-  let b = beforeTotal;
-  let a = afterTotal;
-  for (let i = 0; i < Math.max(beforeBySet.length, afterBySet.length); i++) {
-    const bs = beforeBySet[i] || [0,0];
-    const as = afterBySet[i] || bs;
-    const diff = (as[0] + as[1]) - (bs[0] + bs[1]);
-    if (diff <= 0) continue;
-    if (a <= beforeTotal) break;
-    const steps = Math.min(diff, a - b);
-    if (steps <= 0) continue;
-    const hChanged = as[0] - bs[0];
-    const awChanged = as[1] - bs[1];
-    if (hChanged > 0 && awChanged === 0) return 1;
-    if (awChanged > 0 && hChanged === 0) return 2;
-    b += steps;
+  // Fallback for when SofaScore PBP is temporarily unavailable. Walk the
+  // completed-game transition in match order and identify the exact game that
+  // was added, including set boundaries.
+  const maxSets = Math.max(oldSets.length, newSets.length);
+  let globalBefore = 0;
+
+  for (let i = 0; i < maxSets; i++) {
+    const bs = oldSets[i] || [0, 0];
+    const as = newSets[i] || bs;
+    const oldCount = bs[0] + bs[1];
+    const newCount = as[0] + as[1];
+    if (newCount <= oldCount) {
+      globalBefore += oldCount;
+      continue;
+    }
+
+    const added = newCount - oldCount;
+    const targetStart = Math.max(beforeTotal + 1, globalBefore + oldCount + 1);
+    const targetEnd = Math.min(afterTotal, globalBefore + newCount);
+
+    if (targetStart <= targetEnd) {
+      // For a normal completed game, exactly one side's set-game count rises.
+      const dh = as[0] - bs[0];
+      const da = as[1] - bs[1];
+      if (dh > 0 && da === 0) return 1;
+      if (da > 0 && dh === 0) return 2;
+    }
+
+    globalBefore += newCount;
   }
+
   return null;
 }
 
