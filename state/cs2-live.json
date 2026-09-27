@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:34:51.162Z",
+  "updatedAt": "2026-09-27T14:34:52.181Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36326291843",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2254,
   "telemetry": {
     "startedAt": "2026-09-27T14:32:55.186Z",
-    "events": 631,
+    "events": 632,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700664",
+  "matchId": "1681150",
   "teams": [
-    "Lynn Vision",
-    "NEXVOID"
+    "Iberian Soul",
+    "ex-RUSTEC"
   ],
   "status": "running",
   "seriesScore": [
-    1,
-    0
+    0,
+    1
   ],
   "candidates": 94,
   "diagnostics": {
@@ -33,7 +33,7 @@
     "missingTeams": 12,
     "polyEvents": 224,
     "matchedPoly": 28,
-    "noPolyMatch": 11,
+    "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 1,
     "map1Finished": 2,
