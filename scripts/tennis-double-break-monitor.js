@@ -1,8 +1,8 @@
 import http from "node:http";
 const CFG = {
-  pollMs: 10000,
-  gammaMs: 60000,
-  requestTimeoutMs: 7000,
+  pollMs: 5000,
+  gammaMs: 30000,
+  requestTimeoutMs: 5000,
   telegramMinMs: 1000,
   cooldownMs: 20 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
