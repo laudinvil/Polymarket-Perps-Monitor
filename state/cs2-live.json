@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T14:45:14.120Z",
-  "stage": "POLL_START",
+  "updatedAt": "2026-09-27T14:45:15.961Z",
+  "stage": "PANDASCORE_OK",
   "runId": "36327015622",
   "runAttempt": "1",
   "sha": "dfe6948516e0a4a9b2945f860213a13ede7736da",
   "pid": 2257,
   "telemetry": {
     "startedAt": "2026-09-27T14:44:54.113Z",
-    "events": 36,
+    "events": 38,
     "polls": 0,
     "alerts": 0,
     "errors": 1,
@@ -17,11 +17,12 @@
       "data": "{\"error\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\",\"stack\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\\n    at parseMarket (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:269:37)\\n    at marketPrices (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:406:18)\\n    at ensurePrematchBaseline (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:3:24)\\n    at poll (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:697:11)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\\n    at async file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:879:5\"}"
     }
   },
-  "now": "2026-09-27T14:45:14.119Z",
+  "upcoming": 100,
+  "running": 11,
   "diagnostics": {
     "startedAt": "2026-09-27T14:45:14.119Z",
-    "upcoming": 0,
-    "running": 0,
+    "upcoming": 100,
+    "running": 11,
     "bo3": 0,
     "skippedFuture": 0,
     "missingTeams": 0,
