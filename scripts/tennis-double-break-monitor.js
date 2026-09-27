@@ -225,7 +225,7 @@ function currentGameScore(sets) {
 
 async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
   const data = await getJson(
-    `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
+    `https://api.sofascore.com/api/v1/event/${eventId}/point-by-point`,
     "sofa"
   );
 
@@ -262,8 +262,17 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
 
   const games = [];
   for (const set of rawSets) {
+    // Current SofaScore payload uses pointByPoint as a flat array:
+    // [{set, game, gamesHome, gamesAway, serving, gameWonBy, points}, ...].
+    // Older/alternate payloads can nest games under each set.
+    const isFlatGame = Number.isFinite(Number(set?.game)) &&
+      (set?.gamesHome != null || set?.gamesAway != null || set?.gameWonBy != null || set?.serving != null);
     const setNo = Number(set?.set ?? set?.period ?? set?.setNumber ?? 0);
-    const rawGames = Array.isArray(set?.games) ? set.games : [];
+    const rawGames = isFlatGame
+      ? [set]
+      : Array.isArray(set?.games)
+        ? set.games
+        : [];
 
     for (const game of rawGames) {
       const score = game?.score || game;
