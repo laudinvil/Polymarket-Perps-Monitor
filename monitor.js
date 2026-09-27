@@ -50,20 +50,53 @@ async function telegram(text) {
 }
 
 function isSoccer(m) {
-  const league = String(m.leagueAbbreviation || m.league || "").toLowerCase();
-  if (league === "soccer" || league.includes("soccer") || league.includes("football")) return true;
+  const league = String(m.leagueAbbreviation || m.league || "").toLowerCase().trim();
+  const text = [
+    league,
+    m.sport,
+    m.sportSlug,
+    m.slug,
+    m.homeTeam,
+    m.awayTeam
+  ].map(v => String(v ?? "").toLowerCase()).join(" ");
 
-  const period = String(m.period || "").toUpperCase();
-  const slug = String(m.slug || "").toLowerCase();
+  if (/(cs2|counter[- ]?strike|valorant|r6siege|rainbow ?six|mlbb|dota|league of legends|lol esports|starcraft|esports)/i.test(text)) {
+    return false;
+  }
 
-  return ["1H", "2H", "HT"].includes(period) &&
-    !/(nba|nfl|nhl|mlb|ncaa|cfb|cs2|tennis|mma|ufc)/i.test(slug);
+  if (/(soccer|football)/i.test(text)) return true;
+
+  const period = String(m.period || "").toUpperCase().trim();
+  const score = String(m.score || "").trim();
+
+  // Real football feeds normally expose a 1H/2H period and a simple 0-0 style score.
+  if (/^(1H|2H|HT|ET|PEN)$/i.test(period) && /^\\d+\\s*[-:]\\s*\\d+$/.test(score)) {
+    return true;
+  }
+
+  return false;
 }
 
 function minute(m) {
-  const elapsed = String(m.elapsed ?? "").trim();
-  const match = elapsed.match(/^(\d+)/);
-  if (match) return match[1];
+  const candidates = [
+    m.elapsed,
+    m.minute,
+    m.matchMinute,
+    m.gameMinute,
+    m.clock
+  ];
+
+  for (const value of candidates) {
+    const s = String(value ?? "").trim();
+    if (!s) continue;
+
+    const range = s.match(/^(\\d{1,3})\\s*[-:]\\s*(\\d{1,2})$/);
+    if (range) return range[1];
+
+    const direct = s.match(/^(\\d{1,3})(?:['’]|\\s*(?:min|mins|minute|minutes))?$/i);
+    if (direct) return direct[1];
+  }
+
   return "—";
 }
 
