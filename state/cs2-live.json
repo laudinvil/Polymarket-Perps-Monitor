@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T13:46:20.304Z",
-  "stage": "POLL_START",
+  "updatedAt": "2026-09-27T13:46:22.800Z",
+  "stage": "PANDASCORE_OK",
   "runId": "36323513209",
   "runAttempt": "1",
   "sha": "c232ad5e0bda68a5a2a2a307bbea0d5d0896b823",
   "pid": 2356,
   "telemetry": {
     "startedAt": "2026-09-27T13:46:00.300Z",
-    "events": 54,
+    "events": 60,
     "polls": 1,
     "alerts": 0,
     "errors": 1,
@@ -17,5 +17,6 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "now": "2026-09-27T13:46:20.304Z"
+  "upcoming": 100,
+  "running": 7
 }\n
