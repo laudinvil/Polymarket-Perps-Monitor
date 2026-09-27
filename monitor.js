@@ -1,15 +1,26 @@
 import { chromium } from "playwright";
+import http from "node:http";
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const POLL_MS = Number(process.env.POLL_MS || 20000);
-
-if (!TOKEN || !CHAT_ID) throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
-
+const POLL_MS = Number(process.env.POLL_MS || 15000);
+const PORT = Number(process.env.PORT || 3000);
 const SOURCE = "https://polymarket.com/ru/sports/soccer/games";
+
 const seen = new Set();
+let status = { startedAt: new Date().toISOString(), scans: 0, live: 0, lastError: null };
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, {"content-type":"application/json"});
+  res.end(JSON.stringify({ok:true, service:"polymarket-live-soccer-monitor", ...status}));
+});
+server.listen(PORT, "0.0.0.0", () => console.log("HTTP HEALTH LISTENING:", PORT));
 
 async function sendTelegram(text) {
+  if (!TOKEN || !CHAT_ID) {
+    console.error("TELEGRAM CONFIG MISSING: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
+    return;
+  }
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
     headers: {"content-type":"application/json"},
@@ -19,7 +30,7 @@ async function sendTelegram(text) {
 }
 
 function clean(s) {
-  return s.replace(/\\s+/g, " ").trim();
+  return s.replace(/\s+/g, " ").trim();
 }
 
 async function scan(page) {
@@ -29,31 +40,23 @@ async function scan(page) {
   const cards = await page.locator('a[href*="/sports/soccer/games/"]').evaluateAll(as =>
     as.map(a => ({
       href: a.href,
-      text: (a.innerText || "").replace(/\\s+/g, " ").trim()
+      text: (a.innerText || "").replace(/\s+/g, " ").trim()
     }))
   );
 
-  const live = [];
-  for (const card of cards) {
-    if (/\\bLIVE\\b/i.test(card.text)) {
-      live.push(card);
-    }
-  }
-
+  const live = cards.filter(card => /\bLIVE\b/i.test(card.text));
+  status = {...status, scans: status.scans + 1, live: live.length, lastError: null};
   console.log(`SCAN: cards=${cards.length} live=${live.length}`);
 
   for (const item of live) {
     if (seen.has(item.href)) continue;
     seen.add(item.href);
-
-    const title = clean(item.text.replace(/\\bLIVE\\b/ig, ""));
-    const message = `⚽ LIVE FOUND\\n\\n${title}\\n\\n${item.href}`;
+    const title = clean(item.text.replace(/\bLIVE\b/ig, ""));
     console.log("NEW LIVE:", item.href);
-    await sendTelegram(message);
+    await sendTelegram(`⚽ LIVE FOUND\n\n${title}\n\n${item.href}`);
     console.log("TELEGRAM SENT:", item.href);
   }
 
-  // Keep memory bounded while retaining current deduplication.
   if (seen.size > 5000) {
     const keep = [...seen].slice(-2500);
     seen.clear();
@@ -61,17 +64,36 @@ async function scan(page) {
   }
 }
 
-const browser = await chromium.launch({headless:true});
-const page = await browser.newPage({locale:"ru-RU"});
+async function main() {
+  console.log("MONITOR STARTING");
+  console.log("SOURCE:", SOURCE);
+  console.log("POLL_MS:", POLL_MS);
+  console.log("TELEGRAM CONFIG:", TOKEN ? "TOKEN=SET" : "TOKEN=MISSING", CHAT_ID ? "CHAT_ID=SET" : "CHAT_ID=MISSING");
 
-process.on("SIGTERM", async () => { await browser.close(); process.exit(0); });
-process.on("SIGINT", async () => { await browser.close(); process.exit(0); });
-
-while (true) {
   try {
-    await scan(page);
+    const browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+    const page = await browser.newPage({locale:"ru-RU"});
+
+    while (true) {
+      try {
+        await scan(page);
+      } catch (e) {
+        status = {...status, lastError: e?.stack || String(e)};
+        console.error("SCAN ERROR:", e?.stack || e);
+      }
+      await new Promise(r => setTimeout(r, POLL_MS));
+    }
   } catch (e) {
-    console.error("SCAN ERROR:", e.message);
+    status = {...status, lastError: e?.stack || String(e)};
+    console.error("FATAL:", e?.stack || e);
+    await new Promise(r => setTimeout(r, 60000));
   }
-  await new Promise(r => setTimeout(r, POLL_MS));
 }
+
+process.on("SIGTERM", () => { server.close(); process.exit(0); });
+process.on("SIGINT", () => { server.close(); process.exit(0); });
+
+main();
