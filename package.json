@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "exec node monitor.js"
+    "start": "node scripts/deplexo-log-server.js"
   },
   "dependencies": {}
 }
