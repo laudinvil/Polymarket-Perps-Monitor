@@ -30,6 +30,5 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          DEPLEXO_CLAIM_URL: https://polymarket.blitz.cloud/api/claim-alert
         run: node scripts/esports-map1-overreaction.js
 
