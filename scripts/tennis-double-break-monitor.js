@@ -97,8 +97,18 @@ function playerNameMatch(a, b) {
 
 function marketPlayerNames(m) {
   const outcomes = parseJsonField(m.outcomes);
-  const names = outcomes.filter(x => typeof x === "string" && !/^(yes|no)$/i.test(x));
+  const names = outcomes
+    .filter(x => typeof x === "string" && !/^(yes|no)$/i.test(x))
+    .map(x => String(x).trim())
+    .filter(Boolean);
   if (names.length >= 2) return names.slice(0, 2);
+
+  // Some Gamma records expose the player labels through outcomePrices/token
+  // metadata only after normalization; never treat YES/NO as player names.
+  const question = String(m.question || m.title || "");
+  const vs = question.split(/\s+vs\.?\s+|\s+versus\s+/i).map(x => x.trim()).filter(Boolean);
+  if (vs.length === 2) return vs;
+
   return [];
 }
 
