@@ -203,6 +203,18 @@ async function ps(path) {
   return (await getJson(PS_BASE + path, { authorization: "Bearer " + PS_TOKEN })).data;
 }
 
+async function psPaged(path, maxPages = 5) {
+  const all = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const batch = await ps(path + sep + "page=" + page + "&per_page=100");
+    if (!Array.isArray(batch) || !batch.length) break;
+    all.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return [...new Map(all.filter(x => x?.id != null).map(x => [String(x.id), x])).values()];
+}
+
 function opponents(match) {
   return Array.isArray(match.opponents) ? match.opponents : [];
 }
@@ -765,20 +777,20 @@ async function poll() {
 
 const nowMs = Date.now();
 const UPCOMING_TTL = 5 * 60 * 1000;
-const RUNNING_TTL = 20 * 1000;
+const RUNNING_TTL = 60 * 1000;
 
 let upcoming = psUpcomingCache.data;
 let running = psRunningCache.data;
 
 if (!psUpcomingCache.at || nowMs - psUpcomingCache.at >= UPCOMING_TTL) {
-  upcoming = await ps("/matches/upcoming?per_page=100");
+  upcoming = await psPaged("/matches/upcoming", 5);
   psUpcomingCache = {at: Date.now(), data: upcoming};
 } else {
   log("PANDASCORE_CACHE", {endpoint:"upcoming", ageMs: nowMs - psUpcomingCache.at});
 }
 
 if (!psRunningCache.at || nowMs - psRunningCache.at >= RUNNING_TTL) {
-  running = await ps("/matches/running?per_page=100");
+  running = await psPaged("/matches/running", 2);
   psRunningCache = {at: Date.now(), data: running};
 } else {
   log("PANDASCORE_CACHE", {endpoint:"running", ageMs: nowMs - psRunningCache.at});
