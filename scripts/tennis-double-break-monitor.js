@@ -225,7 +225,7 @@ function processBreaks(e, nowSets) {
   const newTotal = totalGames(nowSets);
   if (newTotal <= oldTotal) {
     prev.sets = nowSets;
-    if (first) prev.firstToServe = first;
+    // Keep the match's initial server fixed; SofaScore may update firstToServe during live changes.
     return [];
   }
 
@@ -235,7 +235,7 @@ function processBreaks(e, nowSets) {
   if (newTotal - oldTotal > 1) {
     log("GAME_GAP", { eventId: id, gamesSkipped: newTotal - oldTotal });
     prev.sets = nowSets;
-    if (first) prev.firstToServe = first;
+    // Keep the match's initial server fixed.
     return [];
   }
 
@@ -253,11 +253,16 @@ function processBreaks(e, nowSets) {
   if (tiebreakSet) {
     log("TIEBREAK_COMPLETED", { eventId: id, score: newLast });
     prev.sets = nowSets;
-    prev.firstToServe = first || prev.firstToServe || 1;
+    prev.firstToServe = prev.firstToServe || first || 0;
     return [];
   }
   for (let k = 0; k < count; k++) {
-    const server = ((gameNo + ((first || prev.firstToServe || 1) - 1)) % 2) + 1;
+    const initialServer = prev.firstToServe;
+    if (initialServer !== 1 && initialServer !== 2) {
+      log("SERVER_UNKNOWN", { eventId: id, totalGames: gameNo });
+      break;
+    }
+    const server = ((gameNo + (initialServer - 1)) % 2) + 1;
     const before = gameNo;
     gameNo++;
     const winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
@@ -532,7 +537,7 @@ async function poll() {
       const id = String(e.id);
       const prev = matches.get(id);
       if (!prev) {
-        matches.set(id, { sets, firstToServe: firstServer(e) || 1, breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
+        matches.set(id, { sets, firstToServe: firstServer(e), breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
         continue;
       }
       const breaks = processBreaks(e, sets);
