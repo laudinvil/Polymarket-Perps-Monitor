@@ -582,17 +582,56 @@ function saveState(s) {
 }
 
 async function claimAlertStrict(key, meta = {}) {
-  const claimUrl = process.env.DEPLEXO_CLAIM_URL || "https://polymarket.blitz.cloud/api/claim-alert";
-  const r = await fetch(claimUrl, {
-    method:"POST",
-    headers:{"content-type":"application/json"},
-    body:JSON.stringify({key,...meta,runId:process.env.GITHUB_RUN_ID||null}),
-    signal:AbortSignal.timeout(5000)
-  });
-  const j = await r.json().catch(()=>({}));
-  if (r.status === 409 && j.duplicate) return false;
-  if (!r.ok || !j.ok || !j.claimed) throw new Error("STRICT_DEDUPE_REJECT HTTP "+r.status);
-  return true;
+  const path = "state/cs2-alert-dedupe.json";
+  const api = "https://api.github.com/repos/" + GH_REPO + "/contents/" + path;
+  const headers = {
+    accept:"application/vnd.github+json",
+    authorization:"Bearer " + GH_TOKEN,
+    "x-github-api-version":"2022-11-28"
+  };
+  for (let attempt=1; attempt<=5; attempt++) {
+    try {
+      let currentSha = null;
+      let data = {version:1, alerts:{}};
+      const r = await fetch(api,{headers,signal:AbortSignal.timeout(5000)});
+      if (r.ok) {
+        const j = await r.json();
+        currentSha = j.sha || null;
+        if (j.content) data = JSON.parse(Buffer.from(j.content.replace(/\n/g,""),"base64").toString("utf8"));
+      } else if (r.status !== 404) throw new Error("DEDUPE_READ_HTTP_"+r.status);
+      data.alerts ||= {};
+      if (data.alerts[key]) return false;
+      data.alerts[key] = {
+        claimedAt:new Date().toISOString(),
+        runId:process.env.GITHUB_RUN_ID||null,
+        matchId:meta.matchId||null,
+        teamA:meta.teamA||null,
+        teamB:meta.teamB||null
+      };
+      const body = {
+        message:"CS2 strict alert claim " + key,
+        content:Buffer.from(JSON.stringify(data,null,2)+"\n").toString("base64"),
+        branch:"main"
+      };
+      if (currentSha) body.sha=currentSha;
+      const w = await fetch(api,{
+        method:"PUT",
+        headers:{...headers,"content-type":"application/json"},
+        body:JSON.stringify(body),
+        signal:AbortSignal.timeout(5000)
+      });
+      if (w.ok) return true;
+      if (w.status === 409 || w.status === 422) {
+        await new Promise(r=>setTimeout(r,300*attempt));
+        continue;
+      }
+      throw new Error("DEDUPE_WRITE_HTTP_"+w.status);
+    } catch(e) {
+      if (attempt===5) throw e;
+      await new Promise(r=>setTimeout(r,300*attempt));
+    }
+  }
+  throw new Error("STRICT_DEDUPE_UNAVAILABLE");
 }
 
 async function telegram(text) {
@@ -980,15 +1019,13 @@ for (const match of candidates) {
   let claimed = false;
   try {
     claimed = await claimAlertStrict(strictKey, {
-      matchId:key,
-      teamA,
-      teamB,
+      matchId:key, teamA, teamB,
       eventSlug:String(poly.event?.slug || ""),
       marketId:String(poly.market?.id || "")
     });
   } catch (e) {
-    sample(diag.rejects, {reason:"strict_dedupe_unavailable",matchId:key}, 20);
-    continue;
+    log("STRICT_DEDUPE_ERROR", {key,error:String(e)});
+    throw e;
   }
   if (!claimed) {
     diag.alreadyAlerted++;
