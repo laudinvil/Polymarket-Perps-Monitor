@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:59:14.822Z",
+  "updatedAt": "2026-09-27T14:59:17.081Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327852862",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2242,
   "telemetry": {
     "startedAt": "2026-09-27T14:59:03.677Z",
-    "events": 92,
+    "events": 117,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700705",
+  "matchId": "1700465",
   "teams": [
-    "Imperial",
-    "paiN"
+    "KUUSAMO.gg",
+    "Noir Verse"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 3,
     "polyEvents": 224,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -164,6 +164,33 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1700705",
+        "teams": [
+          "Imperial",
+          "paiN"
+        ],
+        "source": "public-search",
+        "polyEventId": "1087590",
+        "polyEventSlug": "cs2-imp11-pain-2026-09-27",
+        "marketId": "4995311",
+        "marketSlug": "cs2-imp11-pain-2026-09-27",
+        "marketQuestion": "Counter-Strike: Imperial vs paiN (BO5) - FERJEE In House Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1700705",
+        "teams": [
+          "Imperial",
+          "paiN"
+        ],
+        "polyEventId": "1087590",
+        "polyEventSlug": "cs2-imp11-pain-2026-09-27",
+        "marketId": "4995311",
+        "marketSlug": "cs2-imp11-pain-2026-09-27",
+        "marketQuestion": "Counter-Strike: Imperial vs paiN (BO5) - FERJEE In House Playoffs",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -211,6 +238,16 @@
         "reason": "missing_teams",
         "matchId": "1706603",
         "opponents": 1
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN",
+        "seriesScore": [
+          0,
+          0
+        ]
       }
     ]
   }
