@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:26:53.523Z",
+  "updatedAt": "2026-09-27T14:26:56.356Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325874962",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2022,
   "telemetry": {
     "startedAt": "2026-09-27T14:26:05.517Z",
-    "events": 285,
+    "events": 304,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700678",
+  "matchId": "1700664",
   "teams": [
-    "The Huns Esports",
-    "Rare Atom"
+    "Lynn Vision",
+    "NEXVOID"
   ],
   "status": "running",
   "seriesScore": null,
@@ -29,7 +29,7 @@
     "skippedFuture": 48,
     "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 26,
+    "matchedPoly": 28,
     "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 10,
