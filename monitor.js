@@ -57,28 +57,31 @@ async function telegram(text) {
 
 function isSoccer(m) {
   const league = String(m.leagueAbbreviation || m.league || "").toLowerCase().trim();
-  const text = [
-    league,
-    m.sport,
-    m.sportSlug,
-    m.slug,
-    m.homeTeam,
-    m.awayTeam
-  ].map(v => String(v ?? "").toLowerCase()).join(" ");
+  const sport = String(m.sport || m.sportSlug || "").toLowerCase().trim();
+  const slug = String(m.slug || "").toLowerCase();
 
-  if (/(cs2|counter[- ]?strike|valorant|r6siege|rainbow ?six|mlbb|dota|league of legends|lol esports|starcraft|esports)/i.test(text)) {
+  const text = [league, sport, slug].join(" ");
+
+  // Reject non-soccer sports explicitly.
+  if (/(cs2|counter[- ]?strike|valorant|r6siege|rainbow ?six|mlbb|dota|league of legends|lol esports|starcraft|esports|tennis|nba|nfl|nhl|mlb|cfb|ncaa)/i.test(text)) {
     return false;
   }
 
+  // Direct identification when Polymarket supplies the sport/league.
   if (/(soccer|football)/i.test(text)) return true;
 
+  const status = String(m.status || "").toLowerCase().trim();
   const period = String(m.period || "").toUpperCase().trim();
   const score = String(m.score || "").trim();
 
-  // Real football feeds normally expose a 1H/2H period and a simple 0-0 style score.
-  if (/^(1H|2H|HT|ET|PEN)$/i.test(period) && /^\d+\s*[-:]\s*\d+$/.test(score)) {
-    return true;
-  }
+  // Soccer score is plain HOME-AWAY. This also accepts 0-0.
+  if (!/^\d+\s*[-:]\s*\d+$/.test(score)) return false;
+
+  // Polymarket soccer live states.
+  if (["inprogress", "break", "penaltyshootout"].includes(status)) return true;
+
+  // Fallback for feeds that expose period but omit the sport label.
+  if (/^(1H|2H|HT|ET|PEN)$/i.test(period)) return true;
 
   return false;
 }
@@ -114,11 +117,15 @@ function minute(m) {
     const s = String(value ?? "").trim();
     if (!s) continue;
 
-    const range = s.match(/^(\\d{1,3})\\s*[-:]\\s*(\\d{1,2})$/);
-    if (range) return range[1];
-
-    const direct = s.match(/^(\\d{1,3})(?:['’]|\\s*(?:min|mins|minute|minutes))?$/i);
+    // "65", "65'", "65 min", and "65:30" -> 65.
+    const direct = s.match(/^(\d{1,3})(?:['’]|\s*(?:min|mins|minute|minutes))?$/i);
     if (direct) return direct[1];
+
+    const clock = s.match(/^(\d{1,3})\s*:\s*\d{1,2}$/);
+    if (clock) return clock[1];
+
+    const range = s.match(/^(\d{1,3})\s*[-:]\s*(\d{1,2})$/);
+    if (range) return range[1];
   }
 
   return "—";
