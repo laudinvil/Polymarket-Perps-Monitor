@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:26:28.659Z",
+  "updatedAt": "2026-09-27T14:26:30.770Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325874962",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2022,
   "telemetry": {
     "startedAt": "2026-09-27T14:26:05.517Z",
-    "events": 177,
+    "events": 197,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710855",
+  "matchId": "1702600",
   "teams": [
-    "BASEMENT BOYS",
-    "overTIME"
+    "BESTIA Academy",
+    "Procyon Gaming"
   ],
   "status": "not_started",
   "seriesScore": null,
@@ -27,12 +27,12 @@
     "running": 13,
     "bo3": 94,
     "skippedFuture": 0,
-    "missingTeams": 3,
+    "missingTeams": 4,
     "polyEvents": 224,
-    "matchedPoly": 16,
+    "matchedPoly": 18,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
-    "prematchCaptured": 8,
+    "prematchCaptured": 9,
     "map1Finished": 0,
     "alreadyAlerted": 0,
     "noPrematch": 0,
@@ -309,6 +309,12 @@
         "teamA": "PARTIZAN",
         "teamB": "Chaos Enforcers",
         "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1710855",
+        "teamA": "BASEMENT BOYS",
+        "teamB": "overTIME"
       }
     ]
   }
