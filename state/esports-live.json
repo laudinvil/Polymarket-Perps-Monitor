@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:17.111Z",
+  "updatedAt": "2026-09-27T15:37:18.546Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 875,
+    "events": 876,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1684183",
+  "matchId": "1683303",
   "teams": [
-    "BET-M 33",
-    "Sinners"
+    "Bushido Wildcats",
+    "Leo Team"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 15,
+    "noPolyMatch": 16,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
