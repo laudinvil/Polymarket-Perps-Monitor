@@ -206,7 +206,6 @@ async function loadPolyEvents() {
   const urls = [
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=cs2",
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=esports",
-    // Fallback: some live CS2 events are not returned by the tag filters.
     GAMMA + "/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
   ];
   let events = [];
@@ -217,6 +216,26 @@ async function loadPolyEvents() {
     } catch (e) { log("POLY_DISCOVERY_ERROR", String(e)); }
   }
   return [...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
+}
+
+async function searchPolyForMatch(teamA, teamB) {
+  const queries = [teamA + " " + teamB, teamA, teamB];
+  const found = [];
+  for (const q of queries) {
+    try {
+      const url = GAMMA + "/public-search?q=" + encodeURIComponent(q) +
+        "&limit_per_type=20&page=1&keep_closed_markets=0";
+      const x = await getJson(url);
+      const data = x.data || {};
+      for (const e of (Array.isArray(data.events) ? data.events : [])) found.push(e);
+      for (const m of (Array.isArray(data.markets) ? data.markets : [])) {
+        if (m?.event) found.push(m.event);
+      }
+    } catch (e) {
+      log("POLY_SEARCH_ERROR", {teamA,teamB,error:String(e)});
+    }
+  }
+  return [...new Map(found.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
 }
 
 function findPolyEvent(events, teamA, teamB) {
@@ -497,13 +516,29 @@ for (const match of candidates) {
     id:key, teamA, teamB, beginAt:ts, pre:null, alerted:false, lastSeries:null
   };
 
-  const poly = findPolyEvent(polyEvents,teamA,teamB);
+  let poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
     diag.noPolyMatch++;
     sample(diag.rejects, {reason:"no_polymarket_match",matchId:key,teamA,teamB}, 20);
-    log("NO_POLY_MATCH", {key,teamA,teamB});
-    continue;
+    log("NO_POLY_MATCH", {key,teamA,teamB,action:"search_fallback"});
+    const searched = await searchPolyForMatch(teamA,teamB);
+    poly = findPolyEvent(searched,teamA,teamB);
+    if (poly) {
+      diag.noPolyMatch--;
+      diag.matchedPoly++;
+      sample(diag.samples, {
+        matchId:key, teams:[teamA,teamB], source:"public-search",
+        polyEventId:String(poly.event?.id || ""),
+        polyEventSlug:String(poly.event?.slug || ""),
+        marketId:String(poly.market?.id || ""),
+        marketSlug:String(poly.market?.slug || ""),
+        marketQuestion:String(poly.market?.question || poly.market?.title || ""),
+        matchScore:poly.score
+      }, 12);
+      log("POLY_SEARCH_MATCH", {key,teamA,teamB,eventId:String(poly.event?.id || ""),eventSlug:String(poly.event?.slug || ""),marketId:String(poly.market?.id || "")});
+    }
   }
+  if (!poly) continue;
   diag.matchedPoly++;
   sample(diag.samples, {
     matchId:key,
