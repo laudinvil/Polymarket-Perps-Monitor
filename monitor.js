@@ -253,12 +253,12 @@ async function handleGame(m) {
   const currentMinute = minute(m);
   const currentScore = score(m);
 
-  // Do not consume the one-time LIVE alert until both live fields are
-  // actually usable. This prevents a first incomplete WS update from
-  // permanently suppressing the later accurate score/minute update.
-  if (currentMinute === "—" || currentScore === "—") {
+  // A valid score is enough to send the first LIVE alert. Minute data
+  // can be temporarily absent in the WS packet; Gamma/next WS updates
+  // will still populate it when the provider supplies it.
+  if (currentScore === "—") {
     console.log(
-      "LIVE WAITING FOR COMPLETE DATA",
+      "LIVE WAITING FOR SCORE",
       id,
       "MINUTE=" + currentMinute,
       "SCORE=" + currentScore
