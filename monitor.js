@@ -5,14 +5,35 @@ const WS_URL = "wss://sports-api.polymarket.com/ws";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const RECONNECT_MS = 3000;
+const STARTED_AT = new Date().toISOString();
 
 let lastMessageAt = null;
 let lastError = null;
 let liveCount = 0;
 let alertsSent = 0;
 let wsState = "disconnected";
+let wsRef = null;
+let shuttingDown = false;
 const games = new Map();
 const alerted = new Set();
+
+process.on("SIGTERM", () => {
+  console.log("PROCESS SIGTERM RECEIVED", new Date().toISOString());
+  shutdown("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+  console.log("PROCESS SIGINT RECEIVED", new Date().toISOString());
+  shutdown("SIGINT");
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION", err?.stack || err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION", err?.stack || err);
+});
 
 async function telegram(text) {
   if (!TOKEN || !CHAT_ID) throw new Error("Telegram env vars missing");
@@ -35,7 +56,6 @@ function isSoccer(m) {
   const period = String(m.period || "").toUpperCase();
   const slug = String(m.slug || "").toLowerCase();
 
-  // Polymarket soccer uses 1H / 2H / HT and simple football scores.
   return ["1H", "2H", "HT"].includes(period) &&
     !/(nba|nfl|nhl|mlb|ncaa|cfb|cs2|tennis|mma|ufc)/i.test(slug);
 }
@@ -99,10 +119,13 @@ async function handleGame(m) {
 }
 
 function connect() {
+  if (shuttingDown) return;
+
   wsState = "connecting";
   console.log("SPORTS WS CONNECTING", WS_URL);
 
   const ws = new WebSocket(WS_URL);
+  wsRef = ws;
 
   ws.onopen = () => {
     wsState = "connected";
@@ -146,16 +169,22 @@ function connect() {
     await handleGame(m);
   };
 
-  ws.onerror = (e) => {
+  ws.onerror = () => {
     wsState = "error";
     lastError = "Sports WS error";
     console.log("SPORTS WS ERROR");
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     wsState = "disconnected";
-    console.log("SPORTS WS CLOSED; reconnecting in", RECONNECT_MS, "ms");
-    setTimeout(connect, RECONNECT_MS);
+    console.log(
+      "SPORTS WS CLOSED",
+      "code=" + String(event?.code ?? ""),
+      "reason=" + String(event?.reason ?? ""),
+      "shuttingDown=" + String(shuttingDown)
+    );
+
+    if (!shuttingDown) setTimeout(connect, RECONNECT_MS);
   };
 }
 
@@ -165,6 +194,9 @@ const server = http.createServer((req, res) => {
     ok: true,
     service: "polymarket-live-soccer-monitor",
     source: WS_URL,
+    startedAt: STARTED_AT,
+    pid: process.pid,
+    uptimeSeconds: Math.floor(process.uptime()),
     wsState,
     liveCount,
     alertsSent,
@@ -173,7 +205,41 @@ const server = http.createServer((req, res) => {
   }));
 });
 
-server.listen(PORT, "0.0.0.0", () => console.log("HEALTH LISTENING", PORT));
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("HEALTH LISTENING", PORT);
+  console.log("PROCESS PID", process.pid);
+  console.log("PROCESS STARTED", STARTED_AT);
+});
+
+const heartbeat = setInterval(() => {
+  console.log(
+    "HEARTBEAT",
+    new Date().toISOString(),
+    "pid=" + process.pid,
+    "uptime=" + Math.floor(process.uptime()) + "s",
+    "ws=" + wsState,
+    "live=" + liveCount,
+    "alerts=" + alertsSent
+  );
+}, 10000);
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  clearInterval(heartbeat);
+  wsState = "shutting_down";
+
+  try { wsRef?.close(); } catch {}
+  server.close(() => {
+    console.log("PROCESS SHUTDOWN COMPLETE", signal);
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.log("PROCESS SHUTDOWN TIMEOUT", signal);
+    process.exit(0);
+  }, 5000).unref();
+}
 
 console.log("MONITOR STARTING");
 console.log("SOURCE", WS_URL);
