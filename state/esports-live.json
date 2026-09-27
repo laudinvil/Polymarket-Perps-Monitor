@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:40.967Z",
+  "updatedAt": "2026-09-27T15:36:41.973Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 710,
+    "events": 711,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683216",
+  "matchId": "1681152",
   "teams": [
-    "Rakuzan",
-    "Team Spirit"
+    "Black Phoenix",
+    "ex-RUSTEC"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 22,
-    "noPolyMatch": 0,
+    "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
@@ -399,6 +399,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1683216",
+        "teamA": "Rakuzan",
+        "teamB": "Team Spirit"
       }
     ]
   }
