@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:32.333Z",
+  "updatedAt": "2026-09-27T15:36:33.791Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 650,
+    "events": 660,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710864",
+  "matchId": "1702958",
   "teams": [
-    "G2 Ares",
-    "FC Famalicão Esports"
+    "Daxak Team",
+    "Rostik Team"
   ],
   "status": "running",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 10,
+    "matchedPoly": 12,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -338,6 +338,16 @@
         "move": 0.39,
         "reasons": [
           "map_filter"
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports",
+        "seriesScore": [
+          0,
+          0
         ]
       }
     ]
