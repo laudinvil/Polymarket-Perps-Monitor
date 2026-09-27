@@ -453,7 +453,12 @@ async function processBreaks(e, nowSets) {
   }
 
   prev.sets = nowSets;
-  prev.firstToServe = first || prev.firstToServe || 1;
+  // Keep the first observed server stable. Live SofaScore updates can change
+  // firstToServe to the currently serving player; that must not rewrite the
+  // match's initial service order used by the fallback classifier.
+  if (prev.firstToServe !== 1 && prev.firstToServe !== 2) {
+    prev.firstToServe = first || 0;
+  }
   if (breaks.length) {
     state.breaksDetected += breaks.length;
     log("BREAKS_DETECTED", { eventId: id, sides: breaks, totalGames: newTotal });
@@ -756,8 +761,6 @@ async function evaluate(e, brokenSide) {
     return;
   }
   log("ALERT_COOLDOWN_PASS", { eventId: e.id, player });
-  alerted.set(key, Date.now());
-
   const sets = scoreSets(e);
   const [sh, sa] = sets.length ? sets[sets.length - 1] : [0,0];
   const text =
@@ -781,6 +784,7 @@ COMEBACK CANDIDATE`;
   });
   const sent = await telegram(text, marketUrl(m));
   if (sent !== false) {
+    alerted.set(key, Date.now());
     state.alertsSent++;
     log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
   } else {
