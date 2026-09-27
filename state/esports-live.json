@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:45.549Z",
+  "updatedAt": "2026-09-27T15:37:47.087Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 74,
+    "events": 94,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706431",
+  "matchId": "1707300",
   "teams": [
-    "Eternal Fire",
-    "K27"
+    "Metizport",
+    "Inner Circle Academy"
   ],
   "status": "running",
   "seriesScore": [
@@ -34,15 +34,15 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
-    "prematchCaptured": 3,
-    "map1Finished": 3,
+    "prematchCaptured": 4,
+    "map1Finished": 4,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 3,
-    "balancedPrePass": 3,
+    "signalChecks": 4,
+    "balancedPrePass": 4,
     "movePass": 1,
     "postRangePass": 0,
     "mapFilterPass": 0,
@@ -170,6 +170,33 @@
         ],
         "status": "running",
         "beginAt": "2026-09-27T14:12:02Z"
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088001",
+        "polyEventSlug": "cs2-ef1-k271-2026-09-27",
+        "marketId": "5001609",
+        "marketSlug": "cs2-ef1-k271-2026-09-27",
+        "marketQuestion": "Counter-Strike: Eternal Fire vs K27 (BO3) - Stake Ranked Episode 5: Closed Qualifier Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "polyEventId": "1088001",
+        "polyEventSlug": "cs2-ef1-k271-2026-09-27",
+        "marketId": "5001609",
+        "marketSlug": "cs2-ef1-k271-2026-09-27",
+        "marketQuestion": "Counter-Strike: Eternal Fire vs K27 (BO3) - Stake Ranked Episode 5: Closed Qualifier Playoffs",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -253,6 +280,35 @@
           0.45
         ],
         "move": -0.04999999999999999,
+        "reasons": [
+          "move",
+          "post_range",
+          "map_filter"
+        ]
+      },
+      {
+        "reason": "signal_rejected",
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "series": [
+          1,
+          0
+        ],
+        "margin": null,
+        "marginValue": null,
+        "marginRatio": null,
+        "pre": [
+          0.5,
+          0.5
+        ],
+        "post": [
+          0.625,
+          0.375
+        ],
+        "move": 0.125,
         "reasons": [
           "move",
           "post_range",
