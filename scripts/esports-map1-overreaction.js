@@ -72,6 +72,27 @@ function log(event, data = {}) {
 
 
 
+if (TEST_TELEGRAM_SCHEMA) {
+  if (!TG_TOKEN || !TG_CHAT) throw new Error("Missing Telegram secrets");
+  await telegram(
+    "<b>CS2 — MAP 2 SETUP</b>\n\n" +
+    "<b>NAVI</b> won Map 1 vs <b>FaZe</b>\n" +
+    "MAP 1 SERIES SCORE: 13–9\n" +
+    "MAP MARGIN: 4\n\n" +
+    "PRE-MATCH\n" +
+    "NAVI: 52%\n" +
+    "FaZe: 48%\n\n" +
+    "AFTER MAP 1\n" +
+    "NAVI: 79%\n" +
+    "FaZe: 21%\n\n" +
+    "MOVE: +27 pp\n" +
+    "NEXT MAP CANDIDATE: <b>FaZe</b>\n" +
+    "CURRENT: 21%",
+    "https://polymarket.com/esports/cs2"
+  );
+  nativeConsoleLog("TEST_ALERT_SENT", JSON.stringify({schema:"CS2_MAP2_SETUP"}));
+  process.exit(0);
+}
 if (!PS_TOKEN) throw new Error("Missing PANDASCORE_API_TOKEN");
 if (!TG_TOKEN || !TG_CHAT) throw new Error("Missing Telegram secrets");
 
