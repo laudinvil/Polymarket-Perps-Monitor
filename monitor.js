@@ -1,7 +1,7 @@
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 3000);
-const SOURCE = "https://polymarket.com/ru/sports/soccer/games";
+const SOURCE = "https://polymarket.com/sports/soccer/games";
 let lastPoll = null;
 let lastError = null;
 
