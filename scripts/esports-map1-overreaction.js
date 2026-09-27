@@ -87,12 +87,24 @@ const sim = (a,b) => {
 async function getJson(url, headers = {}) {
   let last;
   for (let i=0;i<4;i++) {
+    const started=Date.now();
+    log("HTTP_REQUEST", {url,attempt:i+1});
     try {
       const r = await fetch(url, { headers: { accept:"application/json", ...headers }, signal: AbortSignal.timeout(12000) });
-      if (r.ok) return { data: await r.json(), headers: r.headers };
+      const elapsedMs=Date.now()-started;
+      log("HTTP_RESPONSE", {url,status:r.status,ok:r.ok,elapsedMs});
+      if (r.ok) {
+        const data=await r.json();
+        log("HTTP_JSON", {url,kind:Array.isArray(data)?"array":typeof data,count:Array.isArray(data)?data.length:undefined});
+        return { data, headers: r.headers };
+      }
       last = new Error("HTTP " + r.status + " " + url);
       if (![429,500,502,503,504].includes(r.status)) throw last;
-    } catch (e) { last = e; }
+      log("HTTP_RETRY", {url,status:r.status,nextAttempt:i+2});
+    } catch (e) {
+      last = e;
+      log("HTTP_ERROR", {url,attempt:i+1,error:String(e)});
+    }
     if (i < 3) await sleep(800 * (i+1));
   }
   throw last;
@@ -334,7 +346,7 @@ for (const match of candidates) {
 
   const poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
-    log("NO_POLY_MATCH", JSON.stringify({key,teamA,teamB}));
+    log("NO_POLY_MATCH", {key,teamA,teamB});
     continue;
   }
 
@@ -358,8 +370,20 @@ for (const match of candidates) {
 
   const info = map1Info(match);
   entry.lastSeries = seriesScore(match);
+  log("MATCH_STATE", {
+    key,teamA,teamB,status:match.status,matchType:match.match_type,numberOfGames:match.number_of_games,
+    seriesScore:entry.lastSeries,map1Detected:Boolean(info),
+    complete:match.complete,detailedStats:match.detailed_stats,liveSupported:match.live_supported
+  });
 
-  if (!info || entry.alerted) continue;
+  if (!info) {
+    log("MAP1_NOT_FINISHED", {key,teamA,teamB,seriesScore:entry.lastSeries});
+    continue;
+  }
+  if (entry.alerted) {
+    log("ALREADY_ALERTED", {key,teamA,teamB});
+    continue;
+  }
   if (!entry.pre) {
     log("SKIP_NO_PREMATCH", JSON.stringify({key,teamA,teamB}));
     continue;
