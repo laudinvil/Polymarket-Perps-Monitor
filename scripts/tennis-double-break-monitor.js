@@ -118,14 +118,13 @@ function isMatchWinnerMarket(m) {
     m.rules
   ].filter(Boolean).join(" "));
 
-  // Polymarket's primary tennis market resolves on the player who
-  // advances in the match. Set, total, handicap and exact-score markets
-  // are different contracts and must never be used for this strategy.
-  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by/.test(text)) {
+  // Tennis strategy targets only the primary match-winner/advances contract.
+  // Explicit secondary contract terms always exclude the market.
+  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap/.test(text)) {
     return false;
   }
 
-  return /advances against|win the match|match winner|winner of the match|who will win/.test(text);
+  return /advances against|advance against|win the match|match winner|winner of the match|who will win/.test(text);
 }
 
 function matchMarket(m, e) {
