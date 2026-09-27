@@ -109,17 +109,24 @@ function matchMarket(m, e) {
   const away = e.awayTeam?.name;
   if (!home || !away) return false;
 
-  // Primary key: Polymarket's two outcome names. For match-winner markets
-  // these are the actual player names, so do not rely on URL wording alone.
   const outcomes = marketPlayerNames(m);
   if (outcomes.length >= 2) {
-    const direct =
+    if (
       (playerNameMatch(home, outcomes[0]) && playerNameMatch(away, outcomes[1])) ||
-      (playerNameMatch(home, outcomes[1]) && playerNameMatch(away, outcomes[0]));
-    if (direct) return true;
+      (playerNameMatch(home, outcomes[1]) && playerNameMatch(away, outcomes[0]))
+    ) return true;
   }
 
-  return false;
+  const text = norm([m.question, m.title, m.slug, m.eventSlug].filter(Boolean).join(" "));
+  const hasPlayer = (name) => {
+    const k = nameKey(name);
+    if (!k) return false;
+    return text.includes(k.n) ||
+      text.includes(k.compact) ||
+      (text.includes(k.first) && text.includes(k.last));
+  };
+
+  return hasPlayer(home) && hasPlayer(away);
 }
 
 function marketUrl(m) {
