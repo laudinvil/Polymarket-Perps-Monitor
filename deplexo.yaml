@@ -1,4 +1,3 @@
 framework: node
-install: npm install
-start: npm start
+dockerfile_path: Dockerfile
 port: 3000
