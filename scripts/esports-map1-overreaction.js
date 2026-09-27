@@ -317,10 +317,14 @@ function identifySides(prices, teamA, teamB) {
 }
 
 function map1Info(match) {
+  // PandaScore match.score is the series score. The REST match object does not
+  // reliably expose a separate "Map 1 finished" flag. A series score of 1-0
+  // or 0-1 is therefore the reliable fixture-level signal that Map 1 ended.
   const s = seriesScore(match);
   if (!s || (s[0] + s[1]) < 1) return null;
   const winner = s[0] === 1 && s[1] === 0 ? 0 : s[1] === 1 && s[0] === 0 ? 1 : null;
   if (winner == null) return null;
+
   let margin = null;
   const candidates = [
     match.map_score, match.current_game_score, match.currentGameScore,
