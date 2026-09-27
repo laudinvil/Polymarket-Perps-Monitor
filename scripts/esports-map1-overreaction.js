@@ -596,7 +596,6 @@ for (const match of candidates) {
     const searched = fallbackNearStart ? await searchPolyForMatch(teamA,teamB) : [];
     poly = findPolyEvent(searched,teamA,teamB);
     if (poly) {
-      diag.noPolyMatch--;
       diag.matchedPoly++;
       sample(diag.samples, {
         matchId:key, teams:[teamA,teamB], source:"public-search",
@@ -636,7 +635,8 @@ for (const match of candidates) {
   }
   const sides = identifySides(prices,teamA,teamB);
 
-  if (!entry.pre && (!ts || ts > now)) {
+  const map1State = map1Info(match);
+  if (!entry.pre && (!ts || ts > now || (String(match.status).toLowerCase() === "running" && !map1State))) {
     entry.pre = {
       teamA, teamB,
       a: sides.a.prob, b: sides.b.prob,
