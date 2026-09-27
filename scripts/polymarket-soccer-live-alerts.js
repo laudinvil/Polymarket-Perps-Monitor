@@ -376,7 +376,7 @@ async function discover(){
         continue;
       }
       const before=candidates.length;
-      await addEvent(event,href,true,false);
+      await addEvent(event,href,true,true);
       const pageItem=candidates.find(x=>x.slug===slug||x.eventId===t(event.id));
       if(pageItem){
         const snap=pageGameSnapshot(liveHtml,pageItem.home,pageItem.away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
