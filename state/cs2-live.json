@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:48:50.679Z",
+  "updatedAt": "2026-09-27T14:48:53.071Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 97,
+    "events": 117,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700465",
+  "matchId": "1696342",
   "teams": [
-    "KUUSAMO.gg",
-    "Noir Verse"
+    "M80",
+    "DENDELE CS"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,10 +32,10 @@
     "skippedFuture": 0,
     "missingTeams": 3,
     "polyEvents": 224,
-    "matchedPoly": 8,
+    "matchedPoly": 10,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
-    "prematchCaptured": 4,
+    "prematchCaptured": 5,
     "map1Finished": 0,
     "alreadyAlerted": 0,
     "noPrematch": 0,
@@ -244,6 +244,16 @@
         "matchId": "1700705",
         "teamA": "Imperial",
         "teamB": "paiN",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse",
         "seriesScore": [
           0,
           0
