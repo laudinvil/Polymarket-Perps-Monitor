@@ -78,21 +78,15 @@ function isSoccer(m) {
   // Direct identification when Polymarket supplies the sport/league.
   if (/(soccer|football)/i.test(text)) return true;
 
-  const status = String(m.status || "").toLowerCase().trim();
   const period = String(m.period || "").toUpperCase().trim();
-  const score = String(m.score || "").trim().split("|")[0].trim();
 
-  // Team-name fields are present on esports too, so they cannot identify soccer.
-
-  // Do not classify by score alone: esports feeds also use scores such as
-  // "8-8|0-0|Bo3", and that caused false soccer detections.
-  // Do not classify by a generic "running/live" status either.
+  // Team-name fields and generic score/status values are shared with esports.
 
   // Fallback for feeds that omit the sport label but expose a soccer period.
-  // Accept both compact values ("1H", "2H") and values carrying a clock
-  // ("1H 37:42", "2H 12:03").
+  // Accept compact values, period clocks, and named half clocks.
   if (/^(1H|2H|HT|ET|PEN)(?:\s|$)/i.test(period)) return true;
   if (/^(1ST|2ND)\s*HALF(?:\s|$)/i.test(period)) return true;
+  if (/^(FIRST|SECOND)\s*HALF(?:\s|$)/i.test(period)) return true;
 
   return false;
 }
