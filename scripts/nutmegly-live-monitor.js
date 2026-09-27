@@ -1,4 +1,5 @@
 import process from "node:process";
+import { createServer } from "node:http";
 
 const NUTMEGLY_URL = "https://nutmegly.com/";
 const POLL_MS = 20_000;
@@ -94,7 +95,20 @@ async function poll() {
   console.log(JSON.stringify({ok:true,live:matches.length,matches}));
 }
 
+function startHealthServer() {
+  const port = Number(process.env.PORT || 3000);
+  createServer((req, res) => {
+    if (req.url === "/health" || req.url === "/") {
+      res.writeHead(200, {"content-type":"application/json"});
+      res.end(JSON.stringify({ok:true,service:"nutmegly-live-monitor"}));
+      return;
+    }
+    res.writeHead(404); res.end("not found");
+  }).listen(port, "0.0.0.0", () => console.log(`Health server listening on ${port}`));
+}
+
 async function main() {
+  startHealthServer();
   console.log("Nutmegly LIVE monitor started");
   while (true) {
     try { await poll(); }
