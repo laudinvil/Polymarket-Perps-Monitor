@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:43:45.204Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:43:46.302Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
   "sha": "c9bf6cb6ced1dc6a513835074e506fdbd7a717f8",
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1202,
+    "events": 1204,
     "polls": 6,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 200,
+  "matchId": "1683216",
+  "teams": [
+    "Rakuzan",
+    "Team Spirit"
+  ],
+  "status": "running",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 67,
   "diagnostics": {
     "startedAt": "2026-09-27T15:43:41.385Z",
@@ -40,7 +49,18 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1683216",
+        "game": "Mobile Legends: Bang Bang",
+        "teams": [
+          "Rakuzan",
+          "Team Spirit"
+        ],
+        "status": "running",
+        "beginAt": "2026-09-27T15:42:32Z"
+      }
+    ],
     "rejects": []
   }
 }\n
