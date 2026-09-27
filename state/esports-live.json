@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:41.973Z",
+  "updatedAt": "2026-09-27T15:36:42.894Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 711,
+    "events": 712,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1681152",
+  "matchId": "1662352",
   "teams": [
-    "Black Phoenix",
-    "ex-RUSTEC"
+    "LOUD",
+    "LOS"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 22,
-    "noPolyMatch": 1,
+    "noPolyMatch": 2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
@@ -405,6 +405,12 @@
         "matchId": "1683216",
         "teamA": "Rakuzan",
         "teamB": "Team Spirit"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1681152",
+        "teamA": "Black Phoenix",
+        "teamB": "ex-RUSTEC"
       }
     ]
   }
