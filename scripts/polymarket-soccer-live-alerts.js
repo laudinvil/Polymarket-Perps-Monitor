@@ -5,11 +5,11 @@ const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
-const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
-const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : 4 * 60 * 60 * 1000;
-const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
-const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
-const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
+const DIAGNOSTIC_MODE = false;
+const RUN_MS = Number.POSITIVE_INFINITY;
+const MAX_CYCLES = Number.POSITIVE_INFINITY;
+const SPORTS_WS_TIMEOUT_MS = 25000;
+const MAX_SPORTS_WS_LOOKUPS = Number.POSITIVE_INFINITY;
 let stopping = false;
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
