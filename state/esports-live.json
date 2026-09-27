@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:47:12.619Z",
+  "updatedAt": "2026-09-27T15:47:13.939Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1999,
+    "events": 2009,
     "polls": 10,
     "alerts": 1,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702961",
+  "matchId": "1689002",
   "teams": [
-    "YBN Team",
-    "Cake Team"
+    "GamerLegion",
+    "Sinners"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 36,
+    "matchedPoly": 38,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
