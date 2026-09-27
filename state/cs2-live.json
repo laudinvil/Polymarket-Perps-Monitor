@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:22:42.458Z",
+  "updatedAt": "2026-09-27T15:22:43.818Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329237890",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2043,
   "telemetry": {
     "startedAt": "2026-09-27T15:21:38.260Z",
-    "events": 510,
+    "events": 520,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1688997",
+  "matchId": "1702599",
   "teams": [
-    "NIP",
-    "magic"
+    "METANOIA WOLVES",
+    "MIBR fe"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 224,
-    "matchedPoly": 0,
+    "matchedPoly": 2,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -56,8 +56,55 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T15:20:00Z"
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
       }
     ],
-    "rejects": []
+    "rejects": [
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic",
+        "seriesScore": [
+          0,
+          0
+        ]
+      }
+    ]
   }
 }\n
