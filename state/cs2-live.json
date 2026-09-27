@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:20:13.243Z",
+  "updatedAt": "2026-09-27T15:20:14.796Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329118616",
   "runAttempt": "1",
@@ -7,20 +7,20 @@
   "pid": 2291,
   "telemetry": {
     "startedAt": "2026-09-27T15:19:32.394Z",
-    "events": 322,
+    "events": 342,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700704",
+  "matchId": "1706602",
   "teams": [
-    "Bounty Hunters Esports",
-    "Galorys"
+    "Rebels Gaming",
+    "SAW"
   ],
   "status": "running",
   "seriesScore": [
-    1,
+    0,
     1
   ],
   "candidates": 89,
@@ -32,18 +32,18 @@
     "skippedFuture": 48,
     "missingTeams": 10,
     "polyEvents": 224,
-    "matchedPoly": 22,
+    "matchedPoly": 24,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
-    "prematchCaptured": 0,
-    "map1Finished": 0,
+    "prematchCaptured": 1,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 0,
-    "balancedPrePass": 0,
+    "signalChecks": 1,
+    "balancedPrePass": 1,
     "movePass": 0,
     "postRangePass": 0,
-    "mapFilterPass": 0,
+    "mapFilterPass": 1,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
