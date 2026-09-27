@@ -50,7 +50,13 @@ async function getJson(url, kind = "generic") {
     },
     signal: AbortSignal.timeout(CFG.requestTimeoutMs),
   });
-  if (!r.ok) {\n    if (r.status === 429) {\n      const retry = Number(r.headers.get("retry-after") || 15);\n      await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retry, 5), 120)));\n    }\n    throw new Error(`${r.status} ${url}`);\n  }
+  if (!r.ok) {
+    if (r.status === 429) {
+      const retrySec = Number(r.headers.get("retry-after") || 15);
+      await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retrySec, 5), 120) * 1000));
+    }
+    throw new Error(`${r.status} ${url}`);
+  }
   return r.json();
 }
 
@@ -301,7 +307,8 @@ async function telegram(text, url) {
   const chat = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
   const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);
-  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));\n  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -312,7 +319,17 @@ async function telegram(text, url) {
     }),
     signal: AbortSignal.timeout(CFG.requestTimeoutMs),
   });
-  if (!r.ok) throw new Error(`telegram ${r.status}`);
+  if (!r.ok) {
+    if (r.status === 429) {
+      let retrySec = 5;
+      try {
+        const body = await r.json();
+        retrySec = Number(body?.parameters?.retry_after || retrySec);
+      } catch {}
+      await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retrySec, 1), 120) * 1000));
+    }
+    throw new Error(`telegram ${r.status}`);
+  }
 }
 
 async function evaluate(e, brokenSide) {
