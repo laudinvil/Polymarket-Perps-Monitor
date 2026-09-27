@@ -8,6 +8,7 @@ const RECONNECT_MS = 3000;
 const GAMMA_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&tag_slug=soccer&limit=500";
 const GAMMA_POLL_MS = 10000;
 const STARTED_AT = new Date().toISOString();
+const DIAGNOSTIC_INTERVAL_MS = 30000;
 
 let lastMessageAt = null;
 let lastError = null;
@@ -26,6 +27,7 @@ let gammaPolls = 0;
 let gammaLiveCount = 0;
 let gammaPolling = false;
 let gammaTimer = null;
+let diagnosticTimer = null;
 let wsRef = null;
 let shuttingDown = false;
 const games = new Map();
@@ -543,11 +545,34 @@ const heartbeat = setInterval(() => {
   );
 }, 10000);
 
+const diagnosticTimerStart = setInterval(() => {
+  console.log("DIAGNOSTIC STATE", JSON.stringify({
+    startedAt: STARTED_AT,
+    pid: process.pid,
+    wsState,
+    eventsReceived,
+    soccerCandidates,
+    soccerAccepted,
+    soccerRejected,
+    liveCount,
+    alertsSent,
+    gammaPolls,
+    gammaLiveCount,
+    lastEvent,
+    lastSoccerCandidate,
+    lastGammaEvent,
+    lastGammaError,
+    lastError
+  }));
+}, DIAGNOSTIC_INTERVAL_MS);
+diagnosticTimer = diagnosticTimerStart;
+
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(heartbeat);
   clearInterval(gammaTimer);
+  clearInterval(diagnosticTimer);
   wsState = "shutting_down";
 
   try { wsRef?.close(); } catch {}
