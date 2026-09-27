@@ -38,22 +38,22 @@ async function scan(){
   if(stderr) console.log("CHROMIUM:",stderr.slice(-2000));
   const html=stdout;
   const cards=[];
-  const re=/<a\\b[^>]*href=["']([^"']*\\/sports\\/soccer\\/games\\/[^"']*)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const re=/<a\b[^>]*href=["']([^"']*\/sports\/soccer\/games\/[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while((m=re.exec(html))){
-    const text=m[2].replace(/<script[\\s\\S]*?<\\/script>/gi," ").replace(/<style[\\s\\S]*?<\\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/\\s+/g," ").trim();
+    const text=m[2].replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/\s+/g," ").trim();
     const href=new URL(m[1],SOURCE).href;
     cards.push({href,text});
   }
-  const live=cards.filter(x=>/\\bLIVE\\b/i.test(x.text));
+  const live=cards.filter(x=>/\bLIVE\b/i.test(x.text));
   status={...status,scans:status.scans+1,live:live.length,lastError:null};
   console.log(`SCAN: cards=${cards.length} live=${live.length}`);
   for(const item of live){
     if(seen.has(item.href)) continue;
     seen.add(item.href);
-    const title=item.text.replace(/\\bLIVE\\b/ig,"").replace(/\\s+/g," ").trim();
+    const title=item.text.replace(/\bLIVE\b/ig,"").replace(/\s+/g," ").trim();
     console.log("NEW LIVE:",item.href);
-    await sendTelegram(`⚽ LIVE FOUND\\n\\n${title}\\n\\n${item.href}`);
+    await sendTelegram(`⚽ LIVE FOUND\n\n${title}\n\n${item.href}`);
     console.log("TELEGRAM SENT:",item.href);
   }
 }
