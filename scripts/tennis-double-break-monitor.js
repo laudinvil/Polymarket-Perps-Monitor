@@ -360,6 +360,8 @@ async function processBreaks(e, nowSets) {
           winner: feedGame.winner === 1 ? "HOME" : feedGame.winner === 2 ? "AWAY" : null,
           score: [feedGame.home, feedGame.away]
         });
+      } else {
+        log("PBP_NO_COMPLETED_GAME", { eventId: id });
       }
     } catch (err) {
       log("PBP_ERROR", { eventId: id, error: String(err) });
