@@ -17,50 +17,32 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, "0.0.0.0", () => console.log("HTTP HEALTH LISTENING:", PORT));
 
 async function sendTelegram(text) {
-  if (!TOKEN || !CHAT_ID) {
-    console.error("TELEGRAM CONFIG MISSING");
-    return;
-  }
+  if (!TOKEN || !CHAT_ID) return console.error("TELEGRAM CONFIG MISSING");
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: {"content-type":"application/json"},
-    body: JSON.stringify({chat_id: CHAT_ID, text, disable_web_page_preview:false})
+    method:"POST", headers:{"content-type":"application/json"},
+    body:JSON.stringify({chat_id:CHAT_ID,text,disable_web_page_preview:false})
   });
   if (!r.ok) throw new Error(`Telegram HTTP ${r.status}: ${await r.text()}`);
 }
 
-function clean(s) {
-  return s.replace(/\s+/g, " ").trim();
-}
+function clean(s) { return s.replace(/\s+/g, " ").trim(); }
 
 async function scan(page) {
   await page.goto(SOURCE, {waitUntil:"domcontentloaded", timeout:30000});
   await page.waitForTimeout(3000);
-
   const cards = await page.locator('a[href*="/sports/soccer/games/"]').evaluateAll(as =>
-    as.map(a => ({
-      href: a.href,
-      text: (a.innerText || "").replace(/\s+/g, " ").trim()
-    }))
+    as.map(a => ({href:a.href,text:(a.innerText||"").replace(/\s+/g," ").trim()}))
   );
-
-  const live = cards.filter(card => /\bLIVE\b/i.test(card.text));
-  status = {...status, scans: status.scans + 1, live: live.length, lastError: null};
+  const live = cards.filter(x => /\bLIVE\b/i.test(x.text));
+  status = {...status, scans:status.scans+1, live:live.length, lastError:null};
   console.log(`SCAN: cards=${cards.length} live=${live.length}`);
-
   for (const item of live) {
     if (seen.has(item.href)) continue;
     seen.add(item.href);
-    const title = clean(item.text.replace(/\bLIVE\b/ig, ""));
+    const title = clean(item.text.replace(/\bLIVE\b/ig,""));
     console.log("NEW LIVE:", item.href);
     await sendTelegram(`⚽ LIVE FOUND\n\n${title}\n\n${item.href}`);
     console.log("TELEGRAM SENT:", item.href);
-  }
-
-  if (seen.size > 5000) {
-    const keep = [...seen].slice(-2500);
-    seen.clear();
-    for (const x of keep) seen.add(x);
   }
 }
 
@@ -69,40 +51,29 @@ async function main() {
   console.log("SOURCE:", SOURCE);
   console.log("POLL_MS:", POLL_MS);
   console.log("TELEGRAM CONFIG:", TOKEN ? "TOKEN=SET" : "TOKEN=MISSING", CHAT_ID ? "CHAT_ID=SET" : "CHAT_ID=MISSING");
-
   try {
     const browser = await chromium.launch({
-      headless: true,
-      chromiumSandbox: false,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-software-rasterizer",
-        "--no-zygote",
-        "--single-process"
-      ]
+      executablePath:"/usr/bin/chromium",
+      headless:true,
+      args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]
     });
     console.log("BROWSER STARTED");
     const page = await browser.newPage({locale:"ru-RU"});
     while (true) {
-      try {
-        await scan(page);
-      } catch (e) {
-        status = {...status, lastError: e?.stack || String(e)};
-        console.error("SCAN ERROR:", e?.stack || e);
+      try { await scan(page); }
+      catch (e) {
+        status = {...status,lastError:e?.stack||String(e)};
+        console.error("SCAN ERROR:", e?.stack||e);
       }
-      await new Promise(r => setTimeout(r, POLL_MS));
+      await new Promise(r=>setTimeout(r,POLL_MS));
     }
   } catch (e) {
-    status = {...status, lastError: e?.stack || String(e)};
-    console.error("FATAL:", e?.stack || e);
-    await new Promise(r => setTimeout(r, 60000));
+    status = {...status,lastError:e?.stack||String(e)};
+    console.error("FATAL:", e?.stack||String(e));
+    await new Promise(r=>setTimeout(r,60000));
   }
 }
 
-process.on("SIGTERM", () => { server.close(); process.exit(0); });
-process.on("SIGINT", () => { server.close(); process.exit(0); });
-
+process.on("SIGTERM",()=>{server.close();process.exit(0)});
+process.on("SIGINT",()=>{server.close();process.exit(0)});
 main();
