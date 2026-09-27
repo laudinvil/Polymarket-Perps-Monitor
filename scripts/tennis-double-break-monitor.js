@@ -775,7 +775,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
 
-if (process.env.TEST_ALERT === "1") {
+// Temporary startup verification: send one Telegram test after deployment.
+if (!globalThis.__TEST_ALERT_SENT__) {
+  globalThis.__TEST_ALERT_SENT__ = true;
   await sendTestAlert().catch(err => log("TEST_ALERT_ERROR", { error: String(err) }));
 }
 
