@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:32:08.760Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:32:10.123Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
   "sha": "3a03ace73651ebaabccb93fa124bcaf52b050dc3",
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 12,
+    "events": 14,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 200,
+  "matchId": "1714922",
+  "teams": [
+    "Galatasaray Esports",
+    "Pcific Esports"
+  ],
+  "status": "not_started",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 68,
   "diagnostics": {
     "startedAt": "2026-09-27T15:32:03.738Z",
@@ -40,7 +49,18 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1714922",
+        "game": "Valorant",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      }
+    ],
     "rejects": []
   }
 }\n
