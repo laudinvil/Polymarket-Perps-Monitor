@@ -168,6 +168,20 @@ function processBreaks(e, nowSets) {
   const breaks = [];
   let gameNo = oldTotal;
   const count = Math.min(newTotal - oldTotal, 8);
+
+  // 6-6 -> 7-6 / 6-7 is a completed tiebreak, not a normal service game.
+  // Never classify the tiebreak winner as a service break.
+  const oldLast = oldSets[oldSets.length - 1] || [0, 0];
+  const newLast = nowSets[nowSets.length - 1] || oldLast;
+  const tiebreakSet =
+    oldLast[0] === 6 && oldLast[1] === 6 &&
+    ((newLast[0] === 7 && newLast[1] === 6) || (newLast[0] === 6 && newLast[1] === 7));
+  if (tiebreakSet) {
+    log("TIEBREAK_COMPLETED", { eventId: id, score: newLast });
+    prev.sets = nowSets;
+    prev.firstToServe = first || prev.firstToServe || 1;
+    return [];
+  }
   for (let k = 0; k < count; k++) {
     const server = ((gameNo + ((first || prev.firstToServe || 1) - 1)) % 2) + 1;
     const before = gameNo;
