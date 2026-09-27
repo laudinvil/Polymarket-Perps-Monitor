@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:34:28.645Z",
+  "updatedAt": "2026-09-27T15:34:30.224Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 755,
+    "events": 765,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714921",
+  "matchId": "1702599",
   "teams": [
-    "Misa Esports",
-    "Fear Never Ends"
+    "METANOIA WOLVES",
+    "MIBR fe"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 2,
+    "matchedPoly": 4,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -96,6 +96,43 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1714921",
+        "teams": [
+          "Misa Esports",
+          "Fear Never Ends"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091761",
+        "polyEventSlug": "val-mis-fne1-2026-09-27",
+        "marketId": "5029477",
+        "marketSlug": "val-mis-fne1-2026-09-27",
+        "marketQuestion": "Valorant: Misa Esports vs Fear Never Ends (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1714921",
+        "teams": [
+          "Misa Esports",
+          "Fear Never Ends"
+        ],
+        "polyEventId": "1091761",
+        "polyEventSlug": "val-mis-fne1-2026-09-27",
+        "marketId": "5029477",
+        "marketSlug": "val-mis-fne1-2026-09-27",
+        "marketQuestion": "Valorant: Misa Esports vs Fear Never Ends (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "game": "Counter-Strike",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
       }
     ],
     "rejects": [
@@ -104,6 +141,16 @@
         "matchId": "1714922",
         "teamA": "Galatasaray Esports",
         "teamB": "Pcific Esports",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714921",
+        "teamA": "Misa Esports",
+        "teamB": "Fear Never Ends",
         "seriesScore": [
           0,
           0
