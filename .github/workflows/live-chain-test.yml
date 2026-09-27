@@ -36,6 +36,32 @@ jobs:
           const teamNames=e=>{const out=[]; const add=v=>{if(typeof v==="string"&&v.trim())out.push(v.trim()); else if(v&&typeof v==="object"){const n=v.name||v.teamName||v.title; if(typeof n==="string"&&n.trim())out.push(n.trim());}}; add(e.homeTeam); add(e.awayTeam); add(e.home); add(e.away); add(e.homeTeamName); add(e.awayTeamName); if(Array.isArray(e.teams))e.teams.forEach(add); return [...new Set(out)];}; const eventTeams=e=>{const t=teamNames(e); if(t.length>=2)return [t[0],t[1]]; const title=String(e.title||e.name||"").replace(/\s+-\s+(?:More Markets|Halftime Result|Second Half Result|Corners|Cards|O\/U.*)$/i,"").trim(); const q=(Array.isArray(e.markets)?e.markets:[]).map(m=>String(m.question||m.title||"")).find(x=>/\s+(?:vs\.?|v\.?|versus)\s+/i.test(x)); const s=q||title; const p=s.split(/\s+(?:vs\.?|v\.?|versus)\s+/i); return p.length===2?[p[0].trim(),p[1].trim()]:null;}; let found=null; for(const l of live)for(const e of events){const p=eventTeams(e); if(!p)continue; const score=Math.max(sim(l.home,p[0])+sim(l.away,p[1]),sim(l.home,p[1])+sim(l.away,p[0])); if(score<1.25)continue; if(!found||score>found.score)found={l,e,score,timeOk:false,polyHome:p[0],polyAway:p[1]};};
           if(found){
             try {
+              const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
+              const ep=await json("https://site.api.espn.com/apis/site/v2/sports/soccer/kor.1/scoreboard?dates="+day);
+              const ee=Array.isArray(ep.events)?ep.events:[];
+              const em=ee.map(ev=>{
+                const comp=ev.competitions?.[0]||{};
+                const cs=comp.competitors||[];
+                const home=cs.find(x=>x.homeAway==="home")||cs[0], away=cs.find(x=>x.homeAway==="away")||cs[1];
+                const st=ev.status||{};
+                return {id:ev.id,home:home?.team?.displayName||"",away:away?.team?.displayName||"",score:(home?.score!=null&&away?.score!=null)?home.score+"–"+away.score:"—",state:st.type?.state||"",detail:st.type?.detail||"",clock:st.displayClock||"",period:st.period};
+              });
+              const ematch=em.reduce((best,x)=>{
+                const s=Math.max(sim(found.l.home,x.home)+sim(found.l.away,x.away),sim(found.l.home,x.away)+sim(found.l.away,x.home));
+                return !best||s>best.s?{x,s}:best;
+              },null);
+              if(ematch&&ematch.s>=1.25){
+                const x=ematch.x;
+                console.log("ESPN_MATCH",JSON.stringify(x));
+                if(x.score!=="—")found.l.score=x.score;
+                const clock=String(x.clock||x.detail||"");
+                const m=clock.match(/(?:^|\s)(\d{1,3})(?:\+(\d+))?\s*(?:'|min)?/i);
+                if(m&&x.state==="in") found.l.minute=m[1]+(m[2]?"+"+m[2]:"");
+                if(x.state==="in"&&x.period) found.l.period=String(x.period);
+                found.l.minuteSource="ESPN";
+              }
+            } catch(e){console.log("ESPN_ERROR",String(e));}
+            try {
               const slug=found.l.slug;
               if(slug){
                 const dr=await json("https://sportscore.com/api/widget/match/?sport=football&slug="+encodeURIComponent(slug));
