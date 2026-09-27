@@ -39,9 +39,33 @@ jobs:
               const slug=found.l.slug;
               if(slug){
                 const dr=await json("https://sportscore.com/api/widget/match/?sport=football&slug="+encodeURIComponent(slug));
-                const raw=JSON.stringify(dr);
-                const mm=raw.match(/(?:2H|1H|HT|ET|AET)\\s*[-–:]\\s*(\\d{1,3})/i)||raw.match(/(?:^|\\b)(\\d{1,3})\\s*(?:min|minute|\\'|′)/i);
-                if(mm){found.l.minute=mm[1];found.l.minuteSource="SportScore match detail";}
+                const minuteFromText=v=>{
+                  if(typeof v!=="string")return null;
+                  const s=v.trim();
+                  let m=s.match(/(?:2H|1H|ET|AET)\\s*[-–:]\\s*(\\d{1,3})(?:\\+\\d+)?/i);
+                  if(m)return m[1];
+                  m=s.match(/\\b(\\d{1,3})(?:\\+\\d+)?\\s*(?:min|minute)\\b/i);
+                  return m?m[1]:null;
+                };
+                const candidates=[];
+                const scan=x=>{
+                  if(!x||typeof x!=="object")return;
+                  if(Array.isArray(x)){for(const v of x)scan(v);return;}
+                  for(const [k,v] of Object.entries(x)){
+                    const key=String(k).toLowerCase();
+                    if(typeof v==="string" && /status_text|statustext|clock|match_time|matchtime|elapsed|minute|currentminute|gameminute|period/.test(key)){
+                      const m=minuteFromText(v);
+                      if(m)candidates.push({key,value:v,minute:m});
+                      else if(/^(?:minute|elapsed|currentminute|gameminute)$/.test(key)&&/^\\d{1,3}$/.test(v.trim())) candidates.push({key,value:v,minute:v.trim()});
+                    } else if(typeof v==="number"&&/^(?:minute|elapsed|currentminute|gameminute)$/.test(key)&&v>=0&&v<=130){
+                      candidates.push({key,value:v,minute:String(Math.floor(v))});
+                    } else if(v&&typeof v==="object")scan(v);
+                  }
+                };
+                scan(dr);
+                const priority=candidates.find(x=>/status_text|statustext|clock|match_time|matchtime/.test(x.key))||candidates.find(x=>/^(?:minute|elapsed|currentminute|gameminute)$/.test(x.key));
+                if(priority){found.l.minute=priority.minute;found.l.minuteSource="SportScore match detail:"+priority.key;}
+                console.log("MINUTE_CANDIDATES",JSON.stringify(candidates.slice(0,20)));
                 console.log("MINUTE_DETAIL",JSON.stringify({slug,minute:found.l.minute,source:found.l.minuteSource||"none"}));
               }
             } catch(e){console.log("MINUTE_DETAIL_ERROR",String(e));}
