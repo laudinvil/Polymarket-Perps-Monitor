@@ -1,17 +1,18 @@
 {
-  "updatedAt": "2026-09-27T13:38:51.665Z",
-  "stage": "POLL_START",
+  "updatedAt": "2026-09-27T13:38:53.932Z",
+  "stage": "PANDASCORE_OK",
   "runId": "36323098748",
   "runAttempt": "1",
   "sha": "366b5292cafa089834bb7a020378f700fc46d3f1",
   "pid": 2025,
   "telemetry": {
     "startedAt": "2026-09-27T13:38:51.654Z",
-    "events": 0,
+    "events": 6,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "now": "2026-09-27T13:38:51.665Z"
+  "upcoming": 100,
+  "running": 7
 }\n
