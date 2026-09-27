@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:49.914Z",
+  "updatedAt": "2026-09-27T15:33:51.251Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,20 +7,20 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 535,
+    "events": 536,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700679",
+  "matchId": "1700719",
   "teams": [
-    "The Huns Esports",
-    "NEXVOID"
+    "Team Yandex",
+    "Natus Vincere"
   ],
-  "status": "not_started",
+  "status": "running",
   "seriesScore": [
-    0,
+    2,
     0
   ],
   "candidates": 68,
@@ -31,11 +31,11 @@
     "bo3": 55,
     "bo5": 10,
     "firstTo3": 3,
-    "skippedFuture": 0,
-    "missingTeams": 5,
+    "skippedFuture": 6,
+    "missingTeams": 8,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 26,
+    "noPolyMatch": 27,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
