@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const PS_TOKEN = process.env.PANDASCORE_API_TOKEN;
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -251,7 +252,26 @@ async function telegram(text, url) {
 }
 
 const state = loadState();
-const now = Date.now();
+
+function persistRemoteState() {
+  saveState(state);
+  try {
+    execFileSync("git", ["config","user.name","github-actions[bot]"], {stdio:"ignore"});
+    execFileSync("git", ["config","user.email","41898282+github-actions[bot]@users.noreply.github.com"], {stdio:"ignore"});
+    execFileSync("git", ["add","state/esports-map1-overreaction.json"], {stdio:"ignore"});
+    const status = execFileSync("git", ["status","--porcelain","state/esports-map1-overreaction.json"], {encoding:"utf8"}).trim();
+    if (!status) return;
+    execFileSync("git", ["commit","-m","Persist CS2 monitor state"], {stdio:"ignore"});
+    execFileSync("git", ["push"], {stdio:"ignore"});
+    console.log("STATE_PUSHED");
+  } catch (e) {
+    console.log("STATE_PUSH_ERROR", JSON.stringify({error:String(e)}));
+  }
+}
+
+async function poll() {
+  const now = Date.now();
+
 
 const upcoming = await ps("/csgo/matches/upcoming?per_page=100");
 const running = await ps("/csgo/matches/running?per_page=100");
@@ -356,5 +376,21 @@ for (const match of candidates) {
   console.log("ALERT_SENT", JSON.stringify({key,teamA,teamB,loser,move}));
 }
 
+
 saveState(state);
 console.log("POLL_RESULT", JSON.stringify({tracked:Object.keys(state.value.matches).length,alerts:state.value.alerts.length}));
+}
+
+while (true) {
+  const started = Date.now();
+  try {
+    await poll();
+  } catch (e) {
+    console.log("POLL_ERROR", JSON.stringify({error:String(e),stack:e?.stack}));
+  }
+  persistRemoteState();
+  const elapsed = Date.now() - started;
+  const wait = Math.max(5000, 20000 - elapsed);
+  console.log("NEXT_POLL", JSON.stringify({waitMs:wait}));
+  await sleep(wait);
+}
