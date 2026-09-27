@@ -1,29 +1,18 @@
 {
-  "updatedAt": "2026-09-27T14:54:12.490Z",
-  "stage": "MATCH_PROGRESS",
+  "updatedAt": "2026-09-27T14:54:13.825Z",
+  "stage": "POLL_RESULT",
   "runId": "36327235934",
   "runAttempt": "1",
   "sha": "b3530923907af08d7ba7fca7fd7ba6e428e53f0d",
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1524,
+    "events": 1534,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1707300",
-  "teams": [
-    "Metizport",
-    "Inner Circle Academy"
-  ],
-  "status": "running",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 92,
   "diagnostics": {
     "startedAt": "2026-09-27T14:53:21.466Z",
     "upcoming": 100,
@@ -32,7 +21,7 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 36,
+    "matchedPoly": 38,
     "noPolyMatch": 14,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -352,5 +341,17 @@
         "teamB": "regain"
       }
     ]
-  }
+  },
+  "config": {
+    "minPreFavorite": 0.35,
+    "maxPreFavorite": 0.65,
+    "minMove": 0.15,
+    "minPostFavorite": 0.6,
+    "maxPostFavorite": 0.95,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 39,
+  "alerts": 0
 }\n
