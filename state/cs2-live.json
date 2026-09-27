@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:10:42.542Z",
+  "updatedAt": "2026-09-27T15:10:44.015Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328535144",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2113,
   "telemetry": {
     "startedAt": "2026-09-27T15:09:54.105Z",
-    "events": 417,
+    "events": 436,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1684180",
+  "matchId": "1706431",
   "teams": [
-    "BBL",
-    "Sinners"
+    "Eternal Fire",
+    "K27"
   ],
   "status": "running",
   "seriesScore": [
-    0,
-    1
+    1,
+    0
   ],
   "candidates": 91,
   "diagnostics": {
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 30,
+    "matchedPoly": 32,
     "noPolyMatch": 13,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 4,
+    "map1Finished": 5,
     "alreadyAlerted": 0,
-    "noPrematch": 4,
+    "noPrematch": 5,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
