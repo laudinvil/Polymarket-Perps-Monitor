@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:43:31.275Z",
+  "updatedAt": "2026-09-27T15:43:32.652Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1187,
+    "events": 1188,
     "polls": 4,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1637688",
+  "matchId": "1713030",
   "teams": [
-    "Hydra Esports",
-    "FULL SENSE"
+    "MURASH GAMING",
+    "ENTER FORCE.36"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 4,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 25,
+    "noPolyMatch": 26,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
