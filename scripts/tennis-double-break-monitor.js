@@ -224,6 +224,12 @@ function processBreaks(e, nowSets) {
   const oldTotal = totalGames(oldSets);
   const newTotal = totalGames(nowSets);
   if (newTotal <= oldTotal) {
+    log("NO_GAME_CHANGE", {
+      eventId: id,
+      oldTotal,
+      newTotal,
+      score: nowSets
+    });
     prev.sets = nowSets;
     // Keep the match's initial server fixed; SofaScore may update firstToServe during live changes.
     return [];
