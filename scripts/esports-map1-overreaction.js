@@ -1005,7 +1005,7 @@ for (const match of prioritizedCandidates) {
   const oneSided = Number.isFinite(marginValue) && marginValue >= CFG.minMapMargin && marginRatio >= CFG.minMapMarginRatio;
   const balancedPre = preFavorite >= CFG.minPreFavorite && preFavorite <= CFG.maxPreFavorite;
   const overshoot = move >= CFG.minMove && postWinner >= CFG.minPostFavorite && postWinner <= CFG.maxPostFavorite;
-  const mapFilter = CFG.requireMapMargin ? oneSided : true;
+  const mapFilter = CFG.requireMapMargin ? (oneSided || !Number.isFinite(marginValue)) : true;
 
   diag.signalChecks++;
   if (balancedPre) diag.balancedPrePass++;
