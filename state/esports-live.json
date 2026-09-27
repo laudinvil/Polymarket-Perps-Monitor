@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:34:35.986Z",
+  "updatedAt": "2026-09-27T15:34:37.361Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 787,
+    "events": 788,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706604",
+  "matchId": "1706603",
   "teams": [
-    "Infinite",
-    "Rebels Gaming"
+    "Fluxo W7M",
+    "SAW"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 8,
-    "noPolyMatch": 2,
+    "noPolyMatch": 3,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -244,6 +244,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1706604",
+        "teamA": "Infinite",
+        "teamB": "Rebels Gaming"
       }
     ]
   }
