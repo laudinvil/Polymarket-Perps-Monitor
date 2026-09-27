@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:00:44.552Z",
+  "updatedAt": "2026-09-27T15:00:45.943Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327852862",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2242,
   "telemetry": {
     "startedAt": "2026-09-27T14:59:03.677Z",
-    "events": 660,
+    "events": 670,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706602",
+  "matchId": "1712164",
   "teams": [
-    "Rebels Gaming",
-    "SAW"
+    " Phantom Academy",
+    "ILLYRIANS"
   ],
   "status": "running",
   "seriesScore": [
-    0,
-    1
+    1,
+    0
   ],
   "candidates": 90,
   "diagnostics": {
@@ -32,13 +32,13 @@
     "skippedFuture": 47,
     "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 26,
+    "matchedPoly": 28,
     "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 0,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
-    "noPrematch": 0,
+    "noPrematch": 1,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
