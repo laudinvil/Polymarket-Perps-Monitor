@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T14:42:26.923Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T14:42:27.800Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36326824612",
   "runAttempt": "1",
   "sha": "0a3316b581d58887c65dec35e4ffa5afe8a902ee",
   "pid": 2212,
   "telemetry": {
     "startedAt": "2026-09-27T14:41:44.521Z",
-    "events": 72,
+    "events": 74,
     "polls": 0,
     "alerts": 0,
     "errors": 2,
@@ -17,7 +17,16 @@
       "data": "{\"error\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\",\"stack\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\\n    at parseMarket (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:249:37)\\n    at marketPrices (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:367:18)\\n    at ensurePrematchBaseline (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:3:24)\\n    at poll (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:658:11)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\\n    at async file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:840:5\"}"
     }
   },
-  "polyEvents": 224,
+  "matchId": "1710864",
+  "teams": [
+    "G2 Ares",
+    "FC Famalicão Esports"
+  ],
+  "status": "not_started",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 92,
   "diagnostics": {
     "startedAt": "2026-09-27T14:42:24.535Z",
@@ -42,7 +51,17 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      }
+    ],
     "rejects": []
   }
 }\n
