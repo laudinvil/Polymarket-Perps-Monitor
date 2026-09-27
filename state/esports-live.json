@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:32:58.889Z",
+  "updatedAt": "2026-09-27T15:33:01.414Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 329,
+    "events": 339,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1689002",
+  "matchId": "1714932",
   "teams": [
-    "GamerLegion",
-    "Sinners"
+    "Trigon Titans",
+    "Mix My Miks"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 22,
-    "noPolyMatch": 4,
+    "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -326,6 +326,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1689002",
+        "teamA": "GamerLegion",
+        "teamB": "Sinners"
       }
     ]
   }
