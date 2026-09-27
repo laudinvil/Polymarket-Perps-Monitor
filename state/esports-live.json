@@ -238,6 +238,16 @@
         "eventSlug": "cs2-ksm-noirve-2026-09-27"
       }
     },
+    "1700473": {
+      "matchId": "1700473",
+      "teamA": "Black Phoenix",
+      "teamB": "ex-Zero Tenacity"
+    },
+    "1700475": {
+      "matchId": "1700475",
+      "teamA": "Esport Academy Copenhagen",
+      "teamB": "megoshort"
+    },
     "1700585": {
       "matchId": "1700585",
       "teamA": "LAG Gaming",
@@ -616,7 +626,7 @@
   "liveScores": {
     "1662461": {
       "matchId": "1662461",
-      "updatedAt": "2026-09-27T21:49:40.222Z",
+      "updatedAt": "2026-09-27T21:50:46.528Z",
       "games": {
         "1662461": {
           "id": "1662461",
@@ -628,7 +638,7 @@
           "status": "running",
           "finished": false,
           "winnerId": null,
-          "observedAt": "2026-09-27T21:49:40.222Z",
+          "observedAt": "2026-09-27T21:50:46.528Z",
           "source": "match",
           "raw": {
             "score": null,
@@ -687,438 +697,30 @@
       }
     }
   },
-  "updatedAt": "2026-09-27T21:49:41.794Z",
+  "updatedAt": "2026-09-27T21:50:51.478Z",
   "stage": "POLL_RESULT",
   "runId": "36352992796",
   "sha": "acd30e845d6d16872a2a8a11ba518cc5cb2bb86b",
   "telemetry": {
     "startedAt": "2026-09-27T21:47:40.973Z",
-    "events": 477,
-    "polls": 2,
+    "events": 578,
+    "polls": 4,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 139,
-      "HTTP_RESPONSE": 139,
-      "HTTP_JSON": 135,
-      "GAME1_EVIDENCE": 50,
-      "HTTP_NONRETRYABLE": 4,
-      "HTTP_ERROR": 4,
-      "GAME_DETAILS_ERROR": 4,
-      "POLL_RESULT": 1
+      "HTTP_REQUEST": 162,
+      "HTTP_RESPONSE": 162,
+      "HTTP_JSON": 156,
+      "GAME1_EVIDENCE": 77,
+      "HTTP_NONRETRYABLE": 6,
+      "HTTP_ERROR": 6,
+      "GAME_DETAILS_ERROR": 6,
+      "POLL_RESULT": 2
     },
     "recent": [
       {
-        "ts": "2026-09-27T21:48:32.490Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:32.864Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 374
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:32.905Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:32.905Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:33.834Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 928
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:33.840Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:33.840Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712192",
-          "gameId": "233328",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:33.872Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:34.753Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 881
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:34.756Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:34.756Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.091Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 335
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.126Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.126Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.796Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 670
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.834Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:35.834Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1691676",
-          "gameId": "284095",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T21:48:37.135Z",
-        "event": "POLL_RESULT",
-        "data": {
-          "diagnostics": {
-            "events": 504,
-            "candidates": 401,
-            "livesFetched": 1,
-            "liveScoresObserved": 1,
-            "hltvFallbackMatches": 0,
-            "hltvFallbackMisses": 0,
-            "hltvFallbackErrors": 0,
-            "hltvResultsMatches": 0,
-            "hltvResultsMisses": 0,
-            "hltvResultsErrors": 0,
-            "bo3FallbackMatches": 0,
-            "bo3FallbackMisses": 0,
-            "bo3FallbackErrors": 0,
-            "polyHydrateAttempts": 53,
-            "polyFastMatched": 0,
-            "polySearchCalls": 39,
-            "matchedPoly": 25,
-            "finishedGamesFound": 2,
-            "map1Finished": 2,
-            "gameDetailsRequested": 2,
-            "gameDetailsWinnerOnlyRequested": 2,
-            "gameScoreFound": 0,
-            "gameWinnerFound": 2,
-            "winnerOnlyRejected": 2,
-            "marginUnavailable": 2,
-            "signalChecks": 0,
-            "fallbackSignalPass": 0,
-            "balancedPrePass": 0,
-            "movePass": 0,
-            "postRangePass": 0,
-            "mapFilterPass": 0,
-            "signalPass": 0,
-            "alertsSent": 0,
-            "alreadyAlerted": 0,
-            "noMarketUrl": 0,
-            "rejects": [],
-            "liveWsConnections": 1,
-            "liveWsOpen": 1,
-            "liveWsLastError": "ws_close_4003",
-            "sourceErrors": 0,
-            "hltvApiErrors": 13
-          },
-          "config": {
-            "minPreFavorite": 0.25,
-            "maxPreFavorite": 0.75,
-            "minMove": 0.03,
-            "minPostFavorite": 0.52,
-            "maxPostFavorite": 1,
-            "minMapMargin": 2,
-            "minMapMarginRatio": 0.25,
-            "requireMapMargin": true,
-            "maxUpcomingHours": 24
-          }
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.151Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.152Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.153Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.154Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.359Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 206
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.433Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.433Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.456Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 23
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.511Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.566Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 412
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.566Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "kind": "array",
-          "count": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.579Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 427
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.691Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "kind": "array",
-          "count": 4
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:37.698Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 547
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:38.312Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:38.312Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:38.512Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 200
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:38.961Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:38.961Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:39.206Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 245
-        }
-      },
-      {
-        "ts": "2026-09-27T21:49:39.452Z",
+        "ts": "2026-09-27T21:50:45.646Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
@@ -1127,7 +729,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:39.452Z",
+        "ts": "2026-09-27T21:50:45.646Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1135,17 +737,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:39.659Z",
+        "ts": "2026-09-27T21:50:45.867Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 207
+          "elapsedMs": 221
         }
       },
       {
-        "ts": "2026-09-27T21:49:39.885Z",
+        "ts": "2026-09-27T21:50:46.113Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1154,7 +756,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:39.885Z",
+        "ts": "2026-09-27T21:50:46.113Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1162,17 +764,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.097Z",
+        "ts": "2026-09-27T21:50:46.302Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 212
+          "elapsedMs": 189
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.221Z",
+        "ts": "2026-09-27T21:50:46.527Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1181,7 +783,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.661Z",
+        "ts": "2026-09-27T21:50:46.954Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1702961",
@@ -1200,7 +802,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.661Z",
+        "ts": "2026-09-27T21:50:46.954Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1208,17 +810,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.797Z",
+        "ts": "2026-09-27T21:50:47.070Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
           "status": 404,
           "ok": false,
-          "elapsedMs": 136
+          "elapsedMs": 116
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.797Z",
+        "ts": "2026-09-27T21:50:47.070Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1226,7 +828,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.797Z",
+        "ts": "2026-09-27T21:50:47.070Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1235,7 +837,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.798Z",
+        "ts": "2026-09-27T21:50:47.070Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1702961",
@@ -1244,7 +846,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.800Z",
+        "ts": "2026-09-27T21:50:47.072Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1662461",
@@ -1263,7 +865,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.800Z",
+        "ts": "2026-09-27T21:50:47.072Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1271,17 +873,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.923Z",
+        "ts": "2026-09-27T21:50:47.200Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
           "status": 404,
           "ok": false,
-          "elapsedMs": 123
+          "elapsedMs": 128
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.923Z",
+        "ts": "2026-09-27T21:50:47.200Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1289,7 +891,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.923Z",
+        "ts": "2026-09-27T21:50:47.200Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1298,7 +900,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.923Z",
+        "ts": "2026-09-27T21:50:47.200Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1662461",
@@ -1307,7 +909,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:40.925Z",
+        "ts": "2026-09-27T21:50:47.202Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700623",
@@ -1326,7 +928,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.047Z",
+        "ts": "2026-09-27T21:50:47.222Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700638",
@@ -1345,7 +947,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.072Z",
+        "ts": "2026-09-27T21:50:47.246Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1696341",
@@ -1364,7 +966,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.131Z",
+        "ts": "2026-09-27T21:50:47.269Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712062",
@@ -1383,7 +985,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.132Z",
+        "ts": "2026-09-27T21:50:47.270Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700598",
@@ -1402,7 +1004,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.215Z",
+        "ts": "2026-09-27T21:50:47.289Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700585",
@@ -1421,7 +1023,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.256Z",
+        "ts": "2026-09-27T21:50:47.333Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1637686",
@@ -1440,7 +1042,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.262Z",
+        "ts": "2026-09-27T21:50:47.338Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1697653",
@@ -1459,7 +1061,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.264Z",
+        "ts": "2026-09-27T21:50:47.340Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712147",
@@ -1478,7 +1080,85 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.374Z",
+        "ts": "2026-09-27T21:50:47.360Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC%20Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.640Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC%20Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 280
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.643Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC%20Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.643Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.930Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 287
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.956Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=WRAITH%20PCIFIC&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:47.956Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.285Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 329
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.308Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20BERG&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.312Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1684183",
@@ -1497,7 +1177,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.430Z",
+        "ts": "2026-09-27T21:50:48.454Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1683303",
@@ -1516,7 +1196,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.560Z",
+        "ts": "2026-09-27T21:50:48.490Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1637687",
@@ -1535,7 +1215,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.562Z",
+        "ts": "2026-09-27T21:50:48.492Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713028",
@@ -1554,7 +1234,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.567Z",
+        "ts": "2026-09-27T21:50:48.496Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1704623",
@@ -1573,7 +1253,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.637Z",
+        "ts": "2026-09-27T21:50:48.509Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1697654",
@@ -1592,7 +1272,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.638Z",
+        "ts": "2026-09-27T21:50:48.510Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713029",
@@ -1611,7 +1291,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.640Z",
+        "ts": "2026-09-27T21:50:48.513Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712148",
@@ -1630,7 +1310,104 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.658Z",
+        "ts": "2026-09-27T21:50:48.636Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix%20ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.872Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix%20ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 236
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.874Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix%20ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:48.874Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.196Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 322
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.246Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Black%20Phoenix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.246Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.561Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 315
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.603Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=ex-Zero%20Tenacity&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.604Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700473",
+          "gameId": "232093",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:49.621Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1689003",
@@ -1649,7 +1426,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.686Z",
+        "ts": "2026-09-27T21:50:49.640Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1684184",
@@ -1668,7 +1445,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.718Z",
+        "ts": "2026-09-27T21:50:49.777Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1637688",
@@ -1687,7 +1464,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.720Z",
+        "ts": "2026-09-27T21:50:49.779Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713030",
@@ -1706,7 +1483,182 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.738Z",
+        "ts": "2026-09-27T21:50:49.782Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team%20Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.084Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team%20Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 302
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.137Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team%20Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.137Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.160Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 23
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.176Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Leo%20Team&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.176Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.486Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 310
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.499Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Noir%20Verse&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.510Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen%20megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.802Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen%20megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 292
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.805Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen%20megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:50.805Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.117Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 312
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.139Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Esport%20Academy%20Copenhagen&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.139Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.409Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 270
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.432Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=megoshort&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.433Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700475",
+          "gameId": "232099",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-27T21:50:51.458Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712192",
@@ -1725,7 +1677,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:49:41.793Z",
+        "ts": "2026-09-27T21:50:51.478Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1691676",
@@ -1746,7 +1698,7 @@
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-27T21:49:41.793Z"
+    "updatedAt": "2026-09-27T21:50:51.478Z"
   },
   "diagnostics": {
     "events": 504,
@@ -1762,10 +1714,10 @@
     "bo3FallbackMatches": 0,
     "bo3FallbackMisses": 0,
     "bo3FallbackErrors": 0,
-    "polyHydrateAttempts": 53,
+    "polyHydrateAttempts": 59,
     "polyFastMatched": 0,
-    "polySearchCalls": 39,
-    "matchedPoly": 25,
+    "polySearchCalls": 43,
+    "matchedPoly": 27,
     "finishedGamesFound": 2,
     "map1Finished": 2,
     "gameDetailsRequested": 2,
@@ -1789,6 +1741,6 @@
     "liveWsOpen": 1,
     "liveWsLastError": "ws_close_4003",
     "sourceErrors": 0,
-    "hltvApiErrors": 13
+    "hltvApiErrors": 15
   }
 }
