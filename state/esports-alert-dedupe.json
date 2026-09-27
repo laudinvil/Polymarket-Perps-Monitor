@@ -81,6 +81,14 @@
       "matchId": "1702600",
       "teamA": "BESTIA Academy",
       "teamB": "Procyon Gaming"
+    },
+    "ESPORTS_MAP1:1662461": {
+      "claimedAt": "2026-09-27T22:21:36.345Z",
+      "runId": "36354983936",
+      "matchId": "1662461",
+      "teamA": "Cloud9",
+      "teamB": "Team Liquid",
+      "sentAt": null
     }
   }
 }
