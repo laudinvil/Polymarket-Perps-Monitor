@@ -90,13 +90,11 @@ function isSoccer(m) {
     return true;
   }
 
-  // Soccer match score is the first pair. Accept 0-0 and en/em dashes.
-  if (/^\d+\s*[-–—:]\s*\d+$/.test(score)) return true;
+  // Do not classify by score alone: esports feeds also use scores such as
+  // "8-8|0-0|Bo3", and that caused false soccer detections.
+  // Do not classify by a generic "running/live" status either.
 
-  // Polymarket soccer live states.
-  if (["inprogress", "running", "live", "break", "halftime", "penaltyshootout"].includes(status)) return true;
-
-  // Fallback for feeds that expose period but omit the sport label.
+  // Fallback for feeds that omit the sport label but expose a soccer period.
   if (/^(1H|2H|HT|ET|PEN)$/i.test(period)) return true;
 
   return false;
