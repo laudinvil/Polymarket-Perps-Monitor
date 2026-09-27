@@ -581,6 +581,12 @@ LIQUIDITY: $${Math.round(liq)}
 ASK DEPTH: $${Math.round(px.depth)}
 
 COMEBACK CANDIDATE`;
+  log("TELEGRAM_ATTEMPT", {
+    eventId: e.id,
+    player,
+    marketUrl: marketUrl(m),
+    textPreview: text.slice(0, 220)
+  });
   state.alertsSent++;
   await telegram(text, marketUrl(m));
   log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
