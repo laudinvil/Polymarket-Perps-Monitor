@@ -261,6 +261,15 @@
       "alerted": false,
       "lastSeries": null
     },
+    "1707300": {
+      "id": "1707300",
+      "teamA": "Metizport",
+      "teamB": "Inner Circle Academy",
+      "beginAt": 1790517600000,
+      "pre": null,
+      "alerted": false,
+      "lastSeries": null
+    },
     "1710855": {
       "id": "1710855",
       "teamA": "BASEMENT BOYS",
