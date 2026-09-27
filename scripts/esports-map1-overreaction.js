@@ -375,24 +375,10 @@ state.value.telemetry ||= telemetry;
 Object.assign(telemetry, state.value.telemetry || {});
 telemetry.recent = Array.isArray(telemetry.recent) ? telemetry.recent.slice(-80) : [];
 
-function persistRemoteState(force = false) {
+function persistRemoteState() {
+  // Keep runtime state local. Live diagnostics are published via GitHub API.
   state.value.telemetry = telemetry;
   saveState(state);
-  const now = Date.now();
-  if (!force && now - lastRemotePushAt < 60000) return;
-  lastRemotePushAt = now;
-  try {
-    execFileSync("git", ["config","user.name","github-actions[bot]"], {stdio:"ignore"});
-    execFileSync("git", ["config","user.email","41898282+github-actions[bot]@users.noreply.github.com"], {stdio:"ignore"});
-    execFileSync("git", ["add","state/esports-map1-overreaction.json"], {stdio:"ignore"});
-    const status = execFileSync("git", ["status","--porcelain","state/esports-map1-overreaction.json"], {encoding:"utf8"}).trim();
-    if (!status) return;
-    execFileSync("git", ["commit","-m","Persist CS2 monitor state"], {stdio:"ignore"});
-    execFileSync("git", ["push"], {stdio:"ignore"});
-    log("STATE_PUSHED");
-  } catch (e) {
-    log("STATE_PUSH_ERROR", JSON.stringify({error:String(e)}));
-  }
 }
 
 async function publishHeartbeat(stage, extra = {}) {
