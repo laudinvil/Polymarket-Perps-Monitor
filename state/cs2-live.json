@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:23:08.414Z",
+  "updatedAt": "2026-09-27T15:23:09.603Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329237890",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2043,
   "telemetry": {
     "startedAt": "2026-09-27T15:21:38.260Z",
-    "events": 631,
+    "events": 632,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700679",
+  "matchId": "1700704",
   "teams": [
-    "The Huns Esports",
-    "NEXVOID"
+    "Bounty Hunters Esports",
+    "Galorys"
   ],
-  "status": "not_started",
+  "status": "running",
   "seriesScore": [
-    0,
-    0
+    1,
+    1
   ],
   "candidates": 90,
   "diagnostics": {
@@ -29,11 +29,11 @@
     "upcoming": 100,
     "running": 9,
     "bo3": 90,
-    "skippedFuture": 0,
-    "missingTeams": 7,
+    "skippedFuture": 48,
+    "missingTeams": 10,
     "polyEvents": 224,
     "matchedPoly": 22,
-    "noPolyMatch": 11,
+    "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
