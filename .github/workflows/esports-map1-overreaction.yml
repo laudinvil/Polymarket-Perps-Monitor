@@ -1,4 +1,5 @@
 name: ESPORTS MAP1 OVERREACTION
+# Active single monitor; push change forces immediate verification
 
 on:
   push:
