@@ -272,7 +272,7 @@ async function fetchGameSpecificScore(match,game,diag){
   if(!game?.id)return null;
   const slug=String(match?.videogame?.slug||"").toLowerCase();
   const title=String(match?.videogame_title?.slug||match?.videogame_title?.name||"").toLowerCase();
-  const isCS=slug==="csgo"||slug.includes("counter")||slug.includes("cs")||title==="cs-2"||title.includes("counter-strike");
+  const isCS=slug==="csgo"||slug.includes("counter")||title==="cs-2"||title.includes("counter-strike");
   const isLoL=slug==="lol"||slug.includes("league")||title==="lol"||title.includes("league");
   const isDota=slug.includes("dota")||title.includes("dota");
   const isValorant=slug.includes("valorant")||title.includes("valorant");
@@ -292,21 +292,14 @@ async function fetchGameSpecificScore(match,game,diag){
       const rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:(Array.isArray(data?.frames)?data.frames:(Array.isArray(data?.rounds)?data.rounds:[])));
       if(!rows.length)continue;
       let best=null;
-      const walk=(v,depth=0)=>{
-        if(depth>5||v==null)return;
-        if(Array.isArray(v)){for(const x of v)walk(x,depth+1);return;}
-        if(typeof v!=="object")return;
-        const candidates=[
-          v.score,v.round_score,v.game_score,v.team_score,v.kills,
-          v.teams,v.opponents,v.results,v.red,v.blue,v.radiant,v.dire
-        ];
-        for(const x of candidates){
-          const p=scorePair(x);
+      const direct=(v)=>{
+        if(!v||typeof v!=="object")return;
+        for(const key of ["round_score","game_score","score"]){
+          const p=scorePair(v[key]);
           if(p&&p[0]!==p[1]&&Math.max(...p)>=2)best=p;
         }
-        for(const x of Object.values(v))walk(x,depth+1);
       };
-      for(const row of rows)walk(row);
+      for(const row of rows)direct(row);
       if(best){
         const value={score:best,marginValue:Math.abs(best[0]-best[1]),marginRatio:Math.abs(best[0]-best[1])/Math.max(...best),source:"pandascore-"+(isCS?"rounds":isLoL?"frames":isDota?"frames":isValorant?"rounds":"game-data")};
         diag.map1ScoreSource=value.source;
@@ -320,6 +313,7 @@ async function fetchGameSpecificScore(match,game,diag){
   diag.map1ScoreUnavailable=(diag.map1ScoreUnavailable||0)+1;
   return null;
 }
+
 const bo3Cache=new Map();
 async function bo3Map1Fallback(teamA,teamB,diag){
   const cacheKey=norm(teamA)+"|"+norm(teamB),cached=bo3Cache.get(cacheKey);
