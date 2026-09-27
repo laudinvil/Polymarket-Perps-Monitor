@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:35:38.533Z",
+  "updatedAt": "2026-09-27T14:35:40.503Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36326291843",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2254,
   "telemetry": {
     "startedAt": "2026-09-27T14:32:55.186Z",
-    "events": 851,
+    "events": 861,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702598",
+  "matchId": "1700664",
   "teams": [
-    "BORRACHEIROS",
-    "Semente do Mal"
+    "Lynn Vision",
+    "NEXVOID"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 24,
+    "matchedPoly": 26,
     "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 0,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
-    "noPrematch": 0,
+    "noPrematch": 1,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
