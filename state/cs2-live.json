@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:30:46.970Z",
+  "updatedAt": "2026-09-27T14:30:48.241Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 1085,
+    "events": 1095,
     "polls": 3,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702598",
+  "matchId": "1700678",
   "teams": [
-    "BORRACHEIROS",
-    "Semente do Mal"
+    "The Huns Esports",
+    "Rare Atom"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 24,
-    "noPolyMatch": -1,
+    "matchedPoly": 26,
+    "noPolyMatch": -2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 1,
+    "map1Finished": 2,
     "alreadyAlerted": 0,
-    "noPrematch": 1,
+    "noPrematch": 2,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
