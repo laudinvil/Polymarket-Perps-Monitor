@@ -587,9 +587,14 @@ COMEBACK CANDIDATE`;
     marketUrl: marketUrl(m),
     textPreview: text.slice(0, 220)
   });
-  state.alertsSent++;
-  await telegram(text, marketUrl(m));
-  log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
+  const sent = await telegram(text, marketUrl(m));
+  if (sent !== false) {
+    state.alertsSent++;
+    log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
+  } else {
+    state.alertsSent = Math.max(0, state.alertsSent - 1);
+    log("ALERT_SEND_FAILED", { eventId: e.id, player, price: px.ask, liquidity: liq });
+  }
 }
 
 async function poll() {
