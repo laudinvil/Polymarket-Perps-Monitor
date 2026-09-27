@@ -500,7 +500,12 @@ function mapMarginFromMatch(match) {
     return ["finished","completed","complete","ended"].includes(status) ||
       Boolean(x?.complete || x?.completed || x?.finished || x?.end_at || x?.ended_at);
   });
-  const g = finished[0] || null;
+  const firstGame = finished.find(x =>
+    Number(x?.number ?? x?.game_number ?? x?.map_number ?? x?.position) === 1
+  ) || [...finished].sort((x,y) =>
+    Date.parse(x?.begin_at || x?.started_at || "") - Date.parse(y?.begin_at || y?.started_at || "")
+  )[0] || null;
+  const g = firstGame;
   // Map margin is taken only from Game/Map 1. Never use aggregate series score.
   if (!g) return {value:null, type:"unavailable", score:null};
   for (const s of [g?.score,g?.map_score,g?.game_score,g?.results]) {
@@ -532,7 +537,7 @@ function map1Info(match) {
   });
 
   if (finishedGames.length >= 1) {
-    const g = finishedGames[0];
+    const g = finishedGames.find(x => Number(x?.number ?? x?.game_number ?? x?.map_number ?? x?.position) === 1) || [...finishedGames].sort((x,y) => Date.parse(x?.begin_at || x?.started_at || "") - Date.parse(y?.begin_at || y?.started_at || ""))[0];
     let winner = null;
     const winnerId = g?.winner?.id ?? g?.winner_id ?? g?.winner?.opponent?.id;
     if (winnerId != null) {
@@ -830,11 +835,12 @@ for (const match of candidates) {
     sample(diag.rejects, {reason:"missing_teams",matchId:String(match.id),opponents:opponents(match).length}, 20);
     continue;
   }
-  sample(diag.samples, {matchId:String(match.id),teams:[teamA,teamB],status:match.status,beginAt:match.begin_at || match.scheduled_at}, 12);
+  sample(diag.samples, {matchId:String(match.id),game:String(match.videogame?.name || match.videogame?.slug || "unknown"),teams:[teamA,teamB],status:match.status,beginAt:match.begin_at || match.scheduled_at}, 12);
 
   const key = String(match.id);
   await publishHeartbeat("MATCH_PROGRESS", {
     matchId:key,
+    game:String(match.videogame?.name || match.videogame?.slug || "unknown"),
     teams:[teamA,teamB],
     status:match.status,
     seriesScore:seriesScore(match),
@@ -1011,7 +1017,7 @@ for (const match of candidates) {
   const marginText = Number.isFinite(marginValue) ? String(marginValue) : "—";
 
   const text =
-    "<b>ESPORTS — MAP 2</b>\n\n" +
+    "<b>ESPORTS — MAP 2</b>\n" + String(match.videogame?.name || "") + "\n\n" +
     "<b>"+winner+"</b> won Map 1 vs <b>"+loser+"</b>\n" +
     "MAP 1 SERIES SCORE: "+info.series[0]+"–"+info.series[1]+"\n" +
     "MAP MARGIN: "+marginText+"\n\n" +
