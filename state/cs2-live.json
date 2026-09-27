@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:33:57.559Z",
+  "updatedAt": "2026-09-27T14:33:59.615Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36326291843",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2254,
   "telemetry": {
     "startedAt": "2026-09-27T14:32:55.186Z",
-    "events": 372,
+    "events": 382,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712170",
+  "matchId": "1700464",
   "teams": [
-    "Mai Tai",
-    "BIG Academy"
+    "Spirit Academy",
+    "megoshort"
   ],
   "status": "running",
   "seriesScore": [
     0,
-    1
+    0
   ],
   "candidates": 94,
   "diagnostics": {
@@ -33,7 +33,7 @@
     "missingTeams": 12,
     "polyEvents": 224,
     "matchedPoly": 34,
-    "noPolyMatch": 12,
+    "noPolyMatch": 13,
     "noPolyPrice": 0,
     "prematchCaptured": 11,
     "map1Finished": 6,
