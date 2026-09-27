@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:51:12.594Z",
+  "updatedAt": "2026-09-27T14:51:14.742Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 774,
+    "events": 776,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712147",
+  "matchId": "1704623",
   "teams": [
-    "Teletubisie",
-    "Eternal Fire Academy"
+    "THUNDER dOWNUNDER",
+    "Ground Zero"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -30,10 +30,10 @@
     "running": 11,
     "bo3": 92,
     "skippedFuture": 0,
-    "missingTeams": 3,
+    "missingTeams": 5,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 7,
+    "noPolyMatch": 9,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
