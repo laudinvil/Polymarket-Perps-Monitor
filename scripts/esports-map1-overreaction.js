@@ -97,13 +97,14 @@ const GAMMA = "https://gamma-api.polymarket.com";
 const CLOB = "https://clob.polymarket.com";
 
 const CFG = {
-  minPreFavorite: 0.35,
-  maxPreFavorite: 0.65,
-  minMove: 0.15,
-  minPostFavorite: 0.60,
-  maxPostFavorite: 0.95,
-  minMapMargin: 6,
-  requireMapMargin: false,
+  minPreFavorite: 0.40,
+  maxPreFavorite: 0.60,
+  minMove: 0.20,
+  minPostFavorite: 0.70,
+  maxPostFavorite: 0.90,
+  minMapMargin: 2,
+  minMapMarginRatio: 0.25,
+  requireMapMargin: true,
   maxUpcomingHours: 24,
 };
 
@@ -237,7 +238,8 @@ function supportedSeries(match) {
   // Include BO3 and BO5. PandaScore also exposes "first_to" formats;
   // first_to 3 is equivalent to a BO5 for our Map 1 -> Map 2 logic.
   return (type === "best_of" && (games === 3 || games === 5)) ||
-         (type === "first_to" && games === 3);
+         (type === "first_to" && games === 3) ||
+         (type === "red_bull_home_ground" && games === 5);
 }
 function beginAt(match) {
   const v = match.begin_at || match.scheduled_at;
@@ -291,7 +293,6 @@ function isMatchWinnerMarket(m, teamA, teamB) {
 
 async function loadPolyEvents() {
   const urls = [
-    GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=cs2",
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=esports",
     GAMMA + "/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
   ];
@@ -482,10 +483,26 @@ function directMapWinner(match) {
 }
 function mapMarginFromMatch(match) {
   const games = Array.isArray(match?.games) ? match.games : [];
-  const g = games.find(x => { const status=String(x?.status||x?.state||"").toLowerCase(); return ["finished","completed","complete","ended"].includes(status)||Boolean(x?.complete||x?.completed||x?.finished||x?.end_at||x?.ended_at); }) || games[0];
-  const sources=[g?.score,g?.map_score,g?.game_score,g?.results,match?.map_score,match?.current_game_score,match?.currentGameScore,match?.game_score,match?.gameScore,match?.round_score,match?.roundScore];
-  for(const s of sources){ if(Array.isArray(s)&&s.length>=2){const a=Number(s[0]),b=Number(s[1]);if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b)return Math.abs(a-b);} else if(s&&typeof s==="object"){const a=Number(s.home??s.team1??s.a),b=Number(s.away??s.team2??s.b);if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b)return Math.abs(a-b);} }
-  return null;
+  const finished = games.filter(x => {
+    const status = String(x?.status || x?.state || "").toLowerCase();
+    return ["finished","completed","complete","ended"].includes(status) ||
+      Boolean(x?.complete || x?.completed || x?.finished || x?.end_at || x?.ended_at);
+  });
+  const g = finished[0] || null;
+  // Map margin is taken only from Game/Map 1. Never use aggregate series score.
+  if (!g) return {value:null, type:"unavailable", score:null};
+  for (const s of [g?.score,g?.map_score,g?.game_score,g?.results]) {
+    let a,b;
+    if (Array.isArray(s) && s.length >= 2) { a=Number(s[0]); b=Number(s[1]); }
+    else if (s && typeof s==="object") {
+      a=Number(s.home??s.team1??s.a); b=Number(s.away??s.team2??s.b);
+    }
+    if (Number.isFinite(a)&&Number.isFinite(b)&&a!==b) {
+      if (Math.max(a,b)<=1) return {value:null,type:"binary",score:[a,b]};
+      return {value:Math.abs(a-b),type:"score",score:[a,b]};
+    }
+  }
+  return {value:null,type:"unavailable",score:null};
 }
 function map1Info(match) {
   const o = opponents(match);
@@ -534,7 +551,7 @@ function map1Info(match) {
         if (Number.isFinite(x)&&Number.isFinite(y)) { margin=Math.abs(x-y); break; }
       }
     }
-    if (winner != null) return {winner,loser:1-winner,series:seriesScore(match)||(winner===0?[1,0]:[0,1]),margin,source:"games"};
+    if (winner != null) return {winner,loser:1-winner,series:seriesScore(match)||(winner===0?[1,0]:[0,1]),margin:{value:margin,type:"score",score:null},source:"games"};
   }
 
   const s=seriesScore(match);
@@ -550,7 +567,7 @@ function map1Info(match) {
       }
     }
     const winner=s[0]===1?0:1;
-    return {winner,loser:1-winner,series:s,margin,source:"series_score"};
+    return {winner,loser:1-winner,series:s,margin:{value:margin,type:"score",score:null},source:"series_score"};
   }
 
   const status=String(match.status||"").toLowerCase();
@@ -561,7 +578,7 @@ function map1Info(match) {
       const a=Number(r[0]?.score??r[0]?.result),b=Number(r[1]?.score??r[1]?.result);
       if(Number.isFinite(a)&&Number.isFinite(b)&&a+b===1){
         const winner=a===1?0:1;
-        return {winner,loser:1-winner,series:[a,b],margin:null,source:"completed_result"};
+        return {winner,loser:1-winner,series:[a,b],margin:{value:null,type:"binary",score:[a,b]},source:"completed_result"};
       }
     }
   }
@@ -582,7 +599,7 @@ function saveState(s) {
 }
 
 async function claimAlertStrict(key, meta = {}) {
-  const path = "state/cs2-alert-dedupe.json";
+  const path = "state/esports-alert-dedupe.json";
   const api = "https://api.github.com/repos/" + GH_REPO + "/contents/" + path;
   const headers = {
     accept:"application/vnd.github+json",
@@ -609,7 +626,7 @@ async function claimAlertStrict(key, meta = {}) {
         teamB:meta.teamB||null
       };
       const body = {
-        message:"CS2 strict alert claim " + key,
+        message:"ESPORTS strict alert claim " + key,
         content:Buffer.from(JSON.stringify(data,null,2)+"\n").toString("base64"),
         branch:"main"
       };
@@ -682,7 +699,7 @@ async function publishHeartbeat(stage, extra = {}) {
     },
     ...extra
   };
-  const path = "state/cs2-live.json";
+  const path = "state/esports-live.json";
   try {
     const api = "https://api.github.com/repos/" + GH_REPO + "/contents/" + path;
     const headers = {
@@ -697,7 +714,7 @@ async function publishHeartbeat(stage, extra = {}) {
       sha = j.sha || null;
     }
     const body = {
-      message: "CS2 monitor heartbeat",
+      message: "ESPORTS monitor heartbeat",
       content: Buffer.from(JSON.stringify(payload,null,2)+"\\n").toString("base64"),
       branch: "main"
     };
@@ -757,14 +774,14 @@ let upcoming = psUpcomingCache.data;
 let running = psRunningCache.data;
 
 if (!psUpcomingCache.at || nowMs - psUpcomingCache.at >= UPCOMING_TTL) {
-  upcoming = await ps("/csgo/matches/upcoming?per_page=100");
+  upcoming = await ps("/matches/upcoming?per_page=100");
   psUpcomingCache = {at: Date.now(), data: upcoming};
 } else {
   log("PANDASCORE_CACHE", {endpoint:"upcoming", ageMs: nowMs - psUpcomingCache.at});
 }
 
 if (!psRunningCache.at || nowMs - psRunningCache.at >= RUNNING_TTL) {
-  running = await ps("/csgo/matches/running?per_page=100");
+  running = await ps("/matches/running?per_page=100");
   psRunningCache = {at: Date.now(), data: running};
 } else {
   log("PANDASCORE_CACHE", {endpoint:"running", ageMs: nowMs - psRunningCache.at});
@@ -777,7 +794,7 @@ await publishHeartbeat("PANDASCORE_OK", {
   diagnostics:diag
 });
 
-const candidates = [...upcoming, ...running].filter(m => supportedSeries(m));
+const candidates = [...new Map([...upcoming, ...running].map(m => [String(m.id), m])).values()].filter(m => supportedSeries(m));
 diag.bo3 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "best_of" && Number(m.number_of_games) === 3).length;
 diag.bo5 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "best_of" && Number(m.number_of_games) === 5).length;
 diag.firstTo3 = candidates.filter(m => String(m.match_type || "").toLowerCase() === "first_to" && Number(m.number_of_games) === 3).length;
@@ -789,7 +806,7 @@ await publishHeartbeat("POLYMARKET_OK", {
   diagnostics:diag
 });
 log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
-log("PANDASCORE_SERIES", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length,bo3:diag.bo3,bo5:diag.bo5,firstTo3:diag.firstTo3}));
+log("PANDASCORE_SERIES", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length,bo3:diag.bo3,bo5:diag.bo5,firstTo3:diag.firstTo3,allEsports:true}));
 
 for (const match of candidates) {
   const ts = beginAt(match);
@@ -934,10 +951,16 @@ for (const match of candidates) {
 
   const preFavorite = Math.max(entry.pre.a,entry.pre.b);
   const move = postWinner - preWinner;
-  const oneSided = info.margin == null ? true : info.margin >= CFG.minMapMargin;
+  const marginValue = Number(info.margin?.value);
+  const marginMaxScore = Array.isArray(info.margin?.score) ? Math.max(...info.margin.score.map(Number)) : null;
+  const marginRatio = Number.isFinite(marginValue) && Number.isFinite(marginMaxScore) && marginMaxScore > 0
+    ? marginValue / marginMaxScore : null;
+  const oneSided = Number.isFinite(marginValue) &&
+    marginValue >= CFG.minMapMargin &&
+    marginRatio >= CFG.minMapMarginRatio;
   const balancedPre = preFavorite >= CFG.minPreFavorite && preFavorite <= CFG.maxPreFavorite;
   const overshoot = move >= CFG.minMove && postWinner >= CFG.minPostFavorite && postWinner <= CFG.maxPostFavorite;
-  const mapFilter = CFG.requireMapMargin ? oneSided && info.margin != null : oneSided;
+  const mapFilter = CFG.requireMapMargin ? oneSided : true;
 
   diag.signalChecks++;
   if (balancedPre) diag.balancedPrePass++;
@@ -957,6 +980,7 @@ for (const match of candidates) {
       teams:[teamA,teamB],
       series:info.series,
       margin:info.margin,
+      marginValue,marginRatio,
       pre:[entry.pre.a,entry.pre.b],
       post:[sides.a.prob,sides.b.prob],
       move,
@@ -965,7 +989,7 @@ for (const match of candidates) {
   }
 
   log("SIGNAL_CHECK", JSON.stringify({
-    key,match:teamA+" vs "+teamB,map1:info.series,margin:info.margin,
+    key,match:teamA+" vs "+teamB,map1:info.series,margin:info.margin,marginValue,marginRatio,
     preA:entry.pre.a,preB:entry.pre.b,postA:sides.a.prob,postB:sides.b.prob,
     move,balancedPre,overshoot,mapFilter
   }));
@@ -975,10 +999,10 @@ for (const match of candidates) {
   const loser = info.loser === 0 ? teamA : teamB;
   const loserProb = postLoser;
   const winner = info.winner === 0 ? teamA : teamB;
-  const marginText = info.margin == null ? "—" : String(info.margin);
+  const marginText = Number.isFinite(marginValue) ? String(marginValue) : "—";
 
   const text =
-    "<b>CS2 — MAP 2</b>\n\n" +
+    "<b>ESPORTS — MAP 2</b>\n\n" +
     "<b>"+winner+"</b> won Map 1 vs <b>"+loser+"</b>\n" +
     "MAP 1 SERIES SCORE: "+info.series[0]+"–"+info.series[1]+"\n" +
     "MAP MARGIN: "+marginText+"\n\n" +
@@ -1019,7 +1043,7 @@ for (const match of candidates) {
     marketSlug,
     url:marketUrl
   });
-  const strictKey = "CS2_MAP1:" + key;
+  const strictKey = "ESPORTS_MAP1:" + key;
   let claimed = false;
   try {
     claimed = await claimAlertStrict(strictKey, {
