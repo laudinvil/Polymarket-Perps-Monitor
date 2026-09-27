@@ -241,13 +241,23 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
 
   // SofaScore may return the game-level server/winner directly on each game.
   // Prefer those fields over inference from cumulative game scores.
+  const sideCode = (value) => {
+    if (value === 1 || value === "1" || String(value).toLowerCase() === "home") return 1;
+    if (value === 2 || value === "2" || String(value).toLowerCase() === "away") return 2;
+    return null;
+  };
+
   const directGameResult = (game) => {
-    const serving = Number(game?.serving ?? game?.score?.serving ?? game?.server ?? game?.score?.server);
-    const scoring = Number(game?.scoring ?? game?.score?.scoring ?? game?.winner ?? game?.score?.winner);
-    return {
-      serving: serving === 1 || serving === 2 ? serving : null,
-      winner: scoring === 1 || scoring === 2 ? scoring : null
-    };
+    const serving = sideCode(game?.serving ?? game?.score?.serving ?? game?.server ?? game?.score?.server);
+    const scoring = sideCode(
+      game?.scoring ??
+      game?.score?.scoring ??
+      game?.winner ??
+      game?.score?.winner ??
+      game?.gameWonBy ??
+      game?.score?.gameWonBy
+    );
+    return { serving, winner: scoring };
   };
 
   const games = [];
@@ -257,8 +267,8 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
 
     for (const game of rawGames) {
       const score = game?.score || game;
-      const home = Number(score?.homeScore ?? game?.homeGames);
-      const away = Number(score?.awayScore ?? game?.awayGames);
+      const home = Number(score?.homeScore ?? game?.homeGames ?? game?.gamesHome);
+      const away = Number(score?.awayScore ?? game?.awayGames ?? game?.gamesAway);
       const direct = directGameResult(game);
       const gameNo = Number(game?.game ?? game?.gameNumber ?? 0);
 
