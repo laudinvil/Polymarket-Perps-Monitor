@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:21:30.136Z",
+  "updatedAt": "2026-09-27T15:21:31.196Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329198460",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2077,
   "telemetry": {
     "startedAt": "2026-09-27T15:20:58.867Z",
-    "events": 312,
+    "events": 313,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1696341",
+  "matchId": "1702601",
   "teams": [
-    "Liquid",
-    "Wildcard"
+    "ALKA GAMING",
+    "Mira"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 2,
     "polyEvents": 224,
     "matchedPoly": 22,
-    "noPolyMatch": 2,
+    "noPolyMatch": 3,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -321,6 +321,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1696341",
+        "teamA": "Liquid",
+        "teamB": "Wildcard"
       }
     ]
   }
