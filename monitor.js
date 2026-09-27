@@ -11,8 +11,20 @@ async function poll() {
     const lookup = await dns.lookup("polymarket.com", {all:true});
     console.log("DNS", JSON.stringify(lookup));
 
-    const response = await fetch(SOURCE, {
-      headers: { "user-agent": "Mozilla/5.0" },
+    const doh = await fetch("https://cloudflare-dns.com/dns-query?name=polymarket.com&type=A", {
+      headers: { "accept": "application/dns-json", "user-agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!doh.ok) throw new Error("DoH HTTP " + doh.status);
+    const dnsJson = await doh.json();
+    const ip = dnsJson.Answer?.find(x => x.type === 1)?.data;
+    if (!ip) throw new Error("DoH returned no A record");
+
+    const response = await fetch("https://" + ip + "/sports/soccer/games", {
+      headers: {
+        "user-agent": "Mozilla/5.0",
+        "host": "polymarket.com"
+      },
       signal: AbortSignal.timeout(10000)
     });
 
