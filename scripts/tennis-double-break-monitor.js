@@ -563,6 +563,7 @@ async function evaluate(e, brokenSide) {
     log("COOLDOWN_BLOCK", { eventId: e.id, player });
     return;
   }
+  log("ALERT_COOLDOWN_PASS", { eventId: e.id, player });
   alerted.set(key, Date.now());
 
   const sets = scoreSets(e);
