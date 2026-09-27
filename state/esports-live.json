@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:42.761Z",
+  "updatedAt": "2026-09-27T15:33:43.920Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 529,
+    "events": 530,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1697654",
+  "matchId": "1713029",
   "teams": [
-    "KT Rolster Challengers",
-    "Galions"
+    "REVATI",
+    "99DIVINE"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 2,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 20,
+    "noPolyMatch": 21,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
