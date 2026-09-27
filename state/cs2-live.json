@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:26:13.222Z",
+  "updatedAt": "2026-09-27T15:26:14.692Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 752,
+    "events": 762,
     "polls": 2,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1696342",
+  "matchId": "1684181",
   "teams": [
-    "M80",
-    "DENDELE CS"
+    "Nemiga",
+    "Color"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 2,
     "polyEvents": 224,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -175,6 +175,20 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1696342",
+        "teams": [
+          "M80",
+          "DENDELE CS"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088971",
+        "polyEventSlug": "cs2-m80-dendel-2026-09-27",
+        "marketId": "5006870",
+        "marketSlug": "cs2-m80-dendel-2026-09-27",
+        "marketQuestion": "Counter-Strike: M80 vs DENDELE CS (BO3) - iBUYPOWER Masters FML Playoffs",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -219,6 +233,16 @@
         "matchId": "1700465",
         "teamA": "KUUSAMO.gg",
         "teamB": "Noir Verse",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS",
         "seriesScore": [
           0,
           0
