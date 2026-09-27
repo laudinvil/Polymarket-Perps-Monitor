@@ -99,14 +99,15 @@ function isSoccer(m) {
   if (soccerLeagues.has(leagueCode)) return true;
 
   const period = String(m.period || "").toUpperCase().trim();
+  const status = String(m.status || "").toLowerCase().trim();
 
-  // Team-name fields and generic score/status values are shared with esports.
-
-  // Fallback for feeds that omit the sport label but expose a soccer period.
-  // Accept compact values, period clocks, and named half clocks.
-  if (/^(1H|2H|HT|ET|PEN)(?:\s|$)/i.test(period)) return true;
-  if (/^(1ST|2ND)\s*HALF(?:\s|$)/i.test(period)) return true;
-  if (/^(FIRST|SECOND)\s*HALF(?:\s|$)/i.test(period)) return true;
+  // The official sports feed uses these soccer period/status values.
+  // This is deliberately based on provider metadata, not team names or
+  // score shape, so esports cannot be mistaken for soccer.
+  if (/^(1H|2H|HT|ET|PEN|FT|FT OT|FT NR)$/.test(period)) return true;
+  if (/^(1ST|2ND)\s+HALF$/.test(period)) return true;
+  if (/^(FIRST|SECOND)\s+HALF$/.test(period)) return true;
+  if (/^(inprogress|break|penaltyshootout)$/.test(status)) return true;
 
   return false;
 }
