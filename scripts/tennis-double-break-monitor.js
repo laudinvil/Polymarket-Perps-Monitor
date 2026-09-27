@@ -216,11 +216,24 @@ async function getCompletedGameFromPointFeed(eventId) {
 
   const rawSets = Array.isArray(data?.pointByPoint)
     ? data.pointByPoint
-    : Array.isArray(data?.points)
-      ? data.points
-      : Array.isArray(data)
-        ? data
-        : [];
+    : Array.isArray(data?.sets)
+      ? data.sets
+      : Array.isArray(data?.points)
+        ? data.points
+        : Array.isArray(data)
+          ? data
+          : [];
+
+  // SofaScore may return the game-level server/winner directly on each game.
+  // Prefer those fields over inference from cumulative game scores.
+  const directGameResult = (game) => {
+    const serving = Number(game?.serving ?? game?.score?.serving);
+    const scoring = Number(game?.scoring ?? game?.score?.scoring);
+    return {
+      serving: serving === 1 || serving === 2 ? serving : null,
+      winner: scoring === 1 || scoring === 2 ? scoring : null
+    };
+  };
 
   const games = [];
   for (const set of rawSets) {
@@ -231,7 +244,7 @@ async function getCompletedGameFromPointFeed(eventId) {
       const score = game?.score || game;
       const home = Number(score?.homeScore ?? game?.homeGames);
       const away = Number(score?.awayScore ?? game?.awayGames);
-      const serving = Number(score?.serving ?? game?.serving);
+      const direct = directGameResult(game);
       const gameNo = Number(game?.game ?? game?.gameNumber ?? 0);
 
       if (!Number.isFinite(home) || !Number.isFinite(away)) continue;
@@ -241,7 +254,8 @@ async function getCompletedGameFromPointFeed(eventId) {
         game: gameNo,
         home,
         away,
-        serving: serving === 1 || serving === 2 ? serving : null
+        serving: direct.serving,
+        directWinner: direct.winner
       });
     }
   }
@@ -255,8 +269,8 @@ async function getCompletedGameFromPointFeed(eventId) {
   let last = games[games.length - 1];
   let previous = games.length > 1 ? games[games.length - 2] : null;
 
-  let winner = null;
-  if (previous && previous.set === last.set) {
+  let winner = last.directWinner || null;
+  if (!winner && previous && previous.set === last.set) {
     const dh = last.home - previous.home;
     const da = last.away - previous.away;
     if (dh === 1 && da === 0) winner = 1;
