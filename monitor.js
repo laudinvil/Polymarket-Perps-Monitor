@@ -162,9 +162,13 @@ function score(m) {
   // Polymarket sports feeds can append set/period scores:
   // "2-1|0-0|..." — use only the match score.
   const main = s.split("|")[0].trim();
-  const parts = main.split(/\s*[-–—:]\s*/);
 
-  return parts.length === 2 ? `${parts[0]}–${parts[1]}` : main;
+  // Only accept a real home-away score. Do not turn unrelated values
+  // such as "18:45" into "18–45".
+  const match = main.match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
+  if (!match) return "—";
+
+  return `${match[1]}–${match[2]}`;
 }
 
 function title(m) {
