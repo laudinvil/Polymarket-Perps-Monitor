@@ -80,10 +80,10 @@ function isSoccer(m) {
 
   const status = String(m.status || "").toLowerCase().trim();
   const period = String(m.period || "").toUpperCase().trim();
-  const score = String(m.score || "").trim();
+  const score = String(m.score || "").trim().split("|")[0].trim();
 
-  // Soccer score is plain HOME-AWAY. This also accepts 0-0.
-  if (!/^\d+\s*[-:]\s*\d+$/.test(score)) return false;
+  // Soccer match score is the first pair. Accept 0-0 and en/em dashes.
+  if (!/^\d+\s*[-–—:]\s*\d+$/.test(score)) return false;
 
   // Polymarket soccer live states.
   if (["inprogress", "break", "penaltyshootout"].includes(status)) return true;
@@ -96,11 +96,11 @@ function isSoccer(m) {
 
 function eventSnapshot(m) {
   return {
-    gameId: String(m.gameId || ""),
+    gameId: String(m.gameId || m.slug || m.id || ""),
     league: m.leagueAbbreviation || m.league || "",
     sport: m.sport || m.sportSlug || "",
-    home: m.homeTeam || "",
-    away: m.awayTeam || "",
+    home: m.homeTeam || m.homeTeamName || "",
+    away: m.awayTeam || m.awayTeamName || "",
     status: m.status || "",
     live: m.live,
     ended: m.ended,
