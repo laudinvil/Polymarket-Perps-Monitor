@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:38:37.990Z",
+  "updatedAt": "2026-09-27T15:38:40.619Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 468,
+    "events": 487,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702600",
+  "matchId": "1662461",
   "teams": [
-    "BESTIA Academy",
-    "Procyon Gaming"
+    "Cloud9",
+    "Team Liquid"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 42,
+    "matchedPoly": 44,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
