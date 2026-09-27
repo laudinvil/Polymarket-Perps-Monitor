@@ -263,6 +263,17 @@ async function pollGammaSoccer() {
       if (!gameId) continue;
 
       const rawTitle = String(e.title || "").trim();
+      const home = String(
+        e.homeTeamName ||
+        e.homeTeam ||
+        ""
+      ).trim();
+      const away = String(
+        e.awayTeamName ||
+        e.awayTeam ||
+        ""
+      ).trim();
+
       const match = rawTitle.match(/^(.+?)\s+vs\.?\s+(.+?)(?:\s+-\s+.*)?$/i);
 
       const normalized = {
@@ -271,15 +282,15 @@ async function pollGammaSoccer() {
         sport: "soccer",
         sportSlug: "soccer",
         slug: e.slug || "",
-        homeTeam: match ? match[1].trim() : rawTitle,
-        awayTeam: match ? match[2].trim() : "",
+        homeTeam: home || (match ? match[1].trim() : rawTitle),
+        awayTeam: away || (match ? match[2].trim() : ""),
         status: e.gameStatus || e.status || "InProgress",
-        live: true,
-        ended: false,
-        score: e.score || "",
-        period: e.period || "",
-        elapsed: e.elapsed || "",
-        minute: e.elapsed || ""
+        live: e.live === true,
+        ended: e.ended === true,
+        score: String(e.score || "").trim(),
+        period: String(e.period || "").trim(),
+        elapsed: String(e.elapsed || "").trim(),
+        minute: String(e.elapsed || "").trim()
       };
 
       lastGammaEvent = eventSnapshot(normalized);
