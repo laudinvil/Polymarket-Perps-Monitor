@@ -1,4 +1,5 @@
 import https from "node:https";
+import { execFile } from "node:child_process";
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -59,44 +60,41 @@ process.on("unhandledRejection", (err) => {
 async function telegram(text) {
   if (!TOKEN || !CHAT_ID) throw new Error("Telegram env vars missing");
 
+  const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
   const body = JSON.stringify({
     chat_id: CHAT_ID,
     text,
     disable_web_page_preview: true
   });
 
-  const response = await new Promise((resolve, reject) => {
-    const req = https.request(
-      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(body)
-        },
-        timeout: 8000
-      },
-      res => {
-        let data = "";
-        res.setEncoding("utf8");
-        res.on("data", chunk => { data += chunk; });
-        res.on("end", () => resolve({
-          status: res.statusCode,
-          body: data
-        }));
+  const result = await new Promise((resolve, reject) => {
+    execFile(
+      "curl",
+      [
+        "--silent", "--show-error", "--max-time", "10",
+        "--connect-timeout", "5",
+        "-X", "POST", url,
+        "-H", "content-type: application/json",
+        "--data-binary", body
+      ],
+      { timeout: 12000, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`curl Telegram failed: ${error.message}; stderr=${stderr.slice(0,300)}`));
+          return;
+        }
+        console.log("TELEGRAM CURL RESPONSE", stdout.slice(0, 500));
+        let parsed;
+        try { parsed = JSON.parse(stdout); } catch {
+          throw new Error("Telegram returned non-JSON: " + stdout.slice(0,300));
+        }
+        if (!parsed.ok) throw new Error("Telegram API rejected: " + stdout.slice(0,500));
+        resolve(parsed);
       }
     );
-    req.on("timeout", () => req.destroy(new Error("Telegram request timeout")));
-    req.on("error", reject);
-    req.write(body);
-    req.end();
   });
 
-  console.log("TELEGRAM RESPONSE", response.status, response.body.slice(0, 500));
-
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error("Telegram HTTP " + response.status + " " + response.body.slice(0, 300));
-  }
+  return result;
 }
 
 function isSoccer(m) {
