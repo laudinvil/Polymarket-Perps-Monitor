@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:39:42.237Z",
+  "updatedAt": "2026-09-27T15:39:43.763Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 209,
+    "events": 228,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702599",
+  "matchId": "1683216",
   "teams": [
-    "METANOIA WOLVES",
-    "MIBR fe"
+    "Rakuzan",
+    "Team Spirit"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
@@ -383,6 +383,16 @@
         "matchId": "1714921",
         "teamA": "Misa Esports",
         "teamB": "Fear Never Ends",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe",
         "seriesScore": [
           0,
           0
