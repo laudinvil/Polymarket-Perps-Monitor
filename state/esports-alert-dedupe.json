@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "alerts": {
+    "ESPORTS_MAP1:1684180": {
+      "claimedAt": "2026-09-27T15:22:24.264Z",
+      "runId": "36329237890",
+      "matchId": "1684180",
+      "teamA": "BBL",
+      "teamB": "Sinners",
+      "migratedFrom": "CS2_MAP1:1684180"
+    },
+    "ESPORTS_MAP1:1707300": {
+      "claimedAt": "2026-09-27T15:22:28.555Z",
+      "runId": "36329237890",
+      "matchId": "1707300",
+      "teamA": "Metizport",
+      "teamB": "Inner Circle Academy",
+      "migratedFrom": "CS2_MAP1:1707300"
+    },
+    "ESPORTS_MAP1:1712164": {
+      "claimedAt": "2026-09-27T15:24:47.503Z",
+      "runId": "36329364428",
+      "matchId": "1712164",
+      "teamA": " Phantom Academy",
+      "teamB": "ILLYRIANS",
+      "migratedFrom": "CS2_MAP1:1712164"
+    },
+    "ESPORTS_MAP1:1706431": {
+      "claimedAt": "2026-09-27T15:24:57.706Z",
+      "runId": "36329364428",
+      "matchId": "1706431",
+      "teamA": "Eternal Fire",
+      "teamB": "K27",
+      "migratedFrom": "CS2_MAP1:1706431"
+    }
+  }
+}
