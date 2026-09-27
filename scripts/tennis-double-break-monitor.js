@@ -7,7 +7,7 @@ const CFG = {
   cooldownMs: 20 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
-  gammaUrl: "https://gamma-api.polymarket.com/markets?tag_id=864&active=true&closed=false&limit=500&order=endDate&ascending=true",
+  gammaUrl: "https://gamma-api.polymarket.com/events?tag_id=864&active=true&closed=false&limit=500&order=endDate&ascending=true",
 };
 
 const state = {
@@ -260,15 +260,14 @@ function recordSignal(e, brokenSide) {
 
 async function refreshMarkets() {
   const data = await getJson(CFG.gammaUrl, "gamma");
-  const arr = Array.isArray(data) ? data : (data.data || data.markets || []);
+  const events = Array.isArray(data) ? data : (data.data || data.events || []);
   markets.clear();
-  for (const m of arr) {
-    if (!m || m.closed === true || m.active === false) continue;
-    // Gamma query is already scoped to Polymarket's tennis tag (864).
-    // Do not require the question itself to contain the word "tennis":
-    // normal match markets usually contain only the two player names.
-    markets.set(String(m.id), m);
-    
+  for (const event of events) {
+    if (!event || event.closed === true || event.active === false) continue;
+    for (const m of Array.isArray(event.markets) ? event.markets : []) {
+      if (!m || m.closed === true || m.active === false) continue;
+      markets.set(String(m.id), { ...m, eventSlug: event.slug });
+    }
   }
   state.matchedMarkets = markets.size;
   state.lastGammaAt = new Date().toISOString();
