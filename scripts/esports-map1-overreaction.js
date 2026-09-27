@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 const PS_TOKEN = process.env.PANDASCORE_API_TOKEN;
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
@@ -192,9 +194,6 @@ function map1Info(match) {
   if (!s || (s[0] + s[1]) < 1) return null;
   const winner = s[0] === 1 && s[1] === 0 ? 0 : s[1] === 1 && s[0] === 0 ? 1 : null;
   if (winner == null) return null;
-
-  // Free PandaScore fixture data does not guarantee map-level round score.
-  // If a map score is exposed in the returned fixture, use it; otherwise leave null.
   let margin = null;
   const candidates = [
     match.map_score, match.current_game_score, match.currentGameScore,
@@ -213,7 +212,6 @@ function map1Info(match) {
 }
 
 function loadState() {
-  const fs = require("fs");
   const path = "state/esports-map1-overreaction.json";
   try {
     return { path, value: JSON.parse(fs.readFileSync(path,"utf8")) };
@@ -223,7 +221,6 @@ function loadState() {
 }
 
 function saveState(s) {
-  const fs = require("fs");
   fs.mkdirSync("state",{recursive:true});
   fs.writeFileSync(s.path, JSON.stringify(s.value,null,2) + "\n");
 }
