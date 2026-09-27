@@ -58,7 +58,16 @@ async function main(){
     const browser=await chromium.launch({
       executablePath,
       headless:true,
-      args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]
+      chromiumSandbox:false,
+      args:[
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-crash-reporter",
+        "--disable-breakpad",
+        "--disable-features=Crashpad",
+        "--disable-gpu"
+      ]
     });
     console.log("BROWSER STARTED");
     const page=await browser.newPage({locale:"ru-RU"});
@@ -66,7 +75,7 @@ async function main(){
       try{await scan(page);}
       catch(e){
         status={...status,lastError:e?.stack||String(e)};
-        console.error("SCAN ERROR:",e?.stack||String(e));
+        console.error("SCAN ERROR:",e?.stack||e);
       }
       await new Promise(r=>setTimeout(r,POLL_MS));
     }
