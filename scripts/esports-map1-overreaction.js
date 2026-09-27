@@ -90,6 +90,32 @@ const CFG = {
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// PandaScore Free/Fixtures limit: 1,000 REST requests/hour.
+// Keep a hard local budget so polling cannot exhaust the plan.
+const PS_HOURLY_LIMIT = 1000;
+const PS_SAFETY_LIMIT = 900;
+const psRequestTimes = [];
+let psUpcomingCache = { at: 0, data: [] };
+let psRunningCache = { at: 0, data: [] };
+
+function prunePsBudget(now = Date.now()) {
+  while (psRequestTimes.length && now - psRequestTimes[0] >= 3600000) psRequestTimes.shift();
+}
+
+async function waitForPsBudget() {
+  while (true) {
+    const now = Date.now();
+    prunePsBudget(now);
+    if (psRequestTimes.length < PS_SAFETY_LIMIT) {
+      psRequestTimes.push(now);
+      return;
+    }
+    const wait = Math.max(1000, 3600000 - (now - psRequestTimes[0]) + 1000);
+    log("PANDASCORE_RATE_WAIT", {used: psRequestTimes.length, limit: PS_SAFETY_LIMIT, waitMs: wait});
+    await sleep(Math.min(wait, 30000));
+  }
+}
 const norm = s => String(s || "")
   .toLowerCase()
   .normalize("NFD")
@@ -475,8 +501,26 @@ async function poll() {
   };
   await publishHeartbeat("POLL_START", {now:new Date(now).toISOString(), diagnostics:diag});
 
-const upcoming = await ps("/csgo/matches/upcoming?per_page=100");
-const running = await ps("/csgo/matches/running?per_page=100");
+const nowMs = Date.now();
+const UPCOMING_TTL = 5 * 60 * 1000;
+const RUNNING_TTL = 20 * 1000;
+
+let upcoming = psUpcomingCache.data;
+let running = psRunningCache.data;
+
+if (!psUpcomingCache.at || nowMs - psUpcomingCache.at >= UPCOMING_TTL) {
+  upcoming = await ps("/csgo/matches/upcoming?per_page=100");
+  psUpcomingCache = {at: Date.now(), data: upcoming};
+} else {
+  log("PANDASCORE_CACHE", {endpoint:"upcoming", ageMs: nowMs - psUpcomingCache.at});
+}
+
+if (!psRunningCache.at || nowMs - psRunningCache.at >= RUNNING_TTL) {
+  running = await ps("/csgo/matches/running?per_page=100");
+  psRunningCache = {at: Date.now(), data: running};
+} else {
+  log("PANDASCORE_CACHE", {endpoint:"running", ageMs: nowMs - psRunningCache.at});
+}
 diag.upcoming = upcoming.length;
 diag.running = running.length;
 await publishHeartbeat("PANDASCORE_OK", {
