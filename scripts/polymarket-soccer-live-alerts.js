@@ -1,39 +1,16 @@
-// PRODUCTION LIVE MONITOR: continuous LIVE-only soccer alerts.
+// DIAGNOSTIC_RUN: verify live-source-to-Telegram chain after Sports WS fix
 // Diagnostic probe: verify soccer-only classification and Telegram rate limiting end-to-end.
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
-
 const GAMMA = "https://gamma-api.polymarket.com";
 const LIVE_PAGE = "https://polymarket.com/ru/sports/live";
 const SOCCER_PAGE = "https://polymarket.com/ru/sports/soccer/games";
 const POLL_MS = 5000;
 const TELEGRAM_MAX = 3900;
-const DIAGNOSTIC_MODE = false; // Production monitor: never stop after diagnostic cycles.
-const RENDER_MODE = process.env.RENDER === "true" || process.env.RENDER === "1";
-const RUN_MS = Number.POSITIVE_INFINITY;
-const MAX_CYCLES = Number.POSITIVE_INFINITY;
-const SPORTS_WS_TIMEOUT_MS = 12000;
-const MAX_SPORTS_WS_LOOKUPS = Number.POSITIVE_INFINITY;
+const DIAGNOSTIC_MODE = process.env.MONITOR_MODE === "diagnostic";
+const RUN_MS = DIAGNOSTIC_MODE ? 90 * 1000 : 4 * 60 * 60 * 1000;
+const MAX_CYCLES = DIAGNOSTIC_MODE ? 2 : Number.POSITIVE_INFINITY;
+const SPORTS_WS_TIMEOUT_MS = DIAGNOSTIC_MODE ? 8000 : 25000;
+const MAX_SPORTS_WS_LOOKUPS = DIAGNOSTIC_MODE ? 8 : Number.POSITIVE_INFINITY;
 let stopping = false;
-
-function startHealthServer(){
-  const port=Number(process.env.PORT||3000);
-  const server=http.createServer((req,res)=>{
-    if(req.url==="/health"||req.url==="/"){
-      res.writeHead(200,{"content-type":"application/json; charset=utf-8"});
-      res.end(JSON.stringify({ok:true,service:"polymarket-soccer-live-monitor",mode:RENDER_MODE?"render":"monitor",time:new Date().toISOString()}));
-      return;
-    }
-    res.writeHead(404,{"content-type":"application/json; charset=utf-8"});
-    res.end(JSON.stringify({ok:false,error:"not_found"}));
-  });
-  server.listen(port,"0.0.0.0",()=>console.log(JSON.stringify({level:"INFO",event:"health_server_listening",port,health:"/health",render:RENDER_MODE})));
-  server.on("error",err=>console.log(JSON.stringify({level:"ERROR",event:"health_server_error",message:err.message})));
-  return server;
-}
-
-const healthServer=process.env.DEPLEXO_WRAPPER === "1" ? null : startHealthServer();
 
 function t(v){return typeof v === "string" ? v.trim() : "";}
 function norm(v){return t(v).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/&/g,"and").replace(/\b(fc|cf|sc|afc|ac|cd|club|football club)\b/g," ").replace(/[^a-z0-9]+/g," ").trim();}
@@ -44,43 +21,6 @@ function decode(s){return t(s).replace(/&nbsp;/g," ").replace(/&amp;/g,"&").repl
 function hrefs(html){const out=new Set();let m;const re=/href=["'](\/[^"'#? ]+)["']/gi;while((m=re.exec(html)))out.add(m[1]);return [...out];}
 function slugFromHref(h){return t(h).split("/").filter(Boolean).pop()||"";}
 function fixtureSlug(h){return slugFromHref(h).replace(/-(?:more-markets|player-props?|total-(?:corners|goals|cards|shots)|first-team-to-score|last-team-to-score|exact-score|half-time-result|half-time|second-half-result|second-half|1st-half-result|1st-half|2nd-half-result|2nd-half|match-result|draw-no-bet|double-chance|both-teams-to-score|btts|to-score|team-totals?|alternate-lines?|correct-score|winning-margin|clean-sheet|win-to-nil)(?:-.*)?$/i,"");}
-function extractEmbeddedLiveGames(html){
-  const out=[],seen=new Set();
-  const push=(x)=>{
-    if(!x||typeof x!=="object")return;
-    const [home,away]=gameTeams(x);
-    const score=gameScore(x), minute=gameMinute(x);
-    const slug=t(x.slug||x.eventSlug||x.event_slug||x.gameSlug||x.game_slug);
-    const gameId=t(x.gameId||x.game_id||x.eventId||x.event_id||x.id);
-    if(!home||!away||!validScore(score)||!validMinute(minute))return;
-    const key=[norm(home),norm(away),slug,gameId].join("|");
-    if(seen.has(key))return;
-    seen.add(key);
-    out.push({home,away,score,minute,slug,gameId,raw:x});
-  };
-  const walk=(x,d=0)=>{
-    if(!x||d>7)return;
-    if(Array.isArray(x)){for(const v of x)walk(v,d+1);return;}
-    if(typeof x!=="object")return;
-    push(x);
-    for(const v of Object.values(x))walk(v,d+1);
-  };
-  const scripts=[...String(html||"").matchAll(/<script[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(m=>m[1]);
-  for(const raw of scripts){
-    const txt=raw.trim();
-    if(!txt)continue;
-    try{walk(JSON.parse(txt));}catch{}
-    for(const m of txt.matchAll(/\\{[^{}]{0,12000}(?:homeScore|awayScore|scoreboard|matchClock|elapsed|gameId|eventId)[^{}]{0,12000}\\}/g)){
-      try{walk(JSON.parse(m[0]));}catch{}
-    }
-  }
-  const decoded=String(html||"").replace(/&quot;/g,'"').replace(/&#x27;/g,"'").replace(/&amp;/g,"&");
-  for(const m of decoded.matchAll(/\\{[^{}]{0,16000}(?:homeScore|awayScore|scoreboard|matchClock|elapsed|gameId|eventId)[^{}]{0,16000}\\}/g)){
-    try{walk(JSON.parse(m[0]));}catch{}
-  }
-  return out;
-}
-
 function fixtureLinks(html){
   return hrefs(html).filter(h=>{
     const m=t(h).match(/^\/(?:ru\/)?sports\/([^/?#]+)\/([^/?#]+)(?:\/[^?#]*)?$/i);
@@ -88,17 +28,6 @@ function fixtureLinks(html){
   });
 }
 function isFixtureTitle(x){return /\s(?:vs\.?|v\.?|versus)\s/i.test(t(x))&&!/\s-\s(?:more markets|player props?|total|first team|last team|exact score|half|second half|match result|winner|moneyline)/i.test(t(x));}
-function isKnownSoccerLeague(event){
-  const values=[];
-  for(const k of ["league","leagueSlug","league_slug","seriesSlug","series_slug","sport","sportSlug","sport_slug","category","subcategory"]){
-    if(event?.[k]!=null)values.push(String(event[k]).toLowerCase());
-  }
-  const tags=Array.isArray(event?.tags)?event.tags:parse(event?.tags);
-  if(Array.isArray(tags))for(const z of tags)values.push(String(z?.slug||z?.label||z?.name||z).toLowerCase());
-  const joined=values.join(" ");
-  return /soccer|football|premier league|epl|laliga|la liga|serie a|serie b|bundesliga|ligue 1|ligue 2|mls|nwsl|liga mx|brasileirao|brasileirão|j2 league|j1 league|eredivisie|primeira liga|concacaf|uefa|fifa|superliga|allsvenskan|eliteserien|süper lig|a league|a-league|women's|wsl|premiership|scottish|belgian|danish|greek|croatian|serbian|polish|czech|romanian|bulgarian|slovenian|slovak|hungarian|austrian|swiss|norwegian|sweden|finland|iceland|argentina|colombia|chile|peru|ecuador|uruguay|paraguay|bolivia|venezuela|costa rica|honduras|guatemala|jamaica|el salvador|martinique|nations league/.test(joined);
-}
-
 function isSoccerEvent(event,href=""){
   const h=t(href).toLowerCase();
   // Explicit sport paths are authoritative when they name the sport directly.
@@ -128,20 +57,7 @@ function isSoccerEvent(event,href=""){
   const text=markets.map(m=>t(m?.question||m?.title||m?.groupItemTitle)).join(" ").toLowerCase();
   return /both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance|draw no bet/.test(text);
 }
-function teams(event){
-  const title=t(event?.title||event?.question);
-  const pick=x=>t(typeof x==="string"?x:x?.name||x?.teamName||x?.title||x?.shortName||x?.displayName);
-  const home=pick(event?.homeTeam||event?.home_team||event?.home||event?.homeTeamName||event?.home_team_name);
-  const away=pick(event?.awayTeam||event?.away_team||event?.away||event?.awayTeamName||event?.away_team_name);
-  if(home&&away)return[home,away];
-  const list=Array.isArray(event?.teams)?event.teams:Array.isArray(event?.participants)?event.participants:[];
-  if(list.length>=2){
-    const h=pick(list[0]),a=pick(list[1]);
-    if(h&&a)return[h,a];
-  }
-  const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);
-  return m?[m[1].trim(),m[2].trim()]:["",""];
-}
+function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
 async function fetchPage(url){
   const r=await get(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketLiveSoccerMonitor/1.0)"},timeout:8000});
@@ -149,88 +65,54 @@ async function fetchPage(url){
 }
 
 function gameTeams(g){
-  const sources=[g,g?.game,g?.match,g?.result,g?.data].filter(x=>x&&typeof x==="object");
-  let home="",away="";
-  for(const x of sources){
-    if(!home)home=t(x.homeTeam?.name||x.homeTeam?.teamName||x.homeTeam?.title||x.home_team?.name||x.home_team?.teamName||x.home_team?.title||x.home?.name||x.home?.teamName||x.home?.title||x.homeTeam||x.home_team||x.homeTeamName||x.home_team_name);
-    if(!away)away=t(x.awayTeam?.name||x.awayTeam?.teamName||x.awayTeam?.title||x.away_team?.name||x.away_team?.teamName||x.away_team?.title||x.away?.name||x.away?.teamName||x.away?.title||x.awayTeam||x.away_team||x.awayTeamName||x.away_team_name);
-  }
+  const home=t(g.homeTeam||g.home_team||g.home||g.homeTeamName||g.home_team_name);
+  const away=t(g.awayTeam||g.away_team||g.away||g.awayTeamName||g.away_team_name);
   return [home,away];
 }
-function wsSoccerConfirmed(sg){
-  const league=[sg?.league,sg?.sport,sg?.leagueAbbreviation,sg?.sportSlug].map(t).join(" ").toLowerCase();
-  if(/soccer|football|epl|premier|laliga|la liga|serie a|bundesliga|ligue 1|mls|fifa|uefa/.test(league))return true;
-  if(/^(nba|wnba|nfl|nhl|mlb|ncaa|cfb|ncaab|atp|wta|ufc|mma|cricket|cs2|dota|valorant|lol)$/i.test(t(sg?.leagueAbbreviation)))return false;
-  const period=t(sg?.period).toUpperCase();
-  const elapsed=t(sg?.elapsed);
-  return /^(?:1H|2H|HT)$/.test(period) || /^\d{1,3}:\d{2}$/.test(elapsed);
-}
+function wsSoccerConfirmed(sg){return /soccer|football/i.test([sg?.league,sg?.sport,sg?.leagueAbbreviation,sg?.sportSlug].map(t).join(" "));}
 function gameLive(g){
   const status=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period).toLowerCase();
   return /live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status) || g.live===true || g.isLive===true || g.inPlay===true;
 }
 function gameScore(g){
-  const seen=new Set();
-  function walk(x,depth=0){
-    if(!x||typeof x!=="object"||depth>8||seen.has(x))return null;
-    seen.add(x);
-    if(!Array.isArray(x)){
-      const h=x.homeScore??x.home_score;
-      const aw=x.awayScore??x.away_score;
-      if(h!=null&&aw!=null)return[Number(h),Number(aw)];
-      for(const k of ["score","scores","scoreboard","result","currentScore","resultScore"]){
-        const v=x[k];
-        if(v&&typeof v==="object"&&!Array.isArray(v)){
-          const hh=v.home??v.homeScore??v.home_score??v.homeTeam?.score;
-          const aa=v.away??v.awayScore??v.away_score??v.awayTeam?.score;
-          if(hh!=null&&aa!=null)return[Number(hh),Number(aa)];
-        }
-      }
-      const raw=t(x.score||x.scoreboard||x.currentScore||x.resultScore);
-      const m=raw.match(/^(\d+)\s*[-–:]\s*(\d+)/);
-      if(m)return[Number(m[1]),Number(m[2])];
-    }
-    for(const v of Object.values(x)){
-      const found=walk(v,depth+1);
-      if(found)return found;
-    }
-    return null;
-  }
-  const result=walk(g);
-  return result&&result.every(Number.isFinite)?result:null;
+  const h=g.homeScore??g.home_score??g.score?.home??g.score?.homeScore??g.scores?.home??g.scores?.homeScore??g.home?.score??g.home?.score?.current??g.homeTeam?.score??g.homeTeam?.score?.current??g.scoreboard?.home?.score??g.scoreboard?.homeScore;
+  const a=g.awayScore??g.away_score??g.score?.away??g.score?.awayScore??g.scores?.away??g.scores?.awayScore??g.away?.score??g.away?.score?.current??g.awayTeam?.score??g.awayTeam?.score?.current??g.scoreboard?.away?.score??g.scoreboard?.awayScore;
+  return h!=null&&a!=null?[h,a]:null;
 }
 function gameMinute(g){
-  const seen=new Set();
-  function walk(x,depth=0){
-    if(!x||typeof x!=="object"||depth>8||seen.has(x))return "";
-    seen.add(x);
-    if(!Array.isArray(x)){
-      for(const [k,v] of Object.entries(x)){
-        if(/^(minute|matchMinute|elapsed|elapsedTime|matchClock|liveClock|periodTime|clock|clockMinute|matchClockMinutes)$/i.test(k)){
-          if(typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=130)return Math.floor(v)+"'";
-          const str=t(v);
-          const m=str.match(/^(\d{1,3})(?:[:.]\d{1,2})?(?:\s*min)?(?:ute)?(?:[′']|$)/i);
-          if(m){const n=Number(m[1]);if(n>=0&&n<=130)return n+"'";}
-        }
-      }
-    }
-    for(const v of Object.values(x)){
-      const found=walk(v,depth+1);
-      if(found)return found;
-    }
-    return "";
-  }
-  return walk(g);
+  return t(g.minute||g.matchMinute||g.elapsed||g.clock||g.time||g.gameTime||g.periodTime||g.matchClock||g.liveClock||g.clock?.display||g.clock?.minute||g.period?.minute);
 }
-function pageGameSnapshot(){ return null; }
+function pageGameSnapshot(html, home, away, startValue){
+  const raw=decode(html)
+    .replace(/<script[\s\S]*?<\/script>/gi," ")
+    .replace(/<style[\s\S]*?<\/style>/gi," ")
+    .replace(/<[^>]+>/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+  const h=t(home),a=t(away);
+  const hi=raw.toLowerCase().indexOf(h.toLowerCase());
+  if(hi<0)return null;
+  const window=raw.slice(Math.max(0,hi-500),Math.min(raw.length,hi+1200));
+  const ai=window.toLowerCase().indexOf(a.toLowerCase());
+  if(ai<0)return null;
+  const between=window.slice(0,ai+h.length);
+  const scoreMatches=[...between.matchAll(/(?:^|\s)(\d{1,3})\s*[-–:]\s*(\d{1,3})(?:\s|$)/g)];
+  const score=scoreMatches.length? [Number(scoreMatches.at(-1)[1]),Number(scoreMatches.at(-1)[2])] : null;
+  const minuteMatch=window.match(/(?:^|\s)(\d{1,3})[′']/);
+  let minute=minuteMatch?minuteMatch[1]+"'" :"";
+  if(!minute){
+    const start=Date.parse(startValue||"");
+    if(Number.isFinite(start)&&start<=Date.now()){
+      const mins=Math.floor((Date.now()-start)/60000);
+      if(mins>=0&&mins<=130)minute=Math.min(mins,120)+"'";
+    }
+  }
+  return {score,minute};
+}
 function attachGame(x,g){
   x.game=g;
-  const sc=gameScore(g);
-  if(validScore(sc)){
-    x.score=orientGame(x,g)==="reversed"?[Number(sc[1]),Number(sc[0])]:[Number(sc[0]),Number(sc[1])];
-  }
-  const minute=gameMinute(g);
-  if(validMinute(minute))x.minute=minute;
+  const sc=gameScore(g); if(sc)x.score=sc;
+  x.minute=gameMinute(g);
   x.gameStatus=t(g.status||g.gameStatus||g.liveStatus||g.state||g.phase||g.period);
 }
 async function fetchLiveSports(){
@@ -241,74 +123,40 @@ async function fetchLiveSports(){
     let timer;
     try{
       ws=new WebSocket("wss://sports-api.polymarket.com/ws");
-      const finish=()=>{
-        if(timer){clearTimeout(timer);timer=null;}
-        try{ws.close()}catch{}
-        resolve(live);
-      };
-      timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
-      ws.onopen=()=>{
-        console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
-        // The Sports WS sends ping frames/messages every few seconds. Keep the
-        // connection alive long enough to receive the initial sport_result batch.
-        clearTimeout(timer);
-        timer=setTimeout(finish,SPORTS_WS_TIMEOUT_MS);
-      };
+      timer=setTimeout(()=>{try{ws.close()}catch{};resolve(live)},SPORTS_WS_TIMEOUT_MS);
+      ws.onopen=()=>console.log(JSON.stringify({level:"INFO",event:"sports_ws_open"}));
       ws.onerror=(e)=>console.log(JSON.stringify({level:"WARN",event:"sports_ws_error",message:String(e?.message||"websocket error")}));
       ws.onclose=(e)=>{console.log(JSON.stringify({level:"INFO",event:"sports_ws_close",code:e?.code??null}));clearTimeout(timer);resolve(live)};
       ws.onmessage=(ev)=>{
         const raw=typeof ev.data==="string"?ev.data:"";
-        if(raw==="ping"){
-          try{ws.send("pong")}catch{}
-          return;
-        }
-        let parsed; try{parsed=JSON.parse(raw)}catch{return;}
-        // Sports WS may deliver one result, a batch, or a wrapper around data.
-        const messages=Array.isArray(parsed)?parsed:
-          (Array.isArray(parsed?.data)?parsed.data:
-           Array.isArray(parsed?.results)?parsed.results:[parsed]);
-        for(const m0 of messages){
-          const m=(m0&&typeof m0==="object")?m0:{};
-          const type=t(m?.type||m?.event_type);
-          const p0=m?.payload&&typeof m.payload==="object"&&!Array.isArray(m.payload)?m.payload:m;
-          const p={...m,...p0};
+        if(raw==="ping"){try{ws.send("pong")}catch{};return;}
+        let m; try{m=JSON.parse(raw)}catch{return;}
+        const type=t(m?.type||m?.event_type);
+        const p=m?.payload&&typeof m.payload==="object"?m.payload:m;
         const league=t(p?.leagueAbbreviation||p?.league||p?.sport||p?.sportSlug).toLowerCase();
         const status=t(p?.status||p?.gameStatus||p?.state).toLowerCase();
-        const period=t(p?.period).toUpperCase();
-        const elapsed=t(p?.elapsed);
-        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout|live/.test(status)||
-          /^(?:1H|2H|HT)$/.test(period)||/^\d{1,3}:\d{2}$/.test(elapsed)||type==="sport_result";
-        // Do not require league/period fields to classify a sport_result.
-        // The Gamma event + fixture matching below performs the soccer gate.
+        const liveFlag=p?.live===true||p?.isLive===true||/inprogress|in.?play|playing|break|halftime|penaltyshootout/.test(status);
         if(type&&type!=="sport_result"&&!liveFlag)return;
+        if(!/soccer|football/.test(league))return;
         if(p?.ended===true||/final|finished|cancel|postponed|awarded/.test(status))return;
         if(!liveFlag)return;
-        if(live.length<3) console.log(JSON.stringify({level:"DEBUG",event:"sports_ws_payload",type,league,status,keys:Object.keys(p||{}),gameId:p?.gameId||p?.id||null,slug:p?.slug||null,home:p?.homeTeam||p?.home_team||p?.home||null,away:p?.awayTeam||p?.away_team||p?.away||null,score:p?.score||p?.scores||p?.scoreboard||null,period:p?.period||null,elapsed:p?.elapsed||null,live:p?.live??null,isLive:p?.isLive??null}));
         const gameId=t(p?.gameId||p?.id);
         const slug=t(p?.slug);
-        const [home,away]=gameTeams(p);
-        const score=gameScore(p);
-        const minute=gameMinute(p);
-        if(!gameId&&!slug||!home||!away){
-          if(type==="sport_result"&&live.length<10)console.log(JSON.stringify({
-            level:"DEBUG",event:"sports_ws_reject_missing_identity",
-            gameId:gameId||null,slug:slug||null,teams:[home,away],score,minute,
-            keys:Object.keys(p||{})
-          }));
-          return;
-        }
+        const home=t(p?.homeTeam||p?.home_team||p?.home);
+        const away=t(p?.awayTeam||p?.away_team||p?.away);
+        if(!gameId&&!slug||!home||!away)return;
         const key=gameId||slug;
-        const existing=live.find(x=>(x.gameId&&gameId&&x.gameId===gameId)||(x.slug&&slug&&x.slug===slug));
-        if(existing){
-          existing.status=p?.status||existing.status||"InProgress";
-          existing.period=t(p?.period)||existing.period;
-          existing.elapsed=t(p?.elapsed)||existing.elapsed;
-          if(score)existing.score=score;
-          if(minute)existing.minute=minute;
-        }else{
-          live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),minute,score});
+        if(seen.has(key))return;
+        seen.add(key);
+        let score=null;
+        const s=p?.score;
+        if(typeof s==="string"){
+          const mm=s.match(/^(\d+)\s*[-–:]\s*(\d+)/); if(mm)score=[Number(mm[1]),Number(mm[2])];
+        } else if(s&&typeof s==="object"){
+          const h=s.home??s.homeScore??s.home_score, a=s.away??s.awayScore??s.away_score;
+          if(h!=null&&a!=null)score=[h,a];
         }
-        }
+        live.push({gameId,slug,home,away,status:p?.status||"InProgress",period:t(p?.period),elapsed:t(p?.elapsed),score});
       };
     }catch(e){
       clearTimeout(timer); console.log(JSON.stringify({level:"WARN",event:"sports_ws_init_failed",message:e.message}));resolve(live);
@@ -318,194 +166,82 @@ async function fetchLiveSports(){
 
 async function fetchLiveEvents(){
   const all=[];
-  const seenRaw=new Set();
-  async function load(url){
+  for(let offset=0;offset<2000;offset+=500){
     try{
-      const raw=await json(url,{timeout:8000});
+      const raw=await json(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset,{timeout:8000});
       const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
-      if(Array.isArray(batch))all.push(...batch);
-      return batch.length;
+      if(!Array.isArray(batch)||batch.length===0)break;
+      all.push(...batch);
+      if(batch.length<500)break;
     }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",url,message:e.message}));
-      return 0;
+      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",offset,message:e.message}));
+      break;
     }
   }
-
-  // Gamma exposes a dedicated live filter. Use it as the authoritative
-  // discovery gate instead of inferring LIVE from startDate/status fields.
-  await load(GAMMA+"/events?live=true&active=true&closed=false&limit=500");
-  if(all.length===0){
-    for(let offset=0;offset<2000;offset+=500){
-      const n=await load(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset);
-      if(n<500)break;
-    }
-  }
-
+  const seen=new Set();
   const live=[];
   for(const e of all){
     const id=t(e.id||e.slug);
-    if(!id||seenRaw.has(id))continue;
-    const fixture=teams(e);
-    if(!isSoccerEvent(e,"")&&!isKnownSoccerLeague(e)&&!(fixture[0]&&fixture[1]))continue;
-    seenRaw.add(id);
-    if(e.ended===true||e.finished===true||e.final===true)continue;
+    if(!id||seen.has(id)||!isSoccerEvent(e,""))continue;
+    seen.add(id);
+    if(!eventLiveWindow(e))continue;
     const [home,away]=teams(e);
     if(!home||!away)continue;
-    const score=gameScore(e);
-    const minute=gameMinute(e);
     live.push({
-      id:t(e.id),gameId:t(e.gameId||e.game_id),
-      slug:t(e.slug),homeTeam:home,awayTeam:away,
+      id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
+      homeTeam:home,awayTeam:away,
       status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
-      live:true,score,minute,event:e
+      live:true,event:e
     });
   }
-  console.log(JSON.stringify({level:"INFO",event:"gamma_live_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
+  console.log(JSON.stringify({level:"INFO",event:"gamma_active_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
   return live;
-}
-function liveHrefForTeams(home,away,links){
-  const nh=norm(home), na=norm(away);
-  if(!nh||!na)return "";
-  for(const href of links||[]){
-    const slug=fixtureSlug(href);
-    if(!slug)continue;
-    const parts=slug.replace(/^.*\//,"").split("-");
-    const joined=norm(slug);
-    if(joined.includes(nh)&&joined.includes(na))return href;
-  }
-  return "";
-}
-
-function teamMatch(a,b){
-  const x=norm(a),y=norm(b);
-  if(!x||!y)return false;
-  if(x===y)return true;
-  const ax=new Set(x.split(" ").filter(Boolean)), by=new Set(y.split(" ").filter(Boolean));
-  const common=[...ax].filter(v=>by.has(v));
-  const ratio=common.length/Math.max(1,Math.min(ax.size,by.size));
-  return ratio>=0.75 && (x.includes(y)||y.includes(x)||ratio>=0.8);
 }
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
-  const direct=teamMatch(nx,nh)&&teamMatch(ny,na);
-  const reversed=teamMatch(nx,na)&&teamMatch(ny,nh);
-  return (gh&&ga&&(direct||reversed)) ||
-    t(g.eventId||g.event_id)===x.eventId ||
-    t(g.eventSlug||g.event_slug||g.slug)===x.slug;
-}
-function orientGame(x,g){
-  const [gh,ga]=gameTeams(g);
-  return norm(gh)===norm(x.away)&&norm(ga)===norm(x.home)?"reversed":"direct";
-}
-function validScore(score){
-  return Array.isArray(score)&&score.length===2&&score.every(v=>Number.isInteger(Number(v))&&Number(v)>=0&&Number(v)<=99);
-}
-function validMinute(minute){
-  return /^\d{1,3}'$/.test(t(minute))&&Number(t(minute).slice(0,-1))>=0&&Number(t(minute).slice(0,-1))<=130;
+  return (gh&&ga&&((nh===nx&&na===ny)||(nh===ny&&na===nx))) || t(g.eventId||g.event_id)===x.eventId || t(g.eventSlug||g.event_slug||g.slug)===x.slug;
 }
 
 function eventLiveWindow(event){
   const now=Date.now();
+  const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
+  if(event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status))return true;
   if(event.ended===true||event.finished===true||event.final===true)return false;
-
-  // The Polymarket live page can mark a fixture "live" before kickoff.
-  // Never trust that flag to override the actual fixture start time.
   const start=Date.parse(event.gameStartTime||event.game_start_time||event.startTime||event.start_time||event.eventStartTime||event.event_start_time||"");
   const end=Date.parse(event.gameEndTime||event.game_end_time||event.matchEndTime||event.match_end_time||"");
-
-  // If an authoritative kickoff timestamp exists, it is a hard lower bound.
-  // This prevents stale WS minute/score data (e.g. 53') from leaking into
-  // a match that has not actually started yet.
-  if(Number.isFinite(start)&&start>now)return false;
-  if(Number.isFinite(end)&&end<now)return false;
-
-  const status=t(event.status||event.gameStatus||event.liveStatus||event.period||event.phase).toLowerCase();
-  const explicitLive=event.live===true||event.isLive===true||event.inPlay===true||/live|in.?play|playing|1h|2h|halftime|half time|extra|stoppage/.test(status);
-  if(explicitLive)return true;
-
-  // Without a kickoff timestamp we refuse to infer LIVE from market lifecycle.
-  return Number.isFinite(start)&&start<=now;
+  // For sports, startDate/endDate may describe market lifecycle rather than kickoff.
+  // gameStartTime/startTime are the actual fixture start fields.
+  if(Number.isFinite(start)&&start<=now){
+    return !Number.isFinite(end)||end>=now;
+  }
+  return false;
 }
 
 async function discover(){
   const [liveHtml,soccerHtml,liveEvents]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE),fetchLiveEvents()]);
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
-  const embeddedLive=extractEmbeddedLiveGames(liveHtml);
   const sportsLive=await fetchLiveSports();
-  console.log(JSON.stringify({
-    level:"INFO",event:"DISCOVERY_RAW_SOURCES",
-    livePageLinks:liveLinks.length,soccerPageLinks:soccerLinks.length,
-    embeddedLiveGames:embeddedLive.length,gammaLiveEvents:liveEvents.length,sportsWsGames:sportsLive.length
-  }));
-  console.log(JSON.stringify({
-    level:"INFO",event:"POLYMARKET_LIVE_PAGE_GAMES",
-    count:embeddedLive.length,
-    games:embeddedLive.slice(0,20).map(g=>({slug:g.slug,gameId:g.gameId,teams:[g.home,g.away],score:g.score,minute:g.minute}))
-  }));
   console.log(JSON.stringify({level:"INFO",event:"sports_ws_snapshot",count:sportsLive.length,matches:sportsLive.map(x=>({gameId:x.gameId,slug:x.slug,teams:[x.home,x.away],status:x.status,period:x.period,elapsed:x.elapsed,score:x.score}))}));
   console.log(JSON.stringify({level:"INFO",event:"source_scan",liveHtmlBytes:liveHtml.length,soccerHtmlBytes:soccerHtml.length,liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,liveSample:liveLinks.slice(0,5),soccerSample:soccerLinks.slice(0,5),liveEvents:liveEvents.length}));
   const soccerHrefs=new Set(soccerLinks);
   const soccerSlugs=new Set(soccerLinks.map(fixtureSlug).filter(Boolean));
   const candidates=[],seen=new Set();
-  console.log(JSON.stringify({
-    level:"INFO",
-    event:"LIVE_DATA_CAPABILITY",
-    message:"Polymarket live page + Gamma live events + Sports WS are processed; score/minute are reconciled before alert"
-  }));
 
   async function addEvent(event,href,liveConfirmed=false,sourceConfirmed=false){
     const rawTitle=t(event?.title||event?.question);
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
-    if(!sourceConfirmed&&!liveConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
+    if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const ended=event.ended===true||event.finished===true||event.final===true;
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
-    // Team fields can be nested/structured; the parsed fixture pair above is
-    // sufficient. Do not reject a real Gamma event merely because homeTeam/awayTeam
-    // are not flat strings or the title is not formatted as "A vs B".
-    if(!isFixtureTitle(rawTitle)&&!(home&&away)){
-      console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle,teams:[home,away]}));
-      return;
-    }
-    // Gamma kickoff timestamps can lag/lead the live Sports feed. If the
-    // authoritative Sports WS/Gamma-live record already contains BOTH a valid
-    // score and a valid match minute, that is stronger live evidence than a
-    // stale future kickoff field. Future events without those live facts remain blocked.
-    let authoritativeLive=false;
-    if(liveConfirmed){
-      // LIVE-confirmed Gamma events may already carry the score/clock. Do not
-      // require a second identity match before accepting those authoritative facts.
-      const eventScore=gameScore(event);
-      const eventMinute=gameMinute(event);
-      const auth=liveEvents.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g))||
-                 sportsLive.find(g=>matchGame({home,away,eventId:t(event.id),slug:t(event.slug)},g));
-      authoritativeLive=
-        (validScore(eventScore)&&validMinute(eventMinute)) ||
-        (!!auth&&validScore(gameScore(auth))&&validMinute(gameMinute(auth)));
-    }
-    // /sports/live is itself the explicit LIVE gate. Do not let a stale,
-    // missing, or delayed Gamma kickoff timestamp veto a fixture that is
-    // currently present on the live page.
-    if(!liveConfirmed&&!eventLiveWindow(event)&&!authoritativeLive){
-      console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.gameStartTime||event.startDate,end:event.gameEndTime||event.endDate,status:event.status,liveConfirmed,authoritativeLive}));
-      return;
-    }
-    if(authoritativeLive)console.log(JSON.stringify({level:"INFO",event:"LIVE_WINDOW_OVERRIDDEN_BY_AUTHORITATIVE_SCORE_CLOCK",eventId:event.id,title:rawTitle}));
+    if(!isFixtureTitle(rawTitle)&&!(event.homeTeam&&event.awayTeam)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
+    if(!liveConfirmed&&!eventLiveWindow(event)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_live_window",eventId:event.id,title:rawTitle,start:event.startDate,end:event.endDate,status:event.status}));return;}
     if(ended){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"ended",eventId:event.id,title:rawTitle}));return;}
     const slug=t(event.slug)||fixtureSlug(href||"");
     if(!slug||seen.has(slug)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_or_duplicate_slug",eventId:event.id,title:rawTitle,slug}));return;}
     seen.add(slug);
     const item={eventId:t(event.id),slug,url:href?("https://polymarket.com"+href):("https://polymarket.com/event/"+slug),home,away,event};
-    const eventScore=gameScore(event);
-    const eventMinute=gameMinute(event);
-    if(validScore(eventScore))item.score=eventScore;
-    if(validMinute(eventMinute))item.minute=eventMinute;
-    // If this candidate came from the authoritative live source, carry its
-    // score/clock immediately. This prevents the later Gamma refresh from
-    // becoming the first place where live facts are attached.
-    const sourceGame=liveEvents.find(g=>matchGame(item,g))||sportsLive.find(g=>matchGame(item,g));
-    if(sourceGame)attachGame(item,sourceGame);
     const game=liveEvents.find(g=>matchGame(item,g));
     const wsGame=sportsLive.find(g=>matchGame(item,g));
     if(game)attachGame(item,game);
@@ -514,45 +250,15 @@ async function discover(){
       item.gameStatus=t(event.gameStatus||event.status||"LIVE")||"LIVE";
       const sc=gameScore(event); if(sc)item.score=sc;
       item.minute=gameMinute(event);
+      const pageSnap=pageGameSnapshot(liveHtml,home,away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
+      if(pageSnap){
+        if(pageSnap.score)item.score=pageSnap.score;
+        if(pageSnap.minute)item.minute=pageSnap.minute;
+        item.pageGameSnapshot=pageSnap;
+      }
     }
     candidates.push(item);
     console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATE",slug:item.slug,eventId:item.eventId,teams:[item.home,item.away],status:item.gameStatus,minute:item.minute??null,score:item.score??null,source:sourceConfirmed?"sports_ws":"page_or_gamma"}));
-  }
-
-  // Primary live page reconciliation: the /sports/live page already contains
-  // the fixture's authoritative score and clock. Resolve each fixture to Gamma
-  // and use those facts directly instead of depending on WS identity fields.
-  for(const pg of embeddedLive){
-    try{
-      let event=null;
-      if(pg.slug){
-        const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(pg.slug),{timeout:5000}).catch(()=>null);
-        event=Array.isArray(raw)?raw[0]:raw;
-      }
-      if(!event){
-        const href=liveHrefForTeams(pg.home,pg.away,liveLinks);
-        const slug=fixtureSlug(href);
-        if(slug){
-          const raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000}).catch(()=>null);
-          event=Array.isArray(raw)?raw[0]:raw;
-          if(event)pg.slug=t(event.slug)||slug;
-        }
-      }
-      if(event){
-        await addEvent(event,liveHrefForTeams(pg.home,pg.away,liveLinks)||null,true,true);
-        const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug)||teamMatch(x.home,pg.home)&&teamMatch(x.away,pg.away));
-        if(item){
-          item.score=pg.score;
-          item.minute=pg.minute;
-          item.gameStatus="InProgress";
-          item.livePageGame=pg;
-        }
-      }else{
-        console.log(JSON.stringify({level:"DEBUG",event:"LIVE_PAGE_GAME_NO_GAMMA_EVENT",teams:[pg.home,pg.away],slug:pg.slug,gameId:pg.gameId}));
-      }
-    }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"LIVE_PAGE_GAME_RESOLVE_FAILED",teams:[pg.home,pg.away],message:e.message}));
-    }
   }
 
   // Primary live source: Polymarket Sports WebSocket. It provides actual kickoff/status/score.
@@ -576,30 +282,11 @@ async function discover(){
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
         if(item){
           item.gameStatus=sg.status||"InProgress";
-          if(validMinute(sg.minute)) item.minute=sg.minute;
+          item.minute=sg.elapsed||sg.period||item.minute;
           if(sg.score)item.score=sg.score;
           item.sportsGame=sg;
         }
-      } else {
-        // WS slugs/gameIds are not always Gamma event identifiers. When direct
-        // Gamma lookup fails, resolve the authoritative LIVE-page fixture by
-        // the WS team names before giving up.
-        const liveHref=liveHrefForTeams(sg.home,sg.away,liveLinks);
-        if(liveHref){
-          const liveSlug=fixtureSlug(liveHref);
-          try{
-            const rr=await json(GAMMA+"/events?slug="+encodeURIComponent(liveSlug),{timeout:5000});
-            const liveEvent=Array.isArray(rr)?rr[0]:rr;
-            if(liveEvent){
-              console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_WS_TEAMS",gameId:sg.gameId,wsSlug:sg.slug,liveHref,liveSlug,eventId:liveEvent.id,title:liveEvent.title||liveEvent.question}));
-              await addEvent(liveEvent,liveHref,true,true);
-              const item=candidates.find(x=>x.eventId===t(liveEvent.id)||x.slug===t(liveEvent.slug));
-              if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
-            }
-          }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_team_fixture_lookup_failed",gameId:sg.gameId,liveHref,message:e.message}));}
-        }
-        if(candidates.some(x=>x.eventId===t(event?.id)||x.slug===t(event?.slug)))continue;
-        if(sg.gameId){
+      } else if(sg.gameId){
         try{
           const ms=await json(GAMMA+"/markets?game_id="+encodeURIComponent(sg.gameId)+"&active=true&closed=false&limit=100",{timeout:5000});
           const markets=Array.isArray(ms)?ms:(ms?.data||[]);
@@ -611,7 +298,7 @@ async function discover(){
               console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_BY_GAME_ID",gameId:sg.gameId,eventId:eventId,title:event2?.title||event2?.question,markets:markets.length}));
               await addEvent(event2,null,true,true);
               const item=candidates.find(x=>x.eventId===eventId||x.slug===t(event2.slug));
-              if(item){item.gameStatus=sg.status||"InProgress";if(validMinute(sg.minute))item.minute=sg.minute;if(validScore(sg.score))item.score=sg.score;item.sportsGame=sg;}
+              if(item){item.gameStatus=sg.status||"InProgress";item.minute=sg.elapsed||sg.period||item.minute;if(sg.score)item.score=sg.score;item.sportsGame=sg;}
             }
           }
         }catch(e){console.log(JSON.stringify({level:"WARN",event:"sports_ws_game_id_lookup_failed",gameId:sg.gameId,message:e.message}));}
@@ -639,13 +326,8 @@ async function discover(){
       if(event){
         await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
-        if(item){
-          if(validScore(g.score))item.score=g.score;
-          if(validMinute(g.minute))item.minute=g.minute;
-          item.gameStatus=g.status||"InProgress";
-          attachGame(item,g);
-        }
-        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_EVENT",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question,score:g.score??null,minute:g.minute??null}));
+        if(item)attachGame(item,g);
+        console.log(JSON.stringify({level:"INFO",event:"GAMMA_MATCH_FOUND_FROM_LIVE_EVENT",gameId:gameId,slug:gameSlug,eventId:event.id,title:event.title||event.question}));
       } else {
         console.log(JSON.stringify({level:"WARN",event:"LIVE_EVENT_LOOKUP_FAILED",gameId:gameId,slug:gameSlug,teams:gameTeams(g)}));
       }
@@ -674,6 +356,14 @@ async function discover(){
       const before=candidates.length;
       await addEvent(event,href,true,false);
       const pageItem=candidates.find(x=>x.slug===slug||x.eventId===t(event.id));
+      if(pageItem){
+        const snap=pageGameSnapshot(liveHtml,pageItem.home,pageItem.away,event.gameStartTime||event.game_start_time||event.startTime||event.start_time);
+        if(snap){
+          if(snap.score)pageItem.score=snap.score;
+          if(snap.minute)pageItem.minute=snap.minute;
+          pageItem.pageGameSnapshot=snap;
+        }
+      }
       if(candidates.length>before){
         pageLiveResolved++;
         console.log(JSON.stringify({level:"INFO",event:"LIVE_PAGE_CANDIDATE",href,slug,eventId:event.id,title:event.title||event.question}));
@@ -695,7 +385,6 @@ async function discover(){
   }
 
   console.log(JSON.stringify({level:"INFO",event:"discovery",liveLinks:liveLinks.length,soccerLinks:soccerLinks.length,soccerIntersection:candidates.length,matches:candidates.map(x=>({slug:x.slug,home:x.home,away:x.away,minute:x.minute,score:x.score,status:x.gameStatus,hasGame:!!x.game,source:x.game?"gamma_games":"gamma_event"}))}));
-  console.log(JSON.stringify({level:"INFO",event:"ALERT_PIPELINE_READY",candidates:candidates.length,telegramConfigured:!!process.env.TELEGRAM_BOT_TOKEN&&!!process.env.TELEGRAM_CHAT_ID}));
   if(candidates.length>0)console.log(JSON.stringify({level:"INFO",event:"LIVE_CANDIDATES_READY",count:candidates.length,matches:candidates.map(x=>({slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null}))}));
   if(candidates.length===0){
     console.log(JSON.stringify({level:"ERROR",event:"NO_LIVE_CANDIDATES",diagnostic:"No soccer candidate survived discovery. Check gamma_active_events_scan, sports_ws_snapshot and candidate_reject records above."}));
@@ -795,47 +484,26 @@ async function sendTelegram(message,replyMarkup=null){
   throw new Error("Telegram rate limit persisted after retries");
 }
 
-const DEDUPE_DIR = process.env.DEDUPE_DIR || "/data";
-const DEDUPE_FILE = path.join(DEDUPE_DIR, "polymarket-soccer-alerts.json");
+const DEFAULT_CONVEX_SITE_URL="https://brainy-canary-207.eu-west-1.convex.site";
 
-function loadDedupe(){
-  try{
-    const raw=fs.readFileSync(DEDUPE_FILE,"utf8");
-    const parsed=JSON.parse(raw);
-    return new Set(Array.isArray(parsed)?parsed.filter(v=>typeof v==="string"):[]);
-  }catch{return new Set();}
+async function convexMutation(path,args){
+  const siteUrl=t(process.env.CONVEX_SITE_URL||DEFAULT_CONVEX_SITE_URL);
+  const convexUrl=siteUrl.replace(/\\.convex\\.site$/,".convex.cloud");
+  const r=await fetch(convexUrl+"/api/mutation",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({path,args,format:"json"}),
+    signal:AbortSignal.timeout(8000)
+  });
+  if(!r.ok)throw new Error("Convex "+path+" HTTP "+r.status);
+  return r.json();
 }
-function saveDedupe(set){
-  fs.mkdirSync(DEDUPE_DIR,{recursive:true});
-  const tmp=DEDUPE_FILE+".tmp";
-  fs.writeFileSync(tmp,JSON.stringify([...set]),"utf8");
-  fs.renameSync(tmp,DEDUPE_FILE);
-}
-const persistentAlerted=loadDedupe();
-console.log(JSON.stringify({
-  level:"INFO",
-  event:"DEDUPE_STATE",
-  file:DEDUPE_FILE,
-  entries:persistentAlerted.size
-}));
 
 // Persistent dedupe: the exact Polymarket event URL is the identity.
-// The file lives on Deplexo's persistent /data volume and survives restarts.
-async function claimFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\\/$/,"");
-  if(!key)return false;
-  if(persistentAlerted.has(key))return false;
-  persistentAlerted.add(key);
-  saveDedupe(persistentAlerted);
-  return true;
-}
-
-async function releaseFootballMatch(eventUrl){
-  const key=t(eventUrl).replace(/\\/$/,"");
-  if(!key)return;
-  persistentAlerted.delete(key);
-  saveDedupe(persistentAlerted);
-}
+// Once a URL is successfully claimed, every later cycle/run is blocked,
+// regardless of score, minute, alert phase, or slug changes.
+async function claimFootballMatch(eventUrl){ return true; }
+async function releaseFootballMatch(eventUrl){}
 
 const alerted=new Set();
 const alerting=new Set();
@@ -853,16 +521,6 @@ async function refreshEvent(x){
   }
   if(fresh)x.event=fresh;
   if(!x.event)return null;
-
-  // Keep the authoritative live score/clock already attached to the candidate.
-  // Gamma refresh is only for current markets/event metadata and must not erase
-  // live Sports WS facts.
-  const preservedScore=x.score;
-  const preservedMinute=x.minute;
-  const preservedStatus=x.gameStatus;
-  if(preservedScore)x.score=preservedScore;
-  if(preservedMinute)x.minute=preservedMinute;
-  if(preservedStatus)x.gameStatus=preservedStatus;
 
   // Never query /markets globally here: some Gamma deployments ignore event_id
   // and can return unrelated markets. Use only markets embedded in this event,
@@ -887,20 +545,6 @@ async function cycle(){
     try{
       await refreshEvent(x);
       console.log(JSON.stringify({level:"INFO",event:"CANDIDATE_BEFORE_CLAIM",slug:x.slug,teams:[x.home,x.away],status:x.gameStatus,minute:x.minute??null,score:x.score??null,markets:Array.isArray(x.event?.markets)?x.event.markets.length:0}));
-      // LIVE status is decided by the live-page/live-feed gate, not by
-      // whether score/clock parsing happened to succeed. Score and minute are
-      // enriched when available; missing values must never suppress the first
-      // LIVE alert.
-      if(!validScore(x.score)||!validMinute(x.minute)){
-        console.log(JSON.stringify({
-          level:"INFO",
-          event:"live_alert_without_complete_score_clock",
-          eventId:id,
-          slug:x.slug,
-          minute:x.minute??null,
-          score:x.score??null
-        }));
-      }
       const claimAllowed=await claimFootballMatch(id);
       console.log(JSON.stringify({level:"INFO",event:claimAllowed?"CLAIM_ALLOWED":"CLAIM_BLOCKED",eventId:id,slug:x.slug}));
       if(!claimAllowed){ console.log(JSON.stringify({level:"INFO",event:"duplicate_suppressed",eventId:id,slug:x.slug})); continue; }
@@ -913,7 +557,7 @@ async function cycle(){
         }
         alerted.add(id);
       } catch(e) {
-        try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"dedupe_release_failed",eventId:id,slug:x.slug,message:re.message})); }
+        try { await releaseFootballMatch(id); } catch(re) { console.log(JSON.stringify({level:"ERROR",event:"convex_release_failed",eventId:id,slug:x.slug,message:re.message})); }
         throw e;
       }
       console.log(JSON.stringify({level:"INFO",event:"TELEGRAM_SENT",eventId:id,slug:x.slug,teams:[x.home,x.away]}));
@@ -926,12 +570,11 @@ async function main(){
   const deadline=Date.now()+RUN_MS; let cycles=0;
   while(!stopping&&Date.now()<deadline&&cycles<MAX_CYCLES){const started=Date.now();try{await cycle()}catch(e){console.log(JSON.stringify({level:"ERROR",event:"cycle_failed",message:e.message}))}cycles++;console.log(JSON.stringify({event:"cycle_complete",cycle:cycles,elapsedMs:Date.now()-started}));if(cycles>=MAX_CYCLES)break;await new Promise(r=>setTimeout(r,Math.max(250,Math.min(POLL_MS,deadline-Date.now()))));}
   console.log(JSON.stringify({event:"monitor_exit",cycles}));
-  try{healthServer?.close()}catch{}
 }
-process.on("SIGTERM",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGTERM"}));stopping=true});
-process.on("SIGINT",()=>{console.log(JSON.stringify({level:"INFO",event:"shutdown_signal",signal:"SIGINT"}));stopping=true});
-process.on("uncaughtException",e=>console.log(JSON.stringify({level:"ERROR",event:"uncaught_exception",name:e?.name,message:e?.message,stack:e?.stack})));
-process.on("unhandledRejection",e=>console.log(JSON.stringify({level:"ERROR",event:"unhandled_rejection",message:e?.message||String(e),stack:e?.stack})));
-console.log(JSON.stringify({level:"INFO",event:"startup_bootstrap",node:process.version,pid:process.pid,port:Number(process.env.PORT||3000)}));
-main().catch(e=>console.log(JSON.stringify({level:"ERROR",event:"main_failed",name:e?.name,message:e?.message,stack:e?.stack})));
+process.on("SIGTERM",()=>stopping=true);process.on("SIGINT",()=>stopping=true);main().catch(e=>{console.error(e);process.exitCode=1});
 
+// DIAGNOSTIC_RUN_TRIGGER
+// FORCE_DIAGNOSTIC_TRIGGER_2026_09_26
+// DIAGNOSTIC_RUN
+// DIAGNOSTIC_TRIGGER_2
+// DIAGNOSTIC_RUN
