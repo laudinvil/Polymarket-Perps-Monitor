@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:12:13.786Z",
+  "updatedAt": "2026-09-27T15:12:16.334Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328535144",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2113,
   "telemetry": {
     "startedAt": "2026-09-27T15:09:54.105Z",
-    "events": 854,
+    "events": 856,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712148",
+  "matchId": "1700704",
   "teams": [
-    "XI Esport",
-    "OldMix"
+    "Bounty Hunters Esports",
+    "Galorys"
   ],
-  "status": "not_started",
+  "status": "running",
   "seriesScore": [
-    0,
-    0
+    1,
+    1
   ],
   "candidates": 90,
   "diagnostics": {
@@ -29,11 +29,11 @@
     "upcoming": 100,
     "running": 9,
     "bo3": 90,
-    "skippedFuture": 0,
-    "missingTeams": 4,
+    "skippedFuture": 48,
+    "missingTeams": 11,
     "polyEvents": 224,
     "matchedPoly": 22,
-    "noPolyMatch": 9,
+    "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
