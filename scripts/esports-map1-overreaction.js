@@ -70,10 +70,59 @@ const polyPriceCache=new Map();async function marketPrices(poly){if(!poly?.marke
 function identifySides(prices,teamA,teamB){const pa=prices.find(x=>sim(x.name,teamA)>=.5),pb=prices.find(x=>sim(x.name,teamB)>=.5);return{a:pa||prices[0],b:pb||prices[1]};}
 async function psLives(){try{return await psPaged("/lives",3)}catch(e){log("PANDASCORE_LIVES_ERROR",{error:String(e)});return[];}}
 function liveMatchId(x){return String(x?.match_id??x?.matchId??x?.match?.id??x?.id??"");}
-function mergeLiveIntoMatch(match,lives){const id=String(match?.id||"");const live=(lives||[]).find(x=>liveMatchId(x)===id);if(!live)return match;const games=[...(Array.isArray(match?.games)?match.games:[])];for(const k of ["games","maps"]){if(Array.isArray(live?.[k]))games.push(...live[k]);}const out={...match};if(games.length)out.games=[...new Map(games.filter(g=>g&&typeof g==="object").map(g=>[String(g.id??g.position??g.number??JSON.stringify(g)),g])).values()];if(live?.match&&typeof live.match==="object")Object.assign(out,live.match);out.__live=live;return out;}\nfunction scorePair(s){if(Array.isArray(s)&&s.length>=2){const vals=s.map(x=>typeof x==="object"?Number(x?.score??x?.result??x?.value??x?.points):Number(x));if(vals.every(Number.isFinite))return[vals[0],vals[1]];}if(s&&typeof s==="object"){const a=s.home??s.team1??s.a??s.home_score??s.team1_score,b=s.away??s.team2??s.b??s.away_score??s.team2_score;const av=typeof a==="object"?Number(a?.score??a?.result??a?.value??a?.points):Number(a),bv=typeof b==="object"?Number(b?.score??b?.result??b?.value??b?.points):Number(b);if(Number.isFinite(av)&&Number.isFinite(bv))return[av,bv];}return null;}
-function parseGameScore(g){for(const s of [g?.score,g?.map_score,g?.game_score,g?.results,g?.opponents,g?.teams]){const pair=scorePair(s);if(pair&&pair[0]!==pair[1]){if(Math.max(...pair)<=1)return{value:null,type:"binary",score:pair};return{value:Math.abs(pair[0]-pair[1]),type:"score",score:pair};}}return{value:null,type:"unknown",score:null};}
-function gameFinished(g){const status=String(g?.status||g?.state||"").toLowerCase();return /^(finished|completed|complete|ended)$/.test(status)||g?.finished===true||g?.complete===true;}
-function firstFinishedGame(match){const games=Array.isArray(match.games)?match.games:[];const finished=games.filter(gameFinished);if(!finished.length)return null;finished.sort((a,b)=>Number(a?.position??a?.number??a?.id??0)-Number(b?.position??b?.number??b?.id??0));return finished[0];}
+function mergeLiveIntoMatch(match,lives){
+  const id=String(match?.id||"");
+  const live=(lives||[]).find(x=>liveMatchId(x)===id);
+  if(!live)return match;
+  const games=[...(Array.isArray(match?.games)?match.games:[])];
+  for(const k of ["games","maps"]){
+    if(Array.isArray(live?.[k]))games.push(...live[k]);
+  }
+  const out={...match};
+  if(games.length){
+    out.games=[...new Map(games.filter(g=>g&&typeof g==="object").map(g=>[
+      String(g.id??g.position??g.number??JSON.stringify(g)),g
+    ])).values()];
+  }
+  if(live?.match&&typeof live.match==="object")Object.assign(out,live.match);
+  out.__live=live;
+  return out;
+}
+function scorePair(s){
+  if(Array.isArray(s)&&s.length>=2){
+    const vals=s.map(x=>typeof x==="object"?Number(x?.score??x?.result??x?.value??x?.points):Number(x));
+    if(vals.every(Number.isFinite))return[vals[0],vals[1]];
+  }
+  if(s&&typeof s==="object"){
+    const a=s.home??s.team1??s.a??s.home_score??s.team1_score;
+    const b=s.away??s.team2??s.b??s.away_score??s.team2_score;
+    const av=typeof a==="object"?Number(a?.score??a?.result??a?.value??a?.points):Number(a);
+    const bv=typeof b==="object"?Number(b?.score??b?.result??b?.value??b?.points):Number(b);
+    if(Number.isFinite(av)&&Number.isFinite(bv))return[av,bv];
+  }
+  return null;
+}
+function parseGameScore(g){
+  for(const s of [g?.score,g?.map_score,g?.game_score,g?.results,g?.opponents,g?.teams]){
+    const pair=scorePair(s);
+    if(pair&&pair[0]!==pair[1]){
+      if(Math.max(...pair)<=1)return{value:null,type:"binary",score:pair};
+      return{value:Math.abs(pair[0]-pair[1]),type:"score",score:pair};
+    }
+  }
+  return{value:null,type:"unknown",score:null};
+}
+function gameFinished(g){
+  const status=String(g?.status||g?.state||"").toLowerCase();
+  return /^(finished|completed|complete|ended)$/.test(status)||g?.finished===true||g?.complete===true;
+}
+function firstFinishedGame(match){
+  const games=Array.isArray(match.games)?match.games:[];
+  const finished=games.filter(gameFinished);
+  if(!finished.length)return null;
+  finished.sort((a,b)=>Number(a?.position??a?.number??a?.id??0)-Number(b?.position??b?.number??b?.id??0));
+  return finished[0];
+}
 async function fetchGameDetails(match, game){
   if(!game?.id)return game;
   try{
