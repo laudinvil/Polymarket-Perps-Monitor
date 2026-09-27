@@ -114,8 +114,8 @@ function eventSnapshot(m) {
     ended: m.ended,
     period: m.period || "",
     elapsed: m.elapsed || "",
-    minute: m.minute ?? "",
-    score: m.score || "",
+    minute: minute(m),
+    score: score(m),
     slug: m.slug || ""
   };
 }
