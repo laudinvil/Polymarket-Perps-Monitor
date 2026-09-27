@@ -225,14 +225,26 @@ async function handleGame(m) {
   const status = String(m.status || "").toLowerCase().trim();
   const liveFlag = String(m.live).toLowerCase() === "true";
   const endedFlag = String(m.ended).toLowerCase() === "true";
-  const liveStatus = ["inprogress", "running", "live", "break", "halftime", "penaltyshootout"].includes(status);
+  const liveStatus = [
+    "inprogress",
+    "running",
+    "live",
+    "break",
+    "halftime",
+    "penaltyshootout"
+  ].includes(status);
+
+  // Polymarket's documented soccer statuses are InProgress, Break and
+  // PenaltyShootout. A live flag is also authoritative when present.
+  const soccerStatus =
+    ["inprogress", "break", "penaltyshootout"].includes(status);
 
   // WS payloads may encode booleans as strings. Never let "false"
   // become truthy and block an otherwise valid LIVE event.
   const soccerLive =
     soccer &&
     !endedFlag &&
-    (liveFlag || liveStatus);
+    (liveFlag || liveStatus || soccerStatus);
 
   if (soccerLive) {
     soccerAccepted++;
