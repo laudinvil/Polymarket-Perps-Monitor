@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:35:54.529Z",
+  "updatedAt": "2026-09-27T15:35:55.645Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 568,
+    "events": 569,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1711995",
+  "matchId": "1637686",
   "teams": [
-    "Direborn",
-    "Team Kinetix"
+    "Godji Check",
+    "SOLYX ESPORTS"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 10,
+    "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
