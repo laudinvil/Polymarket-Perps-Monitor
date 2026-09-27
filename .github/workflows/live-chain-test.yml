@@ -71,7 +71,7 @@ jobs:
             let minute=null;
             if(typeof raw==="number"&&Number.isFinite(raw))minute=Math.floor(raw);
             else if(raw!=null){
-              const m=String(raw).match(/\\d+(?:\\.\\d+)?/);
+              const m=String(raw).match(/\d+(?:\.\d+)?/);
               if(m)minute=Math.floor(Number(m[0]));
             }
             return {minute,score:hit.score??null,period:hit.period??null,gameId:hit.gameId??null,slug:hit.slug??null,status:hit.status??null};
