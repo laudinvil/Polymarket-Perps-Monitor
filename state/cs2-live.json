@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:15:13.370Z",
+  "updatedAt": "2026-09-27T15:15:16.737Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328832911",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2013,
   "telemetry": {
     "startedAt": "2026-09-27T15:15:03.244Z",
-    "events": 42,
+    "events": 67,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702599",
+  "matchId": "1681152",
   "teams": [
-    "METANOIA WOLVES",
-    "MIBR fe"
+    "Black Phoenix",
+    "ex-RUSTEC"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 224,
-    "matchedPoly": 2,
+    "matchedPoly": 4,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -92,6 +92,42 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "source": "public-search",
+        "polyEventId": "1084156",
+        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketId": "4973479",
+        "marketSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "polyEventId": "1084156",
+        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketId": "4973479",
+        "marketSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1681152",
+        "teams": [
+          "Black Phoenix",
+          "ex-RUSTEC"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
       }
     ],
     "rejects": [
@@ -100,6 +136,16 @@
         "matchId": "1688997",
         "teamA": "NIP",
         "teamB": "magic",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe",
         "seriesScore": [
           0,
           0
