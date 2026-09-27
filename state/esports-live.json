@@ -1,10 +1,76 @@
 {
   "version": 2,
   "matches": {
+    "1637686": {
+      "matchId": "1637686",
+      "teamA": "Godji Check",
+      "teamB": "SOLYX ESPORTS",
+      "pre": {
+        "teamA": "Godji Check",
+        "teamB": "SOLYX ESPORTS",
+        "a": 1,
+        "b": 0,
+        "capturedAt": "2026-09-27T16:22:28.154Z",
+        "marketId": "1401023",
+        "eventSlug": "hok-sol-gc-2026-02-20"
+      }
+    },
+    "1637687": {
+      "matchId": "1637687",
+      "teamA": "eArena",
+      "teamB": "Bacon Time",
+      "pre": {
+        "teamA": "eArena",
+        "teamB": "Bacon Time",
+        "a": 0,
+        "b": 1,
+        "capturedAt": "2026-09-27T16:22:38.134Z",
+        "marketId": "1405024",
+        "eventSlug": "hok-bac-ea-2026-02-21"
+      }
+    },
+    "1637688": {
+      "matchId": "1637688",
+      "teamA": "Hydra Esports",
+      "teamB": "FULL SENSE",
+      "pre": {
+        "teamA": "Hydra Esports",
+        "teamB": "FULL SENSE",
+        "a": 0,
+        "b": 1,
+        "capturedAt": "2026-09-27T16:23:08.077Z",
+        "marketId": "1344343",
+        "eventSlug": "hok-fs-he-2026-02-06"
+      }
+    },
+    "1662352": {
+      "matchId": "1662352",
+      "teamA": "LOUD",
+      "teamB": "LOS"
+    },
+    "1662461": {
+      "matchId": "1662461",
+      "teamA": "Cloud9",
+      "teamB": "Team Liquid",
+      "pre": {
+        "teamA": "Cloud9",
+        "teamB": "Team Liquid",
+        "a": 0.35353535353535354,
+        "b": 0.6464646464646465,
+        "capturedAt": "2026-09-27T16:22:09.378Z",
+        "marketId": "4786498",
+        "eventSlug": "lol-c9-tl2-2026-09-27"
+      }
+    },
     "1681152": {
       "matchId": "1681152",
       "teamA": "Black Phoenix",
       "teamB": "ex-RUSTEC"
+    },
+    "1683216": {
+      "matchId": "1683216",
+      "teamA": "Rakuzan",
+      "teamB": "Team Spirit"
     },
     "1683303": {
       "matchId": "1683303",
@@ -79,6 +145,34 @@
         "capturedAt": "2026-09-27T16:20:39.874Z",
         "marketId": "5006870",
         "eventSlug": "cs2-m80-dendel-2026-09-27"
+      }
+    },
+    "1697653": {
+      "matchId": "1697653",
+      "teamA": "T1 Academy",
+      "teamB": "Cupid Esports",
+      "pre": {
+        "teamA": "T1 Academy",
+        "teamB": "Cupid Esports",
+        "a": 0.9191919191919192,
+        "b": 0.08080808080808081,
+        "capturedAt": "2026-09-27T16:22:29.914Z",
+        "marketId": "4962483",
+        "eventSlug": "lol-t1a-cpd-2026-09-28"
+      }
+    },
+    "1697654": {
+      "matchId": "1697654",
+      "teamA": "KT Rolster Challengers",
+      "teamB": "Galions",
+      "pre": {
+        "teamA": "KT Rolster Challengers",
+        "teamB": "Galions",
+        "a": 0.6161616161616161,
+        "b": 0.38383838383838387,
+        "capturedAt": "2026-09-27T16:22:50.956Z",
+        "marketId": "4962524",
+        "eventSlug": "lol-ktc-gal-2026-09-28"
       }
     },
     "1700465": {
@@ -198,6 +292,25 @@
         "eventSlug": "cs2-alkaa-mira-2026-09-27"
       }
     },
+    "1702958": {
+      "matchId": "1702958",
+      "teamA": "Daxak Team",
+      "teamB": "Rostik Team"
+    },
+    "1702961": {
+      "matchId": "1702961",
+      "teamA": "YBN Team",
+      "teamB": "Cake Team",
+      "pre": {
+        "teamA": "YBN Team",
+        "teamB": "Cake Team",
+        "a": 0.3473684210526316,
+        "b": 0.6526315789473685,
+        "capturedAt": "2026-09-27T16:22:05.077Z",
+        "marketId": "5031455",
+        "eventSlug": "dota2-ybn-cake-2026-09-27"
+      }
+    },
     "1704623": {
       "matchId": "1704623",
       "teamA": "THUNDER dOWNUNDER",
@@ -259,6 +372,34 @@
       "teamA": "G2 Ares",
       "teamB": "FC Famalicão Esports"
     },
+    "1712062": {
+      "matchId": "1712062",
+      "teamA": "Hong Kong",
+      "teamB": "Malaysia",
+      "pre": {
+        "teamA": "Hong Kong",
+        "teamB": "Malaysia",
+        "a": 0,
+        "b": 1,
+        "capturedAt": "2026-09-27T16:22:18.543Z",
+        "marketId": "4853184",
+        "eventSlug": "crint-hkg-mys-2026-09-24"
+      }
+    },
+    "1712063": {
+      "matchId": "1712063",
+      "teamA": "Philippines",
+      "teamB": "China",
+      "pre": {
+        "teamA": "Philippines",
+        "teamB": "China",
+        "a": 0.0020554984583761563,
+        "b": 0.9979445015416238,
+        "capturedAt": "2026-09-27T16:22:21.244Z",
+        "marketId": "5029498",
+        "eventSlug": "hok-philip-china-2026-09-27"
+      }
+    },
     "1712147": {
       "matchId": "1712147",
       "teamA": "Teletubisie",
@@ -287,6 +428,48 @@
         "eventSlug": "cs2-xi-oldmix-2026-09-28"
       }
     },
+    "1713028": {
+      "matchId": "1713028",
+      "teamA": "Please Not Hero Ban",
+      "teamB": "Lazuli",
+      "pre": {
+        "teamA": "Please Not Hero Ban",
+        "teamB": "Lazuli",
+        "a": 1,
+        "b": 0,
+        "capturedAt": "2026-09-27T16:22:44.699Z",
+        "marketId": "2639126",
+        "eventSlug": "ow-laz-pnhb-2026-06-23"
+      }
+    },
+    "1713029": {
+      "matchId": "1713029",
+      "teamA": "REVATI",
+      "teamB": "99DIVINE",
+      "pre": {
+        "teamA": "REVATI",
+        "teamB": "99DIVINE",
+        "a": 0,
+        "b": 1,
+        "capturedAt": "2026-09-27T16:22:59.351Z",
+        "marketId": "2639138",
+        "eventSlug": "ow-99d-rev-2026-06-23"
+      }
+    },
+    "1713030": {
+      "matchId": "1713030",
+      "teamA": "MURASH GAMING",
+      "teamB": "ENTER FORCE.36",
+      "pre": {
+        "teamA": "MURASH GAMING",
+        "teamB": "ENTER FORCE.36",
+        "a": 1,
+        "b": 0,
+        "capturedAt": "2026-09-27T16:23:14.583Z",
+        "marketId": "2708817",
+        "eventSlug": "ow-ef36-mg-2026-06-29"
+      }
+    },
     "1714222": {
       "matchId": "1714222",
       "teamA": "PARTIZAN",
@@ -300,577 +483,621 @@
         "marketId": "5003781",
         "eventSlug": "cs2-prtzn-ce5-2026-09-27"
       }
+    },
+    "1714921": {
+      "matchId": "1714921",
+      "teamA": "Misa Esports",
+      "teamB": "Fear Never Ends"
+    },
+    "1714922": {
+      "matchId": "1714922",
+      "teamA": "Galatasaray Esports",
+      "teamB": "Pcific Esports"
+    },
+    "1714931": {
+      "matchId": "1714931",
+      "teamA": "Eternal Fire",
+      "teamB": "NKVT",
+      "pre": {
+        "teamA": "Eternal Fire",
+        "teamB": "NKVT",
+        "a": 0.7934782608695653,
+        "b": 0.2065217391304348,
+        "capturedAt": "2026-09-27T16:22:07.711Z",
+        "marketId": "5029485",
+        "eventSlug": "val-ef-nkvt-2026-09-27"
+      }
+    },
+    "1714932": {
+      "matchId": "1714932",
+      "teamA": "Trigon Titans",
+      "teamB": "Mix My Miks",
+      "pre": {
+        "teamA": "Trigon Titans",
+        "teamB": "Mix My Miks",
+        "a": 0.4791666666666667,
+        "b": 0.5208333333333334,
+        "capturedAt": "2026-09-27T16:22:06.838Z",
+        "marketId": "5029489",
+        "eventSlug": "val-tt3-mmm-2026-09-27"
+      }
     }
   },
   "alerts": [],
-  "updatedAt": "2026-09-27T16:21:04.473Z",
+  "updatedAt": "2026-09-27T16:23:15.984Z",
   "stage": "POLL_RESULT",
-  "runId": "36332854604",
-  "sha": "08da73fee88443f3cb00e2b9846216b0c1b71249",
+  "runId": "36332937376",
+  "sha": "97bb0e6a872baa948528c0bdd3a1f9a36c11ac38",
   "telemetry": {
-    "startedAt": "2026-09-27T16:20:29.031Z",
-    "events": 469,
+    "startedAt": "2026-09-27T16:21:44.871Z",
+    "events": 685,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 156,
-      "HTTP_RESPONSE": 156,
-      "HTTP_JSON": 124,
-      "HTTP_ERROR": 32
+      "HTTP_REQUEST": 228,
+      "HTTP_RESPONSE": 228,
+      "HTTP_JSON": 172,
+      "HTTP_ERROR": 56
     },
     "recent": [
       {
-        "ts": "2026-09-27T16:20:53.672Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=111295479369328940249209695645491465379240524504650022394023517376436246935165&side=BUY",
-          "attempt": 4
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:53.781Z",
+        "ts": "2026-09-27T16:23:02.142Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=61434709621147570808725008965492379407089746199864435798341603453803692009164&side=BUY",
-          "status": 404,
-          "ok": false,
-          "elapsedMs": 112
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:53.781Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=61434709621147570808725008965492379407089746199864435798341603453803692009164&side=BUY",
-          "attempt": 4,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=61434709621147570808725008965492379407089746199864435798341603453803692009164&side=BUY"
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:53.785Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=111295479369328940249209695645491465379240524504650022394023517376436246935165&side=BUY",
-          "status": 404,
-          "ok": false,
-          "elapsedMs": 113
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:53.785Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=111295479369328940249209695645491465379240524504650022394023517376436246935165&side=BUY",
-          "attempt": 4,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=111295479369328940249209695645491465379240524504650022394023517376436246935165&side=BUY"
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:53.788Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER%20Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:54.068Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER%20Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 280
+          "elapsedMs": 368
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.076Z",
+        "ts": "2026-09-27T16:23:02.151Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER%20Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=Hydra%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
           "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.076Z",
+        "ts": "2026-09-27T16:23:02.151Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.356Z",
+        "ts": "2026-09-27T16:23:02.549Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 280
+          "elapsedMs": 398
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.440Z",
+        "ts": "2026-09-27T16:23:02.692Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=THUNDER%20dOWNUNDER&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=FULL%20SENSE&limit_per_type=20&page=1&keep_closed_markets=0",
           "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.440Z",
+        "ts": "2026-09-27T16:23:02.692Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:20:54.716Z",
+        "ts": "2026-09-27T16:23:02.693Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:02.830Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 276
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:55.233Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Ground%20Zero&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:55.233Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:55.233Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T16:20:55.341Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 108
+          "elapsedMs": 137
         }
       },
       {
-        "ts": "2026-09-27T16:20:55.341Z",
+        "ts": "2026-09-27T16:23:02.830Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 1,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:20:55.358Z",
+        "ts": "2026-09-27T16:23:02.837Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 125
+          "elapsedMs": 145
         }
       },
       {
-        "ts": "2026-09-27T16:20:55.358Z",
+        "ts": "2026-09-27T16:23:02.837Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 1,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.141Z",
+        "ts": "2026-09-27T16:23:03.629Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 2
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.158Z",
+        "ts": "2026-09-27T16:23:03.636Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 2
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.249Z",
+        "ts": "2026-09-27T16:23:03.773Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 108
+          "elapsedMs": 144
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.249Z",
+        "ts": "2026-09-27T16:23:03.773Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 2,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.263Z",
+        "ts": "2026-09-27T16:23:03.777Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 105
+          "elapsedMs": 141
         }
       },
       {
-        "ts": "2026-09-27T16:20:56.263Z",
+        "ts": "2026-09-27T16:23:03.777Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 2,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.849Z",
+        "ts": "2026-09-27T16:23:05.372Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 3
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.863Z",
+        "ts": "2026-09-27T16:23:05.377Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 3
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.977Z",
+        "ts": "2026-09-27T16:23:05.515Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 114
+          "elapsedMs": 138
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.977Z",
+        "ts": "2026-09-27T16:23:05.515Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 3,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.978Z",
+        "ts": "2026-09-27T16:23:05.521Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 129
+          "elapsedMs": 149
         }
       },
       {
-        "ts": "2026-09-27T16:20:57.978Z",
+        "ts": "2026-09-27T16:23:05.521Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 3,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.377Z",
+        "ts": "2026-09-27T16:23:07.915Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 4
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.378Z",
+        "ts": "2026-09-27T16:23:07.920Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 4
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.485Z",
+        "ts": "2026-09-27T16:23:08.064Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 107
+          "elapsedMs": 144
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.485Z",
+        "ts": "2026-09-27T16:23:08.064Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY",
           "attempt": 4,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=6655346837474042087160072477541823068741601378489407860489669106910576330969&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=24562820346815945188639336509309282058765499892653373527653642677216821984815&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.504Z",
+        "ts": "2026-09-27T16:23:08.077Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "status": 404,
           "ok": false,
-          "elapsedMs": 127
+          "elapsedMs": 162
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.504Z",
+        "ts": "2026-09-27T16:23:08.077Z",
         "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY",
           "attempt": 4,
-          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=35831489442993570949287983124040142003515191889442382366705173993695872021554&side=BUY"
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=71835131876493849672984771984253772163446855536926457119115803505256319226250&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.507Z",
+        "ts": "2026-09-27T16:23:08.080Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport%20OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.799Z",
+        "ts": "2026-09-27T16:23:08.394Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport%20OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 292
+          "elapsedMs": 314
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.800Z",
+        "ts": "2026-09-27T16:23:08.396Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport%20OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING%20ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T16:21:00.800Z",
+        "ts": "2026-09-27T16:23:08.396Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.101Z",
+        "ts": "2026-09-27T16:23:08.791Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 301
+          "elapsedMs": 395
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.117Z",
+        "ts": "2026-09-27T16:23:08.794Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=XI%20Esport&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=MURASH%20GAMING&limit_per_type=20&page=1&keep_closed_markets=0",
           "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.117Z",
+        "ts": "2026-09-27T16:23:08.794Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.414Z",
+        "ts": "2026-09-27T16:23:09.192Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 297
+          "elapsedMs": 398
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.416Z",
+        "ts": "2026-09-27T16:23:09.203Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=OldMix&limit_per_type=20&page=1&keep_closed_markets=0",
+          "url": "https://gamma-api.polymarket.com/public-search?q=ENTER%20FORCE.36&limit_per_type=20&page=1&keep_closed_markets=0",
           "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.417Z",
+        "ts": "2026-09-27T16:23:09.203Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=25963687762076561140432664062887463043840436767276255849071600279388075401575&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.417Z",
+        "ts": "2026-09-27T16:23:09.203Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=26703946111048908269839556024257837541342547603480658128485989709438231229504&side=BUY",
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.523Z",
+        "ts": "2026-09-27T16:23:09.341Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=25963687762076561140432664062887463043840436767276255849071600279388075401575&side=BUY",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 106
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 138
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.523Z",
-        "event": "HTTP_JSON",
+        "ts": "2026-09-27T16:23:09.341Z",
+        "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=25963687762076561140432664062887463043840436767276255849071600279388075401575&side=BUY",
-          "kind": "object"
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 1,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.532Z",
+        "ts": "2026-09-27T16:23:09.360Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=26703946111048908269839556024257837541342547603480658128485989709438231229504&side=BUY",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 115
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 157
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.532Z",
-        "event": "HTTP_JSON",
+        "ts": "2026-09-27T16:23:09.360Z",
+        "event": "HTTP_ERROR",
         "data": {
-          "url": "https://clob.polymarket.com/price?token_id=26703946111048908269839556024257837541342547603480658128485989709438231229504&side=BUY",
-          "kind": "object"
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 1,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.535Z",
+        "ts": "2026-09-27T16:23:10.142Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus%20mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 2
         }
       },
       {
-        "ts": "2026-09-27T16:21:01.824Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus%20mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 289
-        }
-      },
-      {
-        "ts": "2026-09-27T16:21:01.910Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus%20mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
-        }
-      },
-      {
-        "ts": "2026-09-27T16:21:01.910Z",
+        "ts": "2026-09-27T16:23:10.160Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 2
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.291Z",
+        "ts": "2026-09-27T16:23:10.291Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 381
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 149
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.314Z",
-        "event": "HTTP_JSON",
+        "ts": "2026-09-27T16:23:10.291Z",
+        "event": "HTTP_ERROR",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=Nexus&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 2,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.314Z",
+        "ts": "2026-09-27T16:23:10.301Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 141
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:10.301Z",
+        "event": "HTTP_ERROR",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 2,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY"
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:11.891Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "attempt": 1
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 3
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.587Z",
+        "ts": "2026-09-27T16:23:11.901Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 3
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:12.031Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 273
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 140
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.606Z",
-        "event": "HTTP_JSON",
+        "ts": "2026-09-27T16:23:12.031Z",
+        "event": "HTTP_ERROR",
         "data": {
-          "url": "https://gamma-api.polymarket.com/public-search?q=mellren&limit_per_type=20&page=1&keep_closed_markets=0",
-          "kind": "object"
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 3,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY"
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.609Z",
+        "ts": "2026-09-27T16:23:12.043Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 142
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:12.043Z",
+        "event": "HTTP_ERROR",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 3,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY"
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.431Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 4
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.442Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 4
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.575Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 144
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.575Z",
+        "event": "HTTP_ERROR",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY",
+          "attempt": 4,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=96289055673667696084516644336525328967626154068141968144445142379211850494503&side=BUY"
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.583Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "status": 404,
+          "ok": false,
+          "elapsedMs": 141
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.583Z",
+        "event": "HTTP_ERROR",
+        "data": {
+          "url": "https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY",
+          "attempt": 4,
+          "error": "Error: HTTP 404 https://clob.polymarket.com/price?token_id=47668670689253467478507901050144168218288397666038189124733174663459050348177&side=BUY"
+        }
+      },
+      {
+        "ts": "2026-09-27T16:23:14.586Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -878,17 +1105,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.902Z",
+        "ts": "2026-09-27T16:23:14.860Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 293
+          "elapsedMs": 274
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.920Z",
+        "ts": "2026-09-27T16:23:14.881Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports%20NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -896,7 +1123,7 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:02.920Z",
+        "ts": "2026-09-27T16:23:14.881Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -904,17 +1131,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.229Z",
+        "ts": "2026-09-27T16:23:15.118Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 309
+          "elapsedMs": 237
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.251Z",
+        "ts": "2026-09-27T16:23:15.128Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=The%20Huns%20Esports&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -922,7 +1149,7 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.251Z",
+        "ts": "2026-09-27T16:23:15.128Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -930,17 +1157,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.562Z",
+        "ts": "2026-09-27T16:23:15.365Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 311
+          "elapsedMs": 237
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.564Z",
+        "ts": "2026-09-27T16:23:15.369Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=NEXVOID&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -948,7 +1175,7 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.567Z",
+        "ts": "2026-09-27T16:23:15.374Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -956,17 +1183,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.861Z",
+        "ts": "2026-09-27T16:23:15.591Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 294
+          "elapsedMs": 217
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.864Z",
+        "ts": "2026-09-27T16:23:15.594Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de%20Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -974,7 +1201,7 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:03.864Z",
+        "ts": "2026-09-27T16:23:15.594Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -982,17 +1209,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:04.124Z",
+        "ts": "2026-09-27T16:23:15.816Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 260
+          "elapsedMs": 222
         }
       },
       {
-        "ts": "2026-09-27T16:21:04.131Z",
+        "ts": "2026-09-27T16:23:15.819Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=BLUEJAYS.de&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1000,7 +1227,7 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:04.131Z",
+        "ts": "2026-09-27T16:23:15.820Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1008,17 +1235,17 @@
         }
       },
       {
-        "ts": "2026-09-27T16:21:04.463Z",
+        "ts": "2026-09-27T16:23:15.978Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 332
+          "elapsedMs": 159
         }
       },
       {
-        "ts": "2026-09-27T16:21:04.471Z",
+        "ts": "2026-09-27T16:23:15.982Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/public-search?q=Sissi%20State%20Punks&limit_per_type=20&page=1&keep_closed_markets=0",
@@ -1028,12 +1255,12 @@
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-27T16:21:04.471Z"
+    "updatedAt": "2026-09-27T16:23:15.982Z"
   },
   "diagnostics": {
     "events": 514,
-    "candidates": 174,
-    "matchedPoly": 24,
+    "candidates": 395,
+    "matchedPoly": 43,
     "map1Finished": 0,
     "gameDetailsRequested": 0,
     "gameScoreFound": 0,
