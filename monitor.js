@@ -349,6 +349,12 @@ function connect() {
 
     if (m && m.type === "sport_result" && m.payload) m = m.payload;
 
+    // Some Sports WS messages are wrapped as {type:"sport_result", data:{...}}
+    // while others are already the result object.
+    if (m && m.type === "sport_result" && m.data && typeof m.data === "object") {
+      m = m.data;
+    }
+
     const sportId = String(m?.gameId || m?.slug || m?.id || "").trim();
     if (!m || !sportId) return;
 
