@@ -126,16 +126,7 @@ function matchMarket(m, e) {
     if (direct) return true;
   }
 
-  // Fallback: compare both player names against question/title/event slug.
-  const t = namesFromMarket(m).text;
-  const hit = (name) => {
-    const k = nameKey(name);
-    if (!k) return false;
-    if (t.includes(k.n)) return true;
-    if (t.includes(k.compact)) return true;
-    return t.includes(k.last) && t.includes(k.first);
-  };
-  return hit(home) && hit(away);
+  return false;
 }
 
 function marketUrl(m) {
