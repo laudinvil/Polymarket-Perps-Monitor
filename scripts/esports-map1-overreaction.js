@@ -150,8 +150,13 @@ function seriesScore(match) {
   const a = Number(o[0]?.score), b = Number(o[1]?.score);
   return Number.isFinite(a) && Number.isFinite(b) ? [a,b] : null;
 }
-function bo3(match) {
-  return String(match.match_type || "").toLowerCase() === "best_of" && Number(match.number_of_games) === 3;
+function supportedSeries(match) {
+  const type = String(match.match_type || "").toLowerCase();
+  const games = Number(match.number_of_games);
+  // Include BO3 and BO5. PandaScore also exposes "first_to" formats;
+  // first_to 3 is equivalent to a BO5 for our Map 1 -> Map 2 logic.
+  return (type === "best_of" && (games === 3 || games === 5)) ||
+         (type === "first_to" && games === 3);
 }
 function beginAt(match) {
   const v = match.begin_at || match.scheduled_at;
@@ -484,7 +489,7 @@ await publishHeartbeat("PANDASCORE_OK", {
   diagnostics:diag
 });
 
-const candidates = [...upcoming, ...running].filter(m => bo3(m));
+const candidates = [...upcoming, ...running].filter(m => supportedSeries(m));
 diag.bo3 = candidates.length;
 const polyEvents = await loadPolyEvents();
 diag.polyEvents = polyEvents.length;
