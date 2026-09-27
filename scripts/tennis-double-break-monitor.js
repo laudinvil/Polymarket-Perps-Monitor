@@ -364,6 +364,7 @@ async function processBreaks(e, nowSets) {
         log("PBP_NO_COMPLETED_GAME", { eventId: id });
       }
     } catch (err) {
+      state.sourceErrors++;
       log("PBP_ERROR", { eventId: id, error: String(err) });
     }
 
@@ -382,6 +383,9 @@ async function processBreaks(e, nowSets) {
 
     if (winner !== 1 && winner !== 2) {
       winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
+      if (winner === 1 || winner === 2) {
+        log("WINNER_FALLBACK", { eventId: id, game: gameNo, winner: winner === 1 ? "HOME" : "AWAY" });
+      }
     }
     log("GAME_CHANGE", {
       eventId: id,
