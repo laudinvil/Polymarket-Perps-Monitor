@@ -25,6 +25,7 @@ const state = {
   breaksDetected: 0,
   twoBreakCandidates: 0,
   marketMisses: 0,
+  marketMatches: 0,
   cooldownBlocked: 0,
   lastError: null,
 };
@@ -302,18 +303,34 @@ async function refreshMarkets() {
 }
 
 function findMarketForPlayer(e, playerName) {
-  let best = null;
+  const candidates = [];
   for (const m of markets.values()) {
     if (!matchMarket(m, e)) continue;
+    const names = namesFromMarket(m);
+    const outcomes = names.outcomes || [];
+    const exactOutcome = outcomes.some(x => playerNameMatch(playerName, x));
     const q = String(m.question || m.title || "").toLowerCase();
-    // Prefer the market that explicitly names the player, then a match-winner market.
-    const playerHit = q.includes(playerName.toLowerCase());
     const winnerish = q.includes("win") || q.includes("winner");
-    if (!best || playerHit || (winnerish && !String(best.question || best.title || "").toLowerCase().includes("win"))) {
-      best = m;
-    }
+    const score =
+      (exactOutcome ? 100 : 0) +
+      (winnerish ? 20 : 0) +
+      (outcomes.length === 2 ? 10 : 0) +
+      (m.slug || m.eventSlug ? 5 : 0);
+    candidates.push({ m, score });
   }
-  return best;
+  candidates.sort((a, b) => b.score - a.score);
+  const selected = candidates[0]?.m || null;
+  if (selected) {
+    state.marketMatches++;
+    log("MARKET_MATCH", {
+      eventId: e.id,
+      player: playerName,
+      marketId: selected.id,
+      slug: selected.slug || selected.eventSlug || null,
+      outcomes: marketPlayerNames(selected)
+    });
+  }
+  return selected;
 }
 
 function handleBook(msg) {
