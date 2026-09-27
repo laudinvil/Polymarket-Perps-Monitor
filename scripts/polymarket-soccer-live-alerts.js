@@ -56,7 +56,7 @@ function isSoccerEvent(event,href=""){
   const text=markets.map(m=>t(m?.question||m?.title||m?.groupItemTitle)).join(" ").toLowerCase();
   return /both teams to score|\bbtts\b|total corners|correct score|win to nil|double chance|draw no bet/.test(text);
 }
-function teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
+function firstEvent(raw){\n  if(Array.isArray(raw))return raw[0]||null;\n  if(raw&&Array.isArray(raw.events))return raw.events[0]||null;\n  if(raw&&Array.isArray(raw.data))return raw.data[0]||null;\n  if(raw&&raw.event&&typeof raw.event==="object")return raw.event;\n  return raw&&typeof raw==="object"?raw:null;\n}\nfunction teams(event){const title=t(event.title||event.question);if(event.homeTeam&&event.awayTeam)return[t(event.homeTeam),t(event.awayTeam)];const m=title.match(/^(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+)$/i);return m?[m[1].trim(),m[2].trim()]:["",""];}
 
 async function fetchPage(url){
   const r=await get(url,{headers:{accept:"text/html,application/xhtml+xml","user-agent":"Mozilla/5.0 (compatible; PolymarketLiveSoccerMonitor/1.0)"},timeout:8000});
@@ -254,7 +254,7 @@ async function discover(){
       let raw=null;
       if(gameSlug){ try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(gameSlug),{timeout:5000}); }catch{} }
       if(!raw && gameId){ try{ raw=await json(GAMMA+"/events?game_id="+encodeURIComponent(gameId),{timeout:5000}); }catch{} }
-      const event=Array.isArray(raw)?raw[0]:raw;
+      const event=firstEvent(raw);
       if(event){
         await addEvent(event,null,true,true);
         const item=candidates.find(x=>x.eventId===t(event.id)||x.slug===t(event.slug));
