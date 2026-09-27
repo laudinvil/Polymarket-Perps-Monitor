@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:58:22.083Z",
+  "updatedAt": "2026-09-27T14:58:23.556Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 2539,
+    "events": 2549,
     "polls": 10,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700704",
+  "matchId": "1700664",
   "teams": [
-    "Bounty Hunters Esports",
-    "Galorys"
+    "Lynn Vision",
+    "NEXVOID"
   ],
   "status": "running",
   "seriesScore": [
     1,
-    1
+    0
   ],
   "candidates": 91,
   "diagnostics": {
@@ -32,7 +32,7 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
