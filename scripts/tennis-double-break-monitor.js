@@ -339,18 +339,21 @@ async function refreshMarkets() {
   state.lastGammaAt = new Date().toISOString();
 }
 function findMarketForPlayer(e, playerName) {
-  let best = null;
   for (const m of markets.values()) {
     if (!matchMarket(m, e)) continue;
-    const q = String(m.question || m.title || "").toLowerCase();
-    // Prefer the market that explicitly names the player, then a match-winner market.
-    const playerHit = q.includes(playerName.toLowerCase());
-    const winnerish = q.includes("win") || q.includes("winner");
-    if (!best || playerHit || (winnerish && !String(best.question || best.title || "").toLowerCase().includes("win"))) {
-      best = m;
-    }
+    if (!marketPlayerNames(m).some(name => playerNameMatch(playerName, name))) continue;
+    state.marketMatches++;
+    log("MARKET_MATCH", {
+      eventId: e.id,
+      player: playerName,
+      marketId: m.id,
+      question: m.question || m.title || null,
+      eventSlug: m.eventSlug || null,
+      outcomes: marketPlayerNames(m)
+    });
+    return m;
   }
-  return best;
+  return null;
 }
 
 function handleBook(msg) {
