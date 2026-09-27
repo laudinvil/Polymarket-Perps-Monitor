@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:51:50.477Z",
+  "updatedAt": "2026-09-27T14:51:51.717Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 968,
+    "events": 978,
     "polls": 3,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710855",
+  "matchId": "1689002",
   "teams": [
-    "BASEMENT BOYS",
-    "overTIME"
+    "GamerLegion",
+    "Sinners"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 3,
     "polyEvents": 224,
-    "matchedPoly": 16,
+    "matchedPoly": 18,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -284,6 +284,16 @@
         "matchId": "1714222",
         "teamA": "PARTIZAN",
         "teamB": "Chaos Enforcers",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1710855",
+        "teamA": "BASEMENT BOYS",
+        "teamB": "overTIME",
         "seriesScore": [
           0,
           0
