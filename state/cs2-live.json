@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T13:40:53.864Z",
-  "stage": "PANDASCORE_OK",
+  "updatedAt": "2026-09-27T13:40:54.914Z",
+  "stage": "POLYMARKET_OK",
   "runId": "36323098748",
   "runAttempt": "1",
   "sha": "366b5292cafa089834bb7a020378f700fc46d3f1",
   "pid": 2025,
   "telemetry": {
     "startedAt": "2026-09-27T13:38:51.654Z",
-    "events": 326,
+    "events": 335,
     "polls": 6,
     "alerts": 0,
     "errors": 2,
@@ -17,6 +17,5 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "upcoming": 100,
-  "running": 7
+  "polyEvents": 224
 }\n
