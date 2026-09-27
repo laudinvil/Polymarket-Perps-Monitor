@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:07.145Z",
+  "updatedAt": "2026-09-27T15:36:08.313Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 578,
+    "events": 579,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1704623",
+  "matchId": "1697654",
   "teams": [
-    "THUNDER dOWNUNDER",
-    "Ground Zero"
+    "KT Rolster Challengers",
+    "Galions"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 20,
+    "noPolyMatch": 21,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
