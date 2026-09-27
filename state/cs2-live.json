@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:53:57.099Z",
+  "updatedAt": "2026-09-27T14:53:58.140Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1441,
+    "events": 1442,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683304",
+  "matchId": "1700704",
   "teams": [
-    "Nexus",
-    "mellren"
+    "Bounty Hunters Esports",
+    "Galorys"
   ],
-  "status": "not_started",
+  "status": "running",
   "seriesScore": [
-    0,
-    0
+    1,
+    1
   ],
   "candidates": 92,
   "diagnostics": {
@@ -29,11 +29,11 @@
     "upcoming": 100,
     "running": 11,
     "bo3": 92,
-    "skippedFuture": 0,
-    "missingTeams": 5,
+    "skippedFuture": 48,
+    "missingTeams": 11,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 11,
+    "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
