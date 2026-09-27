@@ -328,14 +328,13 @@ function saveState(s) {
   fs.writeFileSync(s.path, JSON.stringify(s.value,null,2) + "\n");
 }
 
-async function telegram(text, url) {
+async function telegram(text) {
   const body = new URLSearchParams({
     chat_id: TG_CHAT,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: "false",
   });
-  if (url) body.set("reply_markup", JSON.stringify({ inline_keyboard: [[{ text:"ОТКРЫТЬ POLYMARKET", url }]] }));
   const r = await fetch("https://api.telegram.org/bot"+TG_TOKEN+"/sendMessage", {
     method:"POST",
     headers:{"content-type":"application/x-www-form-urlencoded"},
@@ -533,8 +532,15 @@ for (const match of candidates) {
     "NEXT MAP CANDIDATE: <b>"+loser+"</b>\n" +
     "CURRENT: "+Math.round(loserProb*100)+"%";
 
-  const url = poly.event.slug ? "https://polymarket.com/event/"+poly.event.slug : "https://polymarket.com/esports/cs2";
-  await telegram(text,url);
+  const eventSlug = String(poly.event.slug || "").trim();
+  const marketSlug = String(poly.market.slug || "").trim();
+  const url = eventSlug && marketSlug
+    ? "https://polymarket.com/event/" + eventSlug + "/" + marketSlug
+    : eventSlug
+      ? "https://polymarket.com/event/" + eventSlug
+      : null;
+  const alertText = url ? text + "\\n\\n" + url : text;
+  await telegram(alertText);
 
   entry.alerted = true;
   entry.alertedAt = new Date().toISOString();
