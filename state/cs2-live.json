@@ -1,30 +1,28 @@
 {
-  "updatedAt": "2026-09-27T14:12:19.486Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T14:12:46.728Z",
+  "stage": "POLL_RESULT",
   "runId": "36324722736",
   "runAttempt": "1",
   "sha": "54a8262aea1fc52e3366dabbd672b01d4fc16891",
   "pid": 2040,
   "telemetry": {
     "startedAt": "2026-09-27T14:06:51.838Z",
-    "events": 7256,
+    "events": 7841,
     "polls": 12,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 224,
-  "candidates": 93,
   "diagnostics": {
     "startedAt": "2026-09-27T14:12:15.096Z",
     "upcoming": 100,
     "running": 12,
     "bo3": 93,
-    "skippedFuture": 0,
-    "missingTeams": 0,
+    "skippedFuture": 47,
+    "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 0,
-    "noPolyMatch": 0,
+    "matchedPoly": 54,
+    "noPolyMatch": 7,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -38,7 +36,290 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
-    "rejects": []
-  }
+    "samples": [
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:10:00Z"
+      },
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091743",
+        "polyEventSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketId": "5029449",
+        "marketSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketQuestion": "Counter-Strike: Metizport vs Inner Circle Academy (BO3) - Tipsport Cup Open #2 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "polyEventId": "1091743",
+        "polyEventSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketId": "5029449",
+        "marketSlug": "cs2-mzp-innerc-2026-09-27",
+        "marketQuestion": "Counter-Strike: Metizport vs Inner Circle Academy (BO3) - Tipsport Cup Open #2 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      },
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088197",
+        "polyEventSlug": "cs2-g2a-fcf-2026-09-27",
+        "marketId": "5003601",
+        "marketSlug": "cs2-g2a-fcf-2026-09-27",
+        "marketQuestion": "Counter-Strike: G2 Ares vs FC Famalicão Esports (BO3) - Hotspawn Showdown Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "polyEventId": "1088197",
+        "polyEventSlug": "cs2-g2a-fcf-2026-09-27",
+        "marketId": "5003601",
+        "marketSlug": "cs2-g2a-fcf-2026-09-27",
+        "marketQuestion": "Counter-Strike: G2 Ares vs FC Famalicão Esports (BO3) - Hotspawn Showdown Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "polyEventId": "1088128",
+        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
+        "marketId": "5002751",
+        "marketSlug": "cs2-nip-mgc-2026-09-27",
+        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "source": "public-search",
+        "polyEventId": "1084156",
+        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketId": "4973479",
+        "marketSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "polyEventId": "1084156",
+        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketId": "4973479",
+        "marketSlug": "cs2-mw-mibrf-2026-09-27",
+        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
+        "matchScore": 1
+      }
+    ],
+    "rejects": [
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1707300",
+        "teamA": "Metizport",
+        "teamB": "Inner Circle Academy"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1707300",
+        "teamA": "Metizport",
+        "teamB": "Inner Circle Academy",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe",
+        "seriesScore": null
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1681152",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706604",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706603",
+        "opponents": 1
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1684181",
+        "teamA": "Nemiga",
+        "teamB": "Color"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1684181",
+        "teamA": "Nemiga",
+        "teamB": "Color",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1714222",
+        "teamA": "PARTIZAN",
+        "teamB": "Chaos Enforcers"
+      }
+    ]
+  },
+  "config": {
+    "minPreFavorite": 0.4,
+    "maxPreFavorite": 0.6,
+    "minMove": 0.25,
+    "minPostFavorite": 0.75,
+    "maxPostFavorite": 0.9,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 38,
+  "alerts": 0
 }\n
