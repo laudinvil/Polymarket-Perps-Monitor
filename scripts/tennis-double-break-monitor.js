@@ -208,7 +208,7 @@ function currentGameScore(sets) {
   return sets.length ? sets[sets.length - 1] : [0,0];
 }
 
-async function getCompletedGameFromPointFeed(eventId) {
+async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
   const data = await getJson(
     `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
     "sofa"
@@ -264,10 +264,15 @@ async function getCompletedGameFromPointFeed(eventId) {
 
   games.sort((a, b) => a.set - b.set || a.game - b.game);
 
-  // Only treat a game as completed when the cumulative game score advanced
-  // by exactly one game from the previous completed game.
-  let last = games[games.length - 1];
-  let previous = games.length > 1 ? games[games.length - 2] : null;
+  // Match the PBP game to the exact live-score transition we observed.
+  // The newest PBP entry can be an in-progress game, so blindly taking the
+  // last entry can classify the wrong server/winner.
+  let last = targetTotal == null
+    ? games[games.length - 1]
+    : games.find(g => g.home + g.away === targetTotal);
+  if (!last) return null;
+  const lastIndex = games.indexOf(last);
+  let previous = lastIndex > 0 ? games[lastIndex - 1] : null;
 
   let winner = last.directWinner || null;
   if (!winner && previous && previous.set === last.set) {
@@ -350,7 +355,7 @@ async function processBreaks(e, nowSets) {
     // fragile need to reconstruct serving order from firstToServe.
     let feedGame = null;
     try {
-      feedGame = await getCompletedGameFromPointFeed(id);
+      feedGame = await getCompletedGameFromPointFeed(id, newTotal);
       if (feedGame) {
         log("PBP_GAME", {
           eventId: id,
