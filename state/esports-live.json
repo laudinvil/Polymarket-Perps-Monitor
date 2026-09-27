@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:09.362Z",
+  "updatedAt": "2026-09-27T15:36:10.492Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 580,
+    "events": 581,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1713029",
+  "matchId": "1712148",
   "teams": [
-    "REVATI",
-    "99DIVINE"
+    "XI Esport",
+    "OldMix"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 22,
+    "noPolyMatch": 23,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
