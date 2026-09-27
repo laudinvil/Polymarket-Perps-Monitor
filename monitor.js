@@ -142,8 +142,13 @@ function minute(m) {
 function score(m) {
   const s = String(m.score ?? "").trim();
   if (!s) return "—";
-  const parts = s.split("-");
-  return parts.length === 2 ? `${parts[0]}–${parts[1]}` : s;
+
+  // Polymarket sports feeds can append set/period scores:
+  // "2-1|0-0|..." — use only the match score.
+  const main = s.split("|")[0].trim();
+  const parts = main.split(/\s*[-–—:]\s*/);
+
+  return parts.length === 2 ? `${parts[0]}–${parts[1]}` : main;
 }
 
 function title(m) {
