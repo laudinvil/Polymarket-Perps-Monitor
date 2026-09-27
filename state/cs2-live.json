@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:55:48.784Z",
+  "updatedAt": "2026-09-27T14:55:50.087Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1927,
+    "events": 1937,
     "polls": 7,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712164",
+  "matchId": "1712170",
   "teams": [
-    " Phantom Academy",
-    "ILLYRIANS"
+    "Mai Tai",
+    "BIG Academy"
   ],
   "status": "running",
   "seriesScore": [
-    1,
-    0
+    0,
+    1
   ],
   "candidates": 92,
   "diagnostics": {
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 28,
+    "matchedPoly": 30,
     "noPolyMatch": 13,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 3,
+    "map1Finished": 4,
     "alreadyAlerted": 0,
-    "noPrematch": 3,
+    "noPrematch": 4,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
