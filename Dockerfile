@@ -2,10 +2,7 @@ FROM node:22-bookworm
 WORKDIR /app
 
 COPY package.json ./
-RUN apt-get update \
- && apt-get install -y --no-install-recommends firefox-esr \
- && rm -rf /var/lib/apt/lists/* \
- && npm install --omit=dev
+RUN npm install --omit=dev
 
 COPY monitor.js ./
 
