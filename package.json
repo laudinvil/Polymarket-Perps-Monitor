@@ -2,5 +2,6 @@
   "name":"polymarket-live-soccer-monitor",
   "private":true,
   "type":"module",
-  "scripts":{"start":"node monitor.js"}
+  "scripts":{"start":"node monitor.js"},
+  "dependencies":{"playwright":"^1.55.0"}
 }
