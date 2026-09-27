@@ -532,15 +532,12 @@ for (const match of candidates) {
     "NEXT MAP CANDIDATE: <b>"+loser+"</b>\n" +
     "CURRENT: "+Math.round(loserProb*100)+"%";
 
-  const eventSlug = String(poly.event.slug || "").trim();
-  const marketSlug = String(poly.market.slug || "").trim();
-  const url = eventSlug && marketSlug
-    ? "https://polymarket.com/event/" + eventSlug + "/" + marketSlug
-    : eventSlug
-      ? "https://polymarket.com/event/" + eventSlug
-      : null;
-  const alertText = url ? text + "\\n\\n" + url : text;
-  await telegram(alertText);
+  const marketUrl = String(poly.market?.url || "").trim();
+  if (!marketUrl) {
+    log("NO_MARKET_URL", {marketId:String(poly.market?.id || ""),eventSlug:String(poly.event?.slug || "")});
+    continue;
+  }
+  await telegram(text + "\\n\\n" + marketUrl);
 
   entry.alerted = true;
   entry.alertedAt = new Date().toISOString();
