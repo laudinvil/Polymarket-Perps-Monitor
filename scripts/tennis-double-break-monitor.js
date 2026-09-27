@@ -612,6 +612,20 @@ async function telegram(text, url) {
   }
 }
 
+async function sendTestAlert() {
+  const text =
+`🎾 TEST ALERT
+
+TENNIS MONITOR ONLINE
+
+Two-consecutive-service-break strategy
+TEST MODE — ONE MESSAGE
+
+If you received this message, Telegram delivery is working.`;
+  const sent = await telegram(text, "https://polymarket.com/tennis");
+  log("TEST_ALERT_SENT", { sent: sent !== false });
+}
+
 async function evaluate(e, brokenSide) {
   log("EVALUATE_START", {
     eventId: e.id,
@@ -760,6 +774,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
+
+if (process.env.TEST_ALERT === "1") {
+  await sendTestAlert().catch(err => log("TEST_ALERT_ERROR", { error: String(err) }));
+}
 
 await refreshMarkets().catch(err => { state.lastError = String(err); log("GAMMA_ERROR", { error: String(err) }); });
 setInterval(() => refreshMarkets().catch(err => log("GAMMA_ERROR", { error: String(err) })), CFG.gammaMs);
