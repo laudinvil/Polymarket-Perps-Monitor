@@ -76,7 +76,7 @@ function isSoccer(m) {
   const score = String(m.score || "").trim();
 
   // Real football feeds normally expose a 1H/2H period and a simple 0-0 style score.
-  if (/^(1H|2H|HT|ET|PEN)$/i.test(period) && /^\\d+\\s*[-:]\\s*\\d+$/.test(score)) {
+  if (/^(1H|2H|HT|ET|PEN)$/i.test(period) && /^\d+\s*[-:]\s*\d+$/.test(score)) {
     return true;
   }
 
