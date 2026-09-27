@@ -1,6 +1,6 @@
 async function ensurePrematchBaseline(match, poly, entry) {
   if (entry.pre) return entry.pre;
-  const prices = await marketPrices(poly.market);
+  const prices = await marketPrices(poly);
   if (!prices) return null;
   const [teamA, teamB] = teams(match);
   const sides = identifySides(prices, teamA, teamB);
