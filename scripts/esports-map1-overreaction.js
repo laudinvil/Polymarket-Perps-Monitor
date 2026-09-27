@@ -268,38 +268,54 @@ async function fetchGameDetails(match, game){
     return detail||game;
   }catch(e){log("GAME_DETAILS_ERROR",{matchId:String(match?.id||""),gameId:String(game.id),error:String(e)});return game;}
 }
-async function fetchCSRoundScore(gameId,diag){
-  if(!gameId)return null;
-  const urls=[
-    "/csgo/games/"+encodeURIComponent(String(gameId))+"/rounds",
-    "/csgo/games/"+encodeURIComponent(String(gameId))+"/rounds?per_page=100"
-  ];
-  for(const path of urls){
+async function fetchGameSpecificScore(match,game,diag){
+  if(!game?.id)return null;
+  const slug=String(match?.videogame?.slug||"").toLowerCase();
+  const title=String(match?.videogame_title?.slug||match?.videogame_title?.name||"").toLowerCase();
+  const isCS=slug==="csgo"||slug.includes("counter")||slug.includes("cs")||title==="cs-2"||title.includes("counter-strike");
+  const isLoL=slug==="lol"||slug.includes("league")||title==="lol"||title.includes("league");
+  const isDota=slug.includes("dota")||title.includes("dota");
+  const isValorant=slug.includes("valorant")||title.includes("valorant");
+  const endpoints=isCS
+    ? ["/csgo/games/"+encodeURIComponent(String(game.id))+"/rounds"]
+    : isLoL
+      ? ["/lol/games/"+encodeURIComponent(String(game.id))+"/frames"]
+      : isDota
+        ? ["/dota2/games/"+encodeURIComponent(String(game.id))+"/frames"]
+        : isValorant
+          ? ["/valorant/games/"+encodeURIComponent(String(game.id))+"/rounds"]
+          : [];
+  if(!endpoints.length)return null;
+  for(const path of endpoints){
     try{
       const data=await ps(path);
-      const rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:(Array.isArray(data?.rounds)?data.rounds:[]));
+      const rows=Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:(Array.isArray(data?.frames)?data.frames:(Array.isArray(data?.rounds)?data.rounds:[])));
       if(!rows.length)continue;
-      const counts=[0,0];
-      for(const round of rows){
-        const winner=String(round?.winner?.side??round?.winner_side??round?.winning_side??round?.winner?.name??"").toLowerCase();
-        if(winner==="counter-terrorist"||winner==="counter_terrorists"||winner==="ct"||winner==="counterterrorist")counts[0]++;
-        else if(winner==="terrorist"||winner==="terrorists"||winner==="t")counts[1]++;
-        else{
-          const results=Array.isArray(round?.results)?round.results:[];
-          if(results.length>=2){
-            const vals=results.map(x=>Number(x?.score??x?.result??x?.value));
-            if(vals.every(Number.isFinite)&&vals[0]!==vals[1]){
-              if(vals[0]>vals[1])counts[0]++;else counts[1]++;
-            }
-          }
+      let best=null;
+      const walk=(v,depth=0)=>{
+        if(depth>5||v==null)return;
+        if(Array.isArray(v)){for(const x of v)walk(x,depth+1);return;}
+        if(typeof v!=="object")return;
+        const candidates=[
+          v.score,v.round_score,v.game_score,v.team_score,v.kills,
+          v.teams,v.opponents,v.results,v.red,v.blue,v.radiant,v.dire
+        ];
+        for(const x of candidates){
+          const p=scorePair(x);
+          if(p&&p[0]!==p[1]&&Math.max(...p)>=2)best=p;
         }
-      }
-      if(counts[0]+counts[1]>=3&&counts[0]!==counts[1]){
-        diag.map1ScoreSource="pandascore-rounds";
+        for(const x of Object.values(v))walk(x,depth+1);
+      };
+      for(const row of rows)walk(row);
+      if(best){
+        const value={score:best,marginValue:Math.abs(best[0]-best[1]),marginRatio:Math.abs(best[0]-best[1])/Math.max(...best),source:"pandascore-"+(isCS?"rounds":isLoL?"frames":isDota?"frames":isValorant?"rounds":"game-data")};
+        diag.map1ScoreSource=value.source;
         diag.map1ScoreFound=(diag.map1ScoreFound||0)+1;
-        return{score:counts,marginValue:Math.abs(counts[0]-counts[1]),marginRatio:Math.abs(counts[0]-counts[1])/Math.max(...counts),source:"pandascore-rounds"};
+        return value;
       }
-    }catch(e){log("CS_ROUNDS_ERROR",{gameId:String(gameId),error:String(e)})}
+    }catch(e){
+      log("GAME_SCORE_ENRICH_ERROR",{matchId:String(match?.id||""),gameId:String(game.id),path,error:String(e)});
+    }
   }
   diag.map1ScoreUnavailable=(diag.map1ScoreUnavailable||0)+1;
   return null;
@@ -572,7 +588,7 @@ async function map1InfoAsync(match,diag){
   if(score.type==="winner_only"){
     diag.gameWinnerFound=(diag.gameWinnerFound||0)+1;
     diag.marginUnavailable=(diag.marginUnavailable||0)+1;
-    const roundScore=await fetchCSRoundScore(g?.id,diag);
+    const roundScore=await fetchGameSpecificScore(match,g,diag);
     const winner=score.winnerIndex;
     const loser=winner===0?1:0;
     if(roundScore){
