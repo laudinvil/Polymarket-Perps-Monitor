@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:17:05.144Z",
+  "updatedAt": "2026-09-27T15:17:06.651Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328832911",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2013,
   "telemetry": {
     "startedAt": "2026-09-27T15:15:03.244Z",
-    "events": 697,
+    "events": 707,
     "polls": 1,
     "alerts": 4,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706431",
+  "matchId": "1707300",
   "teams": [
-    "Eternal Fire",
-    "K27"
+    "Metizport",
+    "Inner Circle Academy"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,18 +32,18 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 32,
+    "matchedPoly": 34,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 5,
+    "map1Finished": 6,
     "alreadyAlerted": 3,
     "noPrematch": 0,
-    "signalChecks": 2,
-    "balancedPrePass": 2,
+    "signalChecks": 3,
+    "balancedPrePass": 3,
     "movePass": 0,
-    "postRangePass": 0,
-    "mapFilterPass": 2,
+    "postRangePass": 1,
+    "mapFilterPass": 3,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
