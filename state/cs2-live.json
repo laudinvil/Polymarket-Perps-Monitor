@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:53:52.781Z",
+  "updatedAt": "2026-09-27T14:53:53.861Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1437,
+    "events": 1438,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712147",
+  "matchId": "1683303",
   "teams": [
-    "Teletubisie",
-    "Eternal Fire Academy"
+    "Bushido Wildcats",
+    "Leo Team"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -30,10 +30,10 @@
     "running": 11,
     "bo3": 92,
     "skippedFuture": 0,
-    "missingTeams": 3,
+    "missingTeams": 5,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 7,
+    "noPolyMatch": 8,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
