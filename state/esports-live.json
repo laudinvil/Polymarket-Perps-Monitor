@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:34:04.605Z",
+  "updatedAt": "2026-09-27T15:34:07.359Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,20 +7,20 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 636,
+    "events": 656,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1707300",
+  "matchId": "1710864",
   "teams": [
-    "Metizport",
-    "Inner Circle Academy"
+    "G2 Ares",
+    "FC Famalicão Esports"
   ],
   "status": "running",
   "seriesScore": [
-    1,
+    0,
     0
   ],
   "candidates": 68,
@@ -34,17 +34,17 @@
     "skippedFuture": 6,
     "missingTeams": 8,
     "polyEvents": 200,
-    "matchedPoly": 46,
+    "matchedPoly": 48,
     "noPolyMatch": 27,
     "noPolyPrice": 0,
-    "prematchCaptured": 5,
-    "map1Finished": 5,
+    "prematchCaptured": 6,
+    "map1Finished": 6,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 5,
-    "balancedPrePass": 5,
-    "movePass": 3,
-    "postRangePass": 1,
+    "signalChecks": 6,
+    "balancedPrePass": 6,
+    "movePass": 4,
+    "postRangePass": 2,
     "mapFilterPass": 0,
     "signalPass": 0,
     "noMarketUrl": 0,
