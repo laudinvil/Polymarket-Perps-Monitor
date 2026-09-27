@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:55.366Z",
+  "updatedAt": "2026-09-27T15:37:57.690Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 190,
+    "events": 209,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714921",
+  "matchId": "1702599",
   "teams": [
-    "Misa Esports",
-    "Fear Never Ends"
+    "METANOIA WOLVES",
+    "MIBR fe"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 18,
+    "matchedPoly": 20,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
@@ -377,6 +377,16 @@
         "matchId": "1714922",
         "teamA": "Galatasaray Esports",
         "teamB": "Pcific Esports",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714921",
+        "teamA": "Misa Esports",
+        "teamB": "Fear Never Ends",
         "seriesScore": [
           0,
           0
