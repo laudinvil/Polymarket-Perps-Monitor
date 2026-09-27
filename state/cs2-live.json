@@ -1,28 +1,29 @@
 {
-  "updatedAt": "2026-09-27T14:19:59.135Z",
-  "stage": "POLL_RESULT",
+  "updatedAt": "2026-09-27T14:20:05.245Z",
+  "stage": "POLL_START",
   "runId": "36325282392",
   "runAttempt": "1",
   "sha": "36d6acd84024531e247d7d6b130cf7c396afa857",
   "pid": 2258,
   "telemetry": {
     "startedAt": "2026-09-27T14:16:15.792Z",
-    "events": 5432,
-    "polls": 8,
+    "events": 5434,
+    "polls": 9,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
+  "now": "2026-09-27T14:20:05.245Z",
   "diagnostics": {
-    "startedAt": "2026-09-27T14:19:43.784Z",
-    "upcoming": 100,
-    "running": 13,
-    "bo3": 94,
-    "skippedFuture": 48,
-    "missingTeams": 12,
-    "polyEvents": 224,
-    "matchedPoly": 54,
-    "noPolyMatch": 7,
+    "startedAt": "2026-09-27T14:20:05.245Z",
+    "upcoming": 0,
+    "running": 0,
+    "bo3": 0,
+    "skippedFuture": 0,
+    "missingTeams": 0,
+    "polyEvents": 0,
+    "matchedPoly": 0,
+    "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -36,290 +37,7 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [
-      {
-        "matchId": "1710864",
-        "teams": [
-          "G2 Ares",
-          "FC Famalicão Esports"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T15:00:00Z"
-      },
-      {
-        "matchId": "1710864",
-        "teams": [
-          "G2 Ares",
-          "FC Famalicão Esports"
-        ],
-        "source": "public-search",
-        "polyEventId": "1088197",
-        "polyEventSlug": "cs2-g2a-fcf-2026-09-27",
-        "marketId": "5003601",
-        "marketSlug": "cs2-g2a-fcf-2026-09-27",
-        "marketQuestion": "Counter-Strike: G2 Ares vs FC Famalicão Esports (BO3) - Hotspawn Showdown Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1710864",
-        "teams": [
-          "G2 Ares",
-          "FC Famalicão Esports"
-        ],
-        "polyEventId": "1088197",
-        "polyEventSlug": "cs2-g2a-fcf-2026-09-27",
-        "marketId": "5003601",
-        "marketSlug": "cs2-g2a-fcf-2026-09-27",
-        "marketQuestion": "Counter-Strike: G2 Ares vs FC Famalicão Esports (BO3) - Hotspawn Showdown Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1688997",
-        "teams": [
-          "NIP",
-          "magic"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T15:00:00Z"
-      },
-      {
-        "matchId": "1688997",
-        "teams": [
-          "NIP",
-          "magic"
-        ],
-        "source": "public-search",
-        "polyEventId": "1088128",
-        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
-        "marketId": "5002751",
-        "marketSlug": "cs2-nip-mgc-2026-09-27",
-        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1688997",
-        "teams": [
-          "NIP",
-          "magic"
-        ],
-        "polyEventId": "1088128",
-        "polyEventSlug": "cs2-nip-mgc-2026-09-27",
-        "marketId": "5002751",
-        "marketSlug": "cs2-nip-mgc-2026-09-27",
-        "marketQuestion": "Counter-Strike: NIP vs magic (BO3) - 1win Private Club #1 Playoffs",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1702599",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1702599",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "source": "public-search",
-        "polyEventId": "1084156",
-        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketId": "4973479",
-        "marketSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1702599",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "polyEventId": "1084156",
-        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketId": "4973479",
-        "marketSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1700705",
-        "teams": [
-          "Imperial",
-          "paiN"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T17:00:00Z"
-      },
-      {
-        "matchId": "1700705",
-        "teams": [
-          "Imperial",
-          "paiN"
-        ],
-        "source": "public-search",
-        "polyEventId": "1087590",
-        "polyEventSlug": "cs2-imp11-pain-2026-09-27",
-        "marketId": "4995309",
-        "marketSlug": "cs2-imp11-pain-2026-09-27-game4",
-        "marketQuestion": "Counter-Strike: Imperial vs paiN - Map 4 Winner",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1700705",
-        "teams": [
-          "Imperial",
-          "paiN"
-        ],
-        "polyEventId": "1087590",
-        "polyEventSlug": "cs2-imp11-pain-2026-09-27",
-        "marketId": "4995309",
-        "marketSlug": "cs2-imp11-pain-2026-09-27-game4",
-        "marketQuestion": "Counter-Strike: Imperial vs paiN - Map 4 Winner",
-        "matchScore": 1
-      }
-    ],
-    "rejects": [
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1710864",
-        "teamA": "G2 Ares",
-        "teamB": "FC Famalicão Esports"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1710864",
-        "teamA": "G2 Ares",
-        "teamB": "FC Famalicão Esports",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1688997",
-        "teamA": "NIP",
-        "teamB": "magic"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1688997",
-        "teamA": "NIP",
-        "teamB": "magic",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1702599",
-        "teamA": "METANOIA WOLVES",
-        "teamB": "MIBR fe"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1702599",
-        "teamA": "METANOIA WOLVES",
-        "teamB": "MIBR fe",
-        "seriesScore": null
-      },
-      {
-        "reason": "missing_teams",
-        "matchId": "1681152",
-        "opponents": 1
-      },
-      {
-        "reason": "missing_teams",
-        "matchId": "1706604",
-        "opponents": 1
-      },
-      {
-        "reason": "missing_teams",
-        "matchId": "1706603",
-        "opponents": 1
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1700705",
-        "teamA": "Imperial",
-        "teamB": "paiN"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1700705",
-        "teamA": "Imperial",
-        "teamB": "paiN",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1700465",
-        "teamA": "KUUSAMO.gg",
-        "teamB": "Noir Verse"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1700465",
-        "teamA": "KUUSAMO.gg",
-        "teamB": "Noir Verse",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1696342",
-        "teamA": "M80",
-        "teamB": "DENDELE CS"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1696342",
-        "teamA": "M80",
-        "teamB": "DENDELE CS",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1684181",
-        "teamA": "Nemiga",
-        "teamB": "Color"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1684181",
-        "teamA": "Nemiga",
-        "teamB": "Color",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1714222",
-        "teamA": "PARTIZAN",
-        "teamB": "Chaos Enforcers"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1714222",
-        "teamA": "PARTIZAN",
-        "teamB": "Chaos Enforcers",
-        "seriesScore": null
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1710855",
-        "teamA": "BASEMENT BOYS",
-        "teamB": "overTIME"
-      }
-    ]
-  },
-  "config": {
-    "minPreFavorite": 0.35,
-    "maxPreFavorite": 0.65,
-    "minMove": 0.15,
-    "minPostFavorite": 0.6,
-    "maxPostFavorite": 0.95,
-    "requireMapMargin": false,
-    "minMapMargin": 6,
-    "maxUpcomingHours": 24
-  },
-  "tracked": 38,
-  "alerts": 0
+    "samples": [],
+    "rejects": []
+  }
 }\n
