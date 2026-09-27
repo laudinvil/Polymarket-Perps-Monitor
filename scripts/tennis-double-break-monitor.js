@@ -127,7 +127,7 @@ function isMatchWinnerMarket(m) {
   const primary = norm([m.question, m.title].filter(Boolean).join(" "));
   if (!primary) return false;
 
-  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap|set winner|win set/.test(primary)) {
+  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by|game handicap|games handicap|set winner|win set|set [0-9]/.test(primary)) {
     return false;
   }
 
