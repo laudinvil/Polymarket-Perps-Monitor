@@ -151,10 +151,19 @@ function minute(m) {
     const clock = s.match(/^(\d{1,3})\s*:\s*\d{1,2}$/);
     if (clock) return clock[1];
 
-    const range = s.match(/^(\d{1,3})\s*[-:]\s*(\d{1,2})$/);
-    if (range) return range[1];
+    // A plain HH:MM-looking value can be an unrelated timestamp. Only
+    // accept colon clocks from explicit elapsed/period fields.
+    const isExplicitClockField =
+      value === m.elapsed ||
+      value === m.matchMinute ||
+      value === m.gameMinute ||
+      value === m.clock ||
+      value === m.period;
 
-    // Polymarket may provide a period clock such as "1H 37:42".
+    const clock = s.match(/^(\d{1,3})\s*:\s*\d{1,2}$/);
+    if (clock && isExplicitClockField) return clock[1];
+
+    // Polymarket period clocks: "1H 37:42", "2H 12:03", etc.
     const periodClock = s.match(/(?:1H|2H|ET)\s*(\d{1,3})\s*:\s*\d{1,2}/i);
     if (periodClock) return periodClock[1];
 
