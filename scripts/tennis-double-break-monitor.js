@@ -2,8 +2,8 @@ import http from "node:http";
 import fs from "node:fs/promises";
 
 const CFG = {
-  pollMs: 8000,
-  gammaMs: 60000,
+  pollMs: 3000,
+  gammaMs: 30000,
   cooldownMs: 20 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
@@ -325,7 +325,7 @@ async function evaluate(e, brokenSide) {
   if (!m) return;
   const clob = yesToken(m, player);
   if (!clob) return;
-  const px = prices.get(clob.id);
+  const px = prices.get(clob.id) || { ask: null, depth: 0 };
   const liq = marketLiquidity(m);
 
   const key = `${e.id}:${player}`;
