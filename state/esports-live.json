@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:58.379Z",
+  "updatedAt": "2026-09-27T15:36:59.757Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 805,
+    "events": 815,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714931",
+  "matchId": "1702600",
   "teams": [
-    "Eternal Fire",
-    "NKVT"
+    "BESTIA Academy",
+    "Procyon Gaming"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 40,
+    "matchedPoly": 42,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
