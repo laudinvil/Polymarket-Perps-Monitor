@@ -459,8 +459,15 @@ async function evaluate(e, brokenSide) {
   }
   const outcomes = parseJsonField(m.outcomes);
   const prices0 = parseJsonField(m.outcomePrices);
-  const idx = outcomes.findIndex(x => String(x).toLowerCase() === String(player).toLowerCase());
-  const initialAsk = idx >= 0 ? Number(prices0[idx]) : Number(prices0[0]);
+  const idx = outcomes.findIndex(x => playerNameMatch(player, String(x)));
+  const initialAsk = idx >= 0 ? Number(prices0[idx]) : null;
+  log("MARKET_PRICE_MAP", {
+    eventId: e.id,
+    player,
+    outcomes,
+    selectedOutcome: idx >= 0 ? outcomes[idx] : null,
+    price: Number.isFinite(initialAsk) ? initialAsk : null
+  });
   const px = { ask: Number.isFinite(initialAsk) ? initialAsk : null, depth: 0 };
   const liq = marketLiquidity(m);
 
