@@ -89,7 +89,10 @@ function isSoccer(m) {
   // Do not classify by a generic "running/live" status either.
 
   // Fallback for feeds that omit the sport label but expose a soccer period.
-  if (/^(1H|2H|HT|ET|PEN)$/i.test(period)) return true;
+  // Accept both compact values ("1H", "2H") and values carrying a clock
+  // ("1H 37:42", "2H 12:03").
+  if (/^(1H|2H|HT|ET|PEN)(?:\s|$)/i.test(period)) return true;
+  if (/^(1ST|2ND)\s*HALF(?:\s|$)/i.test(period)) return true;
 
   return false;
 }
