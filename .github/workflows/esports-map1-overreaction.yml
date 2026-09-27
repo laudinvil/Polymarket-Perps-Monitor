@@ -4,9 +4,10 @@ on:
   push:
     paths:
       - "scripts/esports-map1-overreaction.js"
+      - ".github/workflows/esports-map1-overreaction.yml"
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "*/5 * * * *"
 
 concurrency:
   group: esports-map1-overreaction
