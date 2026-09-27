@@ -2,7 +2,7 @@
   "name": "polymarket-perps-monitor",
   "private": true,
   "scripts": {
-    "start": "node scripts/deplexo-start.js"
+    "start": "node scripts/nutmegly-live-monitor.js"
   },
   "engines": {
     "node": ">=22"
