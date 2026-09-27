@@ -260,10 +260,12 @@ function findMarketForPlayer(e, playerName) {
   for (const m of markets.values()) {
     if (!matchMarket(m, e)) continue;
     const q = String(m.question || m.title || "").toLowerCase();
-    // Prefer match-winner style markets because Polymarket does not expose a
-    // reliable universal "next break" tennis market.
-    const winnerish = q.includes("win") || q.includes("winner") || q.includes(playerName.toLowerCase());
-    if (!best || winnerish) best = m;
+    // Prefer the market that explicitly names the player, then a match-winner market.
+    const playerHit = q.includes(playerName.toLowerCase());
+    const winnerish = q.includes("win") || q.includes("winner");
+    if (!best || playerHit || (winnerish && !String(best.question || best.title || "").toLowerCase().includes("win"))) {
+      best = m;
+    }
   }
   return best;
 }
