@@ -28,6 +28,9 @@ const matches = await page.locator('a[href*="/sports/soccer/games"]').evaluateAl
 );
 
 console.log("LIVE CARDS:", JSON.stringify(matches, null, 2));
+const bodyText = await page.locator("body").innerText();
+console.log("PAGE_HAS_LIVE:", /\\bLIVE\\b/i.test(bodyText));
+console.log("LIVE_CONTEXT:", bodyText.split("\\n").filter(x => /\\bLIVE\\b/i.test(x)).slice(0,20));
 
 for (const m of matches) {
   const text = m.text;
