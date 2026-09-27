@@ -2,8 +2,10 @@ import http from "node:http";
 import fs from "node:fs/promises";
 
 const CFG = {
-  pollMs: 3000,
-  gammaMs: 30000,
+  pollMs: 10000,
+  gammaMs: 60000,
+  requestTimeoutMs: 7000,
+  telegramMinMs: 1000,
   cooldownMs: 20 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
@@ -31,22 +33,29 @@ const matches = new Map();
 const markets = new Map();
 const prices = new Map();
 const alerted = new Map();
-let ws = null;
-let wsTimer = null;
+let lastSofaRequest = 0;
+let lastGammaRequest = 0;
+let lastTelegramRequest = 0;
 
 function log(type, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), type, ...data }));
 }
 
-async function getJson(url) {
+async function getJson(url, kind = "generic") {
+  const minGap = kind === "sofa" ? CFG.pollMs : kind === "gamma" ? CFG.gammaMs : 1000;
+  const now = Date.now();
+  const last = kind === "sofa" ? lastSofaRequest : kind === "gamma" ? lastGammaRequest : 0;
+  if (now - last < minGap) await new Promise(r => setTimeout(r, minGap - (now - last)));
+  if (kind === "sofa") lastSofaRequest = Date.now();
+  if (kind === "gamma") lastGammaRequest = Date.now();
   const r = await fetch(url, {
     headers: {
       accept: "application/json",
       "user-agent": "Mozilla/5.0 TennisDoubleBreakMonitor/1.0",
     },
-    signal: AbortSignal.timeout(9000),
+    signal: AbortSignal.timeout(CFG.requestTimeoutMs),
   });
-  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  if (!r.ok) {\n    if (r.status === 429) {\n      const retry = Number(r.headers.get("retry-after") || 15);\n      await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retry, 5), 120)));\n    }\n    throw new Error(`${r.status} ${url}`);\n  }
   return r.json();
 }
 
@@ -200,7 +209,7 @@ function recordSignal(e, brokenSide) {
 }
 
 async function refreshMarkets() {
-  const data = await getJson(CFG.gammaUrl);
+  const data = await getJson(CFG.gammaUrl, "gamma");
   const arr = Array.isArray(data) ? data : (data.data || data.markets || []);
   markets.clear();
   const tokenIds = [];
@@ -304,7 +313,7 @@ async function telegram(text, url) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chat = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
-  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);\n  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));\n  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -343,7 +352,7 @@ ${e.homeTeam?.name} vs ${e.awayTeam?.name}
 ${player} lost 2 service games in a row.
 SET: ${sh}–${sa}
 
-POLYMARKET PRICE: ${Math.round(px.ask * 100)}¢
+POLYMARKET PRICE: ${px.ask == null ? "—" : `${Math.round(px.ask * 100)}¢`}
 LIQUIDITY: $${Math.round(liq)}
 ASK DEPTH: $${Math.round(px.depth)}
 
@@ -355,7 +364,7 @@ COMEBACK CANDIDATE`;
 
 async function poll() {
   try {
-    const body = await getJson(CFG.sofaUrl);
+    const body = await getJson(CFG.sofaUrl, "sofa");
     const events = body.events || [];
     state.liveMatches = events.length;
     for (const e of events) {
