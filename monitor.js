@@ -18,7 +18,7 @@ server.listen(PORT, "0.0.0.0", () => console.log("HTTP HEALTH LISTENING:", PORT)
 
 async function sendTelegram(text) {
   if (!TOKEN || !CHAT_ID) {
-    console.error("TELEGRAM CONFIG MISSING: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
+    console.error("TELEGRAM CONFIG MISSING");
     return;
   }
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
@@ -73,10 +73,19 @@ async function main() {
   try {
     const browser = await chromium.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+      chromiumSandbox: false,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--no-zygote",
+        "--single-process"
+      ]
     });
+    console.log("BROWSER STARTED");
     const page = await browser.newPage({locale:"ru-RU"});
-
     while (true) {
       try {
         await scan(page);
