@@ -2,3 +2,9 @@ framework: node
 install: npm ci
 start: node scripts/deplexo-log-server.js
 port: 3000
+
+# STRICT DEDUPE RULE — HIGHEST PRIORITY
+# No CS2 Map 1 alert may be sent unless Deplexo atomically claims the match key.
+# One key only: CS2_MAP1:<PandaScore match id>. A key may be claimed once ever.
+# Duplicate claims return HTTP 409. If Deplexo is unavailable, FAIL CLOSED: send ZERO alerts.
+# This overrides local state, GitHub Actions concurrency, retries, and process restarts.
