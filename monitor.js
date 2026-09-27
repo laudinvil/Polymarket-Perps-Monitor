@@ -256,7 +256,7 @@ async function pollGammaSoccer() {
     const data = await response.json();
     const events = Array.isArray(data) ? data : Array.isArray(data.events) ? data.events : [];
 
-    const liveEvents = events.filter(e => e && e.live === true && e.ended !== true);
+    const liveEvents = events.filter(e => e && String(e.live).toLowerCase() === "true" && String(e.ended).toLowerCase() !== "true");
     gammaLiveCount = liveEvents.length;
     lastGammaError = null;
 
@@ -297,7 +297,7 @@ async function pollGammaSoccer() {
         slug: e.slug || "",
         homeTeam: home || (match ? match[1].trim() : rawTitle),
         awayTeam: away || (match ? match[2].trim() : ""),
-        status: e.gameStatus || e.status || "InProgress",
+        status: e.gameStatus || e.status || (e.live === true ? "InProgress" : ""),
         live: e.live === true,
         ended: e.ended === true,
         score: String(e.score || "").trim(),
