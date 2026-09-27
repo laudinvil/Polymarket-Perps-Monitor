@@ -89,13 +89,56 @@ jobs:
                   }
                 };
                 scan(dr);
-                const priority=candidates.find(x=>/status_text|statustext|clock|match_time|matchtime/.test(x.key))||candidates.find(x=>/^(?:minute|elapsed|currentminute|gameminute)$/.test(x.key));
-                if(priority){found.l.minute=priority.minute;found.l.minuteSource="SportScore match detail:"+priority.key;}
                 console.log("MINUTE_CANDIDATES",JSON.stringify(candidates.slice(0,20)));
                 console.log("MINUTE_DETAIL",JSON.stringify({slug,minute:found.l.minute,source:found.l.minuteSource||"none"}));
               }
             } catch(e){console.log("MINUTE_DETAIL_ERROR",String(e));}
-            const ps=found.e.score; if(typeof ps==="string"&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(ps)) { found.l.score=ps.replace(/:/,"–").replace(/-/,"–"); found.l.scoreSource="Polymarket"; } else if(ps&&typeof ps==="object"){ const ph=ps.home??ps.homeScore??ps.currentHome??ps.homeTeam, pa=ps.away??ps.awayScore??ps.currentAway??ps.awayTeam; if(ph!=null&&pa!=null) { found.l.score=String(ph)+"–"+String(pa); found.l.scoreSource="Polymarket"; } } console.log("BEST_MATCH",JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score,timeOk:found.timeOk,polyScore:found.e.score,polyPeriod:found.e.period})); } else console.log("BEST_MATCH","NONE");
+            // FotMob is used only for authoritative live state/clock. Never derive minute from kickoff time.
+            try {
+              const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
+              const fp=await json("https://www.fotmob.com/api/data/matches?date="+day);
+              const fm=[];
+              for(const league of (fp.leagues||[])) for(const m of (league.matches||[])){
+                const h=m.home?.name||"", a=m.away?.name||"";
+                const s=Math.max(
+                  sim(found.l.home,h)+sim(found.l.away,a),
+                  sim(found.l.home,a)+sim(found.l.away,h)
+                );
+                if(s>=1.25) fm.push({m,s});
+              }
+              fm.sort((a,b)=>b.s-a.s);
+              const best=fm[0];
+              if(best){
+                const d=await json("https://www.fotmob.com/api/data/matchDetails?matchId="+encodeURIComponent(best.m.id));
+                const teams=d.header?.teams||[];
+                const hs=teams[0]?.score, as=teams[1]?.score;
+                const st=d.header?.status||{};
+                const lt=st.liveTime||{};
+                const clock=String(lt.long||lt.short||"");
+                console.log("FOTMOB_MATCH",JSON.stringify({
+                  id:best.m.id,home:teams[0]?.name||best.m.home?.name,away:teams[1]?.name||best.m.away?.name,
+                  score:st.scoreStr||"—",finished:!!st.finished,started:!!st.started,ongoing:!!st.ongoing,
+                  liveTime:lt,clock
+                }));
+                if(hs!=null&&as!=null) found.l.score=String(hs)+"–"+String(as);
+                if(!st.finished&&st.started&&clock){
+                  // Accept explicit values such as 81, 90+3, 2H - 81, or 81'.
+                  let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
+                  if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*(?:'|min|minute)?\\b/i);
+                  if(m){
+                    found.l.minute=m[1]+(m[2]?"+":"" )+(m[2]||"");
+                    found.l.minuteSource="FotMob";
+                    found.l.period=lt.short||found.l.period||"";
+                  } else if(/^(?:HT|Half Time|Halftime|Interrupted|IR)$/i.test(clock)){
+                    found.l.minute=clock;
+                    found.l.minuteSource="FotMob";
+                  }
+                }
+              } else {
+                console.log("FOTMOB_MATCH","NONE");
+              }
+            } catch(e){console.log("FOTMOB_ERROR",String(e));}
+            const ps=found.e.score; if(typeof ps==="string"&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(ps) && found.l.score==="—") { found.l.score=ps.replace(/:/,"–").replace(/-/,"–"); found.l.scoreSource="Polymarket"; } else if(ps&&typeof ps==="object"){ const ph=ps.home??ps.homeScore??ps.currentHome??ps.homeTeam, pa=ps.away??ps.awayScore??ps.currentAway??ps.awayTeam; if(ph!=null&&pa!=null && found.l.score==="—") { found.l.score=String(ph)+"–"+String(pa); found.l.scoreSource="Polymarket"; } } console.log("BEST_MATCH",JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score,timeOk:found.timeOk,polyScore:found.e.score,polyPeriod:found.e.period})); } else console.log("BEST_MATCH","NONE");
           if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)throw Error("GitHub Telegram secrets are missing");
           const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
           const link=found?.e?.slug?"https://polymarket.com/event/"+found.e.slug:"https://polymarket.com/sports/soccer";
