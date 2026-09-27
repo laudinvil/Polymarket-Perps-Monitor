@@ -3,12 +3,9 @@ name: Tennis Double Break Monitor
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
   push:
     paths:
-      - "scripts/tennis-double-break-monitor.js"
-      - ".github/workflows/tennis-double-break.yml"
-
+    
 concurrency:
   group: tennis-double-break-monitor
   cancel-in-progress: true
@@ -16,7 +13,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 360
     permissions:
       contents: read
     steps:
