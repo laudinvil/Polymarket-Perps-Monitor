@@ -213,44 +213,59 @@ async function getCompletedGameFromPointFeed(eventId) {
     `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
     "sofa-pbp"
   );
-  log("PBP_SOURCE", {
-    eventId,
-    payloadType: Array.isArray(data) ? "array" : typeof data,
-    hasPointByPoint: Array.isArray(data?.pointByPoint),
-    keys: data && typeof data === "object" ? Object.keys(data).slice(0, 20) : []
-  });
-  const sets = Array.isArray(data?.pointByPoint) ? data.pointByPoint
-    : Array.isArray(data) ? data
-    : [];
+
+  const rawSets = Array.isArray(data?.pointByPoint)
+    ? data.pointByPoint
+    : Array.isArray(data?.points)
+      ? data.points
+      : Array.isArray(data)
+        ? data
+        : [];
+
   const games = [];
-  for (const set of sets) {
-    for (const game of Array.isArray(set?.games) ? set.games : []) {
-      const score = game?.score || {};
-      if (Number.isFinite(Number(score.homeScore)) && Number.isFinite(Number(score.awayScore))) {
-        games.push({
-          set: Number(set.set || set.period || 0),
-          game: Number(game.game || 0),
-          home: Number(score.homeScore),
-          away: Number(score.awayScore),
-          serving: Number(score.serving)
-        });
-      }
+  for (const set of rawSets) {
+    const setNo = Number(set?.set ?? set?.period ?? set?.setNumber ?? 0);
+    const rawGames = Array.isArray(set?.games) ? set.games : [];
+
+    for (const game of rawGames) {
+      const score = game?.score || game;
+      const home = Number(score?.homeScore ?? game?.homeGames);
+      const away = Number(score?.awayScore ?? game?.awayGames);
+      const serving = Number(score?.serving ?? game?.serving);
+      const gameNo = Number(game?.game ?? game?.gameNumber ?? 0);
+
+      if (!Number.isFinite(home) || !Number.isFinite(away)) continue;
+
+      games.push({
+        set: setNo,
+        game: gameNo,
+        home,
+        away,
+        serving: serving === 1 || serving === 2 ? serving : null
+      });
     }
   }
+
   if (!games.length) return null;
+
   games.sort((a, b) => a.set - b.set || a.game - b.game);
-  const last = games[games.length - 1];
-  const previous = games.length > 1 ? games[games.length - 2] : null;
+
+  // Only treat a game as completed when the cumulative game score advanced
+  // by exactly one game from the previous completed game.
+  let last = games[games.length - 1];
+  let previous = games.length > 1 ? games[games.length - 2] : null;
+
   let winner = null;
-  if (!previous || previous.set !== last.set) {
-    if (last.home === 1 && last.away === 0) winner = 1;
-    else if (last.home === 0 && last.away === 1) winner = 2;
-  } else {
+  if (previous && previous.set === last.set) {
     const dh = last.home - previous.home;
     const da = last.away - previous.away;
     if (dh === 1 && da === 0) winner = 1;
-    if (da === 1 && dh === 0) winner = 2;
+    else if (da === 1 && dh === 0) winner = 2;
+  } else if (!previous || previous.set !== last.set) {
+    if (last.home === 1 && last.away === 0) winner = 1;
+    else if (last.home === 0 && last.away === 1) winner = 2;
   }
+
   return { ...last, winner };
 }
 
