@@ -213,6 +213,12 @@ async function getCompletedGameFromPointFeed(eventId) {
     `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
     "sofa-pbp"
   );
+  log("PBP_SOURCE", {
+    eventId,
+    payloadType: Array.isArray(data) ? "array" : typeof data,
+    hasPointByPoint: Array.isArray(data?.pointByPoint),
+    keys: data && typeof data === "object" ? Object.keys(data).slice(0, 20) : []
+  });
   const sets = Array.isArray(data?.pointByPoint) ? data.pointByPoint
     : Array.isArray(data) ? data
     : [];
