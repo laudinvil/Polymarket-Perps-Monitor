@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:42:50.578Z",
+  "updatedAt": "2026-09-27T15:42:51.979Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1066,
+    "events": 1076,
     "polls": 4,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714222",
+  "matchId": "1710855",
   "teams": [
-    "PARTIZAN",
-    "Chaos Enforcers"
+    "BASEMENT BOYS",
+    "overTIME"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 32,
+    "matchedPoly": 34,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
