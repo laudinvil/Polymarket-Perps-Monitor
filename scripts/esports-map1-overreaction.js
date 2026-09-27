@@ -174,7 +174,6 @@ async function map1InfoAsync(match,diag){
   derivedSeries[winner]=1;
   derivedSeries[loser]=0;
   const finalSeries=series&&series[0]!==series[1]?series:derivedSeries;
-  const marginRatio=score.value/Math.max(...score.score);
   return{winner,loser,series:finalSeries,margin:score.score||null,marginValue:score.value,marginRatio:Number.isFinite(score.value)?score.value/Math.max(...score.score):null};
 }
 
