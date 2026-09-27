@@ -143,14 +143,34 @@ const norm = s => String(s || "")
   .replace(/\b(esports?|gaming|team|academy|club|fc|gg|org)\b/g, " ")
   .replace(/\s+/g, " ").trim();
 
-const sim = (a,b) => {
-  const A = new Set(norm(a).split(" ").filter(x => x.length > 2));
-  const B = new Set(norm(b).split(" ").filter(x => x.length > 2));
+function compact(s) {
+  return norm(s).replace(/\s+/g, "");
+}
+
+function acronym(s) {
+  return norm(s).split(" ").filter(Boolean).map(x => x[0]).join("");
+}
+
+function nameScore(a, b) {
+  const na = norm(a), nb = norm(b);
+  if (!na || !nb) return 0;
+  if (na === nb || compact(a) === compact(b)) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.92;
+
+  const aa = acronym(a), ab = acronym(b);
+  if (aa && ab && aa === ab && aa.length >= 2) return 0.88;
+  if (aa && nb === aa) return 0.88;
+  if (ab && na === ab) return 0.88;
+
+  const A = new Set(na.split(" ").filter(x => x.length > 1));
+  const B = new Set(nb.split(" ").filter(x => x.length > 1));
   if (!A.size || !B.size) return 0;
   let hit = 0;
   for (const x of A) if (B.has(x)) hit++;
   return hit / Math.max(A.size, B.size);
-};
+}
+
+const sim = (a,b) => nameScore(a,b);
 
 async function getJson(url, headers = {}) {
   let last;
@@ -312,42 +332,61 @@ async function searchPolyForMatch(teamA, teamB) {
 
 function findPolyEvent(events, teamA, teamB) {
   events = Array.isArray(events) ? events : [];
-  const a = norm(teamA), b = norm(teamB);
   let best = null;
+
   for (const e of events) {
     const et = eventTeams(e);
     const title = String(e.title || e.name || "");
     const markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
-    const texts = [title];
+    const texts = [title, ...et];
+
     for (const m of markets) {
       texts.push(String(m?.question || m?.title || ""));
       const parsed = parseMarket(m);
       if (parsed) texts.push(parsed.map(x => x.name).join(" vs "));
     }
-    let titlePairScore = 0;
+
+    let pairScore = 0;
+    let bestText = "";
     for (const t of texts) {
+      const s1 = nameScore(teamA, t);
+      const s2 = nameScore(teamB, t);
       const nt = norm(t);
-      const hasA = a && (nt.includes(a) || sim(t, teamA) >= 0.60);
-      const hasB = b && (nt.includes(b) || sim(t, teamB) >= 0.60);
-      if (hasA && hasB) { titlePairScore = 1; break; }
-      titlePairScore = Math.max(titlePairScore, (sim(t, teamA) + sim(t, teamB)) / 2);
+      const hasA = nt.includes(norm(teamA)) || s1 >= 0.72;
+      const hasB = nt.includes(norm(teamB)) || s2 >= 0.72;
+      if (hasA && hasB) {
+        pairScore = Math.max(pairScore, Math.min(1, (Math.max(s1,0.72) + Math.max(s2,0.72)) / 2));
+        bestText = t;
+      }
     }
-    let teamScore = 0;
-    if (et.length >= 2) teamScore = Math.max(
-      (sim(teamA,et[0]) + sim(teamB,et[1])) / 2,
-      (sim(teamA,et[1]) + sim(teamB,et[0])) / 2
-    );
-    const score = Math.max(teamScore, titlePairScore);
-    if (!best || score > best.score) best = { event:e, score };
+
+    if (et.length >= 2) {
+      const direct = Math.max(
+        (nameScore(teamA,et[0]) + nameScore(teamB,et[1])) / 2,
+        (nameScore(teamA,et[1]) + nameScore(teamB,et[0])) / 2
+      );
+      if (direct > pairScore) {
+        pairScore = direct;
+        bestText = et.join(" vs ");
+      }
+    }
+
+    if (!best || pairScore > best.score) {
+      best = { event:e, score:pairScore, matchedText:bestText };
+    }
   }
-  if (!best || best.score < 0.60) return null;
+
+  if (!best || best.score < 0.68) return null;
+
   const e = best.event;
   const markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
   for (const m of markets) {
     const active = m?.active === true || String(m?.active).toLowerCase() === "true";
     const closed = m?.closed === true || String(m?.closed).toLowerCase() === "true";
     if (!active || closed) continue;
-    if (isMatchWinnerMarket(m, teamA, teamB)) return { event:e, market:m, score:best.score };
+    if (isMatchWinnerMarket(m, teamA, teamB)) {
+      return { event:e, market:m, score:best.score, matchedText:best.matchedText };
+    }
   }
   return null;
 }
