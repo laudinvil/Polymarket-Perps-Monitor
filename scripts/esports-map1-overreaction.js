@@ -541,33 +541,30 @@ function map1Info(match) {
         if (Number.isFinite(a)&&Number.isFinite(b)&&a!==b) winner=a>b?0:1;
       }
     }
-    let margin = null;
-    for (const c of [g?.score,g?.map_score,g?.game_score,g?.results]) {
-      if (Array.isArray(c) && c.length >= 2) {
-        const x=Number(c[0]),y=Number(c[1]);
-        if (Number.isFinite(x)&&Number.isFinite(y)) { margin=Math.abs(x-y); break; }
-      } else if (c && typeof c==="object") {
-        const x=Number(c.home??c.team1??c.a),y=Number(c.away??c.team2??c.b);
-        if (Number.isFinite(x)&&Number.isFinite(y)) { margin=Math.abs(x-y); break; }
-      }
-    }
-    if (winner != null) return {winner,loser:1-winner,series:seriesScore(match)||(winner===0?[1,0]:[0,1]),margin:{value:margin,type:"score",score:null},source:"games"};
+    if (winner != null) return {
+      winner, loser:1-winner,
+      series:seriesScore(match)||(winner===0?[1,0]:[0,1]),
+      margin:mapMarginFromMatch(match),
+      source:"games"
+    };
   }
 
   const s=seriesScore(match);
   if (s && ((s[0]===1&&s[1]===0)||(s[1]===1&&s[0]===0))) {
-    let margin=null;
+    const winner=s[0]===1?0:1;
+    let margin = {value:null,type:"unavailable",score:null};
     for (const c of [match.map_score,match.current_game_score,match.currentGameScore,match.game_score,match.gameScore,match.round_score,match.roundScore]) {
-      if (Array.isArray(c)&&c.length>=2) {
-        const x=Number(c[0]),y=Number(c[1]);
-        if (Number.isFinite(x)&&Number.isFinite(y)) {margin=Math.abs(x-y);break;}
-      } else if(c&&typeof c==="object"){
-        const x=Number(c.home??c.team1??c.a),y=Number(c.away??c.team2??c.b);
-        if(Number.isFinite(x)&&Number.isFinite(y)){margin=Math.abs(x-y);break;}
+      let x,y;
+      if (Array.isArray(c)&&c.length>=2) { x=Number(c[0]); y=Number(c[1]); }
+      else if(c&&typeof c==="object"){ x=Number(c.home??c.team1??c.a); y=Number(c.away??c.team2??c.b); }
+      if(Number.isFinite(x)&&Number.isFinite(y)&&x!==y){
+        margin = Math.max(x,y)<=1
+          ? {value:null,type:"binary",score:[x,y]}
+          : {value:Math.abs(x-y),type:"score",score:[x,y]};
+        break;
       }
     }
-    const winner=s[0]===1?0:1;
-    return {winner,loser:1-winner,series:s,margin:{value:margin,type:"score",score:null},source:"series_score"};
+    return {winner,loser:1-winner,series:s,margin,source:"series_score"};
   }
 
   const status=String(match.status||"").toLowerCase();
