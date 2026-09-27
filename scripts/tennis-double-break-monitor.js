@@ -478,7 +478,8 @@ async function telegram(text, url) {
   if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
   const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);
   if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
-  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  lastTelegramRequest = Date.now();
+  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
