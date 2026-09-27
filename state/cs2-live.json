@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:29:05.964Z",
+  "updatedAt": "2026-09-27T14:29:06.874Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 582,
+    "events": 583,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1704623",
+  "matchId": "1712148",
   "teams": [
-    "THUNDER dOWNUNDER",
-    "Ground Zero"
+    "XI Esport",
+    "OldMix"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 6,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": -2,
+    "noPolyMatch": -1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
