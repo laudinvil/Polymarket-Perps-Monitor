@@ -7,16 +7,29 @@ let lastError = null;
 
 async function poll() {
   try {
+    const dns = await import("node:dns/promises");
+    const lookup = await dns.lookup("polymarket.com", {all:true});
+    console.log("DNS", JSON.stringify(lookup));
+
     const response = await fetch(SOURCE, {
       headers: { "user-agent": "Mozilla/5.0" },
       signal: AbortSignal.timeout(10000)
     });
+
     lastPoll = new Date().toISOString();
     lastError = response.ok ? null : "HTTP " + response.status;
-    console.log("POLL", response.status);
+    console.log("POLL", response.status, response.headers.get("content-type"));
   } catch (error) {
     lastPoll = new Date().toISOString();
-    lastError = String(error.message || error);
+    lastError = (error && error.cause)
+      ? String(error.message || error) + " | cause=" + JSON.stringify({
+          name: error.cause.name,
+          code: error.cause.code,
+          message: error.cause.message,
+          syscall: error.cause.syscall,
+          hostname: error.cause.hostname
+        })
+      : String(error.message || error);
     console.log("POLL ERROR", lastError);
   }
 }
