@@ -196,7 +196,10 @@ function isMatchWinnerMarket(m, teamA, teamB) {
   if (!outcomeMatch) return false;
   // We need the series/match-winner market, not Map 1/2/3 markets.
   if (/\bmap\s*[123]\b/i.test(q)) return false;
-  return /\b(win|winner)\b.*\b(match|series)\b|\b(match|series)\b.*\b(win|winner)\b/i.test(q);
+  if (/\b(total|over|under|spread|handicap|rounds?|kills?|first\s+map|map\s+winner)\b/i.test(q)) return false;
+  // Polymarket's current CS2 match-winner questions are not consistent:
+  // some use "winner", others expose only the two team outcomes.
+  return true;
 }
 
 async function loadPolyEvents() {
