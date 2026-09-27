@@ -1,19 +1,24 @@
-name: LIVE CHAIN TEST
+name: LIVE FOOTBALL MONITOR
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: live-football-monitor
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run external LIVE -> Polymarket -> Telegram test
+      - name: Run LIVE football monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -29,6 +34,10 @@ jobs:
           const minuteKey=ms=>ms==null?null:Math.floor(ms/60000);
           const extract=(n,o=[])=>{if(!n||typeof n!=="object")return o;if(Array.isArray(n)){for(const x of n)extract(x,o);return o}const h=n.home?.name||n.homeTeam?.name||n.homeTeamName||n.home,a=n.away?.name||n.awayTeam?.name||n.awayTeamName||n.away,st=n.status,so=st&&typeof st==="object"?st:{},live=n.live===true||n.isLive===true||(typeof st==="string"&&/live|in.?progress|halftime|break/i.test(st)),started=so.started===true||n.started===true,finished=so.finished===true||n.finished===true;if(h&&a&&!finished&&(live||started)){const scoreVal=v=>{if(v==null)return null;if(typeof v==="number"||typeof v==="string")return v;if(typeof v==="object")return v.current??v.display??v.value??v.goals??v.score??v.total??v.regular??v.home??null;return null}; const sh=scoreVal(n.home?.score)??scoreVal(n.homeScore)??scoreVal(n.score?.home)??scoreVal(n.scoreHome)??scoreVal(n.scores?.home)??scoreVal(n.home?.goals)??scoreVal(n.home?.points)??scoreVal(n.home?.currentScore),sa=scoreVal(n.away?.score)??scoreVal(n.awayScore)??scoreVal(n.score?.away)??scoreVal(n.scoreAway)??scoreVal(n.scores?.away)??scoreVal(n.away?.goals)??scoreVal(n.away?.points)??scoreVal(n.away?.currentScore);const raw=n.minute??n.elapsed??n.time??so.minute??so.elapsed??"—";const parsedRaw=Date.parse(String(raw));const sm=startMs(n)|| (Number.isFinite(parsedRaw)?parsedRaw:null);const minute=/^\d{4}-\d{2}-\d{2}T/.test(String(raw))&&Number.isFinite(parsedRaw)?Math.max(0,Math.floor((Date.now()-parsedRaw)/60000)):raw;o.push({home:String(h),away:String(a),score:sh!=null&&sa!=null?sh+"–"+sa:"—",minute:String(minute),startMs:sm});return o}for(const v of Object.values(n))extract(v,o);return o};
           const json=async u=>{let last;for(let i=0;i<4;i++){try{const r=await fetch(u,{headers:{accept:"application/json"},signal:AbortSignal.timeout(15000)});console.log("HTTP",r.status,u);if(r.ok)return r.json();last=Error(u+" HTTP "+r.status);if(![429,500,502,503,504].includes(r.status))throw last;}catch(e){last=e}if(i<3)await new Promise(r=>setTimeout(r,1500*(i+1)))}throw last};
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          const seen=new Set();
+          for(let cycle=1;cycle<=8;cycle++){
+          console.log("MONITOR_CYCLE",cycle);
           const ld=await json(LIVE_URL),live=extract(ld);
           const base="https://gamma-api.polymarket.com/events?active=true&closed=false&live=true&limit=500"; const tags=["soccer","football"]; const pages=await Promise.all(tags.map(async tag=>{try{const p=await json(base+"&tag_slug="+encodeURIComponent(tag));return Array.isArray(p)?p:(p.events||[])}catch{return[]}})); const events=[...new Map(pages.flat().map(e=>[String(e.id),e])).values()];
           console.log("LIVE_COUNT",live.length); console.log("LIVE_SAMPLE",JSON.stringify(live.slice(0,10))); const sports=events.filter(e=>e.sport==="soccer"||e.sport==="football"||e.eventDate||e.startTime).slice(0,30).map(e=>({id:e.id,title:e.title,slug:e.slug,eventDate:e.eventDate,startTime:e.startTime,live:e.live,score:e.score,period:e.period,teams:e.teams,sport:e.sport,gameId:e.gameId,marketGameStart:Array.isArray(e.markets)&&e.markets[0]?.gameStartTime})); console.log("SPORTS_SAMPLE",JSON.stringify(sports)); console.log("POLY_EVENT_COUNT",events.length); const candidates=[]; for(const e of events){const title=String(e.title||e.name||""); const qs=(Array.isArray(e.markets)?e.markets:[]).map(m=>String(m.question||m.title||"")).filter(q=>/\b(?:vs\.?|v\.?|versus)\b/i.test(q)); if(/\b(?:vs\.?|v\.?|versus)\b/i.test(title)||qs.length)candidates.push({id:e.id,title,slug:e.slug,startDate:e.startDate,endDate:e.endDate,keys:Object.keys(e),questions:qs.slice(0,3),marketKeys:Array.isArray(e.markets)&&e.markets[0]?Object.keys(e.markets[0]):[]});} console.log("MATCH_CANDIDATES",JSON.stringify(candidates.slice(0,30)));
@@ -38,6 +47,10 @@ jobs:
           if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)throw Error("GitHub Telegram secrets are missing");
           const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
           const link=found?.e?.slug?"https://polymarket.com/event/"+found.e.slug:"https://polymarket.com/sports/soccer";
-          const text=found&&found.score>=1.25?"⚽ <b>CHAIN TEST</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>":"⚠️ <b>CHAIN TEST</b>\n\nExternal LIVE or Polymarket match was not found.\nLIVE: "+live.length+"\nPOLYMARKET EVENTS: "+events.length;
-          const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
+          const matchKey=found?.e?.id?String(found.e.id):"";
+          const text=found&&found.score>=1.25&&!seen.has(matchKey)?"⚽ <b>LIVE FOUND</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>":null;
+          if(text){seen.add(matchKey);
+          const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));}
+          if(cycle<8) await sleep(30000);
+          }
           NODE
