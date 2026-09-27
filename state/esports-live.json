@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:41:00.343Z",
+  "updatedAt": "2026-09-27T15:41:01.768Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 620,
+    "events": 630,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700464",
+  "matchId": "1706431",
   "teams": [
-    "Spirit Academy",
-    "megoshort"
+    "Eternal Fire",
+    "K27"
   ],
   "status": "running",
   "seriesScore": [
-    0,
-    1
+    1,
+    0
   ],
   "candidates": 67,
   "diagnostics": {
@@ -34,18 +34,18 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 4,
+    "matchedPoly": 6,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 2,
+    "map1Finished": 3,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 2,
-    "balancedPrePass": 2,
+    "signalChecks": 3,
+    "balancedPrePass": 3,
     "movePass": 1,
     "postRangePass": 0,
-    "mapFilterPass": 2,
+    "mapFilterPass": 3,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
@@ -133,6 +133,43 @@
         ],
         "status": "running",
         "beginAt": "2026-09-27T14:06:08Z"
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088259",
+        "polyEventSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketId": "5003772",
+        "marketSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketQuestion": "Counter-Strike: Spirit Academy vs megoshort (BO3) - CCT Europe Closed Qualifier: Series #10 Play-In",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "polyEventId": "1088259",
+        "polyEventSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketId": "5003772",
+        "marketSlug": "cs2-tsa-meg1-2026-09-27",
+        "marketQuestion": "Counter-Strike: Spirit Academy vs megoshort (BO3) - CCT Europe Closed Qualifier: Series #10 Play-In",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1706431",
+        "game": "Counter-Strike",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "status": "running",
+        "beginAt": "2026-09-27T14:12:02Z"
       }
     ],
     "rejects": [
@@ -186,6 +223,34 @@
           0.65
         ],
         "move": -0.15000000000000002,
+        "reasons": [
+          "move",
+          "post_range"
+        ]
+      },
+      {
+        "reason": "signal_rejected",
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "series": [
+          0,
+          1
+        ],
+        "margin": null,
+        "marginValue": null,
+        "marginRatio": null,
+        "pre": [
+          0.5,
+          0.5
+        ],
+        "post": [
+          0.445,
+          0.555
+        ],
+        "move": 0.05500000000000005,
         "reasons": [
           "move",
           "post_range"
