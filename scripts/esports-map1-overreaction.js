@@ -266,6 +266,7 @@ function eventTeams(event) {
 }
 
 function parseMarket(m) {
+  if (!m || typeof m !== "object") return null;
   const outcomes = parseJsonMaybe(m.outcomes);
   const ids = parseJsonMaybe(m.clobTokenIds);
   if (!Array.isArray(outcomes) || !Array.isArray(ids) || outcomes.length !== ids.length) return null;
@@ -438,6 +439,7 @@ async function price(tokenId) {
 }
 
 async function marketPrices(poly) {
+  if (!poly?.market) return null;
   const parsed = parseMarket(poly.market);
   if (!parsed) return null;
   const vals = [];
