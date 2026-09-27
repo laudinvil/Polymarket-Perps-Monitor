@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:46:52.547Z",
+  "updatedAt": "2026-09-27T15:46:53.821Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,18 +7,18 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1895,
+    "events": 1896,
     "polls": 10,
     "alerts": 1,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683216",
+  "matchId": "1714922",
   "teams": [
-    "Rakuzan",
-    "Team Spirit"
+    "Galatasaray Esports",
+    "Pcific Esports"
   ],
-  "status": "running",
+  "status": "not_started",
   "seriesScore": [
     0,
     0
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 16,
-    "noPolyMatch": 0,
+    "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
@@ -344,6 +344,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1683216",
+        "teamA": "Rakuzan",
+        "teamB": "Team Spirit"
       }
     ]
   }
