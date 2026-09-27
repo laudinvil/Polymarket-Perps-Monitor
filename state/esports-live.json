@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:40:32.417Z",
+  "updatedAt": "2026-09-27T15:40:33.596Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 575,
+    "events": 576,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1637687",
+  "matchId": "1713028",
   "teams": [
-    "eArena",
-    "Bacon Time"
+    "Please Not Hero Ban",
+    "Lazuli"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 17,
+    "noPolyMatch": 18,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
