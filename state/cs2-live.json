@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:53:58.140Z",
+  "updatedAt": "2026-09-27T14:53:59.695Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1442,
+    "events": 1452,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700704",
+  "matchId": "1702598",
   "teams": [
-    "Bounty Hunters Esports",
-    "Galorys"
+    "BORRACHEIROS",
+    "Semente do Mal"
   ],
   "status": "running",
   "seriesScore": [
     1,
-    1
+    0
   ],
   "candidates": 92,
   "diagnostics": {
@@ -32,7 +32,7 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
