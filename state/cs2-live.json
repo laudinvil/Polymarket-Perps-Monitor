@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:17:02.151Z",
+  "updatedAt": "2026-09-27T15:17:03.569Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328832911",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2013,
   "telemetry": {
     "startedAt": "2026-09-27T15:15:03.244Z",
-    "events": 677,
+    "events": 687,
     "polls": 1,
     "alerts": 4,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700464",
+  "matchId": "1684180",
   "teams": [
-    "Spirit Academy",
-    "megoshort"
+    "BBL",
+    "Sinners"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,18 +32,18 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 28,
+    "matchedPoly": 30,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 3,
+    "map1Finished": 4,
     "alreadyAlerted": 2,
     "noPrematch": 0,
-    "signalChecks": 1,
-    "balancedPrePass": 1,
+    "signalChecks": 2,
+    "balancedPrePass": 2,
     "movePass": 0,
     "postRangePass": 0,
-    "mapFilterPass": 1,
+    "mapFilterPass": 2,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
