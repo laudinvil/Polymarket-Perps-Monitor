@@ -1,29 +1,18 @@
 {
-  "updatedAt": "2026-09-27T15:25:56.156Z",
-  "stage": "MATCH_PROGRESS",
+  "updatedAt": "2026-09-27T15:25:57.484Z",
+  "stage": "POLL_RESULT",
   "runId": "36329364428",
   "runAttempt": "1",
   "sha": "c5c44655e7f4877a02ba6bc040e9e7164625801d",
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 694,
+    "events": 704,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1688997",
-  "teams": [
-    "NIP",
-    "magic"
-  ],
-  "status": "running",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 89,
   "diagnostics": {
     "startedAt": "2026-09-27T15:25:14.003Z",
     "upcoming": 100,
@@ -34,7 +23,7 @@
     "skippedFuture": 49,
     "missingTeams": 10,
     "polyEvents": 224,
-    "matchedPoly": 34,
+    "matchedPoly": 36,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -350,5 +339,17 @@
         "opponents": 0
       }
     ]
-  }
+  },
+  "config": {
+    "minPreFavorite": 0.35,
+    "maxPreFavorite": 0.65,
+    "minMove": 0.15,
+    "minPostFavorite": 0.6,
+    "maxPostFavorite": 0.95,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 41,
+  "alerts": 2
 }\n
