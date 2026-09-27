@@ -480,13 +480,26 @@ function directMapWinner(match) {
   }
   return null;
 }
+function mapMarginFromMatch(match) {
+  const games = Array.isArray(match?.games) ? match.games : [];
+  const g = games.find(x => {
+    const status = String(x?.status || x?.state || "").toLowerCase();
+    return ["finished","completed","complete","ended"].includes(status) || Boolean(x?.complete || x?.completed || x?.finished || x?.end_at || x?.ended_at);
+  }) || games[0];
+  const sources = [g?.score,g?.map_score,g?.game_score,g?.results,match?.map_score,match?.current_game_score,match?.currentGameScore,match?.game_score,match?.gameScore,match?.round_score,match?.roundScore];
+  for (const s of sources) {
+    if (Array.isArray(s) && s.length >= 2) { const a=Number(s[0]), b=Number(s[1]); if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b) return Math.abs(a-b); }
+    else if(s && typeof s==="object") { const a=Number(s.home ?? s.team1 ?? s.a), b=Number(s.away ?? s.team2 ?? s.b); if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b) return Math.abs(a-b); }
+  }
+  return null;
+}
 function map1Info(match) {
   const o = opponents(match);
   const teamIds = o.map(x => String(x?.opponent?.id ?? ""));
   const teamNames = o.map(x => x?.opponent?.name || x?.opponent?.acronym || "");
 
   const directWinner=directMapWinner(match);
-  if(directWinner!=null)return {winner:directWinner,loser:1-directWinner,series:seriesScore(match)||(directWinner===0?[1,0]:[0,1]),margin:null,source:"map_winner"};
+  if(directWinner!=null)return {winner:directWinner,loser:1-directWinner,series:seriesScore(match)||(directWinner===0?[1,0]:[0,1]),margin:mapMarginFromMatch(match),source:"map_winner"};
 
   const games = Array.isArray(match.games) ? match.games : [];
   const finishedGames = games.filter(g => {
@@ -914,7 +927,7 @@ for (const match of candidates) {
   const marginText = info.margin == null ? "—" : String(info.margin);
 
   const text =
-    "<b>CS2 — MAP 2 SETUP</b>\n\n" +
+    "<b>CS2 — MAP 2</b>\n\n" +
     "<b>"+winner+"</b> won Map 1 vs <b>"+loser+"</b>\n" +
     "MAP 1 SERIES SCORE: "+info.series[0]+"–"+info.series[1]+"\n" +
     "MAP MARGIN: "+marginText+"\n\n" +
