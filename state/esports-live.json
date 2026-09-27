@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:37:39.748Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:37:40.856Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
   "sha": "7488d1d2e5d86bde6b63b9303b004271f6159a01",
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 12,
+    "events": 14,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 200,
+  "matchId": "1700719",
+  "teams": [
+    "Team Yandex",
+    "Natus Vincere"
+  ],
+  "status": "running",
+  "seriesScore": [
+    2,
+    0
+  ],
   "candidates": 67,
   "diagnostics": {
     "startedAt": "2026-09-27T15:37:34.554Z",
@@ -40,7 +49,18 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1700719",
+        "game": "Dota 2",
+        "teams": [
+          "Team Yandex",
+          "Natus Vincere"
+        ],
+        "status": "running",
+        "beginAt": "2026-09-27T12:53:06Z"
+      }
+    ],
     "rejects": []
   }
 }\n
