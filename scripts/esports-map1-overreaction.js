@@ -298,6 +298,28 @@ async function fetchGameSpecificScore(match,game,diag){
           const p=scorePair(v[key]);
           if(p&&p[0]!==p[1]&&Math.max(...p)>=2)best=p;
         }
+        // PandaScore CS2 rounds expose the numeric map score inside
+        // counter_terrorists.round_score / terrorists.round_score.
+        const ct=v.counter_terrorists?.round_score;
+        const tt=v.terrorists?.round_score;
+        const ctScore=Number(typeof ct==="object"?ct?.score:ct);
+        const ttScore=Number(typeof tt==="object"?tt?.score:tt);
+        if(Number.isFinite(ctScore)&&Number.isFinite(ttScore)&&ctScore!==ttScore&&Math.max(ctScore,ttScore)>=2){
+          const ctId=String(v.counter_terrorists?.id??ct?.team_id??"");
+          const ttId=String(v.terrorists?.id??tt?.team_id??"");
+          const os=opponents(match);
+          const ctIdx=os.findIndex(o=>String(o?.opponent?.id??o?.id??"")===ctId);
+          const ttIdx=os.findIndex(o=>String(o?.opponent?.id??o?.id??"")===ttId);
+          if(ctIdx===0&&ttIdx===1)best=[ctScore,ttScore];
+          else if(ctIdx===1&&ttIdx===0)best=[ttScore,ctScore];
+          else {
+            const ctName=String(v.counter_terrorists?.team_name??ct?.team_name??"");
+            const ttName=String(v.terrorists?.team_name??tt?.team_name??"");
+            const forward=nameScore(ctName,teams(match)[0])+nameScore(ttName,teams(match)[1]);
+            const reverse=nameScore(ctName,teams(match)[1])+nameScore(ttName,teams(match)[0]);
+            best=reverse>forward?[ttScore,ctScore]:[ctScore,ttScore];
+          }
+        }
       };
       for(const row of rows)direct(row);
       if(best){
