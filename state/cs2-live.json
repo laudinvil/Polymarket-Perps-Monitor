@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:16:32.322Z",
+  "updatedAt": "2026-09-27T15:16:33.683Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328832911",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2013,
   "telemetry": {
     "startedAt": "2026-09-27T15:15:03.244Z",
-    "events": 556,
+    "events": 566,
     "polls": 1,
     "alerts": 4,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700465",
+  "matchId": "1696342",
   "teams": [
-    "KUUSAMO.gg",
-    "Noir Verse"
+    "M80",
+    "DENDELE CS"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 2,
     "polyEvents": 224,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -173,6 +173,20 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1700465",
+        "teams": [
+          "KUUSAMO.gg",
+          "Noir Verse"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088260",
+        "polyEventSlug": "cs2-ksm-noirve-2026-09-27",
+        "marketId": "5003776",
+        "marketSlug": "cs2-ksm-noirve-2026-09-27",
+        "marketQuestion": "Counter-Strike: KUUSAMO.gg vs Noir Verse (BO3) - CCT Europe Closed Qualifier: Series #10 Play-In",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -217,6 +231,16 @@
         "matchId": "1700705",
         "teamA": "Imperial",
         "teamB": "paiN",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse",
         "seriesScore": [
           0,
           0
