@@ -193,13 +193,18 @@ function isMatchWinnerMarket(m, teamA, teamB) {
   const names = p.map(x => norm(x.name));
   const a = norm(teamA), b = norm(teamB);
   const outcomeMatch = (names.some(x => sim(x,a) >= .5) && names.some(x => sim(x,b) >= .5));
-  return outcomeMatch && /(win|winner|match)/i.test(q);
+  if (!outcomeMatch) return false;
+  // We need the series/match-winner market, not Map 1/2/3 markets.
+  if (/\bmap\s*[123]\b/i.test(q)) return false;
+  return /\b(win|winner)\b.*\b(match|series)\b|\b(match|series)\b.*\b(win|winner)\b/i.test(q);
 }
 
 async function loadPolyEvents() {
   const urls = [
-    GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=esports",
     GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=cs2",
+    GAMMA + "/events?active=true&closed=false&limit=500&tag_slug=esports",
+    // Fallback: some live CS2 events are not returned by the tag filters.
+    GAMMA + "/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
   ];
   let events = [];
   for (const u of urls) {
@@ -233,9 +238,11 @@ function findPolyEvent(events, teamA, teamB) {
   }
   if (!best || best.score < 0.70) return null;
   const e = best.event;
-  const markets = Array.isArray(e.markets) ? e.markets : [];
+  const markets = Array.isArray(parseJsonMaybe(e.markets)) ? parseJsonMaybe(e.markets) : [];
   for (const m of markets) {
-    if (!m.active || m.closed) continue;
+    const active = m?.active === true || String(m?.active).toLowerCase() === "true";
+    const closed = m?.closed === true || String(m?.closed).toLowerCase() === "true";
+    if (!active || closed) continue;
     if (isMatchWinnerMarket(m, teamA, teamB)) return { event:e, market:m, score:best.score };
   }
   return null;
