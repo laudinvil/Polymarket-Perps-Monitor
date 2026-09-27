@@ -4,11 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +22,10 @@ jobs:
         run: |
           set -euo pipefail
           node --version
-          node <<'NODE'
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            echo "POLL_ATTEMPT=$attempt"
+            set +e
+            node <<'NODE'
           const LIVE_URL = "https://sportscore.com/api/v1/fixtures/?sport=football&status=live&limit=200";
           const POLY_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&tag_slug=soccer&limit=500";
           const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/&/g," and ").replace(/[^a-z0-9]+/g," ").replace(/\b(fc|afc|cf|sc|ac|club|women|w|u19|u20|u21|u23)\b/g," ").replace(/\s+/g," ").trim();
@@ -162,7 +167,9 @@ jobs:
             const ps=found.e.score; if(typeof ps==="string"&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(ps) && found.l.score==="—") { found.l.score=ps.replace(/:/,"–").replace(/-/,"–"); found.l.scoreSource="Polymarket"; } else if(ps&&typeof ps==="object"){ const ph=ps.home??ps.homeScore??ps.currentHome??ps.homeTeam, pa=ps.away??ps.awayScore??ps.currentAway??ps.awayTeam; if(ph!=null&&pa!=null && found.l.score==="—") { found.l.score=String(ph)+"–"+String(pa); found.l.scoreSource="Polymarket"; } } console.log("BEST_MATCH",JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score,timeOk:found.timeOk,polyScore:found.e.score,polyPeriod:found.e.period})); } else console.log("BEST_MATCH","NONE");
           if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)throw Error("GitHub Telegram secrets are missing");
           const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-          const link=found?.e?.slug?"https://polymarket.com/event/"+found.e.slug:"https://polymarket.com/sports/soccer";
-          const text=found&&found.score>=1.25?"⚽ <b>CHAIN TEST</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>":"⚠️ <b>CHAIN TEST</b>\n\nExternal LIVE or Polymarket match was not found.\nLIVE: "+live.length+"\nPOLYMARKET EVENTS: "+events.length;
+          if(!found||found.score<1.25){console.log("NO_MATCH_THIS_POLL");process.exit(0);}
+          const link="https://polymarket.com/event/"+found.e.slug;
+          const text="⚽ <b>CHAIN TEST</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>";
           const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
+          console.log("ALERT_SENT",found.e.id,found.e.slug);process.exit(10);
           NODE
