@@ -160,13 +160,13 @@ function score(m) {
 }
 
 function title(m) {
-  const home = String(m.homeTeam || "").trim();
-  const away = String(m.awayTeam || "").trim();
+  const home = String(m.homeTeam || m.homeTeamName || "").trim();
+  const away = String(m.awayTeam || m.awayTeamName || "").trim();
   if (home && away) return `${home} vs ${away}`;
   return String(m.slug || `game ${m.gameId}`);
 }
 
-async async function handleGame(m) {
+async function handleGame(m) {
   const id = String(m?.gameId || m?.slug || m?.id || "").trim();
   if (!m || !id) return;
 
