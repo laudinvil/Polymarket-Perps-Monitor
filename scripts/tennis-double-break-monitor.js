@@ -905,13 +905,6 @@ const server = http.createServer((req, res) => {
 
 server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
 
-// Send exactly one Telegram test per process start so a fresh deployment verifies delivery.
-if (!globalThis.__TEST_ALERT_SENT__) {
-  globalThis.__TEST_ALERT_SENT__ = true;
-  await sendTestAlert().catch(err => log("TEST_ALERT_ERROR", { error: String(err) }));
-}
-
-
 await refreshMarkets().catch(err => { state.lastError = String(err); log("GAMMA_ERROR", { error: String(err) }); });
 setInterval(() => refreshMarkets().catch(err => log("GAMMA_ERROR", { error: String(err) })), CFG.gammaMs);
 await poll();
