@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-09-27T13:48:11.202Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T13:48:27.286Z",
+  "stage": "POLL_START",
   "runId": "36323590965",
   "runAttempt": "1",
   "sha": "dab41bc101615897e4ed54c17a414eac7021f2b6",
   "pid": 2238,
   "telemetry": {
     "startedAt": "2026-09-27T13:47:27.204Z",
-    "events": 122,
-    "polls": 2,
+    "events": 160,
+    "polls": 3,
     "alerts": 0,
     "errors": 1,
     "lastError": {
@@ -17,5 +17,5 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "polyEvents": 224
+  "now": "2026-09-27T13:48:27.286Z"
 }\n
