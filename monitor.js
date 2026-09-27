@@ -1,3 +1,4 @@
+import https from "node:https";
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -57,16 +58,45 @@ process.on("unhandledRejection", (err) => {
 
 async function telegram(text) {
   if (!TOKEN || !CHAT_ID) throw new Error("Telegram env vars missing");
-  const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: {"content-type":"application/json"},
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text,
-      disable_web_page_preview: true
-    })
+
+  const body = JSON.stringify({
+    chat_id: CHAT_ID,
+    text,
+    disable_web_page_preview: true
   });
-  if (!r.ok) throw new Error("Telegram HTTP " + r.status);
+
+  const response = await new Promise((resolve, reject) => {
+    const req = https.request(
+      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body)
+        },
+        timeout: 8000
+      },
+      res => {
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", chunk => { data += chunk; });
+        res.on("end", () => resolve({
+          status: res.statusCode,
+          body: data
+        }));
+      }
+    );
+    req.on("timeout", () => req.destroy(new Error("Telegram request timeout")));
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+
+  console.log("TELEGRAM RESPONSE", response.status, response.body.slice(0, 500));
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error("Telegram HTTP " + response.status + " " + response.body.slice(0, 300));
+  }
 }
 
 function isSoccer(m) {
