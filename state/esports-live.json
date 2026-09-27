@@ -1,41 +1,31 @@
 {
-  "updatedAt": "2026-09-27T15:34:41.688Z",
-  "stage": "MATCH_PROGRESS",
-  "runId": "36329789220",
+  "updatedAt": "2026-09-27T15:34:49.537Z",
+  "stage": "POLL_START",
+  "runId": "36330056754",
   "runAttempt": "1",
-  "sha": "3a03ace73651ebaabccb93fa124bcaf52b050dc3",
-  "pid": 2266,
+  "sha": "599d9e4dc9a7907d813f6a827ba681f4da2c333b",
+  "pid": 2050,
   "telemetry": {
-    "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 809,
-    "polls": 1,
+    "startedAt": "2026-09-27T15:34:49.533Z",
+    "events": 0,
+    "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1696342",
-  "teams": [
-    "M80",
-    "DENDELE CS"
-  ],
-  "status": "not_started",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 67,
+  "now": "2026-09-27T15:34:49.537Z",
   "diagnostics": {
-    "startedAt": "2026-09-27T15:34:23.134Z",
-    "upcoming": 100,
-    "running": 8,
-    "bo3": 54,
-    "bo5": 10,
-    "firstTo3": 3,
+    "startedAt": "2026-09-27T15:34:49.537Z",
+    "upcoming": 0,
+    "running": 0,
+    "bo3": 0,
+    "bo5": 0,
+    "firstTo3": 0,
     "skippedFuture": 0,
     "missingTeams": 0,
-    "polyEvents": 200,
-    "matchedPoly": 12,
-    "noPolyMatch": 4,
+    "polyEvents": 0,
+    "matchedPoly": 0,
+    "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -49,234 +39,7 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [
-      {
-        "matchId": "1714922",
-        "game": "Valorant",
-        "teams": [
-          "Galatasaray Esports",
-          "Pcific Esports"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1714922",
-        "teams": [
-          "Galatasaray Esports",
-          "Pcific Esports"
-        ],
-        "source": "public-search",
-        "polyEventId": "1091762",
-        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
-        "marketId": "5029481",
-        "marketSlug": "val-gs4-pcfic-2026-09-27",
-        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1714922",
-        "teams": [
-          "Galatasaray Esports",
-          "Pcific Esports"
-        ],
-        "polyEventId": "1091762",
-        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
-        "marketId": "5029481",
-        "marketSlug": "val-gs4-pcfic-2026-09-27",
-        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1714921",
-        "game": "Valorant",
-        "teams": [
-          "Misa Esports",
-          "Fear Never Ends"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1714921",
-        "teams": [
-          "Misa Esports",
-          "Fear Never Ends"
-        ],
-        "source": "public-search",
-        "polyEventId": "1091761",
-        "polyEventSlug": "val-mis-fne1-2026-09-27",
-        "marketId": "5029477",
-        "marketSlug": "val-mis-fne1-2026-09-27",
-        "marketQuestion": "Valorant: Misa Esports vs Fear Never Ends (BO3) - Monsters Reloaded Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1714921",
-        "teams": [
-          "Misa Esports",
-          "Fear Never Ends"
-        ],
-        "polyEventId": "1091761",
-        "polyEventSlug": "val-mis-fne1-2026-09-27",
-        "marketId": "5029477",
-        "marketSlug": "val-mis-fne1-2026-09-27",
-        "marketQuestion": "Valorant: Misa Esports vs Fear Never Ends (BO3) - Monsters Reloaded Closed Qualifier Group A",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1702599",
-        "game": "Counter-Strike",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1702599",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "source": "public-search",
-        "polyEventId": "1084156",
-        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketId": "4973479",
-        "marketSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1702599",
-        "teams": [
-          "METANOIA WOLVES",
-          "MIBR fe"
-        ],
-        "polyEventId": "1084156",
-        "polyEventSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketId": "4973479",
-        "marketSlug": "cs2-mw-mibrf-2026-09-27",
-        "marketQuestion": "Counter-Strike: METANOIA WOLVES vs MIBR fe (BO3) - CCT South America Series 6 Group Stage",
-        "matchScore": 1
-      },
-      {
-        "matchId": "1683216",
-        "game": "Mobile Legends: Bang Bang",
-        "teams": [
-          "Rakuzan",
-          "Team Spirit"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1681152",
-        "game": "Counter-Strike",
-        "teams": [
-          "Black Phoenix",
-          "ex-RUSTEC"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      },
-      {
-        "matchId": "1662352",
-        "game": "LoL",
-        "teams": [
-          "LOUD",
-          "LOS"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T16:00:00Z"
-      }
-    ],
-    "rejects": [
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1714922",
-        "teamA": "Galatasaray Esports",
-        "teamB": "Pcific Esports",
-        "seriesScore": [
-          0,
-          0
-        ]
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1714921",
-        "teamA": "Misa Esports",
-        "teamB": "Fear Never Ends",
-        "seriesScore": [
-          0,
-          0
-        ]
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1702599",
-        "teamA": "METANOIA WOLVES",
-        "teamB": "MIBR fe",
-        "seriesScore": [
-          0,
-          0
-        ]
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1683216",
-        "teamA": "Rakuzan",
-        "teamB": "Team Spirit"
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1681152",
-        "teamA": "Black Phoenix",
-        "teamB": "ex-RUSTEC"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1662352",
-        "teamA": "LOUD",
-        "teamB": "LOS",
-        "seriesScore": [
-          0,
-          0
-        ]
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1706604",
-        "teamA": "Infinite",
-        "teamB": "Rebels Gaming"
-      },
-      {
-        "reason": "no_polymarket_match",
-        "matchId": "1706603",
-        "teamA": "Fluxo W7M",
-        "teamB": "SAW"
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1700705",
-        "teamA": "Imperial",
-        "teamB": "paiN",
-        "seriesScore": [
-          0,
-          0
-        ]
-      },
-      {
-        "reason": "map1_not_finished",
-        "matchId": "1700465",
-        "teamA": "KUUSAMO.gg",
-        "teamB": "Noir Verse",
-        "seriesScore": [
-          0,
-          0
-        ]
-      }
-    ]
+    "samples": [],
+    "rejects": []
   }
 }\n
