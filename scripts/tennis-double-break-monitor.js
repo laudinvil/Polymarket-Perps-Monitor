@@ -262,6 +262,15 @@ function processBreaks(e, nowSets) {
     const before = gameNo;
     gameNo++;
     const winner = inferWinnerForGame(oldSets, nowSets, before, gameNo);
+    log("GAME_CHANGE", {
+      eventId: id,
+      beforeTotal: before,
+      afterTotal: gameNo,
+      server: server === 1 ? "HOME" : "AWAY",
+      winner: winner === 1 ? "HOME" : winner === 2 ? "AWAY" : null,
+      scoreBefore: oldSets,
+      scoreAfter: nowSets
+    });
     if (!winner) continue;
     if (winner !== server) {
       const broken = server === 1 ? 0 : 1;
