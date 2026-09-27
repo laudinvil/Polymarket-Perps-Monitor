@@ -139,9 +139,9 @@ function matchMarket(m, e) {
 }
 
 function marketUrl(m) {
-  const slug = m.eventSlug || m.event?.slug ||
-    (Array.isArray(m.events) ? m.events.find(x => x?.slug)?.slug : null);
-  return slug ? `https://polymarket.com/event/${slug}` : "https://polymarket.com/tennis";
+  return m.eventSlug
+    ? `https://polymarket.com/event/${m.eventSlug}`
+    : "https://polymarket.com/tennis";
 }
 
 function parseJsonField(v) {
