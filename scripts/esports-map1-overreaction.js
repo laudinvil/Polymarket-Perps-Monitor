@@ -424,23 +424,73 @@ async function publishHeartbeat(stage, extra = {}) {
 
 async function poll() {
   const now = Date.now();
-  await publishHeartbeat("POLL_START", {now:new Date(now).toISOString()});
+  const diag = {
+    startedAt: new Date(now).toISOString(),
+    upcoming: 0,
+    running: 0,
+    bo3: 0,
+    skippedFuture: 0,
+    missingTeams: 0,
+    polyEvents: 0,
+    matchedPoly: 0,
+    noPolyMatch: 0,
+    noPolyPrice: 0,
+    prematchCaptured: 0,
+    map1Finished: 0,
+    alreadyAlerted: 0,
+    noPrematch: 0,
+    signalChecks: 0,
+    balancedPrePass: 0,
+    movePass: 0,
+    postRangePass: 0,
+    mapFilterPass: 0,
+    signalPass: 0,
+    noMarketUrl: 0,
+    alertsSent: 0,
+    samples: [],
+    rejects: []
+  };
+  const sample = (arr, value, limit = 12) => {
+    if (arr.length < limit) arr.push(value);
+  };
+  await publishHeartbeat("POLL_START", {now:new Date(now).toISOString(), diagnostics:diag});
 
 const upcoming = await ps("/csgo/matches/upcoming?per_page=100");
 const running = await ps("/csgo/matches/running?per_page=100");
-await publishHeartbeat("PANDASCORE_OK", {upcoming:upcoming.length,running:running.length});
+diag.upcoming = upcoming.length;
+diag.running = running.length;
+await publishHeartbeat("PANDASCORE_OK", {
+  upcoming:upcoming.length,
+  running:running.length,
+  diagnostics:diag
+});
 
 const candidates = [...upcoming, ...running].filter(m => bo3(m));
+diag.bo3 = candidates.length;
 const polyEvents = await loadPolyEvents();
-await publishHeartbeat("POLYMARKET_OK", {polyEvents:polyEvents.length});
+diag.polyEvents = polyEvents.length;
+await publishHeartbeat("POLYMARKET_OK", {
+  polyEvents:polyEvents.length,
+  candidates:candidates.length,
+  diagnostics:diag
+});
 log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
 log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
 
 for (const match of candidates) {
   const ts = beginAt(match);
-  if (ts && ts - now > CFG.maxUpcomingHours*3600000) continue;
+  if (ts && ts - now > CFG.maxUpcomingHours*3600000) {
+    diag.skippedFuture++;
+    sample(diag.rejects, {reason:"future_over_24h",matchId:String(match.id),beginAt:match.begin_at || match.scheduled_at}, 20);
+    continue;
+  }
   const [teamA,teamB] = teams(match);
-  if (!teamA || !teamB) continue;
+  if (!teamA || !teamB) {
+    diag.missingTeams++;
+    sample(diag.rejects, {reason:"missing_teams",matchId:String(match.id),opponents:opponents(match).length}, 20);
+    continue;
+  }
+  sample(diag.samples, {matchId:String(match.id),teams:[teamA,teamB],status:match.status,beginAt:match.begin_at || match.scheduled_at}, 12);
 
   const key = String(match.id);
   const entry = state.value.matches[key] ||= {
@@ -449,12 +499,27 @@ for (const match of candidates) {
 
   const poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
+    diag.noPolyMatch++;
+    sample(diag.rejects, {reason:"no_polymarket_match",matchId:key,teamA,teamB}, 20);
     log("NO_POLY_MATCH", {key,teamA,teamB});
     continue;
   }
+  diag.matchedPoly++;
+  sample(diag.samples, {
+    matchId:key,
+    teams:[teamA,teamB],
+    polyEventId:String(poly.event?.id || ""),
+    polyEventSlug:String(poly.event?.slug || ""),
+    marketId:String(poly.market?.id || ""),
+    marketSlug:String(poly.market?.slug || ""),
+    marketQuestion:String(poly.market?.question || poly.market?.title || ""),
+    matchScore:poly.score
+  }, 12);
 
   const prices = await marketPrices(poly);
   if (!prices) {
+    diag.noPolyPrice++;
+    sample(diag.rejects, {reason:"no_polymarket_price",matchId:key,teamA,teamB}, 20);
     log("NO_POLY_PRICE", JSON.stringify({key,teamA,teamB}));
     continue;
   }
@@ -468,6 +533,7 @@ for (const match of candidates) {
       marketId: String(poly.market.id || ""),
       eventSlug: String(poly.event.slug || "")
     };
+    diag.prematchCaptured++;
     log("PREMATCH_CAPTURED", JSON.stringify({key,teamA,teamB,a:sides.a.prob,b:sides.b.prob}));
   }
 
@@ -480,14 +546,20 @@ for (const match of candidates) {
   });
 
   if (!info) {
+    sample(diag.rejects, {reason:"map1_not_finished",matchId:key,teamA,teamB,seriesScore:entry.lastSeries}, 20);
     log("MAP1_NOT_FINISHED", {key,teamA,teamB,seriesScore:entry.lastSeries});
     continue;
   }
+  diag.map1Finished++;
   if (entry.alerted) {
+    diag.alreadyAlerted++;
+    sample(diag.rejects, {reason:"already_alerted",matchId:key,teamA,teamB}, 20);
     log("ALREADY_ALERTED", {key,teamA,teamB});
     continue;
   }
   if (!entry.pre) {
+    diag.noPrematch++;
+    sample(diag.rejects, {reason:"no_prematch",matchId:key,teamA,teamB}, 20);
     log("SKIP_NO_PREMATCH", JSON.stringify({key,teamA,teamB}));
     continue;
   }
@@ -503,6 +575,31 @@ for (const match of candidates) {
   const balancedPre = preFavorite >= CFG.minPreFavorite && preFavorite <= CFG.maxPreFavorite;
   const overshoot = move >= CFG.minMove && postWinner >= CFG.minPostFavorite && postWinner <= CFG.maxPostFavorite;
   const mapFilter = CFG.requireMapMargin ? oneSided && info.margin != null : oneSided;
+
+  diag.signalChecks++;
+  if (balancedPre) diag.balancedPrePass++;
+  if (move >= CFG.minMove) diag.movePass++;
+  if (postWinner >= CFG.minPostFavorite && postWinner <= CFG.maxPostFavorite) diag.postRangePass++;
+  if (mapFilter) diag.mapFilterPass++;
+  if (balancedPre && overshoot && mapFilter) diag.signalPass++;
+  else {
+    const reasons = [];
+    if (!balancedPre) reasons.push("pre_range");
+    if (move < CFG.minMove) reasons.push("move");
+    if (postWinner < CFG.minPostFavorite || postWinner > CFG.maxPostFavorite) reasons.push("post_range");
+    if (!mapFilter) reasons.push("map_filter");
+    sample(diag.rejects, {
+      reason:"signal_rejected",
+      matchId:key,
+      teams:[teamA,teamB],
+      series:info.series,
+      margin:info.margin,
+      pre:[entry.pre.a,entry.pre.b],
+      post:[sides.a.prob,sides.b.prob],
+      move,
+      reasons
+    }, 20);
+  }
 
   log("SIGNAL_CHECK", JSON.stringify({
     key,match:teamA+" vs "+teamB,map1:info.series,margin:info.margin,
@@ -543,6 +640,8 @@ for (const match of candidates) {
       ? "https://polymarket.com/event/" + encodeURIComponent(eventSlug) + "/" + encodeURIComponent(marketSlug)
       : "");
   if (!marketUrl) {
+    diag.noMarketUrl++;
+    sample(diag.rejects, {reason:"no_market_url",matchId:key,teamA,teamB,marketId:String(poly.market?.id || ""),eventSlug,marketSlug}, 20);
     log("NO_MARKET_URL", {
       marketId:String(poly.market?.id || ""),
       eventSlug,
@@ -562,6 +661,7 @@ for (const match of candidates) {
 
   entry.alerted = true;
   entry.alertedAt = new Date().toISOString();
+  diag.alertsSent++;
   state.value.alerts.push({matchId:key,teamA,teamB,winner,loser,preWinner,postWinner,move,at:entry.alertedAt});
   state.value.alerts = state.value.alerts.slice(-500);
   saveState(state);
@@ -570,7 +670,26 @@ for (const match of candidates) {
 
 
 saveState(state);
-log("POLL_RESULT", JSON.stringify({tracked:Object.keys(state.value.matches).length,alerts:state.value.alerts.length}));
+await publishHeartbeat("POLL_RESULT", {
+  diagnostics:diag,
+  config:{
+    minPreFavorite:CFG.minPreFavorite,
+    maxPreFavorite:CFG.maxPreFavorite,
+    minMove:CFG.minMove,
+    minPostFavorite:CFG.minPostFavorite,
+    maxPostFavorite:CFG.maxPostFavorite,
+    requireMapMargin:CFG.requireMapMargin,
+    minMapMargin:CFG.minMapMargin,
+    maxUpcomingHours:CFG.maxUpcomingHours
+  },
+  tracked:Object.keys(state.value.matches).length,
+  alerts:state.value.alerts.length
+});
+log("POLL_RESULT", {
+  tracked:Object.keys(state.value.matches).length,
+  alerts:state.value.alerts.length,
+  diagnostics:diag
+});
 }
 
 while (true) {
