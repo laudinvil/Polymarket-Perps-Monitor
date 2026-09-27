@@ -165,6 +165,27 @@ async function fetchLiveSports(){
 }
 
 async function fetchLiveEvents(){
+  // Primary LIVE discovery: Gamma's live=true + soccer tag. This avoids relying
+  // on the HTML page or on Sports WS status spelling for the existence of a live match.
+  try{
+    const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&live=true&limit=500",{timeout:8000});
+    const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
+    const live=[];
+    const seen=new Set();
+    for(const e of batch){
+      const id=t(e.id||e.slug);
+      if(!id||seen.has(id)||e.ended===true||e.finished===true||e.final===true)continue;
+      seen.add(id);
+      const [home,away]=teams(e);
+      if(!home||!away)continue;
+      live.push({id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),homeTeam:home,awayTeam:away,status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),live:true,event:e});
+    }
+    console.log(JSON.stringify({level:"INFO",event:"gamma_live_sports_scan",activeLiveEvents:batch.length,soccerLiveEvents:live.length,source:"tag_slug=soccer&live=true"}));
+    if(live.length)return live;
+  }catch(e){
+    console.log(JSON.stringify({level:"WARN",event:"gamma_live_sports_scan_failed",message:e.message}));
+  }
+
   const all=[];
   for(let offset=0;offset<2000;offset+=500){
     try{
