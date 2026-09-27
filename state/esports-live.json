@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:26.854Z",
+  "updatedAt": "2026-09-27T15:33:28.170Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 517,
+    "events": 518,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700585",
+  "matchId": "1712063",
   "teams": [
-    "LAG Gaming",
-    "regain"
+    "Philippines",
+    "China"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 8,
+    "noPolyMatch": 9,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
