@@ -1,19 +1,25 @@
 {
-  "updatedAt": "2026-09-27T14:26:10.467Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T14:26:11.423Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36325874962",
   "runAttempt": "1",
   "sha": "73982b796f93b5676cd52e75f2911765b0b4c3ec",
   "pid": 2022,
   "telemetry": {
     "startedAt": "2026-09-27T14:26:05.517Z",
-    "events": 15,
+    "events": 17,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 224,
+  "matchId": "1710864",
+  "teams": [
+    "G2 Ares",
+    "FC Famalicão Esports"
+  ],
+  "status": "not_started",
+  "seriesScore": null,
   "candidates": 94,
   "diagnostics": {
     "startedAt": "2026-09-27T14:26:05.521Z",
@@ -38,7 +44,17 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      }
+    ],
     "rejects": []
   }
 }\n
