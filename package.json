@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node monitor.js"
+    "start": "exec node monitor.js"
   },
   "dependencies": {}
 }
