@@ -1,6 +1,4 @@
 import http from "node:http";
-import fs from "node:fs/promises";
-
 const CFG = {
   pollMs: 10000,
   gammaMs: 60000,
@@ -22,6 +20,12 @@ const state = {
   alertsSent: 0,
   telegramErrors: 0,
   sourceErrors: 0,
+  sofa429: 0,
+  gamma429: 0,
+  breaksDetected: 0,
+  twoBreakCandidates: 0,
+  marketMisses: 0,
+  cooldownBlocked: 0,
   lastError: null,
 };
 
@@ -52,6 +56,8 @@ async function getJson(url, kind = "generic") {
   });
   if (!r.ok) {
     if (r.status === 429) {
+      if (kind === "sofa") state.sofa429++;
+      if (kind === "gamma") state.gamma429++;
       const retrySec = Number(r.headers.get("retry-after") || 15);
       await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retrySec, 5), 120) * 1000));
     }
@@ -166,6 +172,10 @@ function processBreaks(e, nowSets) {
 
   prev.sets = nowSets;
   prev.firstToServe = first || prev.firstToServe || 1;
+  if (breaks.length) {
+    state.breaksDetected += breaks.length;
+    log("BREAKS_DETECTED", { eventId: id, sides: breaks, totalGames: newTotal });
+  }
   return breaks;
 }
 
@@ -336,7 +346,11 @@ async function evaluate(e, brokenSide) {
   const player = brokenSide === 0 ? e.homeTeam?.name : e.awayTeam?.name;
   if (!player) return;
   const m = findMarketForPlayer(e, player);
-  if (!m) return;
+  if (!m) {
+    state.marketMisses++;
+    log("MARKET_MISS", { eventId: e.id, player });
+    return;
+  }
   const outcomes = parseJsonField(m.outcomes);
   const prices0 = parseJsonField(m.outcomePrices);
   const idx = outcomes.findIndex(x => String(x).toLowerCase() === String(player).toLowerCase());
@@ -346,7 +360,11 @@ async function evaluate(e, brokenSide) {
 
   const key = `${e.id}:${player}`;
   const last = alerted.get(key) || 0;
-  if (Date.now() - last < CFG.cooldownMs) return;
+  if (Date.now() - last < CFG.cooldownMs) {
+    state.cooldownBlocked++;
+    log("COOLDOWN_BLOCK", { eventId: e.id, player });
+    return;
+  }
   alerted.set(key, Date.now());
 
   const sets = scoreSets(e);
@@ -389,6 +407,7 @@ async function poll() {
         const side = recordSignal(e, brokenSide);
         if (side !== null) {
           state.signals++;
+          state.twoBreakCandidates++;
           log("TWO_BREAKS", { eventId: e.id, player: side === 0 ? e.homeTeam.name : e.awayTeam.name, sets });
           try { await evaluate(e, side); } catch (err) { state.telegramErrors++; log("ALERT_ERROR", { error: String(err) }); }
         }
