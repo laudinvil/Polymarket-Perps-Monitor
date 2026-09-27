@@ -12,6 +12,19 @@ const DEPLEXO_LOG_TOKEN = process.env.DEPLEXO_LOG_TOKEN || "";
 const nativeConsoleLog = console.log.bind(console);
 const logQueue = [];
 let logBusy = false;
+const telemetry = {
+  startedAt: new Date().toISOString(),
+  events: 0,
+  polls: 0,
+  alerts: 0,
+  errors: 0,
+  byEvent: {},
+  recent: [],
+  lastPoll: null,
+  lastError: null,
+  updatedAt: null
+};
+let lastRemotePushAt = 0;
 
 async function flushLogQueue() {
   if (logBusy || !logQueue.length) return;
@@ -33,6 +46,17 @@ async function flushLogQueue() {
 
 function log(event, data = {}) {
   nativeConsoleLog(event, JSON.stringify(data));
+  telemetry.events++;
+  telemetry.byEvent[event] = (telemetry.byEvent[event] || 0) + 1;
+  if (event === "POLL_RESULT") telemetry.polls++;
+  if (event === "ALERT_SENT") telemetry.alerts++;
+  if (event === "POLL_ERROR" || event === "STATE_PUSH_ERROR") {
+    telemetry.errors++;
+    telemetry.lastError = {ts:new Date().toISOString(), event, data};
+  }
+  telemetry.recent.push({ts:new Date().toISOString(), event, data});
+  if (telemetry.recent.length > 80) telemetry.recent.splice(0, telemetry.recent.length - 80);
+  telemetry.updatedAt = new Date().toISOString();
   logQueue.push({
     ts:new Date().toISOString(),
     event,
@@ -304,9 +328,16 @@ async function telegram(text, url) {
 }
 
 const state = loadState();
+state.value.telemetry ||= telemetry;
+Object.assign(telemetry, state.value.telemetry || {});
+telemetry.recent = Array.isArray(telemetry.recent) ? telemetry.recent.slice(-80) : [];
 
-function persistRemoteState() {
+function persistRemoteState(force = false) {
+  state.value.telemetry = telemetry;
   saveState(state);
+  const now = Date.now();
+  if (!force && now - lastRemotePushAt < 60000) return;
+  lastRemotePushAt = now;
   try {
     execFileSync("git", ["config","user.name","github-actions[bot]"], {stdio:"ignore"});
     execFileSync("git", ["config","user.email","41898282+github-actions[bot]@users.noreply.github.com"], {stdio:"ignore"});
