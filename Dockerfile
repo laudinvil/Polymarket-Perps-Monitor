@@ -10,6 +10,10 @@ RUN apt-get update \
 COPY monitor.js ./
 
 ENV PORT=3000
+ENV HOME=/tmp
+ENV XDG_CONFIG_HOME=/tmp/.config
+ENV XDG_CACHE_HOME=/tmp/.cache
+
 EXPOSE 3000
 
-CMD ["node","monitor.js"]
+CMD ["sh","-c","while true; do echo '=== MONITOR PROCESS START ==='; node monitor.js; code=$?; echo \"=== MONITOR EXIT CODE: $code ===\"; sleep 5; done"]
