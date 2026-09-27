@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run CS2 map-1 overreaction monitor
+      - name: Run all-esports map-1 overreaction monitor
         env:
           PANDASCORE_API_TOKEN: ${{ secrets.PANDASCORE_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
