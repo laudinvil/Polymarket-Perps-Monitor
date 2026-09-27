@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:01:59.953Z",
+  "updatedAt": "2026-09-27T15:02:02.747Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328007264",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2272,
   "telemetry": {
     "startedAt": "2026-09-27T15:01:42.659Z",
-    "events": 102,
+    "events": 127,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700705",
+  "matchId": "1700465",
   "teams": [
-    "Imperial",
-    "paiN"
+    "KUUSAMO.gg",
+    "Noir Verse"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 0,
     "missingTeams": 2,
     "polyEvents": 224,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -173,6 +173,20 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1700705",
+        "teams": [
+          "Imperial",
+          "paiN"
+        ],
+        "source": "public-search",
+        "polyEventId": "1087590",
+        "polyEventSlug": "cs2-imp11-pain-2026-09-27",
+        "marketId": "4995311",
+        "marketSlug": "cs2-imp11-pain-2026-09-27",
+        "marketQuestion": "Counter-Strike: Imperial vs paiN (BO5) - FERJEE In House Playoffs",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -221,6 +235,16 @@
         "reason": "missing_teams",
         "matchId": "1706603",
         "opponents": 1
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN",
+        "seriesScore": [
+          0,
+          0
+        ]
       }
     ]
   }
