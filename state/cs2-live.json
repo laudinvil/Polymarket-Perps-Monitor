@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:25:46.016Z",
+  "updatedAt": "2026-09-27T15:25:47.467Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 623,
+    "events": 633,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700704",
+  "matchId": "1712164",
   "teams": [
-    "Bounty Hunters Esports",
-    "Galorys"
+    " Phantom Academy",
+    "ILLYRIANS"
   ],
   "status": "running",
   "seriesScore": [
     1,
-    1
+    0
   ],
   "candidates": 89,
   "diagnostics": {
@@ -34,18 +34,18 @@
     "skippedFuture": 49,
     "missingTeams": 10,
     "polyEvents": 224,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 0,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
     "noPrematch": 0,
-    "signalChecks": 0,
-    "balancedPrePass": 0,
+    "signalChecks": 1,
+    "balancedPrePass": 1,
     "movePass": 0,
     "postRangePass": 0,
-    "mapFilterPass": 0,
+    "mapFilterPass": 1,
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
