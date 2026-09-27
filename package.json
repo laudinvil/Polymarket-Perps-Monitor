@@ -1,0 +1,11 @@
+{
+  "name": "polymarket-live-soccer-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node monitor.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
