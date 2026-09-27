@@ -274,12 +274,31 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
 
   games.sort((a, b) => a.set - b.set || a.game - b.game);
 
-  // Match the PBP game to the exact live-score transition we observed.
-  // The newest PBP entry can be an in-progress game, so blindly taking the
-  // last entry can classify the wrong server/winner.
+  // PBP game scores are cumulative within a SET, while targetTotal is
+  // cumulative across the whole MATCH. Convert each PBP game to a global
+  // completed-game number before matching it to the live score transition.
+  const setTotals = new Map();
+  for (const g of games) {
+    const n = g.home + g.away;
+    const prev = setTotals.get(g.set) || 0;
+    if (n > prev) setTotals.set(g.set, n);
+  }
+  const setNumbers = [...setTotals.keys()].sort((a, b) => a - b);
+  const offsets = new Map();
+  let offset = 0;
+  for (const setNo of setNumbers) {
+    offsets.set(setNo, offset);
+    offset += setTotals.get(setNo) || 0;
+  }
+  for (const g of games) {
+    g.globalGameNo = (offsets.get(g.set) || 0) + g.home + g.away;
+  }
+
+  // The newest PBP entry can be an in-progress game, so match the exact
+  // completed-game transition instead of blindly taking the last entry.
   let last = targetTotal == null
     ? games[games.length - 1]
-    : games.find(g => g.home + g.away === targetTotal);
+    : games.find(g => g.globalGameNo === targetTotal);
   if (!last) return null;
   const lastIndex = games.indexOf(last);
   let previous = lastIndex > 0 ? games[lastIndex - 1] : null;
@@ -295,7 +314,7 @@ async function getCompletedGameFromPointFeed(eventId, targetTotal = null) {
     else if (last.home === 0 && last.away === 1) winner = 2;
   }
 
-  return { ...last, winner };
+  return { ...last, winner, globalGameNo: last.globalGameNo };
 }
 
 async function processBreaks(e, nowSets) {
