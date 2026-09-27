@@ -86,11 +86,24 @@ async function fetchGameDetails(match, game){
   }catch(e){log("GAME_DETAILS_ERROR",{matchId:String(match?.id||""),gameId:String(game.id),error:String(e)});return game;}
 }
 async function map1InfoAsync(match,diag){
-  const g=firstFinishedGame(match);
-  if(!g)return null;
-  diag.map1Finished++;
   const series=seriesScore(match);
   if(!series||series[0]===series[1])return null;
+  const g=firstFinishedGame(match);
+  const seriesHasMap1=series.some(Number.isFinite)&&Math.min(series[0],series[1])===0&&Math.max(series[0],series[1])>=1;
+  if(!g&&!seriesHasMap1)return null;
+  diag.map1Finished++;
+  if(!g){
+    diag.map1DetectedFromSeries=(diag.map1DetectedFromSeries||0)+1;
+    const embedded=parseGameScore(match?.__live)||parseGameScore(match);
+    if(Number.isFinite(embedded.value)){
+      const winner=series[0]>series[1]?0:1,loser=winner===0?1:0;
+      const marginRatio=embedded.score?embedded.value/Math.max(...embedded.score):null;
+      diag.gameScoreFound=(diag.gameScoreFound||0)+1;
+      return{winner,loser,series,margin:embedded.score,marginValue:embedded.value,marginRatio};
+    }
+    diag.marginUnavailable=(diag.marginUnavailable||0)+1;
+    return null;
+  }
   let score=parseGameScore(g);
   if(!Number.isFinite(score.value)){
     diag.gameDetailsRequested=(diag.gameDetailsRequested||0)+1;
