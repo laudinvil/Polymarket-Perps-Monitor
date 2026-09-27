@@ -326,11 +326,16 @@ function recordSignal(e, brokenSide) {
 async function refreshMarkets() {
   const data = await getJson(CFG.gammaUrl, "gamma");
   const events = Array.isArray(data) ? data : (data.data || data.events || []);
+  let eventsWithMarkets = 0;
+  let activeMarkets = 0;
   markets.clear();
   for (const event of events) {
     if (!event || event.closed === true || event.active === false) continue;
-    for (const m of Array.isArray(event.markets) ? event.markets : []) {
+    const eventMarkets = Array.isArray(event.markets) ? event.markets : [];
+    if (eventMarkets.length) eventsWithMarkets++;
+    for (const m of eventMarkets) {
       if (!m || m.closed === true || m.active === false) continue;
+      activeMarkets++;
       markets.set(String(m.id), { ...m, eventSlug: event.slug });
     }
   }
@@ -338,6 +343,8 @@ async function refreshMarkets() {
   state.lastGammaAt = new Date().toISOString();
   log("MARKETS_REFRESHED", {
     eventsLoaded: events.length,
+    eventsWithMarkets,
+    activeMarkets,
     marketsLoaded: markets.size,
     tennisWinnerMarkets: Array.from(markets.values()).filter(isMatchWinnerMarket).length
   });
