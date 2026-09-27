@@ -121,7 +121,8 @@ function minute(m) {
     m.minute,
     m.matchMinute,
     m.gameMinute,
-    m.clock
+    m.clock,
+    m.period
   ];
 
   for (const value of candidates) {
