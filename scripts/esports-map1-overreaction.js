@@ -289,10 +289,25 @@ async function bo3Map1Fallback(teamA,teamB,diag){
         if(arr.length)break;
       }catch{}
     }
+    const collectNames=(v,out=[],depth=0)=>{
+      if(depth>8||v==null)return out;
+      if(Array.isArray(v)){for(const x of v)collectNames(x,out,depth+1);return out;}
+      if(typeof v!=="object")return out;
+      for(const k of ["name","title","team_name","teamName"]){
+        const s=String(v?.[k]??"").trim();
+        if(s&&s.length<120&&!out.includes(s))out.push(s);
+      }
+      for(const x of Object.values(v))collectNames(x,out,depth+1);
+      return out;
+    };
     const ranked=rows.map(m=>{
-      const ts=Array.isArray(m?.teams)?m.teams:[m?.team1,m?.team2,m?.home_team,m?.away_team];
-      const names=ts.map(x=>String(x?.name||x?.title||x||"")).filter(Boolean).slice(0,2);
-      return{m,names,score:names.length>=2?Math.max(nameScore(names[0],teamA)+nameScore(names[1],teamB),nameScore(names[0],teamB)+nameScore(names[1],teamA)):0};
+      const names=collectNames(m).filter(n=>nameScore(n,teamA)>=0.2||nameScore(n,teamB)>=0.2).slice(0,12);
+      let best=0,pair=[];
+      for(let i=0;i<names.length;i++)for(let j=i+1;j<names.length;j++){
+        const s=Math.max(nameScore(names[i],teamA)+nameScore(names[j],teamB),nameScore(names[i],teamB)+nameScore(names[j],teamA));
+        if(s>best){best=s;pair=[names[i],names[j]];}
+      }
+      return{m,names:pair,score:best};
     }).filter(x=>x.score>=1.25).sort((a,b)=>b.score-a.score);
     for(const hit of ranked.slice(0,3)){
       let detail=hit.m;
@@ -368,9 +383,12 @@ async function bo3ApiLiveV2(teamA,teamB,diag){
         if(d>7||x==null)return;
         if(Array.isArray(x)){for(const y of x)walk(y,d+1);return;}
         if(typeof x!=="object")return;
-        const a=Number(x.team1_score??x.team1Score??x.home_score??x.homeScore??x.team1?.score??x.home?.score);
-        const b=Number(x.team2_score??x.team2Score??x.away_score??x.awayScore??x.team2?.score??x.away?.score);
+        const at=x?.attributes&&typeof x.attributes==="object"?x.attributes:{};
+        const a=Number(x.team1_score??x.team1Score??x.home_score??x.homeScore??x.team1?.score??x.home?.score??at.team1_score??at.team1Score??at.home_score??at.homeScore??at.team1?.score??at.home?.score);
+        const b=Number(x.team2_score??x.team2Score??x.away_score??x.awayScore??x.team2?.score??x.away?.score??at.team2_score??at.team2Score??at.away_score??at.awayScore??at.team2?.score??at.away?.score);
         if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b&&Math.max(a,b)>1)found.push([a,b]);
+        const sp=scorePair(x.score??x.scores??at.score??at.scores);
+        if(sp&&sp[0]!==sp[1]&&Math.max(...sp)>1)found.push(sp);
         for(const y of Object.values(x))walk(y,d+1);
       };
       walk(detail);
