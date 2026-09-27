@@ -1,9 +1,11 @@
 import http from "node:http";
+import https from "node:https";
 
 const TOKEN=process.env.TELEGRAM_BOT_TOKEN||"";
 const CHAT_ID=process.env.TELEGRAM_CHAT_ID||"";
 const POLL_MS=Number(process.env.POLL_MS||15000);
 const PORT=Number(process.env.PORT||3000);
+const HOST="polymarket.com";
 const SOURCE="https://polymarket.com/ru/sports/soccer/games";
 const seen=new Set();
 let status={startedAt:new Date().toISOString(),scans:0,live:0,lastError:null};
@@ -24,47 +26,84 @@ async function sendTelegram(text){
 }
 
 function clean(s){
-  return s.replace(/<[^>]*>/g," ")
-    .replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&")
-    .replace(/&quot;/gi,'"').replace(/&#39;/gi,"'")
-    .replace(/\s+/g," ").trim();
+  return s.replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")
+    .replace(/&amp;/gi,"&").replace(/&quot;/gi,'"')
+    .replace(/&#39;/gi,"'").replace(/\s+/g," ").trim();
 }
 
 function extractLiveCards(html){
-  const result=[], marker="/sports/soccer/games/";
+  const result=[],marker="/sports/soccer/games/";
   let pos=0;
   while((pos=html.indexOf(marker,pos))!==-1){
-    const start=html.lastIndexOf("<a",pos);
-    const end=html.indexOf("</a>",pos);
+    const start=html.lastIndexOf("<a",pos),end=html.indexOf("</a>",pos);
     if(start<0||end<0||end-start>20000){pos+=marker.length;continue;}
     const chunk=html.slice(start,end+4);
-    const hrefMatch=chunk.match(/href=["']([^"']*\/sports\/soccer\/games\/[^"']*)["']/i);
-    if(hrefMatch&&/\bLIVE\b/i.test(clean(chunk)))
-      result.push({href:new URL(hrefMatch[1],SOURCE).href,text:clean(chunk)});
-    pos=pos+marker.length;
+    const m=chunk.match(/href=["']([^"']*\/sports\/soccer\/games\/[^"']*)["']/i);
+    if(m&&/\bLIVE\b/i.test(clean(chunk)))
+      result.push({href:new URL(m[1],SOURCE).href,text:clean(chunk)});
+    pos+=marker.length;
   }
   return [...new Map(result.map(x=>[x.href,x])).values()];
 }
 
-async function scan(){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),10000);
-  try{
-    console.log("FETCH START:",SOURCE);
-    const r=await fetch(SOURCE,{
-      signal:controller.signal,
-      redirect:"follow",
-      headers:{
-        "user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
-        "accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language":"ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"
-      }
+function dohResolve(host){
+  return new Promise((resolve,reject)=>{
+    const req=https.request({
+      host:"1.1.1.1",port:443,path:`/dns-query?name=${encodeURIComponent(host)}&type=A`,
+      method:"GET",servername:"cloudflare-dns.com",
+      headers:{host:"cloudflare-dns.com",accept:"application/dns-json"}
+    },res=>{
+      let body="";
+      res.setEncoding("utf8");
+      res.on("data",d=>body+=d);
+      res.on("end",()=>{
+        try{
+          const data=JSON.parse(body);
+          const ip=data.Answer?.find(x=>x.type===1)?.data;
+          if(ip) resolve(ip); else reject(new Error("DOH_NO_A_RECORD"));
+        }catch(e){reject(e);}
+      });
     });
-    console.log("FETCH RESPONSE:",r.status,r.url);
-    if(!r.ok) throw new Error(`Polymarket HTTP ${r.status}`);
-    const html=await r.text();
-    console.log("FETCHED BYTES:",html.length);
-    const live=extractLiveCards(html);
+    req.setTimeout(5000,()=>req.destroy(new Error("DOH_TIMEOUT")));
+    req.on("error",reject);
+    req.end();
+  });
+}
+
+function fetchViaIp(ip){
+  return new Promise((resolve,reject)=>{
+    const req=https.request({
+      host:ip,port:443,path:"/ru/sports/soccer/games",
+      method:"GET",servername:HOST,
+      headers:{
+        host:HOST,
+        "user-agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+        accept:"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language":"ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        connection:"close"
+      }
+    },res=>{
+      let body="";
+      res.setEncoding("utf8");
+      res.on("data",d=>body+=d);
+      res.on("end",()=>resolve({status:res.statusCode||0,body}));
+    });
+    req.setTimeout(10000,()=>req.destroy(new Error("POLYMARKET_TIMEOUT")));
+    req.on("error",reject);
+    req.end();
+  });
+}
+
+async function scan(){
+  try{
+    console.log("DNS: resolving via Cloudflare DoH");
+    const ip=await dohResolve(HOST);
+    console.log("DNS: polymarket.com ->",ip);
+    const r=await fetchViaIp(ip);
+    console.log("FETCH RESPONSE:",r.status);
+    if(r.status<200||r.status>=400) throw new Error(`Polymarket HTTP ${r.status}`);
+    console.log("FETCHED BYTES:",r.body.length);
+    const live=extractLiveCards(r.body);
     status={...status,scans:status.scans+1,live:live.length,lastError:null};
     console.log(`SCAN: live=${live.length}`);
     for(const item of live){
@@ -75,17 +114,15 @@ async function scan(){
       console.log("TELEGRAM SENT:",item.href);
     }
   }catch(e){
-    status.lastError=e?.cause?(`${e.message}; cause=${e.cause.code||e.cause.message||e.cause}`):(e?.stack||String(e));
+    status.lastError=e?.stack||String(e);
     console.error("SCAN ERROR:",status.lastError);
-  }finally{
-    clearTimeout(timer);
   }
 }
 
 async function main(){
   console.log("MONITOR STARTING");
   console.log("SOURCE:",SOURCE);
-  console.log("MODE: LOW-MEMORY HTTP");
+  console.log("MODE: LOW-MEMORY HTTP + DOH");
   console.log("TELEGRAM:",TOKEN&&CHAT_ID?"CONFIGURED":"MISSING");
   while(true){
     await scan();
