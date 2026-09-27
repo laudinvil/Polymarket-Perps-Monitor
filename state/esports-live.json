@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:44:58.597Z",
+  "updatedAt": "2026-09-27T15:44:59.783Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1491,
+    "events": 1492,
     "polls": 6,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1713030",
+  "matchId": "1700679",
   "teams": [
-    "MURASH GAMING",
-    "ENTER FORCE.36"
+    "The Huns Esports",
+    "NEXVOID"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 4,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 26,
+    "noPolyMatch": 27,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
