@@ -9,10 +9,12 @@ RUN apt-get update \
 
 COPY monitor.js ./
 
+RUN mkdir -p /tmp/chrome-home /tmp/chromium-config /tmp/chromium-cache /tmp/chromium-monitor
+
 ENV PORT=3000
-ENV HOME=/tmp
-ENV XDG_CONFIG_HOME=/tmp/.config
-ENV XDG_CACHE_HOME=/tmp/.cache
+ENV HOME=/tmp/chrome-home
+ENV XDG_CONFIG_HOME=/tmp/chromium-config
+ENV XDG_CACHE_HOME=/tmp/chromium-cache
 
 EXPOSE 3000
 
