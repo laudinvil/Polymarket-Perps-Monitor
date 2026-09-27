@@ -1,3 +1,0 @@
-framework: node
-dockerfile_path: Dockerfile
-port: 3000
