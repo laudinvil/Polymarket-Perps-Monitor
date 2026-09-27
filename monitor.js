@@ -170,16 +170,28 @@ async function handleGame(m) {
     }));
   }
 
-  if (m.live === true && !m.ended && soccer) {
+  const status = String(m.status || "").toLowerCase().trim();
+  const soccerLive =
+    soccer &&
+    !m.ended &&
+    (
+      m.live === true ||
+      ["inprogress", "break", "penaltyshootout"].includes(status)
+    );
+
+  if (soccerLive) {
     soccerAccepted++;
     games.set(String(m.gameId), m);
-  } else if (m.ended || String(m.status || "").toLowerCase() === "final") {
+  } else if (
+    m.ended ||
+    ["final", "awarded", "canceled", "postponed"].includes(status)
+  ) {
     games.delete(String(m.gameId));
   }
 
   liveCount = games.size;
 
-  if (!(m.live === true && !m.ended && soccer)) return;
+  if (!soccerLive) return;
 
   const id = String(m.gameId);
   if (alerted.has(id)) return;
