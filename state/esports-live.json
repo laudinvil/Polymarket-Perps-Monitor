@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:43:52.015Z",
+  "updatedAt": "2026-09-27T15:43:53.642Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1235,
+    "events": 1246,
     "polls": 6,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1706431",
+  "matchId": "1707300",
   "teams": [
-    "Eternal Fire",
-    "K27"
+    "Metizport",
+    "Inner Circle Academy"
   ],
   "status": "running",
   "seriesScore": [
@@ -34,19 +34,19 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 6,
+    "matchedPoly": 8,
     "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 3,
-    "alreadyAlerted": 0,
+    "map1Finished": 4,
+    "alreadyAlerted": 1,
     "noPrematch": 0,
-    "signalChecks": 3,
-    "balancedPrePass": 3,
-    "movePass": 1,
-    "postRangePass": 0,
-    "mapFilterPass": 3,
-    "signalPass": 0,
+    "signalChecks": 4,
+    "balancedPrePass": 4,
+    "movePass": 2,
+    "postRangePass": 1,
+    "mapFilterPass": 4,
+    "signalPass": 1,
     "noMarketUrl": 0,
     "alertsSent": 0,
     "samples": [
@@ -180,6 +180,20 @@
         ],
         "status": "running",
         "beginAt": "2026-09-27T14:12:02Z"
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "source": "public-search",
+        "polyEventId": "1088001",
+        "polyEventSlug": "cs2-ef1-k271-2026-09-27",
+        "marketId": "5001609",
+        "marketSlug": "cs2-ef1-k271-2026-09-27",
+        "marketQuestion": "Counter-Strike: Eternal Fire vs K27 (BO3) - Stake Ranked Episode 5: Closed Qualifier Playoffs",
+        "matchScore": 1
       }
     ],
     "rejects": [
@@ -271,6 +285,12 @@
           "move",
           "post_range"
         ]
+      },
+      {
+        "reason": "strict_duplicate_blocked",
+        "matchId": "1706431",
+        "teamA": "Eternal Fire",
+        "teamB": "K27"
       }
     ]
   }
