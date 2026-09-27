@@ -227,7 +227,7 @@ function scorePair(s){
   return null;
 }
 function parseGameScore(g,match=null){
-  const liveSources=[g?.score,g?.map_score,g?.game_score,g?.results,g?.opponents,g?.teams,g?.counter_terrorists&&g?.terrorists?{
+  const liveSources=[g?.score,g?.map_score,g?.game_score,g?.rounds_score,g?.round_score,g?.results,g?.opponents,g?.teams,g?.counter_terrorists&&g?.terrorists?{
     home:g?.counter_terrorists?.round_score??g?.counter_terrorists?.score,
     away:g?.terrorists?.round_score??g?.terrorists?.score
   }:null];
