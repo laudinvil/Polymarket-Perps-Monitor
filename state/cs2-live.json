@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:36:27.279Z",
+  "updatedAt": "2026-09-27T14:36:28.531Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36326291843",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2254,
   "telemetry": {
     "startedAt": "2026-09-27T14:32:55.186Z",
-    "events": 1061,
+    "events": 1071,
     "polls": 3,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1689000",
+  "matchId": "1700704",
   "teams": [
-    "GamerLegion",
-    "3DMAX"
+    "Bounty Hunters Esports",
+    "Galorys"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,7 +32,7 @@
     "skippedFuture": 48,
     "missingTeams": 12,
     "polyEvents": 224,
-    "matchedPoly": 20,
+    "matchedPoly": 22,
     "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
