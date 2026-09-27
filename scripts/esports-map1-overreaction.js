@@ -581,6 +581,20 @@ function saveState(s) {
   fs.writeFileSync(s.path, JSON.stringify(s.value,null,2) + "\n");
 }
 
+async function claimAlertStrict(key, meta = {}) {
+  const claimUrl = process.env.DEPLEXO_CLAIM_URL || "https://polymarket.blitz.cloud/api/claim-alert";
+  const r = await fetch(claimUrl, {
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({key,...meta,runId:process.env.GITHUB_RUN_ID||null}),
+    signal:AbortSignal.timeout(5000)
+  });
+  const j = await r.json().catch(()=>({}));
+  if (r.status === 409 && j.duplicate) return false;
+  if (!r.ok || !j.ok || !j.claimed) throw new Error("STRICT_DEDUPE_REJECT HTTP "+r.status);
+  return true;
+}
+
 async function telegram(text) {
   const body = new URLSearchParams({
     chat_id: TG_CHAT,
@@ -962,6 +976,26 @@ for (const match of candidates) {
     marketSlug,
     url:marketUrl
   });
+  const strictKey = "CS2_MAP1:" + key;
+  let claimed = false;
+  try {
+    claimed = await claimAlertStrict(strictKey, {
+      matchId:key,
+      teamA,
+      teamB,
+      eventSlug:String(poly.event?.slug || ""),
+      marketId:String(poly.market?.id || "")
+    });
+  } catch (e) {
+    sample(diag.rejects, {reason:"strict_dedupe_unavailable",matchId:key}, 20);
+    continue;
+  }
+  if (!claimed) {
+    diag.alreadyAlerted++;
+    sample(diag.rejects, {reason:"strict_duplicate_blocked",matchId:key,teamA,teamB}, 20);
+    continue;
+  }
+
   await telegram(text + "\n\n" + marketUrl);
 
   entry.alerted = true;
