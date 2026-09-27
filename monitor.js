@@ -324,7 +324,25 @@ async function pollGammaSoccer() {
     const data = await response.json();
     const events = Array.isArray(data) ? data : Array.isArray(data.events) ? data.events : [];
 
-    const liveEvents = events.filter(e => e && String(e.live).toLowerCase() === "true" && String(e.ended).toLowerCase() !== "true");
+    const liveEvents = events.filter(e => {
+      if (!e) return false;
+      if (String(e.ended).toLowerCase() === "true") return false;
+
+      const live = String(e.live).toLowerCase() === "true";
+      const status = String(e.gameStatus || e.status || "").toLowerCase().trim();
+
+      // Gamma can expose the live state through either the boolean flag or
+      // the documented sports status. Do not require both.
+      const liveStatus = [
+        "inprogress",
+        "break",
+        "penaltyshootout",
+        "live",
+        "halftime"
+      ].includes(status);
+
+      return live || liveStatus;
+    });
     gammaLiveCount = liveEvents.length;
     lastGammaError = null;
 
