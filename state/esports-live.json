@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:02.479Z",
+  "updatedAt": "2026-09-27T15:36:03.658Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 574,
+    "events": 575,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683303",
+  "matchId": "1637687",
   "teams": [
-    "Bushido Wildcats",
-    "Leo Team"
+    "eArena",
+    "Bacon Time"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 1,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 16,
+    "noPolyMatch": 17,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
