@@ -665,6 +665,16 @@ async function claimAlertStrict(key, meta = {}) {
   throw new Error("STRICT_DEDUPE_UNAVAILABLE");
 }
 
+async function assertCurrentRun() {
+  const runId=String(process.env.GITHUB_RUN_ID||"");
+  const sha=String(process.env.GITHUB_SHA||"");
+  if(!runId||!sha)return;
+  const r=await fetch("https://api.github.com/repos/"+GH_REPO+"/actions/runs/"+runId,{headers:{accept:"application/vnd.github+json",authorization:"Bearer "+GH_TOKEN,"x-github-api-version":"2022-11-28"},signal:AbortSignal.timeout(5000)});
+  if(!r.ok)throw new Error("RUN_GUARD_HTTP_"+r.status);
+  const j=await r.json();
+  if(String(j.head_sha||"")!==sha||String(j.status||"")!=="in_progress")throw new Error("STALE_RUN_BLOCKED");
+}
+
 async function telegram(text) {
   const body = new URLSearchParams({
     chat_id: TG_CHAT,
@@ -1071,6 +1081,8 @@ for (const match of candidates) {
     sample(diag.rejects, {reason:"strict_duplicate_blocked",matchId:key,teamA,teamB}, 20);
     continue;
   }
+
+  await assertCurrentRun();
 
   await telegram(text + "\n\n" + marketUrl);
 
