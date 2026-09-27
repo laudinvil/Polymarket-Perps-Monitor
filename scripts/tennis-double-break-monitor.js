@@ -88,7 +88,13 @@ function matchMarket(m, e) {
   const t = namesFromMarket(m).text;
   const hn = h.split(" ").filter(x => x.length > 2);
   const an = a.split(" ").filter(x => x.length > 2);
-  const hit = (parts) => parts.filter(x => t.includes(x)).length >= Math.min(2, parts.length);
+  const hit = (parts) => {
+    if (!parts.length) return false;
+    // Full player/team name is safest; for long names require at least two tokens.
+    if (t.includes(parts.join(" "))) return true;
+    const required = parts.length >= 3 ? 2 : 1;
+    return parts.filter(x => t.includes(x)).length >= required;
+  };
   return hit(hn) && hit(an);
 }
 
