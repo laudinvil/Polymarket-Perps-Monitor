@@ -68,7 +68,15 @@ async function hydratePolyEvent(candidate,teamA,teamB){if(!candidate?.event)retu
 const priceCache=new Map();async function price(tokenId){const c=priceCache.get(tokenId);if(c&&Date.now()-c.at<30000)return c.value;try{const x=await getJson(CLOB+"/price?token_id="+encodeURIComponent(tokenId)+"&side=BUY");const v=Number(x.data?.price);if(!Number.isFinite(v))return null;priceCache.set(tokenId,{at:Date.now(),value:v});return v}catch{return null;}}
 const polyPriceCache=new Map();async function marketPrices(poly){if(!poly?.market)return null;const parsed=parseMarket(poly.market);if(!parsed)return null;const cacheKey=String(poly.market.id||parsed.map(x=>x.tokenId).join("|")),cached=polyPriceCache.get(cacheKey);if(cached&&Date.now()-cached.at<30000)return cached.data;const vals=await Promise.all(parsed.map(async o=>{if(Number.isFinite(o.gammaPrice))return{...o,price:o.gammaPrice};const clob=o.tokenId?await price(o.tokenId):null;return{...o,price:Number.isFinite(clob)?clob:null};}));if(vals.some(x=>!Number.isFinite(x.price)))return null;const total=vals[0].price+vals[1].price;if(total<=0)return null;const data=vals.map(x=>({...x,prob:x.price/total}));polyPriceCache.set(cacheKey,{at:Date.now(),data});return data;}
 function identifySides(prices,teamA,teamB){const pa=prices.find(x=>sim(x.name,teamA)>=.5),pb=prices.find(x=>sim(x.name,teamB)>=.5);return{a:pa||prices[0],b:pb||prices[1]};}
-async function psLives(){try{return await psPaged("/lives",3)}catch(e){log("PANDASCORE_LIVES_ERROR",{error:String(e)});return[];}}
+async function psLives(){
+  try{
+    const data=await ps("/lives");
+    return Array.isArray(data)?data:[];
+  }catch(e){
+    log("PANDASCORE_LIVES_ERROR",{error:String(e)});
+    return[];
+  }
+}
 function liveMatchId(x){return String(x?.match_id??x?.matchId??x?.match?.id??x?.id??"");}
 function mergeLiveIntoMatch(match,lives){
   const id=String(match?.id||"");
@@ -103,7 +111,11 @@ function scorePair(s){
   return null;
 }
 function parseGameScore(g,match=null){
-  for(const s of [g?.score,g?.map_score,g?.game_score,g?.results,g?.opponents,g?.teams]){
+  const liveSources=[g?.score,g?.map_score,g?.game_score,g?.results,g?.opponents,g?.teams,g?.counter_terrorists&&g?.terrorists?{
+    home:g?.counter_terrorists?.round_score??g?.counter_terrorists?.score,
+    away:g?.terrorists?.round_score??g?.terrorists?.score
+  }:null];
+  for(const s of liveSources){
     const pair=scorePair(s);
     if(pair&&pair[0]!==pair[1]){
       if(Math.max(...pair)<=1)return{value:null,type:"binary",score:pair};
