@@ -7,6 +7,46 @@ const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const GH_TOKEN = process.env.GITHUB_TOKEN;
 const GH_REPO = process.env.GITHUB_REPOSITORY || "laudinvil/Polymarket-Perps-Monitor";
 
+const DEPLEXO_LOG_URL = process.env.DEPLEXO_LOG_URL || "https://polymarket-perps-monitor.deplexo.app/api/logs";
+const DEPLEXO_LOG_TOKEN = process.env.DEPLEXO_LOG_TOKEN || "";
+const nativeConsoleLog = console.log.bind(console);
+const logQueue = [];
+let logBusy = false;
+
+async function flushLogQueue() {
+  if (logBusy || !logQueue.length) return;
+  logBusy = true;
+  const item = logQueue.shift();
+  try {
+    const headers = {"content-type":"application/json"};
+    if (DEPLEXO_LOG_TOKEN) headers.authorization = "Bearer " + DEPLEXO_LOG_TOKEN;
+    await fetch(DEPLEXO_LOG_URL, {
+      method:"POST",
+      headers,
+      body:JSON.stringify(item),
+      signal:AbortSignal.timeout(5000)
+    });
+  } catch {}
+  logBusy = false;
+  if (logQueue.length) void flushLogQueue();
+}
+
+function log(event, data = {}) {
+  nativeConsoleLog(event, JSON.stringify(data));
+  logQueue.push({
+    ts:new Date().toISOString(),
+    event,
+    data,
+    runId:process.env.GITHUB_RUN_ID || null,
+    runAttempt:process.env.GITHUB_RUN_ATTEMPT || null,
+    sha:process.env.GITHUB_SHA || null
+  });
+  if (logQueue.length > 500) logQueue.splice(0, logQueue.length - 500);
+  void flushLogQueue();
+}
+
+
+
 if (!PS_TOKEN) throw new Error("Missing PANDASCORE_API_TOKEN");
 if (!TG_TOKEN || !TG_CHAT) throw new Error("Missing Telegram secrets");
 
@@ -130,7 +170,7 @@ async function loadPolyEvents() {
     try {
       const x = await getJson(u);
       if (Array.isArray(x.data)) events.push(...x.data);
-    } catch (e) { console.log("POLY_DISCOVERY_ERROR", String(e)); }
+    } catch (e) { log("POLY_DISCOVERY_ERROR", String(e)); }
   }
   return [...new Map(events.filter(e=>e?.id!=null).map(e=>[String(e.id),e])).values()];
 }
@@ -247,7 +287,7 @@ async function telegram(text, url) {
     signal:AbortSignal.timeout(12000)
   });
   const j = await r.json();
-  console.log("TELEGRAM_RESPONSE", JSON.stringify({status:r.status,ok:j.ok}));
+  log("TELEGRAM_RESPONSE", JSON.stringify({status:r.status,ok:j.ok}));
   if (!r.ok || !j.ok) throw new Error("Telegram send failed");
 }
 
@@ -263,9 +303,9 @@ function persistRemoteState() {
     if (!status) return;
     execFileSync("git", ["commit","-m","Persist CS2 monitor state"], {stdio:"ignore"});
     execFileSync("git", ["push"], {stdio:"ignore"});
-    console.log("STATE_PUSHED");
+    log("STATE_PUSHED");
   } catch (e) {
-    console.log("STATE_PUSH_ERROR", JSON.stringify({error:String(e)}));
+    log("STATE_PUSH_ERROR", JSON.stringify({error:String(e)}));
   }
 }
 
@@ -278,8 +318,8 @@ const running = await ps("/csgo/matches/running?per_page=100");
 
 const candidates = [...upcoming, ...running].filter(m => bo3(m));
 const polyEvents = await loadPolyEvents();
-console.log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
-console.log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
+log("POLY_EVENTS", JSON.stringify({count:polyEvents.length}));
+log("PANDASCORE_BO3", JSON.stringify({upcoming:upcoming.length,running:running.length,candidates:candidates.length}));
 
 for (const match of candidates) {
   const ts = beginAt(match);
@@ -294,13 +334,13 @@ for (const match of candidates) {
 
   const poly = findPolyEvent(polyEvents,teamA,teamB);
   if (!poly) {
-    console.log("NO_POLY_MATCH", JSON.stringify({key,teamA,teamB}));
+    log("NO_POLY_MATCH", JSON.stringify({key,teamA,teamB}));
     continue;
   }
 
   const prices = await marketPrices(poly);
   if (!prices) {
-    console.log("NO_POLY_PRICE", JSON.stringify({key,teamA,teamB}));
+    log("NO_POLY_PRICE", JSON.stringify({key,teamA,teamB}));
     continue;
   }
   const sides = identifySides(prices,teamA,teamB);
@@ -313,7 +353,7 @@ for (const match of candidates) {
       marketId: String(poly.market.id || ""),
       eventSlug: String(poly.event.slug || "")
     };
-    console.log("PREMATCH_CAPTURED", JSON.stringify({key,teamA,teamB,a:sides.a.prob,b:sides.b.prob}));
+    log("PREMATCH_CAPTURED", JSON.stringify({key,teamA,teamB,a:sides.a.prob,b:sides.b.prob}));
   }
 
   const info = map1Info(match);
@@ -321,7 +361,7 @@ for (const match of candidates) {
 
   if (!info || entry.alerted) continue;
   if (!entry.pre) {
-    console.log("SKIP_NO_PREMATCH", JSON.stringify({key,teamA,teamB}));
+    log("SKIP_NO_PREMATCH", JSON.stringify({key,teamA,teamB}));
     continue;
   }
 
@@ -337,7 +377,7 @@ for (const match of candidates) {
   const overshoot = move >= CFG.minMove && postWinner >= CFG.minPostFavorite && postWinner <= CFG.maxPostFavorite;
   const mapFilter = CFG.requireMapMargin ? oneSided && info.margin != null : oneSided;
 
-  console.log("SIGNAL_CHECK", JSON.stringify({
+  log("SIGNAL_CHECK", JSON.stringify({
     key,match:teamA+" vs "+teamB,map1:info.series,margin:info.margin,
     preA:entry.pre.a,preB:entry.pre.b,postA:sides.a.prob,postB:sides.b.prob,
     move,balancedPre,overshoot,mapFilter
@@ -373,12 +413,12 @@ for (const match of candidates) {
   state.value.alerts.push({matchId:key,teamA,teamB,winner,loser,preWinner,postWinner,move,at:entry.alertedAt});
   state.value.alerts = state.value.alerts.slice(-500);
   saveState(state);
-  console.log("ALERT_SENT", JSON.stringify({key,teamA,teamB,loser,move}));
+  log("ALERT_SENT", JSON.stringify({key,teamA,teamB,loser,move}));
 }
 
 
 saveState(state);
-console.log("POLL_RESULT", JSON.stringify({tracked:Object.keys(state.value.matches).length,alerts:state.value.alerts.length}));
+log("POLL_RESULT", JSON.stringify({tracked:Object.keys(state.value.matches).length,alerts:state.value.alerts.length}));
 }
 
 while (true) {
@@ -386,11 +426,11 @@ while (true) {
   try {
     await poll();
   } catch (e) {
-    console.log("POLL_ERROR", JSON.stringify({error:String(e),stack:e?.stack}));
+    log("POLL_ERROR", JSON.stringify({error:String(e),stack:e?.stack}));
   }
   persistRemoteState();
   const elapsed = Date.now() - started;
   const wait = Math.max(5000, 20000 - elapsed);
-  console.log("NEXT_POLL", JSON.stringify({waitMs:wait}));
+  log("NEXT_POLL", JSON.stringify({waitMs:wait}));
   await sleep(wait);
 }
