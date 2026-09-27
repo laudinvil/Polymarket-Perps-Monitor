@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:26:36.523Z",
+  "updatedAt": "2026-09-27T14:26:37.561Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325874962",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2022,
   "telemetry": {
     "startedAt": "2026-09-27T14:26:05.517Z",
-    "events": 220,
+    "events": 221,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702601",
+  "matchId": "1700598",
   "teams": [
-    "ALKA GAMING",
-    "Mira"
+    "FarmVille",
+    "Marsborne"
   ],
   "status": "not_started",
   "seriesScore": null,
@@ -30,7 +30,7 @@
     "missingTeams": 4,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 3,
+    "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 10,
     "map1Finished": 0,
