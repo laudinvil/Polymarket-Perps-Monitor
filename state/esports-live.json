@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:34:26.273Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:34:28.645Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
   "sha": "3a03ace73651ebaabccb93fa124bcaf52b050dc3",
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 743,
+    "events": 755,
     "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 200,
+  "matchId": "1714921",
+  "teams": [
+    "Misa Esports",
+    "Fear Never Ends"
+  ],
+  "status": "not_started",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 67,
   "diagnostics": {
     "startedAt": "2026-09-27T15:34:23.134Z",
@@ -25,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 0,
+    "matchedPoly": 2,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -40,7 +49,66 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
-    "rejects": []
+    "samples": [
+      {
+        "matchId": "1714922",
+        "game": "Valorant",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1714922",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091762",
+        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
+        "marketId": "5029481",
+        "marketSlug": "val-gs4-pcfic-2026-09-27",
+        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1714922",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "polyEventId": "1091762",
+        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
+        "marketId": "5029481",
+        "marketSlug": "val-gs4-pcfic-2026-09-27",
+        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1714921",
+        "game": "Valorant",
+        "teams": [
+          "Misa Esports",
+          "Fear Never Ends"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      }
+    ],
+    "rejects": [
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714922",
+        "teamA": "Galatasaray Esports",
+        "teamB": "Pcific Esports",
+        "seriesScore": [
+          0,
+          0
+        ]
+      }
+    ]
   }
 }\n
