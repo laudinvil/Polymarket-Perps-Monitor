@@ -211,7 +211,7 @@ function currentGameScore(sets) {
 async function getCompletedGameFromPointFeed(eventId) {
   const data = await getJson(
     `https://www.sofascore.com/api/v1/event/${eventId}/point-by-point`,
-    "sofa-pbp"
+    "sofa"
   );
 
   const rawSets = Array.isArray(data?.pointByPoint)
