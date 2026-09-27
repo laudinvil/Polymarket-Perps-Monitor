@@ -296,6 +296,18 @@ async function handleGame(m) {
 
   if (alerted.has(id)) return;
 
+  // For the first successful test/production alert, do not require score,
+  // minute, period, or any other optional live metadata. LIVE + soccer +
+  // unique game id is sufficient.
+  console.log("LIVE CANDIDATE ACCEPTED", JSON.stringify({
+    id,
+    title: title(m),
+    source: m.source || "sports/gamma",
+    status,
+    live: liveFlag,
+    ended: endedFlag
+  }));
+
   const currentMinute = minute(m);
   const currentScore = score(m);
 
@@ -431,6 +443,7 @@ async function pollGammaSoccer() {
         status: e.gameStatus || e.status || "InProgress",
         live: true,
         ended: false,
+        source: "gamma",
         score: String(e.score || "").trim(),
         period: String(e.period || "").trim(),
         elapsed: String(e.elapsed || e.clock || e.minute || "").trim(),
