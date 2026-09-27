@@ -253,9 +253,8 @@ async function handleGame(m) {
   const currentMinute = minute(m);
   const currentScore = score(m);
 
-  // A valid score is enough to send the first LIVE alert. Minute data
-  // can be temporarily absent in the WS packet; Gamma/next WS updates
-  // will still populate it when the provider supplies it.
+  // The Polymarket sports feed can announce a LIVE match before its first
+  // score update. A 0-0 state is valid, but an unknown score is not.
   if (currentScore === "—") {
     console.log(
       "LIVE WAITING FOR SCORE",
@@ -266,8 +265,8 @@ async function handleGame(m) {
     return;
   }
 
-  alerted.add(id);
-
+  // Keep the first alert one-time per game, but only mark it as consumed
+  // after Telegram confirms delivery.
   const message =
     `⚽ LIVE FOUND\n\n` +
     `${title(m)}\n` +
@@ -277,14 +276,17 @@ async function handleGame(m) {
 
   try {
     await telegram(message);
+    alerted.add(id);
     alertsSent++;
     lastMessageAt = new Date().toISOString();
     console.log("ALERT SENT", id, title(m), "MINUTE", currentMinute, "SCORE", currentScore);
   } catch (e) {
-    alerted.delete(id);
     lastError = String(e.message || e);
     console.log("TELEGRAM ERROR", lastError);
   }
+  return;
+
+
 }
 
 async function pollGammaSoccer() {
