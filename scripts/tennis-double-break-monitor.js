@@ -336,6 +336,11 @@ async function refreshMarkets() {
   }
   state.matchedMarkets = markets.size;
   state.lastGammaAt = new Date().toISOString();
+  log("MARKETS_REFRESHED", {
+    eventsLoaded: events.length,
+    marketsLoaded: markets.size,
+    tennisWinnerMarkets: Array.from(markets.values()).filter(isMatchWinnerMarket).length
+  });
 }
 function findMarketForPlayer(e, playerName) {
   for (const m of markets.values()) {
