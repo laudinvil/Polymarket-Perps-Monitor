@@ -4,9 +4,6 @@ import fs from "node:fs/promises";
 const CFG = {
   pollMs: 8000,
   gammaMs: 60000,
-  maxPrice: 0.35,
-  minLiquidity: 500,
-  minAskDepthUsd: 250,
   cooldownMs: 20 * 60 * 1000,
   port: Number(process.env.PORT || 3000),
   sofaUrl: "https://www.sofascore.com/api/v1/sport/tennis/events/live",
@@ -329,9 +326,7 @@ async function evaluate(e, brokenSide) {
   const clob = yesToken(m, player);
   if (!clob) return;
   const px = prices.get(clob.id);
-  if (!px || px.ask > CFG.maxPrice || px.depth < CFG.minAskDepthUsd) return;
   const liq = marketLiquidity(m);
-  if (liq < CFG.minLiquidity) return;
 
   const key = `${e.id}:${player}`;
   const last = alerted.get(key) || 0;
