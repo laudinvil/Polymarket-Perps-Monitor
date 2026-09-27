@@ -551,6 +551,13 @@ async function evaluate(e, brokenSide) {
 
   const key = `${e.id}:${player}`;
   const last = alerted.get(key) || 0;
+  log("ALERT_COOLDOWN_CHECK", {
+    eventId: e.id,
+    player,
+    lastAlertAt: last ? new Date(last).toISOString() : null,
+    cooldownMs: CFG.cooldownMs,
+    elapsedMs: last ? Date.now() - last : null
+  });
   if (Date.now() - last < CFG.cooldownMs) {
     state.cooldownBlocked++;
     log("COOLDOWN_BLOCK", { eventId: e.id, player });
