@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:32:10.123Z",
+  "updatedAt": "2026-09-27T15:32:13.108Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 14,
+    "events": 39,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714922",
+  "matchId": "1714921",
   "teams": [
-    "Galatasaray Esports",
-    "Pcific Esports"
+    "Misa Esports",
+    "Fear Never Ends"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 0,
+    "matchedPoly": 2,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -59,8 +59,56 @@
         ],
         "status": "not_started",
         "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1714922",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "source": "public-search",
+        "polyEventId": "1091762",
+        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
+        "marketId": "5029481",
+        "marketSlug": "val-gs4-pcfic-2026-09-27",
+        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1714922",
+        "teams": [
+          "Galatasaray Esports",
+          "Pcific Esports"
+        ],
+        "polyEventId": "1091762",
+        "polyEventSlug": "val-gs4-pcfic-2026-09-27",
+        "marketId": "5029481",
+        "marketSlug": "val-gs4-pcfic-2026-09-27",
+        "marketQuestion": "Valorant: Galatasaray Esports vs Pcific Esports (BO3) - Monsters Reloaded Closed Qualifier Group A",
+        "matchScore": 1
+      },
+      {
+        "matchId": "1714921",
+        "game": "Valorant",
+        "teams": [
+          "Misa Esports",
+          "Fear Never Ends"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
       }
     ],
-    "rejects": []
+    "rejects": [
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714922",
+        "teamA": "Galatasaray Esports",
+        "teamB": "Pcific Esports",
+        "seriesScore": [
+          0,
+          0
+        ]
+      }
+    ]
   }
 }\n
