@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:17:00.737Z",
+  "updatedAt": "2026-09-27T15:17:02.151Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328832911",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2013,
   "telemetry": {
     "startedAt": "2026-09-27T15:15:03.244Z",
-    "events": 667,
+    "events": 677,
     "polls": 1,
     "alerts": 4,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712164",
+  "matchId": "1700464",
   "teams": [
-    " Phantom Academy",
-    "ILLYRIANS"
+    "Spirit Academy",
+    "megoshort"
   ],
   "status": "running",
   "seriesScore": [
-    1,
-    0
+    0,
+    1
   ],
   "candidates": 90,
   "diagnostics": {
@@ -32,12 +32,12 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 26,
+    "matchedPoly": 28,
     "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 2,
-    "alreadyAlerted": 1,
+    "map1Finished": 3,
+    "alreadyAlerted": 2,
     "noPrematch": 0,
     "signalChecks": 1,
     "balancedPrePass": 1,
