@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:55:32.856Z",
+  "updatedAt": "2026-09-27T14:55:34.125Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327235934",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2169,
   "telemetry": {
     "startedAt": "2026-09-27T14:48:35.584Z",
-    "events": 1878,
+    "events": 1879,
     "polls": 7,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702601",
+  "matchId": "1700598",
   "teams": [
-    "ALKA GAMING",
-    "Mira"
+    "FarmVille",
+    "Marsborne"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 3,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 4,
+    "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -332,6 +332,12 @@
         "matchId": "1696341",
         "teamA": "Liquid",
         "teamB": "Wildcard"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1702601",
+        "teamA": "ALKA GAMING",
+        "teamB": "Mira"
       }
     ]
   }
