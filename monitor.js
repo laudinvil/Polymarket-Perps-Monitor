@@ -35,6 +35,7 @@ let wsRef = null;
 let shuttingDown = false;
 const games = new Map();
 const alerted = new Set();
+let testAlertSent = false;
 
 process.on("SIGTERM", () => {
   console.log("PROCESS SIGTERM RECEIVED", new Date().toISOString());
@@ -283,6 +284,23 @@ async function handleGame(m) {
   if (soccerLive) {
     soccerAccepted++;
     games.set(id, m);
+
+    // One-time startup proof: send the first qualifying LIVE soccer event
+    // immediately, even if optional match metadata is unavailable.
+    if (!testAlertSent && !alerted.has(id)) {
+      const proof = `⚽ LIVE FOUND\\n\\n${title(m)}\\nLIVE\\nMINUTE: ${minute(m)}\\nSCORE: ${score(m)}`;
+      try {
+        await telegram(proof);
+        testAlertSent = true;
+        alerted.add(id);
+        alertsSent++;
+        lastMessageAt = new Date().toISOString();
+        console.log("FIRST LIVE ALERT SENT", id, title(m));
+      } catch (e) {
+        lastError = String(e.message || e);
+        console.log("FIRST LIVE ALERT ERROR", lastError);
+      }
+    }
   } else if (
     endedFlag ||
     ["final", "awarded", "canceled", "postponed"].includes(status)
