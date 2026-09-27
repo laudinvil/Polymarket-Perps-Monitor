@@ -649,6 +649,16 @@ function shutdown(signal) {
 console.log("MONITOR STARTING");
 console.log("SOURCE", WS_URL);
 console.log("GAMMA SOURCES", GAMMA_URLS.join(" | "));
-connect();
-pollGammaSoccer();
+
+(async () => {
+  try {
+    await telegram("🔧 MONITOR TEST\n\nTelegram connection OK");
+    console.log("STARTUP TEST ALERT SENT");
+  } catch (e) {
+    lastError = String(e.message || e);
+    console.log("STARTUP TEST ALERT ERROR", lastError);
+  }
+  connect();
+  pollGammaSoccer();
+})();
 gammaTimer = setInterval(pollGammaSoccer, GAMMA_POLL_MS);
