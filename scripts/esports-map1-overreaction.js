@@ -1,3 +1,12 @@
+async function ensurePrematchBaseline(match, poly, entry) {
+  if (entry.pre) return entry.pre;
+  const prices = await marketPrices(poly.market);
+  if (!prices) return null;
+  const pre = { at: Date.now(), prices };
+  entry.pre = pre;
+  return pre;
+}
+
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -636,7 +645,10 @@ for (const match of candidates) {
   const sides = identifySides(prices,teamA,teamB);
 
   const map1State = map1Info(match);
-  if (!entry.pre && (!ts || ts > now || (String(match.status).toLowerCase() === "running" && !map1State))) {
+  if (!entry.pre && !map1State) {
+    await ensurePrematchBaseline(match, poly, entry);
+  }
+  if (!entry.pre && (!ts || ts > now)) {
     entry.pre = {
       teamA, teamB,
       a: sides.a.prob, b: sides.b.prob,
