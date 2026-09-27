@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:26:22.033Z",
+  "updatedAt": "2026-09-27T14:26:24.249Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325874962",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2022,
   "telemetry": {
     "startedAt": "2026-09-27T14:26:05.517Z",
-    "events": 117,
+    "events": 137,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1696342",
+  "matchId": "1684181",
   "teams": [
-    "M80",
-    "DENDELE CS"
+    "Nemiga",
+    "Color"
   ],
   "status": "not_started",
   "seriesScore": null,
@@ -29,10 +29,10 @@
     "skippedFuture": 0,
     "missingTeams": 3,
     "polyEvents": 224,
-    "matchedPoly": 10,
+    "matchedPoly": 12,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
-    "prematchCaptured": 5,
+    "prematchCaptured": 6,
     "map1Finished": 0,
     "alreadyAlerted": 0,
     "noPrematch": 0,
@@ -269,6 +269,19 @@
         "matchId": "1700465",
         "teamA": "KUUSAMO.gg",
         "teamB": "Noir Verse",
+        "seriesScore": null
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS",
         "seriesScore": null
       }
     ]
