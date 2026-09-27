@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:44:16.877Z",
+  "updatedAt": "2026-09-27T15:44:18.444Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1379,
+    "events": 1389,
     "polls": 6,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1710855",
+  "matchId": "1702961",
   "teams": [
-    "BASEMENT BOYS",
-    "overTIME"
+    "YBN Team",
+    "Cake Team"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 34,
+    "matchedPoly": 36,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
