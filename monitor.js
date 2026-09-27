@@ -675,10 +675,16 @@ function shutdown(signal) {
 }
 
 console.log("MONITOR STARTING");
+console.log("TELEGRAM CONFIG", JSON.stringify({
+  tokenPresent: Boolean(TOKEN),
+  tokenLength: TOKEN ? TOKEN.length : 0,
+  chatIdPresent: Boolean(CHAT_ID)
+}));
 console.log("SOURCE", WS_URL);
 console.log("GAMMA SOURCES", GAMMA_URLS.join(" | "));
 
 (async () => {
+  await new Promise(resolve => setTimeout(resolve, 3000));
   try {
     await telegram("🔧 MONITOR TEST\n\nTelegram connection OK");
     console.log("STARTUP TEST ALERT SENT");
