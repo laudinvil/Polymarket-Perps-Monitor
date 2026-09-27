@@ -270,10 +270,14 @@ function processBreaks(e, nowSets) {
     return [];
   }
   for (let k = 0; k < count; k++) {
-    const initialServer = prev.firstToServe;
+    let initialServer = prev.firstToServe;
     if (initialServer !== 1 && initialServer !== 2) {
-      log("SERVER_UNKNOWN", { eventId: id, totalGames: gameNo });
-      break;
+      // The live endpoint can omit firstToServe for matches already in progress.
+      // Do not disable the monitor permanently; use a deterministic provisional
+      // sequence and mark the assumption for diagnostics.
+      initialServer = 1;
+      prev.firstToServe = 1;
+      log("SERVER_FALLBACK", { eventId: id, totalGames: gameNo, assumed: "HOME" });
     }
     const server = ((gameNo + (initialServer - 1)) % 2) + 1;
     const before = gameNo;
