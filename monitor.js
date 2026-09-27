@@ -5,6 +5,8 @@ const WS_URL = "wss://sports-api.polymarket.com/ws";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const RECONNECT_MS = 3000;
+const GAMMA_URL = "https://gamma-api.polymarket.com/events?active=true&closed=false&live=true&tag_slug=soccer&limit=500";
+const GAMMA_POLL_MS = 10000;
 const STARTED_AT = new Date().toISOString();
 
 let lastMessageAt = null;
@@ -18,6 +20,11 @@ let soccerAccepted = 0;
 let soccerRejected = 0;
 let lastEvent = null;
 let lastSoccerCandidate = null;
+let lastGammaEvent = null;
+let lastGammaError = null;
+let gammaPolls = 0;
+let gammaLiveCount = 0;
+let gammaPolling = false;
 let wsRef = null;
 let shuttingDown = false;
 const games = new Map();
@@ -217,6 +224,74 @@ async function handleGame(m) {
   }
 }
 
+async function pollGammaSoccer() {
+  if (shuttingDown || gammaPolling) return;
+  gammaPolling = true;
+  gammaPolls++;
+
+  try {
+    const response = await fetch(GAMMA_URL, {
+      headers: { "accept": "application/json" },
+      signal: AbortSignal.timeout(8000)
+    });
+
+    if (!response.ok) {
+      throw new Error("Gamma HTTP " + response.status);
+    }
+
+    const data = await response.json();
+    const events = Array.isArray(data) ? data : Array.isArray(data.events) ? data.events : [];
+
+    const liveEvents = events.filter(e => e && e.live === true && e.ended !== true);
+    gammaLiveCount = liveEvents.length;
+    lastGammaError = null;
+
+    for (const e of liveEvents) {
+      const market = Array.isArray(e.markets)
+        ? e.markets.find(m => m && m.gameId != null)
+        : null;
+
+      const gameId = String(
+        market?.gameId ??
+        e.gameId ??
+        e.id ??
+        e.slug ??
+        ""
+      );
+
+      if (!gameId) continue;
+
+      const rawTitle = String(e.title || "").trim();
+      const match = rawTitle.match(/^(.+?)\s+vs\.?\s+(.+?)(?:\s+-\s+.*)?$/i);
+
+      const normalized = {
+        gameId,
+        leagueAbbreviation: "soccer",
+        sport: "soccer",
+        sportSlug: "soccer",
+        slug: e.slug || "",
+        homeTeam: match ? match[1].trim() : rawTitle,
+        awayTeam: match ? match[2].trim() : "",
+        status: e.gameStatus || e.status || "InProgress",
+        live: true,
+        ended: false,
+        score: e.score || "",
+        period: e.period || "",
+        elapsed: e.elapsed || "",
+        minute: e.elapsed || ""
+      };
+
+      lastGammaEvent = eventSnapshot(normalized);
+      await handleGame(normalized);
+    }
+  } catch (e) {
+    lastGammaError = String(e.message || e);
+    console.log("GAMMA ERROR", lastGammaError);
+  } finally {
+    gammaPolling = false;
+  }
+}
+
 function connect() {
   if (shuttingDown) return;
 
@@ -306,7 +381,11 @@ const server = http.createServer((req, res) => {
     lastMessageAt,
     lastError,
     lastEvent,
-    lastSoccerCandidate
+    lastSoccerCandidate,
+    gammaPolls,
+    gammaLiveCount,
+    lastGammaEvent,
+    lastGammaError
   }));
 });
 
@@ -336,6 +415,7 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(heartbeat);
+  clearInterval(gammaTimer);
   wsState = "shutting_down";
 
   try { wsRef?.close(); } catch {}
@@ -352,4 +432,7 @@ function shutdown(signal) {
 
 console.log("MONITOR STARTING");
 console.log("SOURCE", WS_URL);
+console.log("GAMMA SOURCE", GAMMA_URL);
 connect();
+pollGammaSoccer();
+const gammaTimer = setInterval(pollGammaSoccer, GAMMA_POLL_MS);
