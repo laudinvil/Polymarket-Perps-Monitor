@@ -185,6 +185,13 @@ function marketLiquidity(m) {
   return Number(m.liquidityNum ?? m.liquidity ?? 0);
 }
 
+function firstServer(e) {
+  const v = e.firstToServe ?? e.firstToServeCode;
+  if (v === 1 || String(v).toLowerCase() === "home") return 1;
+  if (v === 2 || String(v).toLowerCase() === "away") return 2;
+  return 0;
+}
+
 function scoreSets(e) {
   const hs = e.homeScore || {};
   const as = e.awayScore || {};
@@ -208,7 +215,7 @@ function currentGameScore(sets) {
 function processBreaks(e, nowSets) {
   const id = String(e.id);
   const prev = matches.get(id);
-  const first = Number(e.firstToServe || e.firstToServeCode || 0);
+  const first = firstServer(e);
   if (!prev) {
     matches.set(id, { sets: nowSets, firstToServe: first, breakSeq: [], home: e.homeTeam?.name, away: e.awayTeam?.name, slug: e.slug });
     return [];
@@ -489,7 +496,7 @@ async function poll() {
       const id = String(e.id);
       const prev = matches.get(id);
       if (!prev) {
-        matches.set(id, { sets, firstToServe: Number(e.firstToServe || 1), breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
+        matches.set(id, { sets, firstToServe: firstServer(e) || 1, breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
         continue;
       }
       const breaks = processBreaks(e, sets);
