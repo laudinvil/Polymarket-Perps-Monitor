@@ -25,7 +25,6 @@ const state = {
   breaksDetected: 0,
   twoBreakCandidates: 0,
   marketMisses: 0,
-  marketMatches: 0,
   cooldownBlocked: 0,
   lastError: null,
 };
@@ -103,11 +102,36 @@ function marketPlayerNames(m) {
   return [];
 }
 
+function namesFromMarket(m) {
+  const q = String(m.question || "");
+  const title = String(m.title || "");
+  const slug = String(m.slug || m.eventSlug || "");
+  const outcomes = marketPlayerNames(m);
+  return { q, title, slug, outcomes, text: norm(q + " " + title + " " + slug + " " + outcomes.join(" ")) };
+}
+
+function isMatchWinnerMarket(m) {
+  const text = norm([
+    m.question,
+    m.title,
+    m.description,
+    m.rules
+  ].filter(Boolean).join(" "));
+
+  // Polymarket's primary tennis market resolves on the player who
+  // advances in the match. Set, total, handicap and exact-score markets
+  // are different contracts and must never be used for this strategy.
+  if (/first set|second set|set [1-5]|total games|total sets|over|under|handicap|spread|exact score|correct score|wins by/.test(text)) {
+    return false;
+  }
+
+  return /advances against|win the match|match winner|winner of the match|who will win/.test(text);
+}
 
 function matchMarket(m, e) {
   const home = e.homeTeam?.name;
   const away = e.awayTeam?.name;
-  if (!home || !away) return false;
+  if (!home || !away || !isMatchWinnerMarket(m)) return false;
 
   const outcomes = marketPlayerNames(m);
   if (outcomes.length >= 2) {
@@ -117,22 +141,28 @@ function matchMarket(m, e) {
     ) return true;
   }
 
-  const text = norm([m.question, m.title, m.slug, m.eventSlug].filter(Boolean).join(" "));
+  const text = norm([
+    m.question,
+    m.title,
+    m.description,
+    m.rules,
+    m.slug,
+    m.eventSlug
+  ].filter(Boolean).join(" "));
   const hasPlayer = (name) => {
     const k = nameKey(name);
-    if (!k) return false;
-    return text.includes(k.n) ||
+    return !!k && (
+      text.includes(k.n) ||
       text.includes(k.compact) ||
-      (text.includes(k.first) && text.includes(k.last));
+      (text.includes(k.first) && text.includes(k.last))
+    );
   };
 
   return hasPlayer(home) && hasPlayer(away);
 }
-
 function marketUrl(m) {
-  return m.eventSlug
-    ? `https://polymarket.com/event/${m.eventSlug}`
-    : "https://polymarket.com/tennis";
+  const slug = m.eventSlug || m.slug;
+  return slug ? `https://polymarket.com/event/${slug}` : "https://polymarket.com/tennis";
 }
 
 function parseJsonField(v) {
@@ -141,6 +171,19 @@ function parseJsonField(v) {
   try { return JSON.parse(v); } catch { return []; }
 }
 
+function yesToken(m, playerName) {
+  const outcomes = parseJsonField(m.outcomes);
+  const ids = parseJsonField(m.clobTokenIds);
+  const prices = parseJsonField(m.outcomePrices);
+  if (!ids.length) return null;
+  let idx = outcomes.findIndex(x => String(x).toLowerCase() === playerName.toLowerCase());
+  if (idx < 0) idx = 0;
+  return { id: String(ids[idx]), initialPrice: Number(prices[idx] || 0), outcome: outcomes[idx] || playerName };
+}
+
+function marketLiquidity(m) {
+  return Number(m.liquidityNum ?? m.liquidity ?? 0);
+}
 
 function scoreSets(e) {
   const hs = e.homeScore || {};
@@ -279,24 +322,208 @@ async function refreshMarkets() {
   state.matchedMarkets = markets.size;
   state.lastGammaAt = new Date().toISOString();
 }
-
 function findMarketForPlayer(e, playerName) {
+  let best = null;
   for (const m of markets.values()) {
     if (!matchMarket(m, e)) continue;
-    if (!marketPlayerNames(m).some(name => playerNameMatch(playerName, name))) continue;
-    state.marketMatches++;
-    log("MARKET_MATCH", {
-      eventId: e.id,
-      player: playerName,
-      marketId: m.id,
-      eventSlug: m.eventSlug || null,
-      outcomes: marketPlayerNames(m)
-    });
-    return m;
+    const q = String(m.question || m.title || "").toLowerCase();
+    // Prefer the market that explicitly names the player, then a match-winner market.
+    const playerHit = q.includes(playerName.toLowerCase());
+    const winnerish = q.includes("win") || q.includes("winner");
+    if (!best || playerHit || (winnerish && !String(best.question || best.title || "").toLowerCase().includes("win"))) {
+      best = m;
+    }
   }
-  return null;
+  return best;
 }
 
+function handleBook(msg) {
+  if (!msg?.asset_id) return;
+  const bids = Array.isArray(msg.bids) ? msg.bids : [];
+  const asks = Array.isArray(msg.asks) ? msg.asks : [];
+  const bestAsk = asks.map(x => Number(x.price)).filter(Number.isFinite).sort((a,b)=>a-b)[0];
+  if (!Number.isFinite(bestAsk)) return;
+  let depth = 0;
+  for (const x of asks) {
+    const p = Number(x.price), s = Number(x.size);
+    if (Number.isFinite(p) && Number.isFinite(s) && p <= bestAsk + 0.05) depth += p * s;
+  }
+  prices.set(String(msg.asset_id), { ask: bestAsk, depth, ts: Date.now() });
+  state.wsBestAsks++;
+}
 
+function handlePriceChange(msg) {
+  for (const x of msg.price_changes || []) {
+    const id = String(x.asset_id || "");
+    const p = Number(x.best_ask ?? x.price);
+    if (!id || !Number.isFinite(p)) continue;
+    const old = prices.get(id) || {};
+    prices.set(id, { ...old, ask: p, ts: Date.now() });
+  }
+}
 
+function connectWs() {
+  try {
+    ws = new WebSocket(CFG.wsUrl);
+    ws.onopen = () => {
+      state.wsConnected = true;
+      log("POLY_WS_OPEN");
+      const ids = [];
+      for (const m of markets.values()) {
+        const h = markets.get(String(m.id));
+        const clob = parseJsonField(h.clobTokenIds);
+        for (const x of clob) ids.push(String(x));
+      }
+      if (ids.length) ws.send(JSON.stringify({ type: "market", assets_ids: [...new Set(ids)].slice(0, 200), custom_feature_enabled: true }));
+      clearInterval(wsTimer);
+      wsTimer = setInterval(() => { try { ws.send("PING"); } catch {} }, 10000);
+    };
+    ws.onmessage = ev => {
+      state.wsMessages++;
+      if (ev.data === "PONG") return;
+      try {
+        const msg = JSON.parse(String(ev.data));
+        if (msg.event_type === "book") handleBook(msg);
+        else if (msg.event_type === "price_change") handlePriceChange(msg);
+      } catch {}
+    };
+    ws.onerror = err => {
+      state.lastError = "polymarket_ws_error";
+      log("POLY_WS_ERROR");
+    };
+    ws.onclose = () => {
+      state.wsConnected = false;
+      clearInterval(wsTimer);
+      setTimeout(connectWs, 3000);
+    };
+  } catch {
+    state.wsConnected = false;
+    setTimeout(connectWs, 5000);
+  }
+}
 
+async function telegram(text, url) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
+  const wait = CFG.telegramMinMs - (Date.now() - lastTelegramRequest);
+  if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+  lastTelegramRequest = Date.now();\n  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chat,
+      text: text + `\n\n<a href="${url}">ОТКРЫТЬ POLYMARKET</a>`,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+    signal: AbortSignal.timeout(CFG.requestTimeoutMs),
+  });
+  if (!r.ok) {
+    if (r.status === 429) {
+      let retrySec = 5;
+      try {
+        const body = await r.json();
+        retrySec = Number(body?.parameters?.retry_after || retrySec);
+      } catch {}
+      await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(retrySec, 1), 120) * 1000));
+    }
+    throw new Error(`telegram ${r.status}`);
+  }
+}
+
+async function evaluate(e, brokenSide) {
+  const player = brokenSide === 0 ? e.homeTeam?.name : e.awayTeam?.name;
+  if (!player) return;
+  const m = findMarketForPlayer(e, player);
+  if (!m) {
+    state.marketMisses++;
+    log("MARKET_MISS", { eventId: e.id, player });
+    return;
+  }
+  const outcomes = parseJsonField(m.outcomes);
+  const prices0 = parseJsonField(m.outcomePrices);
+  const idx = outcomes.findIndex(x => String(x).toLowerCase() === String(player).toLowerCase());
+  const initialAsk = idx >= 0 ? Number(prices0[idx]) : Number(prices0[0]);
+  const px = { ask: Number.isFinite(initialAsk) ? initialAsk : null, depth: 0 };
+  const liq = marketLiquidity(m);
+
+  const key = `${e.id}:${player}`;
+  const last = alerted.get(key) || 0;
+  if (Date.now() - last < CFG.cooldownMs) {
+    state.cooldownBlocked++;
+    log("COOLDOWN_BLOCK", { eventId: e.id, player });
+    return;
+  }
+  alerted.set(key, Date.now());
+
+  const sets = scoreSets(e);
+  const [sh, sa] = sets.length ? sets[sets.length - 1] : [0,0];
+  const text =
+`🎾 TENNIS — 2 BREAKS
+
+${e.homeTeam?.name} vs ${e.awayTeam?.name}
+
+${player} lost 2 service games in a row.
+SET: ${sh}–${sa}
+
+POLYMARKET PRICE: ${px.ask == null ? "—" : `${Math.round(px.ask * 100)}¢`}
+LIQUIDITY: $${Math.round(liq)}
+ASK DEPTH: $${Math.round(px.depth)}
+
+COMEBACK CANDIDATE`;
+  state.alertsSent++;
+  await telegram(text, marketUrl(m));
+  log("ALERT_SENT", { eventId: e.id, player, price: px.ask, liquidity: liq });
+}
+
+async function poll() {
+  try {
+    const body = await getJson(CFG.sofaUrl, "sofa");
+    const events = body.events || [];
+    state.liveMatches = events.length;
+    for (const e of events) {
+      if (e?.status?.type !== "inprogress") continue;
+      const sets = scoreSets(e);
+      if (!sets.length || !e.homeTeam?.name || !e.awayTeam?.name) continue;
+      const id = String(e.id);
+      const prev = matches.get(id);
+      if (!prev) {
+        matches.set(id, { sets, firstToServe: Number(e.firstToServe || 1), breakSeq: [], home: e.homeTeam.name, away: e.awayTeam.name, slug: e.slug });
+        continue;
+      }
+      const breaks = processBreaks(e, sets);
+      for (const brokenSide of breaks) {
+        const side = recordSignal(e, brokenSide);
+        if (side !== null) {
+          state.signals++;
+          state.twoBreakCandidates++;
+          log("TWO_BREAKS", { eventId: e.id, player: side === 0 ? e.homeTeam.name : e.awayTeam.name, sets });
+          try { await evaluate(e, side); } catch (err) { state.telegramErrors++; log("ALERT_ERROR", { error: String(err) }); }
+        }
+      }
+    }
+    state.lastPollAt = new Date().toISOString();
+  } catch (err) {
+    state.sourceErrors++;
+    state.lastError = String(err);
+    log("SOFA_ERROR", { error: String(err) });
+  }
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/health" || req.url === "/") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, strategy: "two-consecutive-service-breaks", state }, null, 2));
+    return;
+  }
+  res.writeHead(404);
+  res.end("not found");
+});
+
+server.listen(CFG.port, () => log("MONITOR_READY", { port: CFG.port, strategy: "two-consecutive-service-breaks" }));
+
+await refreshMarkets().catch(err => { state.lastError = String(err); log("GAMMA_ERROR", { error: String(err) }); });
+setInterval(() => refreshMarkets().catch(err => log("GAMMA_ERROR", { error: String(err) })), CFG.gammaMs);
+await poll();
+setInterval(poll, CFG.pollMs);
