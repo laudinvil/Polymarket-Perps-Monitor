@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:59:47.759Z",
+  "updatedAt": "2026-09-27T14:59:49.694Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36327852862",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2242,
   "telemetry": {
     "startedAt": "2026-09-27T14:59:03.677Z",
-    "events": 323,
+    "events": 342,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1681150",
+  "matchId": "1706602",
   "teams": [
-    "Iberian Soul",
-    "ex-RUSTEC"
+    "Rebels Gaming",
+    "SAW"
   ],
   "status": "running",
   "seriesScore": [
@@ -32,13 +32,13 @@
     "skippedFuture": 48,
     "missingTeams": 11,
     "polyEvents": 224,
-    "matchedPoly": 22,
+    "matchedPoly": 24,
     "noPolyMatch": 13,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
-    "map1Finished": 0,
+    "map1Finished": 1,
     "alreadyAlerted": 0,
-    "noPrematch": 0,
+    "noPrematch": 1,
     "signalChecks": 0,
     "balancedPrePass": 0,
     "movePass": 0,
