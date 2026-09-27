@@ -1,29 +1,18 @@
 {
-  "updatedAt": "2026-09-27T15:40:45.191Z",
-  "stage": "MATCH_PROGRESS",
+  "updatedAt": "2026-09-27T15:40:46.282Z",
+  "stage": "POLL_RESULT",
   "runId": "36330323125",
   "runAttempt": "1",
   "sha": "c9bf6cb6ced1dc6a513835074e506fdbd7a717f8",
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 585,
-    "polls": 0,
+    "events": 586,
+    "polls": 1,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700679",
-  "teams": [
-    "The Huns Esports",
-    "NEXVOID"
-  ],
-  "status": "not_started",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 67,
   "diagnostics": {
     "startedAt": "2026-09-27T15:39:11.724Z",
     "upcoming": 100,
@@ -31,11 +20,11 @@
     "bo3": 54,
     "bo5": 10,
     "firstTo3": 3,
-    "skippedFuture": 0,
-    "missingTeams": 4,
+    "skippedFuture": 6,
+    "missingTeams": 7,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 27,
+    "noPolyMatch": 28,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
@@ -473,5 +462,17 @@
         ]
       }
     ]
-  }
+  },
+  "config": {
+    "minPreFavorite": 0.4,
+    "maxPreFavorite": 0.6,
+    "minMove": 0.2,
+    "minPostFavorite": 0.7,
+    "maxPostFavorite": 0.9,
+    "requireMapMargin": true,
+    "minMapMargin": 2,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 67,
+  "alerts": 0
 }\n
