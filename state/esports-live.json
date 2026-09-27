@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:46.514Z",
+  "updatedAt": "2026-09-27T15:36:48.301Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 724,
+    "events": 734,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700705",
+  "matchId": "1700465",
   "teams": [
-    "Imperial",
-    "paiN"
+    "KUUSAMO.gg",
+    "Noir Verse"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 24,
+    "matchedPoly": 26,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -433,6 +433,16 @@
         "matchId": "1706603",
         "teamA": "Fluxo W7M",
         "teamB": "SAW"
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1700705",
+        "teamA": "Imperial",
+        "teamB": "paiN",
+        "seriesScore": [
+          0,
+          0
+        ]
       }
     ]
   }
