@@ -332,7 +332,10 @@ function recordSignal(e, brokenSide) {
   seq.push({ side: brokenSide, ts: Date.now() });
   while (seq.length > 4) seq.shift();
   prev.breakSeq = seq;
-  if (seq.length < 2) return null;
+  if (seq.length < 2) {
+    log("BREAK_SEQUENCE", { eventId: id, count: seq.length, result: "WAITING_FOR_SECOND_BREAK" });
+    return null;
+  }
   const a = seq[seq.length - 2], b = seq[seq.length - 1];
   if (a.side !== b.side) {
     log("BREAK_SEQUENCE", { eventId: id, first: a.side, second: b.side, result: "DIFFERENT_PLAYERS" });
