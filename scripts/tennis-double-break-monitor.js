@@ -70,32 +70,71 @@ function norm(s) {
   return String(s || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\\u0300-\\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function nameKey(s) {
+  const n = norm(s);
+  const parts = n.split(/\\s+/).filter(Boolean);
+  if (!parts.length) return "";
+  // Tennis feeds commonly use "First Last", "Last, First", or initials.
+  const compact = parts.join("");
+  const last = parts[parts.length - 1];
+  const first = parts[0];
+  return { n, parts, compact, first, last };
+}
+
+function playerNameMatch(a, b) {
+  const x = nameKey(a);
+  const y = nameKey(b);
+  if (!x || !y || !x.n || !y.n) return false;
+  if (x.n === y.n || x.compact === y.compact) return true;
+  if (x.last === y.last && (x.first === y.first || x.first[0] === y.first[0])) return true;
+  return false;
+}
+
+function marketPlayerNames(m) {
+  const outcomes = parseJsonField(m.outcomes);
+  const names = outcomes.filter(x => typeof x === "string" && !/^(yes|no)$/i.test(x));
+  if (names.length >= 2) return names.slice(0, 2);
+  return [];
 }
 
 function namesFromMarket(m) {
   const q = String(m.question || "");
   const title = String(m.title || "");
-  return { q, title, text: norm(q + " " + title) };
+  const slug = String(m.slug || m.eventSlug || "");
+  const outcomes = marketPlayerNames(m);
+  return { q, title, slug, outcomes, text: norm(q + " " + title + " " + slug + " " + outcomes.join(" ")) };
 }
 
 function matchMarket(m, e) {
-  const h = norm(e.homeTeam?.name);
-  const a = norm(e.awayTeam?.name);
-  if (!h || !a) return false;
+  const home = e.homeTeam?.name;
+  const away = e.awayTeam?.name;
+  if (!home || !away) return false;
+
+  // Primary key: Polymarket's two outcome names. For match-winner markets
+  // these are the actual player names, so do not rely on URL wording alone.
+  const outcomes = marketPlayerNames(m);
+  if (outcomes.length >= 2) {
+    const direct =
+      (playerNameMatch(home, outcomes[0]) && playerNameMatch(away, outcomes[1])) ||
+      (playerNameMatch(home, outcomes[1]) && playerNameMatch(away, outcomes[0]));
+    if (direct) return true;
+  }
+
+  // Fallback: compare both player names against question/title/event slug.
   const t = namesFromMarket(m).text;
-  const hn = h.split(" ").filter(x => x.length > 2);
-  const an = a.split(" ").filter(x => x.length > 2);
-  const hit = (parts) => {
-    if (!parts.length) return false;
-    // Full player/team name is safest; for long names require at least two tokens.
-    if (t.includes(parts.join(" "))) return true;
-    const required = parts.length >= 3 ? 2 : 1;
-    return parts.filter(x => t.includes(x)).length >= required;
+  const hit = (name) => {
+    const k = nameKey(name);
+    if (!k) return false;
+    if (t.includes(k.n)) return true;
+    if (t.includes(k.compact)) return true;
+    return t.includes(k.last) && t.includes(k.first);
   };
-  return hit(hn) && hit(an);
+  return hit(home) && hit(away);
 }
 
 function marketUrl(m) {
