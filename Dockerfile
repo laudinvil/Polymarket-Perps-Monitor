@@ -3,19 +3,15 @@ WORKDIR /app
 
 COPY package.json ./
 RUN apt-get update \
- && apt-get install -y --no-install-recommends chromium \
+ && apt-get install -y --no-install-recommends firefox-esr \
  && rm -rf /var/lib/apt/lists/* \
  && npm install --omit=dev
 
 COPY monitor.js ./
 
-RUN mkdir -p /tmp/chrome-home /tmp/chromium-config /tmp/chromium-cache /tmp/chromium-monitor
-
 ENV PORT=3000
-ENV HOME=/tmp/chrome-home
-ENV XDG_CONFIG_HOME=/tmp/chromium-config
-ENV XDG_CACHE_HOME=/tmp/chromium-cache
+ENV HOME=/tmp
 
 EXPOSE 3000
 
-CMD ["sh","-c","while true; do echo '=== MONITOR PROCESS START ==='; node monitor.js; code=$?; echo \"=== MONITOR EXIT CODE: $code ===\"; sleep 5; done"]
+CMD ["sh","-c","while true; do echo '=== MONITOR PROCESS START ==='; node monitor.js; code=$?; echo "=== MONITOR EXIT CODE: $code ==="; sleep 5; done"]
