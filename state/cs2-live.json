@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:26:31.940Z",
+  "updatedAt": "2026-09-27T15:26:32.926Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 830,
+    "events": 831,
     "polls": 2,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1712148",
+  "matchId": "1683304",
   "teams": [
-    "XI Esport",
-    "OldMix"
+    "Nexus",
+    "mellren"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 4,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 9,
+    "noPolyMatch": 10,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
