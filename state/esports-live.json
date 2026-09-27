@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:23.131Z",
+  "updatedAt": "2026-09-27T15:33:24.335Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 514,
+    "events": 515,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1702601",
+  "matchId": "1712062",
   "teams": [
-    "ALKA GAMING",
-    "Mira"
+    "Hong Kong",
+    "Malaysia"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 36,
-    "noPolyMatch": 5,
+    "noPolyMatch": 6,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
