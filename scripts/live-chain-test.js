@@ -47,136 +47,106 @@ matches.sort((a,b)=>b.score-a.score);
 console.log("POLY_ALL_LIVE_MATCHES",JSON.stringify(matches.slice(0,30).map(x=>({live:x.l.home+" vs "+x.l.away,poly:x.e.title||x.e.name||x.e.slug,slug:x.e.slug,score:x.score,id:x.e.id}))));
 const found=matches.find(x=>x.score>=1.0)||null;
 if(found) console.log("BEST_MATCH",JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score,polyHome:found.p[0],polyAway:found.p[1]})); else console.log("BEST_MATCH","NONE");
-if(found){
-  try {
-    const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
-    const ep=await json("https://site.api.espn.com/apis/site/v2/sports/soccer/kor.1/scoreboard?dates="+day);
-    const ee=Array.isArray(ep.events)?ep.events:[];
-    const em=ee.map(ev=>{
-      const comp=ev.competitions?.[0]||{};
-      const cs=comp.competitors||[];
-      const home=cs.find(x=>x.homeAway==="home")||cs[0], away=cs.find(x=>x.homeAway==="away")||cs[1];
-      const st=ev.status||{};
-      return {id:ev.id,home:home?.team?.displayName||"",away:away?.team?.displayName||"",score:(home?.score!=null&&away?.score!=null)?home.score+"–"+away.score:"—",state:st.type?.state||"",detail:st.type?.detail||"",clock:st.displayClock||"",period:st.period};
-    });
-    const ematch=em.reduce((best,x)=>{
-      const s=Math.max(sim(found.l.home,x.home)+sim(found.l.away,x.away),sim(found.l.home,x.away)+sim(found.l.away,x.home));
-      return !best||s>best.s?{x,s}:best;
-    },null);
-    if(ematch&&ematch.s>=1.25){
-      const x=ematch.x;
-      console.log("ESPN_MATCH",JSON.stringify(x));
-      if(x.score!=="—")found.l.score=x.score;
-      const clock=String(x.clock||x.detail||"");
-      const m=clock.match(/(?:^|\s)(\d{1,3})(?:\+(\d+))?\s*(?:'|min)?/i);
-      if(m&&x.state==="in") found.l.minute=m[1]+(m[2]?"+"+m[2]:"");
-      if(x.state==="in"&&x.period) found.l.period=String(x.period);
-      found.l.minuteSource="ESPN";
-    }
-  } catch(e){console.log("ESPN_ERROR",String(e));}
-  try {
-    const slug=found.l.slug;
-    if(slug){
-      const dr=await json("https://sportscore.com/api/widget/match/?sport=football&slug="+encodeURIComponent(slug));
-      const minuteFromText=v=>{
-        if(typeof v!=="string")return null;
-        const s=v.trim();
-        let m=s.match(/(?:2H|1H|ET|AET)\\s*[-–:]\\s*(\\d{1,3})(?:\\+\\d+)?/i);
-        if(m)return m[1];
-        m=s.match(/\\b(\\d{1,3})(?:\\+\\d+)?\\s*(?:min|minute)\\b/i);
-        return m?m[1]:null;
-      };
-      const candidates=[];
+const statePath="state/live-alerts.json";
+const ghToken=process.env.GITHUB_TOKEN;
+const repo=process.env.GITHUB_REPOSITORY||"laudinvil/Polymarket-Perps-Monitor";
+const ghApi="https://api.github.com/repos/"+repo+"/contents/"+statePath;
+const ghHeaders=()=>({"accept":"application/vnd.github+json","authorization":"Bearer "+ghToken,"x-github-api-version":"2022-11-28","user-agent":"live-chain-test"});
+const loadState=async()=>{
+  if(!ghToken)return {ids:new Set(),sha:null};
+  try{
+    const r=await fetch(ghApi,{headers:ghHeaders(),signal:AbortSignal.timeout(10000)});
+    if(r.status===404)return {ids:new Set(),sha:null};
+    if(!r.ok)throw Error("state GET "+r.status);
+    const j=await r.json();
+    const raw=Buffer.from(String(j.content||"").replace(/\\n/g,""),"base64").toString("utf8");
+    const ids=new Set(Array.isArray(JSON.parse(raw).ids)?JSON.parse(raw).ids.map(String):[]);
+    return {ids,sha:j.sha};
+  }catch(e){console.log("STATE_LOAD_ERROR",String(e));return {ids:new Set(),sha:null}}
+};
+const saveState=async(state)=>{
+  if(!ghToken)return false;
+  const body=JSON.stringify({ids:[...state.ids].slice(-5000)});
+  const payload={message:"Record sent live match alerts",content:Buffer.from(body).toString("base64"),branch:"main"};
+  if(state.sha)payload.sha=state.sha;
+  const r=await fetch(ghApi,{method:"PUT",headers:{...ghHeaders(),"content-type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
+  const j=await r.json();
+  console.log("STATE_SAVE",JSON.stringify({status:r.status,ok:r.ok}));
+  if(r.ok){state.sha=j.content?.sha||state.sha;return true}
+  return false;
+};
+const explicitMinute=v=>{
+  if(v==null)return null;
+  const s=String(v).trim();
+  if(/^\\d{1,3}\\+\\d+$/.test(s))return s;
+  const m=s.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
+  if(m)return m[1]+(m[2]?"+"+m[2]:"");
+  const n=s.match(/^\\d{1,3}$/);
+  return n?n[0]:null;
+};
+const enrichLive=async(l)=>{
+  let minute=explicitMinute(l.minute), score=l.score, source=minute?"SportScore":"";
+  if(l.slug){
+    try{
+      const dr=await json("https://sportscore.com/api/widget/match/?sport=football&slug="+encodeURIComponent(l.slug));
+      const mins=[];
       const scan=x=>{
         if(!x||typeof x!=="object")return;
-        if(Array.isArray(x)){for(const v of x)scan(v);return;}
+        if(Array.isArray(x)){for(const v of x)scan(v);return}
         for(const [k,v] of Object.entries(x)){
           const key=String(k).toLowerCase();
-          if(typeof v==="string" && /status_text|statustext|clock|match_time|matchtime|elapsed|minute|currentminute|gameminute|period/.test(key)){
-            const m=minuteFromText(v);
-            if(m)candidates.push({key,value:v,minute:m});
-            else if(/^(?:minute|elapsed|currentminute|gameminute)$/.test(key)&&/^\\d{1,3}$/.test(v.trim())) candidates.push({key,value:v,minute:v.trim()});
-          } else if(typeof v==="number"&&/^(?:minute|elapsed|currentminute|gameminute)$/.test(key)&&v>=0&&v<=130){
-            candidates.push({key,value:v,minute:String(Math.floor(v))});
-          } else if(v&&typeof v==="object")scan(v);
+          if(typeof v==="string"){
+            const m=explicitMinute(v);
+            if(m&&/status_text|statustext|clock|match_time|matchtime|elapsed|minute|currentminute|gameminute|period/.test(key))mins.push(m);
+          }else if(typeof v==="number"&&/^(minute|elapsed|currentminute|gameminute)$/.test(key)&&v>=0&&v<=130)mins.push(String(Math.floor(v)));
+          else if(v&&typeof v==="object")scan(v);
         }
       };
       scan(dr);
-      console.log("MINUTE_CANDIDATES",JSON.stringify(candidates.slice(0,20)));
-      console.log("MINUTE_DETAIL",JSON.stringify({slug,minute:found.l.minute,source:found.l.minuteSource||"none"}));
-    }
-  } catch(e){console.log("MINUTE_DETAIL_ERROR",String(e));}
-  // SofaScore live event feed: explicit live status/clock only; never calculate from kickoff time.
-  try {
-    const today=new Date().toISOString().slice(0,10);
-    const sp=await json("https://api.sofascore.com/api/v1/sport/football/scheduled-events/"+today);
-    const se=Array.isArray(sp.events)?sp.events:[];
-    const sm=se.map(ev=>{
-      const h=ev.homeTeam?.name||"", a=ev.awayTeam?.name||"";
-      const s=Math.max(sim(found.l.home,h)+sim(found.l.away,a),sim(found.l.home,a)+sim(found.l.away,h));
-      return {ev,s};
-    }).filter(x=>x.s>=1.25).sort((a,b)=>b.s-a.s)[0];
-    if(sm){
-      const ev=sm.ev;
-      const detail=await json("https://api.sofascore.com/api/v1/event/"+ev.id);
-      const e=detail.event||detail;
-      console.log("SOFASCORE_MATCH",JSON.stringify({id:e.id,home:e.homeTeam?.name,away:e.awayTeam?.name,status:e.status,homeScore:e.homeScore,awayScore:e.awayScore,time:e.time}));
-      const hs=e.homeScore?.current, as=e.awayScore?.current;
-      if(hs!=null&&as!=null) found.l.score=String(hs)+"–"+String(as);
-      const st=e.status||{};
-      const clock=String(st.description||st.period||st.type||"");
-      // Never derive a minute from elapsed/timestamps. Accept only an explicit display clock.\n                let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);\n                if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*['’]?(?:\\s*min)?\\b/i);\n                if(m){found.l.minute=m[1]+(m[2]?"+"+m[2]:"");found.l.minuteSource="SofaScore";}\n              } else console.log("SOFASCORE_MATCH","NONE");
-  } catch(e){console.log("SOFASCORE_ERROR",String(e));}
-  // FotMob is used only for authoritative live state/clock. Never derive minute from kickoff time.
-  try {
-    const day=new Date().toISOString().slice(0,10).replace(/-/g,"");
-    const fp=await json("https://www.fotmob.com/api/data/matches?date="+day);
-    const fm=[];
-    for(const league of (fp.leagues||[])) for(const m of (league.matches||[])){
-      const h=m.home?.name||"", a=m.away?.name||"";
-      const s=Math.max(
-        sim(found.l.home,h)+sim(found.l.away,a),
-        sim(found.l.home,a)+sim(found.l.away,h)
-      );
-      if(s>=1.25) fm.push({m,s});
-    }
-    fm.sort((a,b)=>b.s-a.s);
-    const best=fm[0];
-    if(best){
-      const d=await json("https://www.fotmob.com/api/data/matchDetails?matchId="+encodeURIComponent(best.m.id));
-      const teams=d.header?.teams||[];
-      const hs=teams[0]?.score, as=teams[1]?.score;
-      const st=d.header?.status||{};
-      const lt=st.liveTime||{};
-      const clock=String(lt.long||lt.short||"");
-      console.log("FOTMOB_MATCH",JSON.stringify({
-        id:best.m.id,home:teams[0]?.name||best.m.home?.name,away:teams[1]?.name||best.m.away?.name,
-        score:st.scoreStr||"—",finished:!!st.finished,started:!!st.started,ongoing:!!st.ongoing,
-        liveTime:lt,clock
-      }));
-      if(hs!=null&&as!=null) found.l.score=String(hs)+"–"+String(as);
-      if(!st.finished&&st.started&&clock){
-        // Accept explicit values such as 81, 90+3, 2H - 81, or 81'.
-        let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
-        if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*(?:'|min|minute)?\\b/i);
-        if(m){
-          found.l.minute=m[1]+(m[2]?"+":"" )+(m[2]||"");
-          found.l.minuteSource="FotMob";
-          found.l.period=lt.short||found.l.period||"";
-        } else if(/^(?:HT|Half Time|Halftime|Interrupted|IR)$/i.test(clock)){
-          found.l.minute=clock;
-          found.l.minuteSource="FotMob";
-        }
-      }
-    } else {
-      console.log("FOTMOB_MATCH","NONE");
-    }
-  } catch(e){console.log("FOTMOB_ERROR",String(e));}
-  const ps=found.e.score; if(typeof ps==="string"&&/^\s*\d+\s*[-–:]\s*\d+\s*$/.test(ps) && found.l.score==="—") { found.l.score=ps.replace(/:/,"–").replace(/-/,"–"); found.l.scoreSource="Polymarket"; } else if(ps&&typeof ps==="object"){ const ph=ps.home??ps.homeScore??ps.currentHome??ps.homeTeam, pa=ps.away??ps.awayScore??ps.currentAway??ps.awayTeam; if(ph!=null&&pa!=null && found.l.score==="—") { found.l.score=String(ph)+"–"+String(pa); found.l.scoreSource="Polymarket"; } } const leagueSlug=e=>{const direct=e?.leagueSlug??e?.seriesSlug??e?.league?.slug??e?.series?.slug; if(typeof direct==="string"&&direct.trim())return direct.trim().toLowerCase(); const tags=Array.isArray(e?.tags)?e.tags:[]; for(const t of tags){const s=typeof t==="string"?t:slugOf(t); if(s&&leagueSlugs.includes(s))return s;} const s=String(e?.slug||""); const parts=s.split("-"); return parts.length>1?parts[0].toLowerCase():"";}; console.log("BEST_MATCH",JSON.stringify({live:found.l,title:found.e.title,id:found.e.id,slug:found.e.slug,score:found.score,timeOk:found.timeOk,polyScore:found.e.score,polyPeriod:found.e.period})); } else console.log("BEST_MATCH","NONE");
-if(!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_CHAT_ID)throw Error("GitHub Telegram secrets are missing");
-const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-if(!found||found.score<1.25){console.log("NO_MATCH_THIS_POLL");process.exit(0);}
-const league=leagueSlug(found.e); const slug=String(found.e.slug||""); const link=league&&slug?"https://polymarket.com/sports/"+encodeURIComponent(league)+"/"+encodeURIComponent(slug):"https://polymarket.com/event/"+encodeURIComponent(slug); console.log("POLY_LINK",JSON.stringify({league,slug,link}));
-const text="⚽ <b>CHAIN TEST</b>\n\n"+esc(found.l.home)+" vs "+esc(found.l.away)+"\nLIVE\nMINUTE: "+esc(found.l.minute)+"\nSCORE: "+esc(found.l.score)+"\n\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>";
-const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})}),tj=await tr.json();console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
-console.log("ALERT_SENT",found.e.id,found.e.slug);process.exit(10);
+      if(mins.length){minute=mins[0];source="SportScoreDetail"}
+    }catch(e){console.log("MINUTE_DETAIL_ERROR",l.home+" vs "+l.away,String(e))}
+  }
+  return {...l,minute,minuteSource:source,score};
+};
+const state=await loadState();
+console.log("STATE_LOADED",JSON.stringify({count:state.ids.size}));
+console.log("POLY_ALL_LIVE_MATCHES",JSON.stringify(matches.slice(0,50).map(x=>({live:x.l.home+" vs "+x.l.away,poly:x.e.title||x.e.name||x.e.slug,slug:x.e.slug,score:x.score,id:x.e.id}))));
+let sent=0;
+for(const m of matches){
+  if(m.score<1.0)continue;
+  const live=await enrichLive(m.l);
+  const minuteNum=live.minute?Number(String(live.minute).split("+")[0]):NaN;
+  if(!Number.isFinite(minuteNum)||minuteNum<1){
+    console.log("WAIT_FIRST_MINUTE",JSON.stringify({live:live.home+" vs "+live.away,minute:live.minute,source:live.minuteSource}));
+    continue;
+  }
+  const eventId=String(m.e.id);
+  if(state.ids.has(eventId)){
+    console.log("ALREADY_ALERTED",eventId,m.e.slug);
+    continue;
+  }
+  const leagueSlug=e=>{
+    const direct=e?.leagueSlug??e?.seriesSlug??e?.league?.slug??e?.series?.slug;
+    if(typeof direct==="string"&&direct.trim())return direct.trim().toLowerCase();
+    const tags=Array.isArray(e?.tags)?e.tags:[];
+    for(const t of tags){const s=typeof t==="string"?t:slugOf(t);if(s&&leagueSlugs.includes(s))return s}
+    const s=String(e?.slug||"");const parts=s.split("-");
+    return parts.length>1?parts[0].toLowerCase():"";
+  };
+  const league=leagueSlug(m.e),slug=String(m.e.slug||"");
+  const link=league&&slug?"https://polymarket.com/sports/"+encodeURIComponent(league)+"/"+encodeURIComponent(slug):"https://polymarket.com/event/"+encodeURIComponent(slug);
+  console.log("POLY_LINK",JSON.stringify({league,slug,link}));
+  const text="⚽ <b>LIVE</b>\\n\\n"+esc(live.home)+" vs "+esc(live.away)+"\\nLIVE\\nMINUTE: "+esc(live.minute)+"\\nSCORE: "+esc(live.score)+"\\n\\n<a href=\""+esc(link)+"\">ОТКРЫТЬ POLYMARKET</a>";
+  try{
+    const tr=await fetch("https://api.telegram.org/bot"+process.env.TELEGRAM_BOT_TOKEN+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,parse_mode:"HTML",text})});
+    const tj=await tr.json();
+    console.log("TELEGRAM_RESPONSE",JSON.stringify(tj));
+    if(!tj.ok)throw Error("Telegram rejected: "+JSON.stringify(tj));
+    state.ids.add(eventId);
+    await saveState(state);
+    console.log("ALERT_SENT",eventId,slug);
+    sent++;
+  }catch(e){console.log("ALERT_ERROR",eventId,String(e))}
+}
+console.log("POLL_RESULT",JSON.stringify({live:live.length,polymatch:matches.length,sent}));
+process.exit(0);
