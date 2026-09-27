@@ -514,18 +514,22 @@ function recordSignal(e, breakInfo) {
     return null;
   }
 
-  // A player's service games are separated by exactly one opponent service game.
-  // Therefore two breaks of the same player's serve are consecutive for that
-  // player only when their game numbers differ by 2.
-  if (current.gameNo != null && prior.gameNo != null && current.gameNo - prior.gameNo !== 2) {
-    log("BREAK_SEQUENCE", {
-      eventId: id,
-      firstGame: prior.gameNo,
-      secondGame: current.gameNo,
-      playerSide: brokenSide,
-      result: "NOT_CONSECUTIVE_SERVICE_GAMES"
-    });
-    return null;
+  // For the same player, consecutive service games normally alternate with
+  // exactly one opponent service game. Keep the strict check when PBP game
+  // numbers are reliable, but do not suppress an otherwise valid same-player
+  // sequence when SofaScore omitted or reset the game number.
+  if (current.gameNo != null && prior.gameNo != null && current.gameNo > prior.gameNo) {
+    const gap = current.gameNo - prior.gameNo;
+    if (gap !== 2) {
+      log("BREAK_SEQUENCE", {
+        eventId: id,
+        firstGame: prior.gameNo,
+        secondGame: current.gameNo,
+        playerSide: brokenSide,
+        result: "NOT_CONSECUTIVE_SERVICE_GAMES"
+      });
+      return null;
+    }
   }
 
   if (current.ts - prior.ts > 30 * 60 * 1000) {
