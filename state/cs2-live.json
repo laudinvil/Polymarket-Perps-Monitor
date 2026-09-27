@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:10:35.161Z",
+  "updatedAt": "2026-09-27T15:10:36.548Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328535144",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2113,
   "telemetry": {
     "startedAt": "2026-09-27T15:09:54.105Z",
-    "events": 340,
+    "events": 350,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700664",
+  "matchId": "1706602",
   "teams": [
-    "Lynn Vision",
-    "NEXVOID"
+    "Rebels Gaming",
+    "SAW"
   ],
   "status": "running",
   "seriesScore": [
-    1,
-    0
+    0,
+    1
   ],
   "candidates": 91,
   "diagnostics": {
@@ -33,7 +33,7 @@
     "missingTeams": 11,
     "polyEvents": 224,
     "matchedPoly": 24,
-    "noPolyMatch": 11,
+    "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 1,
