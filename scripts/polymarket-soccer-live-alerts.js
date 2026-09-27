@@ -166,58 +166,72 @@ async function fetchLiveSports(){
 }
 
 async function fetchLiveEvents(){
-  // Primary LIVE discovery: Gamma's live=true + soccer tag. This avoids relying
-  // on the HTML page or on Sports WS status spelling for the existence of a live match.
-  try{
-    const raw=await json(GAMMA+"/events?active=true&closed=false&tag_slug=soccer&live=true&limit=500",{timeout:8000});
-    const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
-    const live=[];
-    const seen=new Set();
-    for(const e of batch){
-      const id=t(e.id||e.slug);
-      if(!id||seen.has(id)||e.ended===true||e.finished===true||e.final===true)continue;
-      seen.add(id);
-      const [home,away]=teams(e);
-      if(!home||!away)continue;
-      live.push({id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),homeTeam:home,awayTeam:away,status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),live:true,event:e});
+  const live=[];
+  const seen=new Set();
+
+  // Use both documented live-sports tag variants. Do not make Sports WS or HTML
+  // a prerequisite for producing a LIVE candidate.
+  for(const query of [
+    "/events?active=true&closed=false&tag_slug=soccer&live=true&limit=500",
+    "/events?active=true&closed=false&tag_slug=sports&live=true&limit=500"
+  ]){
+    try{
+      const raw=await json(GAMMA+query,{timeout:8000});
+      const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
+      for(const e of batch){
+        const id=t(e.id||e.slug);
+        if(!id||seen.has(id)||e.ended===true||e.finished===true||e.final===true)continue;
+        const [home,away]=teams(e);
+        if(!home||!away||!isFixtureTitle(t(e.title||e.question)))continue;
+        if(!isSoccerEvent(e,"") && !looksLikeSoccerEvent(e))continue;
+        seen.add(id);
+        live.push({id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),homeTeam:home,awayTeam:away,status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),live:true,event:e});
+      }
+    }catch(e){
+      console.log(JSON.stringify({level:"WARN",event:"gamma_live_query_failed",query,message:e.message}));
     }
-    console.log(JSON.stringify({level:"INFO",event:"gamma_live_sports_scan",activeLiveEvents:batch.length,soccerLiveEvents:live.length,source:"tag_slug=soccer&live=true"}));
-    if(live.length)return live;
-  }catch(e){
-    console.log(JSON.stringify({level:"WARN",event:"gamma_live_sports_scan_failed",message:e.message}));
+  }
+  if(live.length){
+    console.log(JSON.stringify({level:"INFO",event:"gamma_live_sports_scan",soccerLiveEvents:live.length,source:"soccer+sports live"}));
+    return live;
   }
 
-  const all=[];
-  for(let offset=0;offset<2000;offset+=500){
-    try{
+  // Last-resort direct Gamma scan: an event is eligible only when its actual
+  // kickoff is already in the past and it looks like a football 1X2 fixture.
+  try{
+    for(let offset=0;offset<5000;offset+=500){
       const raw=await json(GAMMA+"/events?active=true&closed=false&limit=500&offset="+offset,{timeout:8000});
       const batch=Array.isArray(raw)?raw:(raw?.events||raw?.data||[]);
-      if(!Array.isArray(batch)||batch.length===0)break;
-      all.push(...batch);
+      if(!Array.isArray(batch)||!batch.length)break;
+      for(const e of batch){
+        const id=t(e.id||e.slug);
+        if(!id||seen.has(id)||e.ended===true||e.finished===true||e.final===true)continue;
+        const [home,away]=teams(e);
+        if(!home||!away||!isFixtureTitle(t(e.title||e.question)))continue;
+        if(!isSoccerEvent(e,"") && !looksLikeSoccerEvent(e))continue;
+        if(!eventLiveWindow(e))continue;
+        seen.add(id);
+        live.push({id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),homeTeam:home,awayTeam:away,status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),live:true,event:e});
+      }
       if(batch.length<500)break;
-    }catch(e){
-      console.log(JSON.stringify({level:"WARN",event:"events_load_failed",offset,message:e.message}));
-      break;
+      if(live.length>=100)break;
     }
+  }catch(e){
+    console.log(JSON.stringify({level:"WARN",event:"gamma_active_events_scan_failed",message:e.message}));
   }
-  const seen=new Set();
-  const live=[];
-  for(const e of all){
-    const id=t(e.id||e.slug);
-    if(!id||seen.has(id)||!isSoccerEvent(e,""))continue;
-    seen.add(id);
-    if(!eventLiveWindow(e))continue;
-    const [home,away]=teams(e);
-    if(!home||!away)continue;
-    live.push({
-      id:t(e.id),gameId:t(e.gameId||e.game_id),slug:t(e.slug),
-      homeTeam:home,awayTeam:away,
-      status:t(e.status||e.gameStatus||e.liveStatus||"LIVE"),
-      live:true,event:e
-    });
-  }
-  console.log(JSON.stringify({level:"INFO",event:"gamma_active_events_scan",activeEvents:all.length,soccerLiveEvents:live.length}));
+  console.log(JSON.stringify({level:"INFO",event:"gamma_live_discovery_result",soccerLiveEvents:live.length}));
   return live;
+}
+function looksLikeSoccerEvent(event){
+  const ms=Array.isArray(event?.markets)?event.markets:[];
+  for(const m of ms){
+    const q=t(m?.question||m?.title||m?.groupItemTitle).toLowerCase();
+    const o=parse(m?.outcomes);
+    if(/draw/.test(q))return true;
+    if(Array.isArray(o)&&o.some(v=>/draw/i.test(String(v))))return true;
+  }
+  const slug=t(event?.slug).toLowerCase();
+  return /(?:^|[-_])(?:epl|es1|es2|it1|it2|de1|de2|fr1|nl1|pt1|bel|tur|sco|eng|uefa|unl|ucl|uwcl|wsl|liga|serie|bundes|ligue|mls|nwsl)(?:[-_]|$)/.test(slug);
 }
 function matchGame(x,g){
   const [gh,ga]=gameTeams(g), nx=norm(x.home),ny=norm(x.away),nh=norm(gh),na=norm(ga);
