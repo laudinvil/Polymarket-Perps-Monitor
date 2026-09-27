@@ -78,6 +78,26 @@ function isSoccer(m) {
   // Direct identification when Polymarket supplies the sport/league.
   if (/(soccer|football)/i.test(text)) return true;
 
+  // Polymarket also uses competition abbreviations for soccer leagues.
+  // Keep this explicit so EPL/MLS/etc. are not rejected just because the
+  // payload does not literally contain the word "soccer".
+  const soccerLeagues = new Set([
+    "SOCCER",
+    "EPL",
+    "MLS",
+    "UCL",
+    "UEL",
+    "LALIGA",
+    "LA LIGA",
+    "BUNDESLIGA",
+    "SERIEA",
+    "SERIE A",
+    "LIGUE1",
+    "LIGUE 1"
+  ]);
+  const leagueCode = String(m.leagueAbbreviation || m.league || "").toUpperCase().trim();
+  if (soccerLeagues.has(leagueCode)) return true;
+
   const period = String(m.period || "").toUpperCase().trim();
 
   // Team-name fields and generic score/status values are shared with esports.
