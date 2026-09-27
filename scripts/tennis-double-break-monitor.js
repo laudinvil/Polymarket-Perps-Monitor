@@ -135,10 +135,6 @@ function parseJsonField(v) {
 }
 
 
-function marketLiquidity(m) {
-  return Number(m.liquidityNum ?? m.liquidity ?? 0);
-}
-
 function scoreSets(e) {
   const hs = e.homeScore || {};
   const as = e.awayScore || {};
