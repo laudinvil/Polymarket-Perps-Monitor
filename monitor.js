@@ -260,7 +260,11 @@ async function pollGammaSoccer() {
 
   try {
     const response = await fetch(GAMMA_URL, {
-      headers: { "accept": "application/json" },
+      headers: {
+        "accept": "application/json",
+        "cache-control": "no-cache",
+        "user-agent": "Polymarket-Live-Soccer-Monitor/1.0"
+      },
       signal: AbortSignal.timeout(8000)
     });
 
