@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:36:11.608Z",
+  "updatedAt": "2026-09-27T15:36:12.755Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 582,
+    "events": 583,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683304",
+  "matchId": "1637688",
   "teams": [
-    "Nexus",
-    "mellren"
+    "Hydra Esports",
+    "FULL SENSE"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -32,10 +32,10 @@
     "bo5": 10,
     "firstTo3": 3,
     "skippedFuture": 0,
-    "missingTeams": 1,
+    "missingTeams": 4,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 24,
+    "noPolyMatch": 25,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
