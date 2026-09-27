@@ -503,6 +503,13 @@ async function telegram(text, url) {
 }
 
 async function evaluate(e, brokenSide) {
+  log("EVALUATE_START", {
+    eventId: e.id,
+    brokenSide,
+    player: brokenSide === 0 ? e.homeTeam?.name || null : e.awayTeam?.name || null,
+    home: e.homeTeam?.name || null,
+    away: e.awayTeam?.name || null
+  });
   const player = brokenSide === 0 ? e.homeTeam?.name : e.awayTeam?.name;
   if (!player) return;
   const m = findMarketForPlayer(e, player);
