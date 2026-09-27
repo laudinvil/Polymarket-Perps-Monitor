@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T14:32:18.155Z",
+  "updatedAt": "2026-09-27T14:32:19.087Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36325966788",
   "runAttempt": "1",
@@ -7,21 +7,21 @@
   "pid": 2250,
   "telemetry": {
     "startedAt": "2026-09-27T14:27:35.194Z",
-    "events": 1544,
+    "events": 1545,
     "polls": 5,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683304",
+  "matchId": "1689000",
   "teams": [
-    "Nexus",
-    "mellren"
+    "GamerLegion",
+    "3DMAX"
   ],
-  "status": "not_started",
+  "status": "running",
   "seriesScore": [
-    0,
-    0
+    1,
+    1
   ],
   "candidates": 94,
   "diagnostics": {
@@ -29,11 +29,11 @@
     "upcoming": 100,
     "running": 13,
     "bo3": 94,
-    "skippedFuture": 0,
-    "missingTeams": 6,
+    "skippedFuture": 48,
+    "missingTeams": 12,
     "polyEvents": 224,
     "matchedPoly": 20,
-    "noPolyMatch": 0,
+    "noPolyMatch": 1,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
