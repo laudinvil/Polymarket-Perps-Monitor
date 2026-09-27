@@ -232,20 +232,36 @@ async function handleGame(m) {
 
   if (alerted.has(id)) return;
 
+  const currentMinute = minute(m);
+  const currentScore = score(m);
+
+  // Do not consume the one-time LIVE alert until both live fields are
+  // actually usable. This prevents a first incomplete WS update from
+  // permanently suppressing the later accurate score/minute update.
+  if (currentMinute === "—" || currentScore === "—") {
+    console.log(
+      "LIVE WAITING FOR COMPLETE DATA",
+      id,
+      "MINUTE=" + currentMinute,
+      "SCORE=" + currentScore
+    );
+    return;
+  }
+
   alerted.add(id);
 
   const message =
     `⚽ LIVE FOUND\n\n` +
     `${title(m)}\n` +
     `LIVE\n` +
-    `MINUTE: ${minute(m)}\n` +
-    `SCORE: ${score(m)}`;
+    `MINUTE: ${currentMinute}\n` +
+    `SCORE: ${currentScore}`;
 
   try {
     await telegram(message);
     alertsSent++;
     lastMessageAt = new Date().toISOString();
-    console.log("ALERT SENT", id, title(m), "MINUTE", minute(m), "SCORE", score(m));
+    console.log("ALERT SENT", id, title(m), "MINUTE", currentMinute, "SCORE", currentScore);
   } catch (e) {
     alerted.delete(id);
     lastError = String(e.message || e);
