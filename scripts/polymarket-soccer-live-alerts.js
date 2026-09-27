@@ -240,7 +240,8 @@ function eventLiveWindow(event){
 }
 
 async function discover(){
-  const [liveHtml,soccerHtml,liveEvents]=await Promise.all([fetchPage(LIVE_PAGE),fetchPage(SOCCER_PAGE),fetchLiveEvents()]);
+  const safePage=async(url)=>{try{return await fetchPage(url)}catch(e){console.log(JSON.stringify({level:"WARN",event:"page_fetch_failed",url,message:e.message}));return "";}};
+  const [liveHtml,soccerHtml,liveEvents]=await Promise.all([safePage(LIVE_PAGE),safePage(SOCCER_PAGE),fetchLiveEvents().catch(e=>{console.log(JSON.stringify({level:"WARN",event:"live_events_fetch_failed",message:e.message}));return [];})]);
   const liveLinks=fixtureLinks(liveHtml);
   const soccerLinks=fixtureLinks(soccerHtml);
   const sportsLive=await fetchLiveSports();
