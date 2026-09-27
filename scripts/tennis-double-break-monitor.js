@@ -275,8 +275,19 @@ function processBreaks(e, nowSets) {
       scoreBefore: oldSets,
       scoreAfter: nowSets
     });
-    if (!winner) continue;
-    if (winner !== server) {
+    if (!winner) {
+      log("GAME_RESULT_UNKNOWN", { eventId: id, gameNo });
+      continue;
+    }
+    const isBreak = winner !== server;
+    log("GAME_CLASSIFIED", {
+      eventId: id,
+      gameNo,
+      server: server === 1 ? "HOME" : "AWAY",
+      winner: winner === 1 ? "HOME" : "AWAY",
+      result: isBreak ? "BREAK" : "HOLD"
+    });
+    if (isBreak) {
       const broken = server === 1 ? 0 : 1;
       breaks.push(broken);
     }
@@ -323,8 +334,15 @@ function recordSignal(e, brokenSide) {
   prev.breakSeq = seq;
   if (seq.length < 2) return null;
   const a = seq[seq.length - 2], b = seq[seq.length - 1];
-  if (a.side !== b.side) return null;
-  if (b.ts - a.ts > 30 * 60 * 1000) return null;
+  if (a.side !== b.side) {
+    log("BREAK_SEQUENCE", { eventId: id, first: a.side, second: b.side, result: "DIFFERENT_PLAYERS" });
+    return null;
+  }
+  if (b.ts - a.ts > 30 * 60 * 1000) {
+    log("BREAK_SEQUENCE", { eventId: id, first: a.side, second: b.side, result: "TOO_OLD" });
+    return null;
+  }
+  log("BREAK_SEQUENCE", { eventId: id, playerSide: a.side, result: "TWO_CONSECUTIVE_BREAKS" });
   return a.side;
 }
 
