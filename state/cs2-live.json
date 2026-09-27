@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-09-27T13:52:02.661Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T13:52:05.978Z",
+  "stage": "POLL_RESULT",
   "runId": "36323840799",
   "runAttempt": "1",
   "sha": "25e174e02aa5a9534c2f95b103d308fb987d0a4e",
   "pid": 2240,
   "telemetry": {
     "startedAt": "2026-09-27T13:51:38.874Z",
-    "events": 69,
+    "events": 105,
     "polls": 1,
     "alerts": 0,
     "errors": 1,
@@ -17,18 +17,16 @@
       "data": "{\"error\":\"Error: Command failed: git push\"}"
     }
   },
-  "polyEvents": 224,
-  "candidates": 88,
   "diagnostics": {
     "startedAt": "2026-09-27T13:51:58.879Z",
     "upcoming": 100,
     "running": 9,
     "bo3": 88,
-    "skippedFuture": 0,
-    "missingTeams": 0,
+    "skippedFuture": 44,
+    "missingTeams": 10,
     "polyEvents": 224,
     "matchedPoly": 0,
-    "noPolyMatch": 0,
+    "noPolyMatch": 34,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -42,7 +40,245 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
-    "rejects": []
-  }
+    "samples": [
+      {
+        "matchId": "1712170",
+        "teams": [
+          "Mai Tai",
+          "BIG Academy"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T13:45:00Z"
+      },
+      {
+        "matchId": "1707300",
+        "teams": [
+          "Metizport",
+          "Inner Circle Academy"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1706431",
+        "teams": [
+          "Eternal Fire",
+          "K27"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1700464",
+        "teams": [
+          "Spirit Academy",
+          "megoshort"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1684180",
+        "teams": [
+          "BBL",
+          "Sinners"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T14:00:00Z"
+      },
+      {
+        "matchId": "1710864",
+        "teams": [
+          "G2 Ares",
+          "FC Famalicão Esports"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      },
+      {
+        "matchId": "1688997",
+        "teams": [
+          "NIP",
+          "magic"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T15:00:00Z"
+      },
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      },
+      {
+        "matchId": "1700465",
+        "teams": [
+          "KUUSAMO.gg",
+          "Noir Verse"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1696342",
+        "teams": [
+          "M80",
+          "DENDELE CS"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1684181",
+        "teams": [
+          "Nemiga",
+          "Color"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T17:00:00Z"
+      },
+      {
+        "matchId": "1714222",
+        "teams": [
+          "PARTIZAN",
+          "Chaos Enforcers"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T17:30:00Z"
+      }
+    ],
+    "rejects": [
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1712170",
+        "teamA": "Mai Tai",
+        "teamB": "BIG Academy"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1707300",
+        "teamA": "Metizport",
+        "teamB": "Inner Circle Academy"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1706431",
+        "teamA": "Eternal Fire",
+        "teamB": "K27"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700464",
+        "teamA": "Spirit Academy",
+        "teamB": "megoshort"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1684180",
+        "teamA": "BBL",
+        "teamB": "Sinners"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1710864",
+        "teamA": "G2 Ares",
+        "teamB": "FC Famalicão Esports"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1688997",
+        "teamA": "NIP",
+        "teamB": "magic"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1702599",
+        "teamA": "METANOIA WOLVES",
+        "teamB": "MIBR fe"
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1681152",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706604",
+        "opponents": 1
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1706603",
+        "opponents": 1
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700465",
+        "teamA": "KUUSAMO.gg",
+        "teamB": "Noir Verse"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1696342",
+        "teamA": "M80",
+        "teamB": "DENDELE CS"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1684181",
+        "teamA": "Nemiga",
+        "teamB": "Color"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1714222",
+        "teamA": "PARTIZAN",
+        "teamB": "Chaos Enforcers"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1710855",
+        "teamA": "BASEMENT BOYS",
+        "teamB": "overTIME"
+      },
+      {
+        "reason": "missing_teams",
+        "matchId": "1689002",
+        "opponents": 1
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1702600",
+        "teamA": "BESTIA Academy",
+        "teamB": "Procyon Gaming"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700638",
+        "teamA": "Yawara Esports",
+        "teamB": "Turma do Pagode"
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1700623",
+        "teamA": "Galorys",
+        "teamB": "Procyon Gaming"
+      }
+    ]
+  },
+  "config": {
+    "minPreFavorite": 0.4,
+    "maxPreFavorite": 0.6,
+    "minMove": 0.25,
+    "minPostFavorite": 0.75,
+    "maxPostFavorite": 0.9,
+    "requireMapMargin": false,
+    "minMapMargin": 6,
+    "maxUpcomingHours": 24
+  },
+  "tracked": 37,
+  "alerts": 0
 }\n
