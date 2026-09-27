@@ -1,19 +1,28 @@
 {
-  "updatedAt": "2026-09-27T15:23:49.240Z",
-  "stage": "POLYMARKET_OK",
+  "updatedAt": "2026-09-27T15:23:50.309Z",
+  "stage": "MATCH_PROGRESS",
   "runId": "36329364428",
   "runAttempt": "1",
   "sha": "c5c44655e7f4877a02ba6bc040e9e7164625801d",
   "pid": 2019,
   "telemetry": {
     "startedAt": "2026-09-27T15:23:43.654Z",
-    "events": 15,
+    "events": 17,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "polyEvents": 224,
+  "matchId": "1702599",
+  "teams": [
+    "METANOIA WOLVES",
+    "MIBR fe"
+  ],
+  "status": "not_started",
+  "seriesScore": [
+    0,
+    0
+  ],
   "candidates": 90,
   "diagnostics": {
     "startedAt": "2026-09-27T15:23:43.659Z",
@@ -40,7 +49,17 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [],
+    "samples": [
+      {
+        "matchId": "1702599",
+        "teams": [
+          "METANOIA WOLVES",
+          "MIBR fe"
+        ],
+        "status": "not_started",
+        "beginAt": "2026-09-27T16:00:00Z"
+      }
+    ],
     "rejects": []
   }
 }\n
