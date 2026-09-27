@@ -17,3 +17,4 @@ server.listen(port,"0.0.0.0",()=>{
 });
 process.on("uncaughtException",e=>process.stderr.write("DEPLEXO_UNCAUGHT "+String(e?.stack||e)+"\n"));
 process.on("unhandledRejection",e=>process.stderr.write("DEPLEXO_REJECTION "+String(e?.stack||e)+"\n"));
+// DEPLOY_TRIGGER_2026_09_26_2244
