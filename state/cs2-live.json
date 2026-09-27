@@ -1,18 +1,17 @@
 {
-  "updatedAt": "2026-09-27T13:24:36.916Z",
-  "stage": "PANDASCORE_OK",
+  "updatedAt": "2026-09-27T13:24:38.179Z",
+  "stage": "POLYMARKET_OK",
   "runId": "36322268153",
   "runAttempt": "1",
   "sha": "ec4aa73841fc67077c5f8058b16bb5a0740513e5",
   "pid": 2199,
   "telemetry": {
     "startedAt": "2026-09-27T13:24:34.471Z",
-    "events": 6,
+    "events": 12,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "upcoming": 100,
-  "running": 7
+  "polyEvents": 124
 }\n
