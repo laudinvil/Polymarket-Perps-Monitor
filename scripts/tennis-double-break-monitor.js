@@ -728,8 +728,47 @@ async function evaluate(e, brokenSide) {
       away: e.awayTeam?.name || null,
       marketsLoaded: markets.size,
       winnerMarkets: Array.from(markets.values()).filter(isMatchWinnerMarket).length,
-      sampleWinnerMarkets: candidates
+      sampleWinnerMarkets: candidates,
+      action: "SEND_ALERT_WITH_TENNIS_FALLBACK"
     });
+
+    const key = `${e.id}:${player}`;
+    const last = alerted.get(key) || 0;
+    if (Date.now() - last < CFG.cooldownMs) {
+      state.cooldownBlocked++;
+      log("COOLDOWN_BLOCK", { eventId: e.id, player });
+      return;
+    }
+
+    const sets = scoreSets(e);
+    const [sh, sa] = sets.length ? sets[sets.length - 1] : [0, 0];
+    const text =
+`🎾 TENNIS — 2 BREAKS
+
+${e.homeTeam?.name} vs ${e.awayTeam?.name}
+
+${player} lost 2 service games in a row.
+SET: ${sh}–${sa}
+
+POLYMARKET PRICE: —
+LIQUIDITY: —
+ASK DEPTH: —
+
+COMEBACK CANDIDATE`;
+
+    log("TELEGRAM_ATTEMPT", {
+      eventId: e.id,
+      player,
+      marketUrl: "https://polymarket.com/tennis",
+      textPreview: text.slice(0, 220),
+      fallback: true
+    });
+    const sent = await telegram(text, "https://polymarket.com/tennis");
+    if (sent !== false) {
+      alerted.set(key, Date.now());
+      state.alertsSent++;
+      log("ALERT_SENT", { eventId: e.id, player, fallback: true });
+    }
     return;
   }
   const outcomes = parseJsonField(m.outcomes);
