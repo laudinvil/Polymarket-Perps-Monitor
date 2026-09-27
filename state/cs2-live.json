@@ -1,41 +1,31 @@
 {
-  "updatedAt": "2026-09-27T14:39:00.804Z",
-  "stage": "MATCH_PROGRESS",
+  "updatedAt": "2026-09-27T14:39:17.092Z",
+  "stage": "POLL_START",
   "runId": "36326512208",
   "runAttempt": "1",
   "sha": "af46febc90632a7d195df67811fbc63226055035",
   "pid": 2241,
   "telemetry": {
     "startedAt": "2026-09-27T14:36:37.041Z",
-    "events": 193,
+    "events": 203,
     "polls": 0,
     "alerts": 0,
-    "errors": 7,
+    "errors": 8,
     "lastError": {
-      "ts": "2026-09-27T14:38:42.040Z",
+      "ts": "2026-09-27T14:39:01.981Z",
       "event": "POLL_ERROR",
       "data": "{\"error\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\",\"stack\":\"TypeError: Cannot read properties of undefined (reading 'outcomes')\\n    at parseMarket (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:240:37)\\n    at marketPrices (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:358:18)\\n    at ensurePrematchBaseline (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:3:24)\\n    at poll (file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:649:11)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\\n    at async file:///home/runner/work/Polymarket-Perps-Monitor/Polymarket-Perps-Monitor/scripts/esports-map1-overreaction.js:831:5\"}"
     }
   },
-  "matchId": "1710864",
-  "teams": [
-    "G2 Ares",
-    "FC Famalicão Esports"
-  ],
-  "status": "not_started",
-  "seriesScore": [
-    0,
-    0
-  ],
-  "candidates": 92,
+  "now": "2026-09-27T14:39:17.092Z",
   "diagnostics": {
-    "startedAt": "2026-09-27T14:38:57.087Z",
-    "upcoming": 100,
-    "running": 11,
-    "bo3": 92,
+    "startedAt": "2026-09-27T14:39:17.092Z",
+    "upcoming": 0,
+    "running": 0,
+    "bo3": 0,
     "skippedFuture": 0,
     "missingTeams": 0,
-    "polyEvents": 224,
+    "polyEvents": 0,
     "matchedPoly": 0,
     "noPolyMatch": 0,
     "noPolyPrice": 0,
@@ -51,17 +41,7 @@
     "signalPass": 0,
     "noMarketUrl": 0,
     "alertsSent": 0,
-    "samples": [
-      {
-        "matchId": "1710864",
-        "teams": [
-          "G2 Ares",
-          "FC Famalicão Esports"
-        ],
-        "status": "not_started",
-        "beginAt": "2026-09-27T15:00:00Z"
-      }
-    ],
+    "samples": [],
     "rejects": []
   }
 }\n
