@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:02:15.807Z",
+  "updatedAt": "2026-09-27T15:02:17.701Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36328007264",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2272,
   "telemetry": {
     "startedAt": "2026-09-27T15:01:42.659Z",
-    "events": 252,
+    "events": 262,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1689002",
+  "matchId": "1702600",
   "teams": [
-    "GamerLegion",
-    "Sinners"
+    "BESTIA Academy",
+    "Procyon Gaming"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -33,7 +33,7 @@
     "missingTeams": 2,
     "polyEvents": 224,
     "matchedPoly": 18,
-    "noPolyMatch": 1,
+    "noPolyMatch": 2,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
@@ -295,6 +295,12 @@
           0,
           0
         ]
+      },
+      {
+        "reason": "no_polymarket_match",
+        "matchId": "1689002",
+        "teamA": "GamerLegion",
+        "teamB": "Sinners"
       }
     ]
   }
