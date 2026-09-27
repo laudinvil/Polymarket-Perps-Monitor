@@ -112,12 +112,7 @@ jobs:
                 if(hs!=null&&as!=null) found.l.score=String(hs)+"–"+String(as);
                 const st=e.status||{};
                 const clock=String(st.description||st.period||st.type||"");
-                const candidates=[st.elapsed,st.currentPeriodStartTimestamp,e.time?.currentPeriodStartTimestamp,e.time?.periodStartTimestamp].filter(v=>v!=null);
-                let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);
-                if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*['’]?(?:\\s*min)?\\b/i);
-                if(m){found.l.minute=m[1]+(m[2]?"+"+m[2]:"");found.l.minuteSource="SofaScore";}
-                else if(Number.isFinite(Number(st.elapsed))){found.l.minute=String(Math.floor(Number(st.elapsed)));found.l.minuteSource="SofaScore";}
-              } else console.log("SOFASCORE_MATCH","NONE");
+                // Never derive a minute from elapsed/timestamps. Accept only an explicit display clock.\n                let m=clock.match(/(?:2H|1H|ET|AET)\\s*[-–:]?\\s*(\\d{1,3})(?:\\+(\\d+))?/i);\n                if(!m) m=clock.match(/\\b(\\d{1,3})(?:\\+(\\d+))?\\s*['’]?(?:\\s*min)?\\b/i);\n                if(m){found.l.minute=m[1]+(m[2]?"+"+m[2]:"");found.l.minuteSource="SofaScore";}\n              } else console.log("SOFASCORE_MATCH","NONE");
             } catch(e){console.log("SOFASCORE_ERROR",String(e));}
             // FotMob is used only for authoritative live state/clock. Never derive minute from kickoff time.
             try {
