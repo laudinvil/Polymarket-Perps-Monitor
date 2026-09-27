@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:38:58.751Z",
+  "updatedAt": "2026-09-27T15:38:59.876Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330228092",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2057,
   "telemetry": {
     "startedAt": "2026-09-27T15:37:34.549Z",
-    "events": 569,
+    "events": 570,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1637686",
+  "matchId": "1711996",
   "teams": [
-    "Godji Check",
-    "SOLYX ESPORTS"
+    "Yangon Galacticos",
+    "Xipto Esports"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 11,
+    "noPolyMatch": 12,
     "noPolyPrice": 0,
     "prematchCaptured": 5,
     "map1Finished": 5,
