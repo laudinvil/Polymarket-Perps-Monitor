@@ -8,10 +8,9 @@ const server=http.createServer((req,res)=>{
 server.on("error",e=>process.stderr.write("DEPLEXO_SERVER_ERROR "+String(e?.stack||e)+"\n"));
 server.listen(port,"0.0.0.0",()=>{
   process.stdout.write("DEPLEXO_LISTENING "+port+"\n");
-  process.env.DEPLEXO_WRAPPER="1";
   try{
-    require("./polymarket-soccer-live-alerts.js");
-    process.stdout.write("DEPLEXO_MONITOR_STARTED\n");
+    require("./live-minimal.js");
+    process.stdout.write("DEPLEXO_MINIMAL_MONITOR_STARTED\n");
   }catch(e){
     process.stderr.write("DEPLEXO_MONITOR_ERROR "+String(e?.stack||e)+"\n");
   }
