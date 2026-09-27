@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:33:13.447Z",
+  "updatedAt": "2026-09-27T15:33:16.966Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329789220",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2266,
   "telemetry": {
     "startedAt": "2026-09-27T15:32:03.730Z",
-    "events": 439,
+    "events": 464,
     "polls": 0,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1700638",
+  "matchId": "1700623",
   "teams": [
-    "Yawara Esports",
-    "Turma do Pagode"
+    "Galorys",
+    "Procyon Gaming"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 30,
+    "matchedPoly": 32,
     "noPolyMatch": 5,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
