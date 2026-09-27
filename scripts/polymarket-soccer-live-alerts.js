@@ -36,6 +36,7 @@ function isSoccerEvent(event,href=""){
   if(sportPath){
     const sport=t(sportPath[1]).toLowerCase();
     if(sport==="soccer" || sport==="football")return true;
+    if(/^(?:epl|england|eng|es|es1|es2|ita|it1|it2|de|de1|de2|fra|fr1|fr2|ned|nl1|bel|por|pt1|swe|den|nor|fin|sco|irl|aut|ukr|pol|cze|gre|tur|rou|cro|ser|sui|bra|arg|mex|usa|mls|col|chi|per|ecu|jpn|kor|aus|saudi|uefa|ucl|uel|uecl|liga|serie|bundes|ligue|eredivisie|superliga|premierleague)$/i.test(sport))return true;
     if(/^(?:tennis|wta|atp|basketball|baseball|hockey|nfl|cfb|ufc|cricket)$/i.test(sport))return false;
   }
   const values=[];
@@ -216,7 +217,7 @@ async function discover(){
     const rawTitle=t(event?.title||event?.question);
     if(!event||!event.id){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"missing_event_id",href}));return;}
     const [home,away]=teams(event);
-    if(!sourceConfirmed&&!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
+    if(!isSoccerEvent(event,href)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_soccer",eventId:event.id,title:rawTitle,href}));return;}
     const ended=event.ended===true||event.finished===true||event.final===true;
     if(!home||!away){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"teams_not_parsed",eventId:event.id,title:rawTitle}));return;}
     if(!isFixtureTitle(rawTitle)&&!(event.homeTeam&&event.awayTeam)){console.log(JSON.stringify({level:"DEBUG",event:"candidate_reject",reason:"not_fixture_title",eventId:event.id,title:rawTitle}));return;}
@@ -280,7 +281,7 @@ async function discover(){
     try{
       let raw=null;
       try{ raw=await json(GAMMA+"/events?slug="+encodeURIComponent(slug),{timeout:5000}); }catch{}
-      const event=Array.isArray(raw)?raw[0]:raw;
+      const event=firstEvent(raw);
       if(!event){
         console.log(JSON.stringify({level:"WARN",event:"live_page_event_lookup_failed",href,slug}));
         continue;
