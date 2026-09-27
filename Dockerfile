@@ -1,8 +1,9 @@
-FROM node:22-bookworm
+FROM mcr.microsoft.com/playwright:v1.55.0-noble
+
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --omit=dev && npx playwright install --with-deps chromium
+RUN npm install --omit=dev
 
 COPY monitor.js ./
 
