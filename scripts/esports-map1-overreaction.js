@@ -79,11 +79,11 @@ const GAMMA = "https://gamma-api.polymarket.com";
 const CLOB = "https://clob.polymarket.com";
 
 const CFG = {
-  minPreFavorite: 0.40,
-  maxPreFavorite: 0.60,
-  minMove: 0.25,
-  minPostFavorite: 0.75,
-  maxPostFavorite: 0.90,
+  minPreFavorite: 0.35,
+  maxPreFavorite: 0.65,
+  minMove: 0.15,
+  minPostFavorite: 0.60,
+  maxPostFavorite: 0.95,
   minMapMargin: 6,
   requireMapMargin: false,
   maxUpcomingHours: 24,
