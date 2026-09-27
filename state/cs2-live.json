@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:23:07.340Z",
+  "updatedAt": "2026-09-27T15:23:08.414Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36329237890",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2043,
   "telemetry": {
     "startedAt": "2026-09-27T15:21:38.260Z",
-    "events": 630,
+    "events": 631,
     "polls": 1,
     "alerts": 2,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1683304",
+  "matchId": "1700679",
   "teams": [
-    "Nexus",
-    "mellren"
+    "The Huns Esports",
+    "NEXVOID"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -30,10 +30,10 @@
     "running": 9,
     "bo3": 90,
     "skippedFuture": 0,
-    "missingTeams": 4,
+    "missingTeams": 7,
     "polyEvents": 224,
     "matchedPoly": 22,
-    "noPolyMatch": 10,
+    "noPolyMatch": 11,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 0,
