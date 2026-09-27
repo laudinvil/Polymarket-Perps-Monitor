@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:37:14.770Z",
+  "updatedAt": "2026-09-27T15:37:16.040Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330056754",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2050,
   "telemetry": {
     "startedAt": "2026-09-27T15:34:49.533Z",
-    "events": 873,
+    "events": 874,
     "polls": 2,
     "alerts": 0,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1697653",
+  "matchId": "1712147",
   "teams": [
-    "T1 Academy",
-    "Cupid Esports"
+    "Teletubisie",
+    "Eternal Fire Academy"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -35,7 +35,7 @@
     "missingTeams": 0,
     "polyEvents": 200,
     "matchedPoly": 52,
-    "noPolyMatch": 13,
+    "noPolyMatch": 14,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
     "map1Finished": 5,
