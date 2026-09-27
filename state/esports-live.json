@@ -611,7 +611,7 @@
   "liveScores": {
     "1662461": {
       "matchId": "1662461",
-      "updatedAt": "2026-09-27T21:39:33.507Z",
+      "updatedAt": "2026-09-27T21:40:43.358Z",
       "games": {
         "1662461": {
           "id": "1662461",
@@ -623,7 +623,7 @@
           "status": "running",
           "finished": false,
           "winnerId": null,
-          "observedAt": "2026-09-27T21:39:33.507Z",
+          "observedAt": "2026-09-27T21:40:43.358Z",
           "source": "match",
           "raw": {
             "score": null,
@@ -682,31 +682,31 @@
       }
     }
   },
-  "updatedAt": "2026-09-27T21:39:39.727Z",
+  "updatedAt": "2026-09-27T21:40:49.485Z",
   "stage": "POLL_RESULT",
   "runId": "36352353844",
   "sha": "7bba4fbe220ebbfc62bcfb20fdfcbf7c593df6ec",
   "telemetry": {
     "startedAt": "2026-09-27T21:36:57.922Z",
-    "events": 574,
-    "polls": 4,
+    "events": 648,
+    "polls": 6,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 156,
-      "HTTP_RESPONSE": 156,
-      "HTTP_JSON": 144,
-      "HTTP_NONRETRYABLE": 12,
-      "HTTP_ERROR": 12,
-      "GAME_DETAILS_ERROR": 12,
+      "HTTP_REQUEST": 169,
+      "HTTP_RESPONSE": 169,
+      "HTTP_JSON": 153,
+      "HTTP_NONRETRYABLE": 16,
+      "HTTP_ERROR": 16,
+      "GAME_DETAILS_ERROR": 16,
       "HLTV_LOADED": 1,
-      "HLTV_RESULTS_UNAVAILABLE": 78,
-      "POLL_RESULT": 2
+      "HLTV_RESULTS_UNAVAILABLE": 104,
+      "POLL_RESULT": 3
     },
     "recent": [
       {
-        "ts": "2026-09-27T21:38:28.685Z",
+        "ts": "2026-09-27T21:39:38.518Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "XI Esport",
@@ -714,7 +714,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:28.889Z",
+        "ts": "2026-09-27T21:39:38.716Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "FOKUS",
@@ -722,7 +722,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:29.095Z",
+        "ts": "2026-09-27T21:39:38.913Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Hydra Esports",
@@ -730,7 +730,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:29.300Z",
+        "ts": "2026-09-27T21:39:39.112Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "MURASH GAMING",
@@ -738,7 +738,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:29.527Z",
+        "ts": "2026-09-27T21:39:39.330Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "BESTIA Academy",
@@ -746,7 +746,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:29.730Z",
+        "ts": "2026-09-27T21:39:39.528Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "KaBuM! Ilha das Lendas",
@@ -754,7 +754,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:38:31.193Z",
+        "ts": "2026-09-27T21:39:40.891Z",
         "event": "POLL_RESULT",
         "data": {
           "diagnostics": {
@@ -813,7 +813,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.248Z",
+        "ts": "2026-09-27T21:40:40.935Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
@@ -821,7 +821,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.249Z",
+        "ts": "2026-09-27T21:40:40.937Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
@@ -829,7 +829,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.250Z",
+        "ts": "2026-09-27T21:40:40.938Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
@@ -837,7 +837,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.251Z",
+        "ts": "2026-09-27T21:40:40.938Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/lives",
@@ -845,17 +845,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.416Z",
+        "ts": "2026-09-27T21:40:40.981Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
           "status": 200,
           "ok": true,
-          "elapsedMs": 166
+          "elapsedMs": 42
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.496Z",
+        "ts": "2026-09-27T21:40:41.049Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
@@ -864,7 +864,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.496Z",
+        "ts": "2026-09-27T21:40:41.049Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
@@ -872,17 +872,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.517Z",
+        "ts": "2026-09-27T21:40:41.069Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
           "status": 200,
           "ok": true,
-          "elapsedMs": 21
+          "elapsedMs": 20
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.594Z",
+        "ts": "2026-09-27T21:40:41.132Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
@@ -891,27 +891,27 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.594Z",
+        "ts": "2026-09-27T21:40:41.251Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 345
+          "elapsedMs": 314
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.595Z",
+        "ts": "2026-09-27T21:40:41.264Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/lives",
           "status": 200,
           "ok": true,
-          "elapsedMs": 344
+          "elapsedMs": 325
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.595Z",
+        "ts": "2026-09-27T21:40:41.264Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/lives",
@@ -920,17 +920,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.626Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 379
-        }
-      },
-      {
-        "ts": "2026-09-27T21:39:31.634Z",
+        "ts": "2026-09-27T21:40:41.342Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
@@ -939,7 +929,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.989Z",
+        "ts": "2026-09-27T21:40:41.347Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 412
+        }
+      },
+      {
+        "ts": "2026-09-27T21:40:41.705Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
@@ -948,7 +948,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:31.989Z",
+        "ts": "2026-09-27T21:40:41.705Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
@@ -956,17 +956,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.193Z",
+        "ts": "2026-09-27T21:40:41.857Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 204
+          "elapsedMs": 152
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.549Z",
+        "ts": "2026-09-27T21:40:42.218Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
@@ -975,7 +975,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.549Z",
+        "ts": "2026-09-27T21:40:42.218Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
@@ -983,17 +983,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.710Z",
+        "ts": "2026-09-27T21:40:42.397Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 161
+          "elapsedMs": 179
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.892Z",
+        "ts": "2026-09-27T21:40:42.576Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
@@ -1002,7 +1002,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:32.892Z",
+        "ts": "2026-09-27T21:40:42.576Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1010,17 +1010,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.059Z",
+        "ts": "2026-09-27T21:40:42.764Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 167
+          "elapsedMs": 188
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.238Z",
+        "ts": "2026-09-27T21:40:42.945Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1029,7 +1029,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.238Z",
+        "ts": "2026-09-27T21:40:42.945Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1037,17 +1037,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.414Z",
+        "ts": "2026-09-27T21:40:43.177Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 175
+          "elapsedMs": 232
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.506Z",
+        "ts": "2026-09-27T21:40:43.357Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1056,7 +1056,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.844Z",
+        "ts": "2026-09-27T21:40:43.699Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1064,7 +1064,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.938Z",
+        "ts": "2026-09-27T21:40:43.793Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1074,7 +1074,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.938Z",
+        "ts": "2026-09-27T21:40:43.793Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1082,7 +1082,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.938Z",
+        "ts": "2026-09-27T21:40:43.793Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/739686",
@@ -1091,7 +1091,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.938Z",
+        "ts": "2026-09-27T21:40:43.793Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1702961",
@@ -1100,7 +1100,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:33.938Z",
+        "ts": "2026-09-27T21:40:43.793Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "YBN Team",
@@ -1108,7 +1108,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.300Z",
+        "ts": "2026-09-27T21:40:44.092Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/csgo/games/231608",
@@ -1116,7 +1116,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.397Z",
+        "ts": "2026-09-27T21:40:44.189Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/csgo/games/231608",
@@ -1126,7 +1126,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.397Z",
+        "ts": "2026-09-27T21:40:44.189Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/csgo/games/231608",
@@ -1134,7 +1134,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.397Z",
+        "ts": "2026-09-27T21:40:44.190Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/csgo/games/231608",
@@ -1143,7 +1143,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.397Z",
+        "ts": "2026-09-27T21:40:44.190Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1689002",
@@ -1152,7 +1152,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.397Z",
+        "ts": "2026-09-27T21:40:44.190Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "GamerLegion",
@@ -1160,7 +1160,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.695Z",
+        "ts": "2026-09-27T21:40:44.424Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/52328",
@@ -1168,7 +1168,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.788Z",
+        "ts": "2026-09-27T21:40:44.517Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/52328",
@@ -1178,7 +1178,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.788Z",
+        "ts": "2026-09-27T21:40:44.517Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/52328",
@@ -1186,7 +1186,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.788Z",
+        "ts": "2026-09-27T21:40:44.517Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/52328",
@@ -1195,7 +1195,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.788Z",
+        "ts": "2026-09-27T21:40:44.517Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1714932",
@@ -1204,7 +1204,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:34.788Z",
+        "ts": "2026-09-27T21:40:44.517Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Trigon Titans",
@@ -1212,7 +1212,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.033Z",
+        "ts": "2026-09-27T21:40:44.721Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1220,17 +1220,17 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.128Z",
+        "ts": "2026-09-27T21:40:44.822Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
           "status": 404,
           "ok": false,
-          "elapsedMs": 95
+          "elapsedMs": 101
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.128Z",
+        "ts": "2026-09-27T21:40:44.822Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1238,7 +1238,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.128Z",
+        "ts": "2026-09-27T21:40:44.822Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/283920",
@@ -1247,7 +1247,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.129Z",
+        "ts": "2026-09-27T21:40:44.822Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1662461",
@@ -1256,7 +1256,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.129Z",
+        "ts": "2026-09-27T21:40:44.823Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Cloud9",
@@ -1264,7 +1264,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.326Z",
+        "ts": "2026-09-27T21:40:45.024Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Galorys",
@@ -1272,7 +1272,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.524Z",
+        "ts": "2026-09-27T21:40:45.229Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Yawara Esports",
@@ -1280,7 +1280,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.722Z",
+        "ts": "2026-09-27T21:40:45.433Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Liquid",
@@ -1288,7 +1288,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:35.919Z",
+        "ts": "2026-09-27T21:40:45.636Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Hong Kong",
@@ -1296,7 +1296,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:36.115Z",
+        "ts": "2026-09-27T21:40:45.838Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "FarmVille",
@@ -1304,7 +1304,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:36.312Z",
+        "ts": "2026-09-27T21:40:46.038Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "LAG Gaming",
@@ -1312,7 +1312,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:36.513Z",
+        "ts": "2026-09-27T21:40:46.246Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Godji Check",
@@ -1320,7 +1320,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:36.714Z",
+        "ts": "2026-09-27T21:40:46.449Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "T1 Academy",
@@ -1328,7 +1328,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:36.917Z",
+        "ts": "2026-09-27T21:40:46.649Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Teletubisie",
@@ -1336,7 +1336,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:37.122Z",
+        "ts": "2026-09-27T21:40:46.847Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Sinners",
@@ -1344,7 +1344,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:37.326Z",
+        "ts": "2026-09-27T21:40:47.049Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Bushido Wildcats",
@@ -1352,7 +1352,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:37.521Z",
+        "ts": "2026-09-27T21:40:47.251Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "eArena",
@@ -1360,7 +1360,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:37.720Z",
+        "ts": "2026-09-27T21:40:47.453Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Please Not Hero Ban",
@@ -1368,7 +1368,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:37.922Z",
+        "ts": "2026-09-27T21:40:47.658Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "THUNDER dOWNUNDER",
@@ -1376,7 +1376,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:38.121Z",
+        "ts": "2026-09-27T21:40:47.858Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "KT Rolster Challengers",
@@ -1384,7 +1384,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:38.320Z",
+        "ts": "2026-09-27T21:40:48.058Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "REVATI",
@@ -1392,7 +1392,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:38.518Z",
+        "ts": "2026-09-27T21:40:48.260Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "XI Esport",
@@ -1400,7 +1400,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:38.716Z",
+        "ts": "2026-09-27T21:40:48.463Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "FOKUS",
@@ -1408,7 +1408,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:38.913Z",
+        "ts": "2026-09-27T21:40:48.665Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "Hydra Esports",
@@ -1416,7 +1416,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:39.112Z",
+        "ts": "2026-09-27T21:40:48.865Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "MURASH GAMING",
@@ -1424,7 +1424,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:39.330Z",
+        "ts": "2026-09-27T21:40:49.085Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "BESTIA Academy",
@@ -1432,7 +1432,7 @@
         }
       },
       {
-        "ts": "2026-09-27T21:39:39.528Z",
+        "ts": "2026-09-27T21:40:49.286Z",
         "event": "HLTV_RESULTS_UNAVAILABLE",
         "data": {
           "teamA": "KaBuM! Ilha das Lendas",
@@ -1442,7 +1442,7 @@
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-27T21:39:39.528Z"
+    "updatedAt": "2026-09-27T21:40:49.286Z"
   },
   "diagnostics": {
     "events": 506,
