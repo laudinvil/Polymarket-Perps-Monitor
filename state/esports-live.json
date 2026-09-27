@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-27T15:45:44.529Z",
+  "updatedAt": "2026-09-27T15:45:46.089Z",
   "stage": "MATCH_PROGRESS",
   "runId": "36330323125",
   "runAttempt": "1",
@@ -7,16 +7,16 @@
   "pid": 2282,
   "telemetry": {
     "startedAt": "2026-09-27T15:39:11.635Z",
-    "events": 1677,
+    "events": 1687,
     "polls": 8,
     "alerts": 1,
     "errors": 0,
     "lastError": null
   },
-  "matchId": "1714222",
+  "matchId": "1710855",
   "teams": [
-    "PARTIZAN",
-    "Chaos Enforcers"
+    "BASEMENT BOYS",
+    "overTIME"
   ],
   "status": "not_started",
   "seriesScore": [
@@ -34,7 +34,7 @@
     "skippedFuture": 0,
     "missingTeams": 0,
     "polyEvents": 200,
-    "matchedPoly": 32,
+    "matchedPoly": 34,
     "noPolyMatch": 4,
     "noPolyPrice": 0,
     "prematchCaptured": 0,
@@ -417,6 +417,16 @@
         "matchId": "1684181",
         "teamA": "Nemiga",
         "teamB": "Color",
+        "seriesScore": [
+          0,
+          0
+        ]
+      },
+      {
+        "reason": "map1_not_finished",
+        "matchId": "1714222",
+        "teamA": "PARTIZAN",
+        "teamB": "Chaos Enforcers",
         "seriesScore": [
           0,
           0
