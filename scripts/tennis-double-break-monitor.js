@@ -520,7 +520,9 @@ function recordSignal(e, breakInfo) {
   // sequence when SofaScore omitted or reset the game number.
   if (current.gameNo != null && prior.gameNo != null && current.gameNo > prior.gameNo) {
     const gap = current.gameNo - prior.gameNo;
-    if (gap !== 2) {
+    // A set can end and the next set can start with the same player serving.
+    // In that case the global game number can advance by 1 rather than 2.
+    if (gap !== 2 && gap !== 1) {
       log("BREAK_SEQUENCE", {
         eventId: id,
         firstGame: prior.gameNo,
