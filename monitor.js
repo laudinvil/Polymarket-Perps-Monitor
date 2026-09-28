@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.12";
+const VERSION = "7.5.13";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1250,18 +1250,17 @@ async function processClosedPeriodAt(forcedStart = null) {
     }
   }
 
-  // A cumulative alert is only valid after the authoritative historical
-  // baseline has completed. Keep the complete live period persisted so it can
-  // be alerted immediately after bootstrap finishes, but never send a zero or
-  // partial cumulative baseline.
-  if (!historicalReady) {
-    log("PERIOD_ALERT_DEFERRED_HISTORY", {
+  // Do not allow a failed historical bootstrap to silence the live monitor.
+  // When the Aug-14 baseline is unavailable, send a clearly separated live
+  // alert instead of pretending that zeroed counts are historical statistics.
+  const alertIsCumulative = historicalReady;
+  if (!alertIsCumulative) {
+    log("PERIOD_ALERT_LIVE_FALLBACK", {
       periodKey,
       reason:"historical_baseline_not_ready",
       complete:newlyComplete,
       counts:state.counts
     });
-    return;
   }
 
   // If a period is complete but Telegram was unavailable, retry it on every
@@ -1303,7 +1302,7 @@ async function processClosedPeriodAt(forcedStart = null) {
   const cumulativeDirection = cumulativeTop.score >= 0 ? "UP" : "DOWN";
   const lines = [
     "5M CHAINLINK TWAP 60s",
-    "CUMULATIVE FROM 14 AUGUST",
+    alertIsCumulative ? "CUMULATIVE FROM 14 AUGUST" : "CURRENT 5M — HISTORICAL BASELINE NOT READY",
     "",
     ...cumulativeRanking.map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
