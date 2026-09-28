@@ -479,7 +479,15 @@ async function fetchMarketBySlug(slug) {
 async function backfill(state) {
   if (state.initialized) return state;
 
-  log("BACKFILL_START", { start: new Date(START_MS).toISOString(), assets: ASSETS.map(a => a.key) });
+  // Historical initialization uses the finalized Polymarket settlement. Live periods
+  // are still verified against Chainlink TWAP60 before they affect the counters.
+  // This avoids tens of thousands of historical Chainlink report requests on free limits.
+  log("BACKFILL_START", {
+    start: new Date(START_MS).toISOString(),
+    assets: ASSETS.map(a => a.key),
+    verification: "polymarket_finalized_settlement"
+  });
+
   let offset = 0;
   let pages = 0;
   const seen = new Set();
@@ -497,21 +505,15 @@ async function backfill(state) {
     for (const m of rows) {
       for (const asset of ASSETS) {
         if (!isTargetMarket(m, asset) || seen.has(m.id)) continue;
+
         const w = winnerOf(m);
-        if (!w) continue;
-        // Historical counters must use the same Chainlink TWAP60 verification as live periods.
-        // Pace/caching keep the backfill within conservative API budgets.
-        try {
-          const chainlink = await verifyTwapSettlement(asset, m, Date.parse(m.startDate));
-          if (chainlink.expected !== w || !chainlink.match) {
-            log("BACKFILL_REJECTED", { asset: asset.key, marketId: m.id, slug: m.slug, winner: w, chainlink });
-            continue;
-          }
-          seen.add(m.id);
-          counts[asset.key] += w === "Up" ? 1 : -1;
-        } catch (e) {
-          log("BACKFILL_VERIFY_ERROR", { asset: asset.key, marketId: m.id, slug: m.slug, error: String(e.message || e) });
+        if (!w) {
+          log("BACKFILL_NO_FINAL_WINNER", { asset: asset.key, marketId: m.id, slug: m.slug });
+          continue;
         }
+
+        seen.add(m.id);
+        counts[asset.key] += w === "Up" ? 1 : -1;
       }
     }
 
@@ -524,7 +526,12 @@ async function backfill(state) {
   state.initialized = true;
   state.lastBackfillAt = nowIso();
   await saveState(state);
-  log("BACKFILL_DONE", { pages, counts });
+  log("BACKFILL_DONE", {
+    pages,
+    counts,
+    verification: "polymarket_finalized_settlement",
+    liveVerification: "chainlink_twap60"
+  });
   return state;
 }
 
