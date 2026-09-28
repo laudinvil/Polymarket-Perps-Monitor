@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.2.0";
+const VERSION = "9.3.0";
 const CASCADE_WINDOW_MS = 10_000;
 const CASCADE_MIN_EVENTS = 5;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -254,23 +254,44 @@ async function processFeed() {
         cascadeEventsInWindow: active.length,
         required: CASCADE_MIN_EVENTS
       });
+    } else {
+      log("CASCADE_PENDING", {
+        exchange: EXCHANGE,
+        symbol,
+        eventsInWindow: active.length,
+        lastEventTs: rawTs,
+        waitAfterLastEventMs: CASCADE_WINDOW_MS
+      });
+    }
+  }
+
+  const nowMs = Date.now();
+  state.cascadeEvents = state.cascadeEvents || {};
+  state.cascadeLastAlertMs = state.cascadeLastAlertMs || {};
+
+  for (const [symbol, bucket] of Object.entries(state.cascadeEvents)) {
+    if (!Array.isArray(bucket) || bucket.length < CASCADE_MIN_EVENTS) continue;
+
+    const latestEventMs = Math.max(...bucket.map(x => Number(x.eventMs) || 0));
+    if (!latestEventMs || nowMs - latestEventMs < CASCADE_WINDOW_MS) continue;
+
+    const lastAlertMs = Number(state.cascadeLastAlertMs[symbol] || 0);
+    if (latestEventMs <= lastAlertMs) {
+      state.cascadeEvents[symbol] = [];
       continue;
     }
 
-    const lastAlertMs = Number(state.cascadeLastAlertMs?.[symbol] || 0);
-    if (eventMs <= lastAlertMs) continue;
-
-    const totalValue = active.reduce((sum, x) => sum + (Number(x.notional) || 0), 0);
-    const totalQty = active.reduce((sum, x) => sum + (Number(x.qty) || 0), 0);
-    const longCount = active.filter(x => x.side === "LONG").length;
-    const shortCount = active.filter(x => x.side === "SHORT").length;
-    const prices = active.map(x => x.price).filter(Number.isFinite);
+    const totalValue = bucket.reduce((sum, x) => sum + (Number(x.notional) || 0), 0);
+    const totalQty = bucket.reduce((sum, x) => sum + (Number(x.qty) || 0), 0);
+    const longCount = bucket.filter(x => x.side === "LONG").length;
+    const shortCount = bucket.filter(x => x.side === "SHORT").length;
+    const prices = bucket.map(x => x.price).filter(Number.isFinite);
     const minPrice = prices.length ? Math.min(...prices) : null;
     const maxPrice = prices.length ? Math.max(...prices) : null;
 
     const message = [
       symbol + " CASCADE",
-      "EVENTS: " + active.length,
+      "EVENTS: " + bucket.length,
       "LONG: " + longCount + " | SHORT: " + shortCount,
       "VALUE: " + formatUsd(totalValue),
       "SIZE: " + formatQty(totalQty),
@@ -280,15 +301,14 @@ async function processFeed() {
     const sent = await sendTelegram(message);
 
     state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
-    state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
-    state.lastEventKey = key;
-    state.cascadeLastAlertMs = state.cascadeLastAlertMs || {};
-    state.cascadeLastAlertMs[symbol] = eventMs;
+    state.lastEventTs = bucket[bucket.length - 1].eventTs;
+    state.lastEventKey = "cascade:" + symbol + ":" + latestEventMs;
+    state.cascadeLastAlertMs[symbol] = latestEventMs;
 
     log(sent ? "LIQUIDATION_CASCADE_ALERT_SENT" : "LIQUIDATION_CASCADE_ALERT_FAILED", {
       exchange: EXCHANGE,
       symbol,
-      events: active.length,
+      events: bucket.length,
       longCount,
       shortCount,
       totalValue,
@@ -296,12 +316,10 @@ async function processFeed() {
       minPrice,
       maxPrice,
       windowMs: CASCADE_WINDOW_MS,
-      eventTs: rawTs,
-      eventKey: key
+      lastEventTs: bucket[bucket.length - 1].eventTs
     });
 
     state.cascadeEvents[symbol] = [];
-    saveState();
   }
 
   if (fresh > 0) {
@@ -310,6 +328,7 @@ async function processFeed() {
       hyperliquid: hyperliquid.length,
       fresh
     });
+    saveState();
   }
 }
 function runtimeDiagnostics() {
