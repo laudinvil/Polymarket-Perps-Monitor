@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.7.3";
+const VERSION = "5.0.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -331,240 +331,178 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-daily-windows-v11";
-const GAMMA_MIN_INTERVAL_MS = 750;
-const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const EXPECTED_MIN_PERIODS = 10_000;
-let gammaNextRequestAt = 0;
-const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-chainlink-twap60-boundaries-v1";
+const HISTORY_PERIOD_MS = PERIOD_MS;
+const HISTORY_BATCH_SIZE = 10;
+const HISTORY_RETRY_MS = 5000;
+const CHAINLINK_REST = process.env.CHAINLINK_REST_URL || "https://api.dataengine.chain.link";
+const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.CHAINLINK_API_KEY || process.env.API_KEY || "";
+const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.USER_SECRET || "";
+const CHAINLINK_FEED_IDS_ENV = process.env.CHAINLINK_TWAP60_FEED_IDS || "";
+let chainlinkClient = null;
+let chainlinkFeedIds = null;
+let historicalBootstrapRunning = false;
 
-function parseJsonField(value, fallback = []) {
+function exactToBigInt(value) {
+  const s = String(value || "").trim();
+  if (!/^-?\d+$/.test(s)) throw new Error("invalid_e18:" + s.slice(0, 40));
+  return BigInt(s);
+}
+function normalizeFeedList(value) {
   if (Array.isArray(value)) return value;
-  try { return JSON.parse(value); } catch { return fallback; }
+  if (Array.isArray(value?.feeds)) return value.feeds;
+  if (Array.isArray(value?.result?.feeds)) return value.result.feeds;
+  return [];
 }
+function feedText(feed) { try { return JSON.stringify(feed).toLowerCase(); } catch { return ""; } }
+function feedIdOf(feed) { return feed?.feedID || feed?.feedId || feed?.id || feed?.streamId || feed?.streamID || null; }
 
-function resolvedWinner(market) {
-  const outcomes = parseJsonField(market?.outcomes);
-  const prices = parseJsonField(market?.outcomePrices);
-  if (!outcomes.length || !prices.length) return null;
-  let best = null;
-  for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
-    const label = String(outcomes[i] || "").trim().toLowerCase();
-    const price = Number(prices[i]);
-    if (!Number.isFinite(price)) continue;
-    if (!best || price > best.price) best = { label, price };
+async function initChainlinkHistoricalClient() {
+  if (chainlinkClient) return chainlinkClient;
+  if (!CHAINLINK_API_KEY || !CHAINLINK_USER_SECRET) throw new Error("CHAINLINK_CREDENTIALS_MISSING");
+  const sdk = await import("@chainlink/data-streams-sdk");
+  const createClient = sdk.createClient || sdk.default?.createClient;
+  if (!createClient) throw new Error("CHAINLINK_SDK_CREATE_CLIENT_UNAVAILABLE");
+  chainlinkClient = createClient({
+    apiKey: CHAINLINK_API_KEY,
+    userSecret: CHAINLINK_USER_SECRET,
+    endpoint: CHAINLINK_REST,
+    wsEndpoint: process.env.CHAINLINK_WS_URL || "wss://ws.dataengine.chain.link"
+  });
+  return chainlinkClient;
+}
+function parseFeedIdEnv() {
+  const raw=CHAINLINK_FEED_IDS_ENV.trim();
+  if(!raw) return {};
+  try { const parsed=JSON.parse(raw); if(parsed&&typeof parsed==="object") return parsed; } catch {}
+  const parts=raw.split(",").map(x=>x.trim()).filter(Boolean);
+  return parts.length===ASSETS.length ? Object.fromEntries(ASSETS.map((a,i)=>[a.key,parts[i]])) : {};
+}
+async function discoverChainlinkTwap60Feeds() {
+  if(chainlinkFeedIds) return chainlinkFeedIds;
+  const fromEnv=parseFeedIdEnv();
+  if(Object.keys(fromEnv).length===ASSETS.length) { chainlinkFeedIds=fromEnv; log("CHAINLINK_FEEDS_CONFIGURED",{assets:ASSETS.map(a=>a.key)}); return chainlinkFeedIds; }
+  const client=await initChainlinkHistoricalClient();
+  const listed=normalizeFeedList(await client.listFeeds());
+  log("CHAINLINK_FEED_DISCOVERY",{total:listed.length});
+  const result={}, candidates={};
+  for(const asset of ASSETS) {
+    const symbol=asset.symbol.replace("/","").toLowerCase();
+    const matches=listed.filter(feed=>{
+      const t=feedText(feed), id=String(feedIdOf(feed)||"").toLowerCase();
+      return (t.includes(asset.key.toLowerCase())||t.includes(symbol)||t.includes(asset.symbol.toLowerCase())) &&
+        t.includes("twap") && (t.includes("60")||t.includes("sixty")) && /^0x[0-9a-f]+$/.test(id);
+    });
+    candidates[asset.key]=matches.map(feed=>({feedId:feedIdOf(feed),name:feed?.name||feed?.feedName||feed?.description||null}));
+    if(matches.length===1) result[asset.key]=feedIdOf(matches[0]);
+    else if(matches.length>1) {
+      const exact=matches.find(feed=>{const t=feedText(feed);return t.includes(asset.symbol.toLowerCase())&&(t.includes("60s")||t.includes("60-second")||t.includes("sixty"));});
+      if(exact) result[asset.key]=feedIdOf(exact);
+    }
   }
-  if (!best || best.price < 0.99) return null;
-  if (best.label === "up") return "Up";
-  if (best.label === "down") return "Down";
-  return null;
+  log("CHAINLINK_FEED_CANDIDATES",{candidates,selected:result});
+  const missing=ASSETS.filter(a=>!result[a.key]).map(a=>a.key);
+  if(missing.length) throw new Error("CHAINLINK_TWAP60_FEEDS_NOT_RESOLVED:"+missing.join(","));
+  chainlinkFeedIds=result;
+  return result;
 }
-
-async function gammaFetch(url, options = {}) {
-  const now = Date.now();
-  const waitMs = Math.max(0, gammaNextRequestAt - now);
-  if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
-  gammaNextRequestAt = Date.now() + GAMMA_MIN_INTERVAL_MS;
-  return fetch(url, options);
+async function decodeChainlinkReport(report) {
+  const sdk=await import("@chainlink/data-streams-sdk");
+  const decodeReport=sdk.decodeReport||sdk.default?.decodeReport;
+  if(!decodeReport) throw new Error("CHAINLINK_SDK_DECODE_REPORT_UNAVAILABLE");
+  const decoded=decodeReport(report.fullReport,report.feedID||report.feedId);
+  if(decoded?.price===undefined||decoded?.price===null) throw new Error("CHAINLINK_TWAP_PRICE_MISSING");
+  const price=typeof decoded.price==="bigint"?decoded.price.toString():String(decoded.price);
+  const ots=Number(report.observationsTimestamp??decoded.observationsTimestamp);
+  const vts=Number(report.validFromTimestamp??decoded.validFromTimestamp);
+  const exp=Number(decoded.expiresAt??report.expiresAt);
+  return {exact:price,observationTimestamp:Number.isFinite(ots)?ots*1000:null,validFromTimestamp:Number.isFinite(vts)?vts*1000:null,expiresAt:Number.isFinite(exp)?exp*1000:null};
 }
-
-async function fetchHistoricalSeries(asset, cutoffMs) {
-  const slug = SERIES_SLUGS[asset.key];
-  const all = [];
-  let windowStart = HISTORY_START_MS;
-  let windows = 0;
-
-  // Do NOT rely on Gamma keyset pagination for the historical backfill.
-  // Gamma has had documented keyset cursor issues. Instead split the history
-  // into one-day windows. A 5m series has ~288 events/day, safely below the
-  // public 500-row page limit, so each window is independently complete.
-  while (windowStart < cutoffMs) {
-    const windowEnd = Math.min(windowStart + HISTORY_WINDOW_MS, cutoffMs);
-    const params = new URLSearchParams();
-    params.set("series_slug", slug);
-    params.set("closed", "true");
-    params.set("start_date_min", new Date(windowStart).toISOString());
-    params.set("start_date_max", new Date(windowEnd).toISOString());
-    params.set("order", "startDate");
-    params.set("ascending", "true");
-    params.set("limit", "500");
-
-    const url = GAMMA + "/events?" + params.toString();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-
+async function fetchHistoricalBoundary(timestampMs) {
+  const client=await initChainlinkHistoricalClient();
+  const feedIds=await discoverChainlinkTwap60Feeds();
+  const targetSec=Math.floor(timestampMs/1000);
+  for(let attempt=1;attempt<=5;attempt++) {
     try {
-      windows++;
-      const r = await gammaFetch(url, {
-        signal: controller.signal,
-        headers: { accept: "application/json" }
-      });
-
-      if (!r.ok) {
-        const body = await r.text().catch(() => "");
-        log("HISTORY_ERROR", {
-          asset: asset.key,
-          status: r.status,
-          endpoint: "events",
-          seriesSlug: slug,
-          windowStart: new Date(windowStart).toISOString(),
-          windowEnd: new Date(windowEnd).toISOString(),
-          body: body.slice(0, 500)
-        });
-        return [];
+      const response=await client.getReportsBulk(ASSETS.map(a=>feedIds[a.key]),targetSec);
+      const reports=Array.isArray(response)?response:(response?.reports||[]);
+      const byFeed=new Map();
+      for(const report of reports) byFeed.set(String(report.feedID||report.feedId||"").toLowerCase(),report);
+      const values={};
+      for(const asset of ASSETS) {
+        const report=byFeed.get(String(feedIds[asset.key]).toLowerCase());
+        if(!report) continue;
+        const decoded=await decodeChainlinkReport(report);
+        const covered=(decoded.validFromTimestamp==null||decoded.validFromTimestamp<=timestampMs)&&(decoded.expiresAt==null||timestampMs<=decoded.expiresAt);
+        if(covered) values[asset.key]=decoded;
       }
-
-      const data = await r.json();
-      const events = Array.isArray(data)
-        ? data
-        : (Array.isArray(data?.events) ? data.events : []);
-
-      log("HISTORY_WINDOW", {
-        asset: asset.key,
-        seriesSlug: slug,
-        endpoint: "events",
-        window: windows,
-        windowStart: new Date(windowStart).toISOString(),
-        windowEnd: new Date(windowEnd).toISOString(),
-        rows: events.length,
-        hasMore: data?.has_more === true,
-        firstSlug: events[0]?.slug || null,
-        lastSlug: events[events.length - 1]?.slug || null
-      });
-
-      // More than 500 rows means the daily window assumption was violated.
-      // Fail closed rather than silently dropping historical periods.
-      if (events.length >= 500 || data?.has_more === true) {
-        log("HISTORY_ERROR", {
-          asset: asset.key,
-          endpoint: "events",
-          error: "daily_window_not_complete",
-          windowStart: new Date(windowStart).toISOString(),
-          windowEnd: new Date(windowEnd).toISOString(),
-          rows: events.length,
-          hasMore: data?.has_more === true
-        });
-        return [];
-      }
-
-      for (const event of events) {
-        const startMs = Date.parse(event.startDate || event.eventStartTime || event.startTime || "");
-        const endMs = Date.parse(event.endDate || event.endTime || "");
-        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
-        if (startMs < windowStart || startMs >= windowEnd || startMs < HISTORY_START_MS || startMs >= cutoffMs) continue;
-
-        const markets = Array.isArray(event.markets) ? event.markets : [];
-        const market = markets.find(m => resolvedWinner(m)) || markets[0] || event;
-        const winner = resolvedWinner(market);
-        if (!winner) continue;
-
-        all.push({
-          periodKey: "period-" + Math.floor(startMs / 1000),
-          startMs,
-          endMs,
-          winner
-        });
-      }
-
-      windowStart = windowEnd;
-    } catch (e) {
-      log("HISTORY_ERROR", {
-        asset: asset.key,
-        error: String(e.message || e),
-        endpoint: "events",
-        seriesSlug: slug,
-        windowStart: new Date(windowStart).toISOString(),
-        windowEnd: new Date(windowEnd).toISOString()
-      });
-      return [];
-    } finally {
-      clearTimeout(timer);
+      return values;
+    } catch(e) {
+      log("CHAINLINK_HISTORY_FETCH_RETRY",{timestamp:new Date(timestampMs).toISOString(),targetSec,attempt,error:String(e.message||e)});
+      if(attempt===5) throw e;
+      await new Promise(resolve=>setTimeout(resolve,HISTORY_RETRY_MS*attempt));
     }
   }
-
-  // A full Aug-14 -> current backfill should contain thousands of 5m periods.
-  // Never apply a tiny/truncated history such as +11/-7 as the baseline.
-  if (all.length < EXPECTED_MIN_PERIODS) {
-    log("HISTORY_ERROR", {
-      asset: asset.key,
-      endpoint: "events",
-      error: "historical_series_too_short",
-      periods: all.length,
-      expectedMinimum: EXPECTED_MIN_PERIODS
-    });
-    return [];
-  }
-
-  return all;
+  return {};
 }
-
+function historyBoundaryTargets(cutoffMs) {
+  const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
+}
 async function bootstrapHistoricalCounts() {
-  state.historyBootstrap = state.historyBootstrap || {};
-  if (state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION && state.historyBootstrap.complete === true) {
-    return true;
-  }
-
-  const cutoffMs = currentPeriodStart();
-  log("HISTORY_BOOTSTRAP_START", {
-    version: HISTORY_BOOTSTRAP_VERSION,
-    from: new Date(HISTORY_START_MS).toISOString(),
-    to: new Date(cutoffMs).toISOString()
-  });
-
-  const historicalCounts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-  const historicalPeriods = {};
-  let total = 0;
-  let failedAssets = [];
-
-  for (const asset of ASSETS) {
-    const rows = await fetchHistoricalSeries(asset, cutoffMs);
-    if (!rows.length) failedAssets.push(asset.key);
-
-    for (const row of rows) {
-      historicalPeriods[row.periodKey] = historicalPeriods[row.periodKey] || {};
-      historicalPeriods[row.periodKey][asset.key] = {
-        winner: row.winner,
-        openTimestamp: row.startMs,
-        closeTimestamp: row.endMs
-      };
-      historicalCounts[asset.key] += row.winner === "Up" ? 1 : -1;
-      total++;
+  if(historicalBootstrapRunning) return false;
+  historicalBootstrapRunning=true;
+  try {
+    state.historyBootstrap=state.historyBootstrap||{};
+    const cutoffMs=currentPeriodStart(), targets=historyBoundaryTargets(cutoffMs), expectedPeriods=targets.length-1;
+    if(state.historyBootstrap.version===HISTORY_BOOTSTRAP_VERSION&&state.historyBootstrap.complete===true&&state.historyBootstrap.to===new Date(cutoffMs).toISOString()) {
+      log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE",{version:HISTORY_BOOTSTRAP_VERSION,periods:expectedPeriods,counts:state.counts}); return true;
     }
-
-    log("HISTORY_ASSET", {
-      asset: asset.key,
-      periods: rows.length,
-      count: historicalCounts[asset.key]
-    });
-  }
-
-  if (failedAssets.length) {
-    log("HISTORY_BOOTSTRAP_INCOMPLETE", { failedAssets, retry:true });
-    return false;
-  }
-
-  state.periods = { ...(state.periods || {}), ...historicalPeriods };
-  state.counts = historicalCounts;
-  state.lastProcessedPeriod = state.lastProcessedPeriod || null;
-  state.leader = ranking()[0];
-  state.historyBootstrap = {
-    version: HISTORY_BOOTSTRAP_VERSION,
-    complete: true,
-    from: new Date(HISTORY_START_MS).toISOString(),
-    to: new Date(cutoffMs).toISOString(),
-    periods: Object.keys(historicalPeriods).length,
-    observations: total,
-    completedAt: nowIso()
-  };
-  saveState();
-  snapshot("HISTORY_BOOTSTRAP_" + HISTORY_BOOTSTRAP_VERSION);
-  log("HISTORY_BOOTSTRAP_COMPLETE", {
-    periods:Object.keys(historicalPeriods).length,
-    counts:state.counts,
-    from:new Date(HISTORY_START_MS).toISOString(),
-    to:new Date(cutoffMs).toISOString()
-  });
-  return true;
+    state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
+    state.periods={}; state.periodAlerted={}; state.leader=null; state.lastProcessedPeriod=null;
+    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:false,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completedBoundaries:0,observations:0,source:"Chainlink Data Streams REST bulk TWAP60",startedAt:state.historyBootstrap.startedAt||nowIso()};
+    saveState(); snapshot("PRE_CHAINLINK_TWAP60_REBUILD");
+    log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST bulk",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
+    await discoverChainlinkTwap60Feeds();
+    const boundaryCache=new Map();
+    let nextIndex=0;
+    while(nextIndex<targets.length) {
+      const batch=targets.slice(nextIndex,nextIndex+HISTORY_BATCH_SIZE);
+      const results=await Promise.all(batch.map(async ts=>({ts,values:await fetchHistoricalBoundary(ts)})));
+      for(const item of results) boundaryCache.set(item.ts,item.values);
+      nextIndex+=batch.length;
+      state.historyBootstrap.completedBoundaries=nextIndex;
+      state.historyBootstrap.observations=Array.from(boundaryCache.values()).reduce((n,x)=>n+Object.keys(x).length,0);
+      saveState();
+      if(nextIndex%100===0||nextIndex===targets.length) log("HISTORY_PROGRESS",{completedBoundaries:nextIndex,totalBoundaries:targets.length,percent:Number((nextIndex/targets.length*100).toFixed(2))});
+    }
+    const historicalCounts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
+    const historicalPeriods={}, assetCoverage=Object.fromEntries(ASSETS.map(a=>[a.key,{periods:0,missing:0}])), invalidPeriods=[];
+    for(let i=0;i<targets.length-1;i++) {
+      const openTs=targets[i],closeTs=targets[i+1],openValues=boundaryCache.get(openTs)||{},closeValues=boundaryCache.get(closeTs)||{},periodKey="period-"+Math.floor(openTs/1000),period={};
+      for(const asset of ASSETS) {
+        const open=openValues[asset.key],close=closeValues[asset.key];
+        if(!open||!close){assetCoverage[asset.key].missing++;continue;}
+        const winner=exactToBigInt(close.exact)>=exactToBigInt(open.exact)?"Up":"Down";
+        historicalCounts[asset.key]+=winner==="Up"?1:-1; assetCoverage[asset.key].periods++;
+        period[asset.key]={winner,openExact:open.exact,closeExact:close.exact,openTimestamp:open.observationTimestamp||openTs,closeTimestamp:close.observationTimestamp||closeTs,source:"chainlink_twap60"};
+      }
+      if(Object.keys(period).length!==ASSETS.length){invalidPeriods.push({periodKey,open:new Date(openTs).toISOString(),close:new Date(closeTs).toISOString(),available:Object.keys(period)});continue;}
+      historicalPeriods[periodKey]=period;
+    }
+    const totalComplete=Object.keys(historicalPeriods).length;
+    const missingAssets=ASSETS.filter(a=>assetCoverage[a.key].periods!==expectedPeriods).map(a=>({asset:a.key,periods:assetCoverage[a.key].periods,expected:expectedPeriods,missing:assetCoverage[a.key].missing}));
+    log("HISTORY_VALIDATION",{expectedPeriods,completePeriods:totalComplete,invalidPeriods:invalidPeriods.length,missingAssets,counts:historicalCounts});
+    if(totalComplete!==expectedPeriods||missingAssets.length) {
+      state.historyBootstrap.complete=false; state.historyBootstrap.validationFailed=true; state.historyBootstrap.completePeriods=totalComplete; state.historyBootstrap.invalidPeriods=invalidPeriods.slice(0,20); state.historyBootstrap.assetCoverage=assetCoverage;
+      state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0])); state.periods={}; state.leader=null; saveState();
+      log("HISTORY_BOOTSTRAP_INCOMPLETE",{reason:"every_asset_every_period_required",expectedPeriods,completePeriods:totalComplete,missingAssets,retry:true}); return false;
+    }
+    state.periods=historicalPeriods; state.counts=historicalCounts; state.leader=ranking()[0];
+    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:true,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completePeriods:totalComplete,observations:expectedPeriods*ASSETS.length,assetCoverage,source:"Chainlink Data Streams REST bulk TWAP60",completedAt:nowIso()};
+    saveState(); snapshot("HISTORY_BOOTSTRAP_COMPLETE");
+    log("HISTORY_BOOTSTRAP_COMPLETE",{periods:totalComplete,expectedPeriods,counts:state.counts,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),source:"Chainlink Data Streams REST bulk TWAP60"});
+    return true;
+  } finally { historicalBootstrapRunning=false; }
 }
 
 async function processClosedPeriod() {
@@ -605,9 +543,9 @@ async function processClosedPeriod() {
       missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
     }
-    const winner = close.value >= open.value ? "Up" : "Down";
+    const winner = exactToBigInt(close.exact) >= exactToBigInt(open.exact) ? "Up" : "Down";
     results[asset.key] = {
-      winner, open:open.value, close:close.value, change:close.value-open.value,
+      winner, open:open.value, close:close.value, openExact:open.exact, closeExact:close.exact, change:close.value-open.value,
       openTimestamp:open.ts, closeTimestamp:close.ts
     };
   }
@@ -777,7 +715,14 @@ async function main() {
   if (state.version !== VERSION) {
     snapshot("PRE_VERSION_CHANGE");
     log("VERSION_CHANGE", { from:state.version||"unknown", to:VERSION });
-    state.version = VERSION; saveState();
+    state.version = VERSION;
+    state.historyBootstrap = null;
+    state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+    state.periods = {};
+    state.periodAlerted = {};
+    state.leader = null;
+    state.lastProcessedPeriod = null;
+    saveState();
   }
 
   log("MONITOR_STARTING", {
@@ -788,10 +733,10 @@ async function main() {
 
   startHealth();
 
-  // Start RTDS immediately. Historical bootstrap is deliberately non-blocking:
-  // a slow/free-tier historical source must never prevent live 5m alerts.
+  // Live TWAP collection may start immediately, but Telegram alerts remain
+  // strictly gated until the complete Chainlink historical baseline validates.
   connectRtds();
-  log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
+  log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_historical_baseline_required" });
   await poll();
   setInterval(poll, POLL_MS);
 
@@ -801,23 +746,19 @@ async function main() {
       if (ready) {
         historyReady = true;
         log("HISTORY_BOOTSTRAP_APPLIED", {
-          counts:state.counts,
-          leader:state.leader
+          counts:state.counts, leader:state.leader,
+          periods:state.historyBootstrap?.completePeriods || 0
         });
         await poll();
         return;
       }
       log("HISTORY_BOOTSTRAP_DEFERRED", {
-        reason:"historical_bootstrap_incomplete",
-        action:"retry_in_30s",
-        counts:state.counts
+        reason:"chainlink_historical_baseline_incomplete",
+        action:"retry_in_30s", counts:state.counts
       });
       setTimeout(runHistoricalBootstrap, 30_000);
     } catch (e) {
-      log("HISTORY_BOOTSTRAP_FATAL", {
-        error:String(e.stack||e),
-        action:"retry_in_30s"
-      });
+      log("HISTORY_BOOTSTRAP_FATAL", { error:String(e.stack||e), action:"retry_in_30s" });
       setTimeout(runHistoricalBootstrap, 30_000);
     }
   };
