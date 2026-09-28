@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.8";
+const VERSION = "4.0.9";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -245,7 +245,10 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+      signal: controller.signal,
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: false })
@@ -257,9 +260,15 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
     }
     let data = null;
     try { data = await r.json(); } catch {}
+    clearTimeout(timeout);
+    if (!data || data.ok !== true) {
+      log("TELEGRAM_ERROR", { kind, status: r.status, body: JSON.stringify(data).slice(0, 1000) });
+      return false;
+    }
     log("TELEGRAM_SENT", { kind, messageId: data?.result?.message_id || null });
     return true;
   } catch (e) {
+    clearTimeout(timeout);
     log("TELEGRAM_ERROR", { kind, error: String(e.message || e) });
     return false;
   }
