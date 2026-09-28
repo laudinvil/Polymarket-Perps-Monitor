@@ -527,7 +527,7 @@ async function backfill(state) {
       "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
       "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
 
-    const rows = await getJson(url);
+    let rows;\n    try {\n      rows = await getJson(url);\n    } catch (e) {\n      log("BACKFILL_PAGE_ERROR", { pages, offset, error: String(e.message || e) });\n      state.counts = counts;\n      state.initialized = true;\n      state.lastBackfillAt = nowIso();\n      state.backfillIncomplete = true;\n      await saveState(state);\n      log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason: String(e.message || e) });\n      return state;\n    }
     if (!Array.isArray(rows) || rows.length === 0) break;
     pages++;
 
