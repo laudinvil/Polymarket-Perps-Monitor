@@ -697,7 +697,6 @@ async function processClosedPeriod(state) {
     await saveState(state);
     log("TELEGRAM_ERROR", { period: periodKey, error: String(e.message || e) });
   }
-}
 
   } finally { cycleBusy = false; }
 }
