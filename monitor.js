@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.0";
+const VERSION = "4.0.1";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -27,7 +27,7 @@ let reconnectTimer = null;
 let heartbeatTimer = null;
 let connected = false;
 let state = null;
-let lastCycle = 0;
+let collectionStartedAt = null;
 const latest = new Map();
 const history = new Map();
 
@@ -108,6 +108,7 @@ function startHealth() {
         version: VERSION,
         source: "Polymarket RTDS Chainlink TWAP60",
         websocket: connected,
+        collectionStartedAt,
         pollingMs: POLL_MS,
         assets: ASSETS.map(a => ({
           asset: a.key,
@@ -154,6 +155,13 @@ function connectRtds() {
 
   ws.on("open", () => {
     connected = true;
+    if (!collectionStartedAt) {
+      collectionStartedAt = Date.now();
+      log("COLLECTION_STARTED", {
+        at: collectionStartedAt,
+        nextPeriodStart: currentPeriodStart() + PERIOD_MS
+      });
+    }
     log("RTDS_CONNECTED");
 
     const subscriptions = ASSETS.map(a => ({
@@ -208,13 +216,7 @@ function connectRtds() {
     const value = Number(exact) / 1e18;
     if (!Number.isFinite(value)) return;
 
-    const point = {
-      ts,
-      value,
-      exact,
-      receivedAt: Date.now()
-    };
-
+    const point = { ts, value, exact, receivedAt: Date.now() };
     latest.set(asset.key, point);
 
     let arr = history.get(asset.key);
@@ -338,8 +340,25 @@ async function processClosedPeriod() {
   const periodKey = "period-" + Math.floor(closedStart / 1000);
 
   if (state.periods[periodKey]) return;
-  if (closedStart <= lastCycle) return;
-  lastCycle = closedStart;
+
+  // Never try to reconstruct a period that began before this monitor
+  // started receiving RTDS data. It cannot have a trustworthy opening point.
+  if (collectionStartedAt && closedStart < collectionStartedAt) {
+    if (!state.skippedStartupPeriods) state.skippedStartupPeriods = {};
+    if (!state.skippedStartupPeriods[periodKey]) {
+      state.skippedStartupPeriods[periodKey] = {
+        reason: "started_before_rtds_collection",
+        skippedAt: nowIso()
+      };
+      saveState();
+      log("PERIOD_SKIPPED_STARTUP", {
+        periodKey,
+        closedStart,
+        collectionStartedAt
+      });
+    }
+    return;
+  }
 
   const closeBoundary = start;
   const results = {};
@@ -374,7 +393,8 @@ async function processClosedPeriod() {
     log("PERIOD_WAIT", {
       periodKey,
       reason: "missing_twap60_boundary",
-      missing
+      missing,
+      retry: true
     });
     return;
   }
@@ -388,11 +408,13 @@ async function processClosedPeriod() {
   state.leader = ranking()[0];
   saveState();
 
+  // The next tradable 5m market begins exactly at the close boundary
+  // of the period we just evaluated.
+  const nextStart = start;
   const top = state.leader;
-  const nextStart = start + PERIOD_MS;
   const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
 
-  let market = await gammaMarket(nextSlug);
+  const market = await gammaMarket(nextSlug);
   const link = market?.slug
     ? "https://polymarket.com/event/" + market.slug
     : "https://polymarket.com/event/" + nextSlug;
@@ -419,7 +441,8 @@ async function processClosedPeriod() {
     counts: state.counts,
     leader: top,
     telegram: sent,
-    source: "crypto_prices_twap_sixty"
+    source: "crypto_prices_twap_sixty",
+    marketSlug: market?.slug || null
   });
 
   snapshot("POST_PERIOD_" + periodKey);
@@ -463,7 +486,6 @@ async function main() {
 
   startHealth();
   connectRtds();
-
   await poll();
 
   setInterval(poll, POLL_MS);
@@ -472,6 +494,7 @@ async function main() {
     log("HEARTBEAT", {
       websocket: connected,
       pollingMs: POLL_MS,
+      collectionStartedAt,
       latest: Object.fromEntries(
         ASSETS.map(a => [a.key, latest.get(a.key) || null])
       ),
