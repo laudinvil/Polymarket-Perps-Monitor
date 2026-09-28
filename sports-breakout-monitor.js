@@ -209,15 +209,18 @@ function updateCompression(key, live, market) {
     if (max - min > MAX_COMPRESSION_RANGE) continue;
 
     const current = values[values.length - 1];
-    const previous = values.slice(0, -1).reduce((a, b) => Math.max(a, b), -Infinity);
-    const previousMin = values.slice(0, -1).reduce((a, b) => Math.min(a, b), Infinity);
+    const previousValues = values.slice(0, -1);
+    if (previousValues.length < 5) continue;
+    const previousMax = Math.max(...previousValues);
+    const previousMin = Math.min(...previousValues);
+    const previousRange = previousMax - previousMin;
 
     let direction = null;
     let breakoutPrice = null;
-    if (current >= max && current - previousMin >= BREAKOUT_CONFIRM_PRICE && current - min >= BREAKOUT_CONFIRM_PRICE) {
+    if (previousRange <= MAX_COMPRESSION_RANGE && current >= previousMax + BREAKOUT_CONFIRM_PRICE) {
       direction = "UP";
       breakoutPrice = current;
-    } else if (current <= min && previous - current >= BREAKOUT_CONFIRM_PRICE && max - current >= BREAKOUT_CONFIRM_PRICE) {
+    } else if (previousRange <= MAX_COMPRESSION_RANGE && current <= previousMin - BREAKOUT_CONFIRM_PRICE) {
       direction = "DOWN";
       breakoutPrice = current;
     }
