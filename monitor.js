@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.11";
+const VERSION = "7.5.12";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1228,10 +1228,10 @@ async function processClosedPeriodAt(forcedStart = null) {
   state.leader = ranking()[0];
   saveState();
 
-  // Never send a trading alert from a partial 5m period. The alert must
-  // contain all seven assets; partial results remain persisted and are merged
-  // when the missing TWAP60 boundaries arrive.
-  if (!newlyComplete) {
+  // Do not wait indefinitely for a late asset. The cumulative alert can
+  // be sent once the period has at least one authoritative TWAP60 result;
+  // missing assets remain retryable and are added on later polls.
+  if (!newlyComplete && Object.keys(newResults).length === 0) {
     // Avoid writing the same diagnostic every 10 seconds. Blitz has no
     // request/credit meter, but unnecessary persistent log writes consume
     // storage and I/O.
@@ -1241,14 +1241,13 @@ async function processClosedPeriodAt(forcedStart = null) {
       saveState();
       log("PERIOD_WAIT", {
         periodKey,
-        reason:"period_partial_waiting_for_all_assets",
+        reason:"period_waiting_for_more_assets",
         available:Object.keys(mergedResults),
         missing:ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key),
         counts:state.counts,
         retry:true
       });
     }
-    return;
   }
 
   // A cumulative alert is only valid after the authoritative historical
