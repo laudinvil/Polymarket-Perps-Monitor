@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "8.1.1";
+const VERSION = "8.2.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -137,6 +137,32 @@ function sideLabel(side) {
   return String(side || "LIQUIDATED").toUpperCase();
 }
 
+async function claimSharedEvent(key) {
+  const url = process.env.DEDUPE_CLAIM_URL;
+  const secret = process.env.DEDUPE_CLAIM_SECRET;
+  if (!url) return true;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(secret ? { authorization: "Bearer " + secret } : {})
+      },
+      body: JSON.stringify({ key, ttlSeconds: 120 }),
+      signal: AbortSignal.timeout(2000)
+    });
+    if (!response.ok) {
+      log("DEDUPE_CLAIM_ERROR", { status: response.status, key });
+      return false;
+    }
+    const body = await response.json().catch(() => ({}));
+    return body.claimed === true || body.ok === true;
+  } catch (e) {
+    log("DEDUPE_CLAIM_ERROR", { error: String(e.message || e), key });
+    return false;
+  }
+}
+
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -214,6 +240,11 @@ async function processFeed() {
     if (eventMs === null || eventMs < monitorStartedAtMs) continue;
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
+
+    // The local seen-set is only a fast-path. Overlapping GitHub runners
+    // require a shared lease to prevent duplicate Telegram alerts.
+    const lease = await claimSharedEvent(key);
+    if (!lease) continue;
 
     remember(key);
     seen.add(key);
