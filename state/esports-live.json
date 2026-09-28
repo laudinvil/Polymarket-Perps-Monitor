@@ -810,1058 +810,31 @@
       }
     }
   },
-  "updatedAt": "2026-09-28T04:07:46.431Z",
+  "updatedAt": "2026-09-28T04:09:04.198Z",
   "stage": "POLL_RESULT",
   "runId": "36364936962",
   "sha": "f89921a32f721c5bbda3257640b0f8df2a64906d",
   "telemetry": {
     "startedAt": "2026-09-28T01:10:14.568Z",
-    "events": 10175,
-    "polls": 274,
+    "events": 10241,
+    "polls": 276,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 1582,
-      "HTTP_RESPONSE": 1582,
-      "HTTP_JSON": 1395,
-      "GAME1_EVIDENCE": 4918,
+      "HTTP_REQUEST": 1591,
+      "HTTP_RESPONSE": 1591,
+      "HTTP_JSON": 1404,
+      "GAME1_EVIDENCE": 4956,
       "HTTP_NONRETRYABLE": 186,
       "HTTP_ERROR": 186,
       "GAME_DETAILS_ERROR": 94,
-      "POLL_RESULT": 137,
+      "POLL_RESULT": 138,
       "BO3GG_API_V2_ERROR": 1,
       "GAME_SCORE_ENRICH_ERROR": 92,
       "HTTP_RETRY": 1
     },
     "recent": [
-      {
-        "ts": "2026-09-28T04:06:26.939Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1661632",
-          "gameId": "228978",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:27.556Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1661631",
-          "gameId": "228975",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:28.178Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1714933",
-          "gameId": "52331",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:28.180Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712192",
-          "gameId": "233328",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:28.784Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700639",
-          "gameId": "232492",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:29.396Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1691676",
-          "gameId": "284095",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:29.397Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711030",
-          "gameId": "8095",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:29.399Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711027",
-          "gameId": "8086",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:29.402Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700599",
-          "gameId": "232402",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:30.014Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711031",
-          "gameId": "8098",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:30.016Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711028",
-          "gameId": "8089",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:30.018Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711998",
-          "gameId": "739860",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:30.020Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711032",
-          "gameId": "8101",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:30.021Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711029",
-          "gameId": "8092",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:06:31.529Z",
-        "event": "POLL_RESULT",
-        "data": {
-          "diagnostics": {
-            "events": 501,
-            "candidates": 398,
-            "livesFetched": 0,
-            "liveScoresObserved": 0,
-            "map1ScoreFound": 0,
-            "map1ScoreUnavailable": 0,
-            "map1ScoreSource": null,
-            "hltvFallbackMatches": 0,
-            "hltvFallbackMisses": 0,
-            "hltvFallbackErrors": 0,
-            "hltvResultsMatches": 0,
-            "hltvResultsMisses": 0,
-            "hltvResultsErrors": 0,
-            "bo3FallbackMatches": 0,
-            "bo3FallbackMisses": 19,
-            "bo3FallbackErrors": 0,
-            "polyHydrateAttempts": 56,
-            "polyFastMatched": 0,
-            "polySearchCalls": 46,
-            "matchedPoly": 38,
-            "finishedGamesFound": 0,
-            "map1Finished": 0,
-            "gameDetailsRequested": 0,
-            "gameDetailsWinnerOnlyRequested": 0,
-            "gameScoreFound": 0,
-            "gameWinnerFound": 0,
-            "winnerOnlyRejected": 0,
-            "marginUnavailable": 0,
-            "signalChecks": 0,
-            "fallbackSignalPass": 0,
-            "balancedPrePass": 0,
-            "movePass": 0,
-            "postRangePass": 0,
-            "mapFilterPass": 0,
-            "signalPass": 0,
-            "alertsSent": 0,
-            "alreadyAlerted": 0,
-            "noMarketUrl": 0,
-            "rejects": [],
-            "sourceErrors": 0,
-            "bo3ApiV2Misses": 19,
-            "bo3PageMisses": 19,
-            "hltvApiErrors": 19
-          },
-          "config": {
-            "minPreFavorite": 0.2,
-            "maxPreFavorite": 0.8,
-            "minMove": 0.01,
-            "minPostFavorite": 0.51,
-            "maxPostFavorite": 1,
-            "minMapMargin": 2,
-            "minMapMarginRatio": 0.25,
-            "requireMapMargin": false,
-            "maxUpcomingHours": 24
-          }
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.567Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.568Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.569Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.569Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.876Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 307
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.962Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 394
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:31.962Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "kind": "array",
-          "count": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.018Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.019Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.019Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 450
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.019Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/lives",
-          "kind": "array",
-          "count": 0
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.040Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 21
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.064Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 497
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.106Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.625Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.625Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:32.826Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 201
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:33.383Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:33.383Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:33.584Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 201
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:33.922Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:33.922Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.167Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 245
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.502Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.502Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.707Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 205
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.934Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.941Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637686",
-          "gameId": "18334",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.943Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711996",
-          "gameId": "739854",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.945Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1697653",
-          "gameId": "284306",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:34.947Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712147",
-          "gameId": "233241",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:35.732Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700472",
-          "gameId": "232090",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:36.362Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1684183",
-          "gameId": "231249",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:36.992Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1683303",
-          "gameId": "231001",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:37.587Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637687",
-          "gameId": "18339",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:37.589Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713028",
-          "gameId": "30807",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:37.593Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1704623",
-          "gameId": "232830",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:38.179Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1697654",
-          "gameId": "284311",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:38.180Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713029",
-          "gameId": "30814",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:38.182Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712148",
-          "gameId": "233244",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:38.770Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1683304",
-          "gameId": "231004",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:39.364Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700473",
-          "gameId": "232093",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:39.951Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1689003",
-          "gameId": "231611",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:40.538Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1684184",
-          "gameId": "231252",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:41.110Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637688",
-          "gameId": "18344",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:41.113Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1714226",
-          "gameId": "233406",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:41.697Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713030",
-          "gameId": "30821",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:41.701Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700474",
-          "gameId": "232096",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:42.296Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1714923",
-          "gameId": "52316",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:42.302Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1661630",
-          "gameId": "228972",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-28T04:07:42.893Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700475",
-          "gameId": "232099",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
       {
         "ts": "2026-09-28T04:07:43.476Z",
         "event": "GAME1_EVIDENCE",
@@ -2127,11 +1100,1038 @@
           },
           "finished": false
         }
+      },
+      {
+        "ts": "2026-09-28T04:07:47.701Z",
+        "event": "POLL_RESULT",
+        "data": {
+          "diagnostics": {
+            "events": 501,
+            "candidates": 398,
+            "livesFetched": 0,
+            "liveScoresObserved": 0,
+            "map1ScoreFound": 0,
+            "map1ScoreUnavailable": 0,
+            "map1ScoreSource": null,
+            "hltvFallbackMatches": 0,
+            "hltvFallbackMisses": 0,
+            "hltvFallbackErrors": 0,
+            "hltvResultsMatches": 0,
+            "hltvResultsMisses": 0,
+            "hltvResultsErrors": 0,
+            "bo3FallbackMatches": 0,
+            "bo3FallbackMisses": 19,
+            "bo3FallbackErrors": 0,
+            "polyHydrateAttempts": 56,
+            "polyFastMatched": 0,
+            "polySearchCalls": 46,
+            "matchedPoly": 38,
+            "finishedGamesFound": 0,
+            "map1Finished": 0,
+            "gameDetailsRequested": 0,
+            "gameDetailsWinnerOnlyRequested": 0,
+            "gameScoreFound": 0,
+            "gameWinnerFound": 0,
+            "winnerOnlyRejected": 0,
+            "marginUnavailable": 0,
+            "signalChecks": 0,
+            "fallbackSignalPass": 0,
+            "balancedPrePass": 0,
+            "movePass": 0,
+            "postRangePass": 0,
+            "mapFilterPass": 0,
+            "signalPass": 0,
+            "alertsSent": 0,
+            "alreadyAlerted": 0,
+            "noMarketUrl": 0,
+            "rejects": [],
+            "sourceErrors": 0,
+            "bo3ApiV2Misses": 19,
+            "bo3PageMisses": 19,
+            "hltvApiErrors": 19
+          },
+          "config": {
+            "minPreFavorite": 0.2,
+            "maxPreFavorite": 0.8,
+            "minMove": 0.01,
+            "minPostFavorite": 0.51,
+            "maxPostFavorite": 1,
+            "minMapMargin": 2,
+            "minMapMarginRatio": 0.25,
+            "requireMapMargin": false,
+            "maxUpcomingHours": 24
+          }
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.750Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.751Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.752Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.752Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/lives",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.863Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 111
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.912Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.912Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:47.957Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 45
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.008Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.153Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 402
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.154Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
+          "kind": "array",
+          "count": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.179Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/lives",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 426
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.179Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/lives",
+          "kind": "array",
+          "count": 0
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.265Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 515
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.825Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:48.825Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:49.059Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 234
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:49.616Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:49.616Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:49.804Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 188
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.142Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.142Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.352Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 210
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.688Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.688Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:50.904Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 216
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:51.129Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
+          "kind": "array",
+          "count": 100
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:51.138Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1637686",
+          "gameId": "18334",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:51.140Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711996",
+          "gameId": "739854",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:51.142Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1697653",
+          "gameId": "284306",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:51.144Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1712147",
+          "gameId": "233241",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:52.575Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700472",
+          "gameId": "232090",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:53.235Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1684183",
+          "gameId": "231249",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:53.847Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1683303",
+          "gameId": "231001",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:54.901Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1637687",
+          "gameId": "18339",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:54.904Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1713028",
+          "gameId": "30807",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:54.909Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1704623",
+          "gameId": "232830",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:55.454Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1697654",
+          "gameId": "284311",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:55.456Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1713029",
+          "gameId": "30814",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:55.459Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1712148",
+          "gameId": "233244",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:56.028Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1683304",
+          "gameId": "231004",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:56.664Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700473",
+          "gameId": "232093",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:57.310Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1689003",
+          "gameId": "231611",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:58.072Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1684184",
+          "gameId": "231252",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:58.676Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1637688",
+          "gameId": "18344",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:58.679Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1714226",
+          "gameId": "233406",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:59.425Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1713030",
+          "gameId": "30821",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:59.430Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700474",
+          "gameId": "232096",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:59.922Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1714923",
+          "gameId": "52316",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:08:59.929Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1661630",
+          "gameId": "228972",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:00.421Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700475",
+          "gameId": "232099",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:00.938Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1661632",
+          "gameId": "228978",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:01.567Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1661631",
+          "gameId": "228975",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:02.190Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1714933",
+          "gameId": "52331",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:02.192Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1712192",
+          "gameId": "233328",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:02.853Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700639",
+          "gameId": "232492",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:03.559Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1691676",
+          "gameId": "284095",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:03.561Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711030",
+          "gameId": "8095",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:03.563Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711027",
+          "gameId": "8086",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:03.565Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700599",
+          "gameId": "232402",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:04.190Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711031",
+          "gameId": "8098",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:04.191Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711028",
+          "gameId": "8089",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:04.194Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711998",
+          "gameId": "739860",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:04.196Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711032",
+          "gameId": "8101",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T04:09:04.198Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711029",
+          "gameId": "8092",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
       }
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-28T04:07:46.431Z"
+    "updatedAt": "2026-09-28T04:09:04.198Z"
   },
   "diagnostics": {
     "events": 501,
