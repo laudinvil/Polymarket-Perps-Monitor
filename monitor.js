@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.8";
+const VERSION = "4.1.9";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -383,6 +383,17 @@ async function processClosedPeriod() {
   state.leader = ranking()[0];
   saveState();
 
+  // If a period is complete but Telegram was unavailable, retry it on every
+  // 10-second cycle. Do not require another RTDS observation.
+  const alertAttempt = state.periodAlerted?.[periodKey]?.attempts || 0;
+  state.periodAlerted = state.periodAlerted || {};
+  state.periodAlerted[periodKey] = {
+    ...(state.periodAlerted[periodKey] || {}),
+    attempts: alertAttempt + 1,
+    lastAttemptAt: nowIso()
+  };
+  saveState();
+
   const nextStart = start;
   const top = state.leader;
   const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
@@ -408,8 +419,12 @@ async function processClosedPeriod() {
 
   const sent = await sendTelegram(lines.join("\n"), "PERIOD_ALERT");
   if (sent) {
-    state.periodAlerted = state.periodAlerted || {};
-    state.periodAlerted[periodKey] = { sentAt: nowIso(), complete: newlyComplete };
+    state.periodAlerted[periodKey] = {
+      ...(state.periodAlerted[periodKey] || {}),
+      sentAt: nowIso(),
+      complete: newlyComplete,
+      sent: true
+    };
     saveState();
   }
   log("PERIOD_PROCESSED", {
