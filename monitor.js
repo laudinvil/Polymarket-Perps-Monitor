@@ -228,6 +228,7 @@ async function restoreAndMigrate() {
 }
 
 async function getJson(url, headers = {}) {
+  if (url.startsWith(API)) await pace("gamma");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
@@ -332,7 +333,7 @@ async function fetchChainlinkReport(feedId, timestamp) {
   const targetSec = Math.floor(timestamp / 1000);
   const cacheKey = feedId + ":" + targetSec;
   if (reportCache.has(cacheKey)) return reportCache.get(cacheKey);
-  const offsets = [0, -1, 1, -2, 2, -5, 5, -10, 10, -30, 30, -60, 60];
+  const offsets = [0, -1, -2, -5, -10, -30, -60];
   const candidates = [];
   const seen = new Set();
 
@@ -352,6 +353,7 @@ async function fetchChainlinkReport(feedId, timestamp) {
       };
       if (!Number.isFinite(report.validFromTimestamp) || !Number.isFinite(report.observationsTimestamp)) continue;
       candidates.push({ requested, report });
+      if (report.validFromTimestamp <= targetSec && report.observationsTimestamp <= targetSec) break;
     } catch {}
   }
 
@@ -549,10 +551,10 @@ async function processClosedPeriod(state) {
   const now = Date.now();
   const currentStart = Math.floor(now / 300000) * 300000;
   const periodStart = currentStart - 300000;
-  if (periodStart < START_MS) { cycleBusy = false; return; }
+  if (periodStart < START_MS) return;
 
   const periodKey = "period-" + Math.floor(periodStart / 1000);
-  if (state.periods[periodKey]) { cycleBusy = false; return; }
+  if (state.periods[periodKey]) return;
 
   const results = {};
   for (const asset of ASSETS) {
