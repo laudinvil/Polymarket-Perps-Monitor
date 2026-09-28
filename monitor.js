@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.1";
+const VERSION = "4.1.2";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -299,12 +299,17 @@ async function processClosedPeriod() {
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
 
-  if (state.periods[periodKey]) return;
+  const savedPeriod = state.periods[periodKey];
+  if (savedPeriod && Object.keys(savedPeriod).length >= ASSETS.length) return;
 
-  // Do not permanently discard a period when only part of the asset set was available.
-  // This allows late TWAP60 streams to complete the same period on a later poll.
-  if (state.periods[periodKey] && Object.keys(state.periods[periodKey]).length < ASSETS.length) {
+  // Partial periods remain retryable so late TWAP60 data can complete them.
+  if (savedPeriod && Object.keys(savedPeriod).length < ASSETS.length) {
     delete state.periods[periodKey];
+    saveState();
+    log("PERIOD_RETRY_PARTIAL", {
+      periodKey,
+      savedAssets: Object.keys(savedPeriod)
+    });
   }
 
   if (collectionStartedAt && closedStart < collectionStartedAt) {
