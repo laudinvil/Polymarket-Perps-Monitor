@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.6.2";
+const VERSION = "4.6.3";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -330,7 +330,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-v1";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-markets-v2";
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
 
 function parseJsonField(value, fallback = []) {
@@ -362,7 +362,7 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
   const limit = 500;
 
   while (true) {
-    const url = GAMMA + "/events?series_slug=" + encodeURIComponent(slug)
+    const url = GAMMA + "/markets?series_slug=" + encodeURIComponent(slug)
       + "&closed=true&limit=" + limit
       + "&offset=" + offset
       + "&order=endDate&ascending=true";
@@ -371,22 +371,21 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
     try {
       const r = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
       if (!r.ok) {
-        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset });
+        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset, endpoint:"markets" });
         break;
       }
       const data = await r.json();
-      const events = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-      if (!events.length) break;
+      const markets = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      if (!markets.length) break;
 
       let reachedFuture = false;
-      for (const event of events) {
-        const startMs = Date.parse(event.startDate || event.eventStartTime || "");
-        const endMs = Date.parse(event.endDate || "");
+      for (const market of markets) {
+        const startMs = Date.parse(market.startDate || market.eventStartTime || "");
+        const endMs = Date.parse(market.endDate || "");
         if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
         if (endMs < HISTORY_START_MS) continue;
         if (startMs >= cutoffMs) { reachedFuture = true; break; }
 
-        const market = Array.isArray(event.markets) ? event.markets[0] : null;
         const winner = resolvedWinner(market);
         if (!winner) continue;
 
@@ -398,10 +397,10 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         });
       }
 
-      if (reachedFuture || events.length < limit) break;
+      if (reachedFuture || markets.length < limit) break;
       offset += limit;
     } catch (e) {
-      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e) });
+      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e), endpoint:"markets" });
       break;
     } finally {
       clearTimeout(timer);
@@ -410,7 +409,6 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
 
   return all;
 }
-
 async function bootstrapHistoricalCounts() {
   state.historyBootstrap = state.historyBootstrap || {};
   if (state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION && state.historyBootstrap.complete === true) {
