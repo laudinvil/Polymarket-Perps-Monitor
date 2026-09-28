@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.6.0";
+const MONITOR_VERSION = "2.7.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -538,34 +538,42 @@ async function fetchMarketBySlug(slug) {
   return market;
 }
 
-async function getBackfillPage(url, pages, offset, state) {
+async function getBackfillEventsPage(url, pages, offset, state) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const rows = await getJson(url);
       if (Array.isArray(rows)) {
-        log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: "gamma_markets_date_window", rows: rows.length });
+        log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: "gamma_events_date_windows", rows: rows.length });
         return rows;
       }
       throw new Error("invalid_response");
     } catch (e) {
       const reason = String(e.message || e);
-      log("BACKFILL_RETRY", {
-        pages,
-        offset,
-        attempt,
-        source: "gamma_markets_date_window",
-        error: reason
-      });
+      log("BACKFILL_RETRY", { pages, offset, attempt, source: "gamma_events_date_windows", error: reason });
       if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
     }
   }
-
-  const reason = "gamma_page_failed";
   state.backfillIncomplete = true;
   state.lastBackfillAt = nowIso();
   await saveState(state);
-  log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
+  log("BACKFILL_PAGE_ERROR", { pages, offset, error: "gamma_events_page_failed" });
   return null;
+}
+
+function collectTargetMarketsFromEvents(events) {
+  const out = [];
+  for (const event of events) {
+    const markets = Array.isArray(event?.markets) ? event.markets : [];
+    for (const market of markets) {
+      for (const asset of ASSETS) {
+        if (isTargetMarket(market, asset)) {
+          out.push({ asset, market });
+          break;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 async function backfill(state) {
@@ -574,92 +582,72 @@ async function backfill(state) {
   log("BACKFILL_START", {
     start: new Date(START_MS).toISOString(),
     assets: ASSETS.map(a => a.key),
-    source: "gamma_markets_date_windows",
-    verification: "polymarket_finalized_settlement"
+    source: "gamma_events_official_settlement",
+    verification: "official_polymarket_winner",
+    chainlinkRole: "live_and_closed_period_verification"
   });
 
   const counts = state.backfillCounts && typeof state.backfillCounts === "object"
     ? Object.fromEntries(ASSETS.map(a => [a.key, Number(state.backfillCounts[a.key] || 0)]))
     : Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-  const seen = new Set();
+  const processedMarkets = new Set(Array.isArray(state.backfillProcessedMarkets) ? state.backfillProcessedMarkets : []);
   const endMs = Math.floor(Date.now() / 300000) * 300000;
   const windowMs = 24 * 60 * 60 * 1000;
-  let cursorMs = Number.isFinite(Number(state.backfillCursorMs)) && Number(state.backfillCursorMs) >= START_MS
-    ? Number(state.backfillCursorMs)
-    : START_MS;
-  let windows = 0;
-  let pages = 0;
+  let cursorMs = Number.isFinite(Number(state.backfillCursorMs)) && Number(state.backfillCursorMs) >= START_MS ? Number(state.backfillCursorMs) : START_MS;
+  let windows = Number(state.backfillWindows || 0);
+  let pages = Number(state.backfillPages || 0);
 
   while (cursorMs < endMs) {
     const windowEndMs = Math.min(cursorMs + windowMs, endMs);
     let offset = 0;
-
     while (true) {
-      const url = API + "/markets?closed=true&tag_slug=crypto" +
+      const url = API + "/events?closed=true&tag_slug=crypto" +
         "&start_date_min=" + encodeURIComponent(new Date(cursorMs).toISOString()) +
         "&end_date_max=" + encodeURIComponent(new Date(windowEndMs).toISOString()) +
-        "&limit=500&offset=" + offset + "&order=endDate&ascending=true";
-
-      const rows = await getBackfillPage(url, pages, offset, state);
+        "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
+      const rows = await getBackfillEventsPage(url, pages, offset, state);
       if (rows === null) return state;
       pages++;
-
-      for (const m of rows) {
-        for (const asset of ASSETS) {
-          if (!isTargetMarket(m, asset) || seen.has(asset.key + ":" + m.id)) continue;
-
-          const w = winnerOf(m);
-          if (!w) {
-            log("BACKFILL_NO_FINAL_WINNER", { asset: asset.key, marketId: m.id, slug: m.slug });
-            continue;
-          }
-
-          seen.add(asset.key + ":" + m.id);
-          counts[asset.key] += w === "Up" ? 1 : -1;
-        }
+      const targets = collectTargetMarketsFromEvents(rows);
+      let added = 0;
+      for (const { asset, market } of targets) {
+        const key = asset.key + ":" + String(market.id || market.slug);
+        if (processedMarkets.has(key)) continue;
+        const winner = winnerOf(market);
+        if (!winner) continue;
+        processedMarkets.add(key);
+        counts[asset.key] += winner === "Up" ? 1 : -1;
+        added++;
       }
-
-      log("BACKFILL_PAGE", {
-        windows,
-        pages,
-        windowStart: new Date(cursorMs).toISOString(),
-        windowEnd: new Date(windowEndMs).toISOString(),
-        offset,
-        rows: rows.length,
-        counts
-      });
-
-      if (rows.length < 500) break;
-      offset += 500;
+      log("BACKFILL_PAGE", { windows, pages, windowStart: new Date(cursorMs).toISOString(), windowEnd: new Date(windowEndMs).toISOString(), offset, events: rows.length, targetMarkets: targets.length, added, counts });
+      if (rows.length < 100) break;
+      offset += 100;
     }
-
     cursorMs = windowEndMs;
+    windows++;
     state.backfillCursorMs = cursorMs;
-    state.backfillWindows = windows + 1;
+    state.backfillWindows = windows;
+    state.backfillPages = pages;
     state.backfillCounts = counts;
+    state.backfillProcessedMarkets = Array.from(processedMarkets);
     state.backfillIncomplete = true;
     await saveState(state);
-    windows++;
   }
 
   state.counts = counts;
   state.initialized = true;
   state.backfillIncomplete = false;
   state.backfillCursorMs = endMs;
+  state.backfillWindows = windows;
+  state.backfillPages = pages;
+  state.backfillCounts = counts;
+  state.backfillProcessedMarkets = Array.from(processedMarkets);
   state.lastBackfillAt = nowIso();
-  state.backfillSource = "gamma_markets_date_windows";
+  state.backfillSource = "gamma_events_official_settlement";
   await saveState(state);
-  log("BACKFILL_DONE", {
-    windows,
-    pages,
-    counts,
-    source: "gamma_markets_date_windows",
-    verification: "polymarket_finalized_settlement",
-    liveVerification: "chainlink_twap60"
-  });
+  log("BACKFILL_DONE", { windows, pages, counts, processedMarkets: processedMarkets.size, source: "gamma_events_official_settlement", verification: "official_polymarket_winner", chainlinkRole: "live_and_closed_period_verification" });
   return state;
 }
-
 function ranking(counts) {
   return ASSETS.map(a => ({ asset: a.key, score: Number(counts[a.key] || 0) }))
     .sort((a, b) => Math.abs(b.score) - Math.abs(a.score) || a.asset.localeCompare(b.asset));
