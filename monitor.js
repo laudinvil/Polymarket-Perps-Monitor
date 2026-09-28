@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.4.0";
+const VERSION = "7.4.1";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -51,7 +51,8 @@ function defaultState() {
     periods: {}, lastProcessedPeriod: null, leader: null,
     updatedAt: nowIso(), source: "Polymarket RTDS Chainlink TWAP60",
     pollingMs: POLL_MS,
-    historyBootstrap: null
+    historyBootstrap: null,
+    liveBoundaryCache: {}
   };
 }
 
@@ -211,6 +212,34 @@ function connectAssetRtds(asset) {
     const last = arr[arr.length - 1];
     if (!last || ts > last.ts) arr.push(point);
 
+    // Persist only the boundary candidates needed to survive a restart.
+    // Keep two points per asset: the nearest observation to each 5m boundary
+    // (one boundary can serve as the close of one period and open of the next).
+    state.liveBoundaryCache = state.liveBoundaryCache || {};
+    const periodStart = Math.floor(ts / PERIOD_MS) * PERIOD_MS;
+    const boundaryCandidates = [periodStart, periodStart + PERIOD_MS];
+    let cacheChanged = false;
+    for (const boundary of boundaryCandidates) {
+      const distance = Math.abs(ts - boundary);
+      if (distance > LIVE_BOUNDARY_LOOKBACK_MS) continue;
+      const key = String(boundary);
+      const prev = state.liveBoundaryCache[key]?.[asset.key];
+      if (!prev || Math.abs(prev.ts - boundary) > distance) {
+        if (!state.liveBoundaryCache[key]) state.liveBoundaryCache[key] = {};
+        state.liveBoundaryCache[key][asset.key] = point;
+        cacheChanged = true;
+      }
+    }
+    // Prune old boundary snapshots; only the current and previous period are needed.
+    const minBoundary = periodStart - 2 * PERIOD_MS;
+    for (const key of Object.keys(state.liveBoundaryCache)) {
+      if (Number(key) < minBoundary) {
+        delete state.liveBoundaryCache[key];
+        cacheChanged = true;
+      }
+    }
+    if (cacheChanged) state.liveBoundaryCacheDirty = true;
+
     const cutoff = Date.now() - 12 * 60 * 1000;
     while (arr.length && arr[0].ts < cutoff) arr.shift();
 
@@ -267,9 +296,18 @@ function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
   // the boundary anchored to the actual Chainlink observation instead of
   // waiting forever when the stream timestamp is slightly offset.
   const arr = history.get(assetKey) || [];
+  const persisted = state?.liveBoundaryCache || {};
   const select = target => {
     let selected = null;
     let bestDistance = Infinity;
+    const persistedPoint = persisted[String(target)]?.[assetKey];
+    if (persistedPoint && Number.isFinite(persistedPoint.ts)) {
+      const d = Math.abs(persistedPoint.ts - target);
+      if (d <= LIVE_BOUNDARY_LOOKBACK_MS) {
+        selected = persistedPoint;
+        bestDistance = d;
+      }
+    }
     for (const p of arr) {
       if (!p || !Number.isFinite(p.ts)) continue;
       const distance = Math.abs(p.ts - target);
@@ -1149,6 +1187,10 @@ async function poll() {
   if (!connected) connectRtds();
   try {
     await processClosedPeriod();
+    if (state.liveBoundaryCacheDirty) {
+      state.liveBoundaryCacheDirty = false;
+      saveState();
+    }
   } catch (e) {
     log("CYCLE_ERROR", { error:String(e.stack||e) });
   }
