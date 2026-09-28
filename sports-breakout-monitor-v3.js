@@ -1,6 +1,6 @@
 const http = require("http");
 
-const VERSION = "3.2.0";
+const VERSION = "3.3.0";
 const POLL_MS = 10000;
 const WINDOW_MS = 60000;
 const MAX_RANGE = 0.03;
@@ -105,7 +105,6 @@ async function clobPrice(tokenId) {
     const body = await json(CLOB_PRICE_URL + "?token_id=" + encodeURIComponent(tokenId) + "&side=BUY");
     const p = num(body?.price ?? body?.data?.price);
     return p != null && p > 0 && p < 1 ? p : null;
-    if (alertsSent > 0) pollsSinceAlert = 0;
   } catch (e) {
     log("CLOB_ERROR", { tokenId, error: String(e.message || e) });
     return null;
@@ -201,6 +200,7 @@ async function poll() {
     const live = events.filter(explicitLive);
     const candidates = liveMarkets(events);
     const ps = await prices(candidates);
+    const alertsBefore = alertsSent;
     for (const c of candidates) {
       const p = ps.get(c.key);
       if (p != null) observe(c, p);
@@ -209,6 +209,7 @@ async function poll() {
     lastError = null;
     emptyPolls = candidates.length === 0 || ps.size === 0 ? emptyPolls + 1 : 0;
     pollsSinceAlert++;
+    if (alertsSent > alertsBefore) pollsSinceAlert = 0;
     if (emptyPolls === 3) await telegram("SPORTS MONITOR DIAGNOSTIC\nNo live CLOB candidates detected after 3 polls.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size);
     if (pollsSinceAlert >= 6 && alertsSent === 0 && candidates.length > 0 && ps.size > 0) {
       await telegram("SPORTS MONITOR DIAGNOSTIC\nLive CLOB data is arriving, but no breakout alert yet.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size + "\nTRACKED: " + states.size + "\nHISTORY READY: " + Array.from(states.values()).filter(s => s.history.length >= 6).length);
