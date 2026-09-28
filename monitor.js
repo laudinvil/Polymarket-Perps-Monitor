@@ -146,7 +146,6 @@ async function backfill(state) {
         if (!w) continue;
         seen.add(m.id);
         counts[asset.key] += w === "Up" ? 1 : -1;
-        state.processed[m.slug] = w;
       }
     }
 
