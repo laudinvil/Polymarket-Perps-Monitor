@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.5.1";
+const VERSION = "4.6.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -328,6 +328,158 @@ async function sendOnlineAlert() {
   return false;
 }
 
+
+const HISTORY_START_MS = Date.UTC(2026, 7, 14);
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-v1";
+const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
+
+function parseJsonField(value, fallback = []) {
+  if (Array.isArray(value)) return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function resolvedWinner(market) {
+  const outcomes = parseJsonField(market?.outcomes);
+  const prices = parseJsonField(market?.outcomePrices);
+  if (!outcomes.length || !prices.length) return null;
+  let best = null;
+  for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
+    const label = String(outcomes[i] || "").trim().toLowerCase();
+    const price = Number(prices[i]);
+    if (!Number.isFinite(price)) continue;
+    if (!best || price > best.price) best = { label, price };
+  }
+  if (!best || best.price < 0.99) return null;
+  if (best.label === "up") return "Up";
+  if (best.label === "down") return "Down";
+  return null;
+}
+
+async function fetchHistoricalSeries(asset, cutoffMs) {
+  const slug = SERIES_SLUGS[asset.key];
+  const all = [];
+  let offset = 0;
+  const limit = 500;
+
+  while (true) {
+    const url = GAMMA + "/events?series_slug=" + encodeURIComponent(slug)
+      + "&closed=true&limit=" + limit
+      + "&offset=" + offset
+      + "&order=endDate&ascending=true";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const r = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+      if (!r.ok) {
+        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset });
+        break;
+      }
+      const data = await r.json();
+      const events = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      if (!events.length) break;
+
+      let reachedFuture = false;
+      for (const event of events) {
+        const startMs = Date.parse(event.startDate || event.eventStartTime || "");
+        const endMs = Date.parse(event.endDate || "");
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+        if (endMs < HISTORY_START_MS) continue;
+        if (startMs >= cutoffMs) { reachedFuture = true; break; }
+
+        const market = Array.isArray(event.markets) ? event.markets[0] : null;
+        const winner = resolvedWinner(market);
+        if (!winner) continue;
+
+        all.push({
+          periodKey: "period-" + Math.floor(startMs / 1000),
+          startMs,
+          endMs,
+          winner
+        });
+      }
+
+      if (reachedFuture || events.length < limit) break;
+      offset += limit;
+    } catch (e) {
+      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e) });
+      break;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return all;
+}
+
+async function bootstrapHistoricalCounts() {
+  state.historyBootstrap = state.historyBootstrap || {};
+  if (state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION && state.historyBootstrap.complete === true) {
+    return true;
+  }
+
+  const cutoffMs = currentPeriodStart();
+  log("HISTORY_BOOTSTRAP_START", {
+    version: HISTORY_BOOTSTRAP_VERSION,
+    from: new Date(HISTORY_START_MS).toISOString(),
+    to: new Date(cutoffMs).toISOString()
+  });
+
+  const historicalCounts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+  const historicalPeriods = {};
+  let total = 0;
+  let failedAssets = [];
+
+  for (const asset of ASSETS) {
+    const rows = await fetchHistoricalSeries(asset, cutoffMs);
+    if (!rows.length) failedAssets.push(asset.key);
+
+    for (const row of rows) {
+      historicalPeriods[row.periodKey] = historicalPeriods[row.periodKey] || {};
+      historicalPeriods[row.periodKey][asset.key] = {
+        winner: row.winner,
+        openTimestamp: row.startMs,
+        closeTimestamp: row.endMs
+      };
+      historicalCounts[asset.key] += row.winner === "Up" ? 1 : -1;
+      total++;
+    }
+
+    log("HISTORY_ASSET", {
+      asset: asset.key,
+      periods: rows.length,
+      count: historicalCounts[asset.key]
+    });
+  }
+
+  if (failedAssets.length) {
+    log("HISTORY_BOOTSTRAP_INCOMPLETE", { failedAssets, retry:true });
+    return false;
+  }
+
+  state.periods = { ...(state.periods || {}), ...historicalPeriods };
+  state.counts = historicalCounts;
+  state.lastProcessedPeriod = state.lastProcessedPeriod || null;
+  state.leader = ranking()[0];
+  state.historyBootstrap = {
+    version: HISTORY_BOOTSTRAP_VERSION,
+    complete: true,
+    from: new Date(HISTORY_START_MS).toISOString(),
+    to: new Date(cutoffMs).toISOString(),
+    periods: Object.keys(historicalPeriods).length,
+    observations: total,
+    completedAt: nowIso()
+  };
+  saveState();
+  snapshot("HISTORY_BOOTSTRAP_" + HISTORY_BOOTSTRAP_VERSION);
+  log("HISTORY_BOOTSTRAP_COMPLETE", {
+    periods:Object.keys(historicalPeriods).length,
+    counts:state.counts,
+    from:new Date(HISTORY_START_MS).toISOString(),
+    to:new Date(cutoffMs).toISOString()
+  });
+  return true;
+}
+
 async function processClosedPeriod() {
   const start = currentPeriodStart();
   const closedStart = start - PERIOD_MS;
@@ -541,7 +693,7 @@ async function main() {
     persistentState:true, postgres:false
   });
 
-  startHealth(); connectRtds();
+  const historyReady = await bootstrapHistoricalCounts();\n  if (!historyReady) { log("MONITOR_BLOCKED", { reason:"historical_bootstrap_incomplete" }); setTimeout(() => process.exit(1), 1000); return; }\n\n  startHealth(); connectRtds();
   log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
   await poll();
   setInterval(poll, POLL_MS);
