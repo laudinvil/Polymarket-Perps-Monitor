@@ -691,7 +691,15 @@ async function main() {
     persistentState:true, postgres:false
   });
 
-  const historyReady = await bootstrapHistoricalCounts();\n  if (!historyReady) { log("MONITOR_BLOCKED", { reason:"historical_bootstrap_incomplete" }); setTimeout(() => process.exit(1), 1000); return; }\n\n  startHealth(); connectRtds();
+  const historyReady = await bootstrapHistoricalCounts();
+  if (!historyReady) {
+    log("MONITOR_BLOCKED", { reason:"historical_bootstrap_incomplete" });
+    setTimeout(() => process.exit(1), 1000);
+    return;
+  }
+
+  startHealth();
+  connectRtds();
   log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
   await poll();
   setInterval(poll, POLL_MS);
