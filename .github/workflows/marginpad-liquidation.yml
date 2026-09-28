@@ -5,6 +5,9 @@ on:
   push:
     paths:
       - monitor-start.trigger
+  workflow_run:
+    workflows: ["MarginPad Liquidation 5M"]
+    types: [completed]
 
 concurrency:
   group: marginpad-liquidation-monitor
@@ -13,7 +16,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 350
 
     steps:
       - name: Checkout
@@ -34,9 +37,4 @@ jobs:
           STATE_FILE: /tmp/marginpad-liquidation-state.json
           LOG_FILE: /tmp/marginpad-liquidation.jsonl
         run: |
-          while true; do
-            node monitor.js
-            code=$?
-            echo "MONITOR_EXIT code=$code; restarting in 0.5s"
-            sleep 0.5
-          done
+          node monitor.js
