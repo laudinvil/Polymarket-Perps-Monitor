@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.7";
+const VERSION = "4.1.8";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -293,7 +293,11 @@ async function processClosedPeriod() {
 
   const savedPeriod = state.periods[periodKey] || {};
   const savedCount = Object.keys(savedPeriod).length;
-  if (savedCount >= ASSETS.length) return;
+  const alreadyAlerted = !!state.periodAlerted?.[periodKey];
+
+  // A complete period can still be unsent after a restart/version change.
+  // Do not return before giving the existing result one Telegram attempt.
+  if (savedCount >= ASSETS.length && alreadyAlerted) return;
 
   if (savedCount > 0) {
     log("PERIOD_RETRY_PARTIAL", {
@@ -363,7 +367,6 @@ async function processClosedPeriod() {
 
   // A period may already contain results from an earlier version/run but have
   // never produced a Telegram alert. Do not wait for another asset to arrive.
-  const alreadyAlerted = !!state.periodAlerted?.[periodKey];
   if (!Object.keys(newResults).length && alreadyAlerted) {
     log("PERIOD_WAIT", {
       periodKey,
