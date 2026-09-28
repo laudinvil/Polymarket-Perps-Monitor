@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.0";
+const VERSION = "7.5.1";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -980,8 +980,25 @@ async function bootstrapHistoricalCounts() {
 
     const result = await fetchHistoricalMarketBaseline(cutoffMs);
 
-    state.periods = result.periods;
-    state.counts = result.counts;
+    // Historical bootstrap can finish after the live 5m loop has already
+    // processed a boundary. Never overwrite live state blindly: merge the
+    // authoritative historical baseline with any live periods accumulated
+    // while the bootstrap was running.
+    const livePeriods = state.periods || {};
+    const liveAlerted = state.periodAlerted || {};
+    const mergedPeriods = { ...result.periods, ...livePeriods };
+    const mergedCounts = { ...result.counts };
+    for (const [periodKey, period] of Object.entries(livePeriods)) {
+      if (result.periods?.[periodKey]) continue;
+      for (const asset of ASSETS) {
+        if (period?.[asset.key]?.winner) {
+          mergedCounts[asset.key] += period[asset.key].winner === "Up" ? 1 : -1;
+        }
+      }
+    }
+    state.periods = mergedPeriods;
+    state.periodAlerted = liveAlerted;
+    state.counts = mergedCounts;
     state.leader = ranking()[0];
     state.historyBootstrap = {
       version: HISTORY_BOOTSTRAP_VERSION,
