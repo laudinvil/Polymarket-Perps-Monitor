@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.7.1";
+const VERSION = "4.7.2";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -30,6 +30,7 @@ let state = null;
 let collectionStartedAt = null;
 const latest = new Map();
 const history = new Map();
+let historyReady = false;
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -330,7 +331,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v9-live-first";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v10-500-gated";
 const GAMMA_MIN_INTERVAL_MS = 750;
 let gammaNextRequestAt = 0;
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
@@ -368,10 +369,10 @@ async function gammaFetch(url, options = {}) {
 async function fetchHistoricalSeries(asset, cutoffMs) {
   const slug = SERIES_SLUGS[asset.key];
   const all = [];
-  const limit = 100;
+  const limit = 500;
   let afterCursor = null;
   let pages = 0;
-  const maxPages = 500;
+  const maxPages = 100;
 
   // Gamma offset pagination is deliberately not used here. The public
   // keyset endpoint is the supported way to traverse beyond the 2,000-row
@@ -556,6 +557,13 @@ async function bootstrapHistoricalCounts() {
 }
 
 async function processClosedPeriod() {
+  if (!historyReady) {
+    log("PERIOD_WAIT", {
+      reason:"historical_bootstrap_not_ready",
+      action:"live_rtds_running_alerts_gated_until_cumulative_baseline_loaded"
+    });
+    return;
+  }
   const start = currentPeriodStart();
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
@@ -776,24 +784,33 @@ async function main() {
   await poll();
   setInterval(poll, POLL_MS);
 
-  bootstrapHistoricalCounts()
-    .then(historyReady => {
-      if (!historyReady) {
-        log("HISTORY_BOOTSTRAP_DEFERRED", {
-          reason:"historical_bootstrap_incomplete",
-          action:"keep_live_rtds_running_and_retry_next_process"
-        });
-      } else {
+  const runHistoricalBootstrap = async () => {
+    try {
+      const ready = await bootstrapHistoricalCounts();
+      if (ready) {
+        historyReady = true;
         log("HISTORY_BOOTSTRAP_APPLIED", {
           counts:state.counts,
           leader:state.leader
         });
+        await poll();
+        return;
       }
-    })
-    .catch(e => log("HISTORY_BOOTSTRAP_FATAL", {
-      error:String(e.stack||e),
-      action:"keep_live_rtds_running"
-    }));
+      log("HISTORY_BOOTSTRAP_DEFERRED", {
+        reason:"historical_bootstrap_incomplete",
+        action:"retry_in_30s",
+        counts:state.counts
+      });
+      setTimeout(runHistoricalBootstrap, 30_000);
+    } catch (e) {
+      log("HISTORY_BOOTSTRAP_FATAL", {
+        error:String(e.stack||e),
+        action:"retry_in_30s"
+      });
+      setTimeout(runHistoricalBootstrap, 30_000);
+    }
+  };
+  runHistoricalBootstrap();
 
   setInterval(() => log("HEARTBEAT", {
     websocket:connected, pollingMs:POLL_MS, collectionStartedAt,
