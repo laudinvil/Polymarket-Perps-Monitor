@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.3";
+const VERSION = "7.5.4";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1188,7 +1188,11 @@ async function processClosedPeriodAt(forcedStart = null) {
   for (const asset of ASSETS) {
     if (results[asset.key] && !savedPeriod[asset.key]) {
       newResults[asset.key] = results[asset.key];
-      state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
+      // Do not mutate the cumulative baseline while historical bootstrap is
+      // still running. Live results are persisted and merged after bootstrap.
+      if (historicalReady) {
+        state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
+      }
     }
   }
 
