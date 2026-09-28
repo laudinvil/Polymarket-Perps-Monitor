@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.8.0";
+const MONITOR_VERSION = "2.8.1";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -24,6 +24,7 @@ let lastChainlinkRequestAt = 0;
 let cycleBusy = false;
 const marketCache = new Map();
 const reportCache = new Map();
+const bulkReportCache = new Map();
 async function pace(kind) {
   const min = kind === "chainlink" ? CHAINLINK_MIN_INTERVAL_MS : GAMMA_MIN_INTERVAL_MS;
   const last = kind === "chainlink" ? lastChainlinkRequestAt : lastGammaRequestAt;
@@ -347,6 +348,44 @@ async function chainlinkJsonDirect(fullPath) {
   return getJsonWithHeaders(CHAINLINK_ENDPOINT + fullPath, hmacHeaders("GET", fullPath));
 }
 
+async function fetchChainlinkBulkReports(feedIds, timestamp) {
+  const unique = Array.from(new Set(feedIds.filter(Boolean)));
+  if (!unique.length) return new Map();
+
+  const targetSec = Math.floor(timestamp / 1000);
+  const key = targetSec + ":" + unique.join(",");
+  const cached = new Map();
+  for (const feedId of unique) {
+    const item = bulkReportCache.get(feedId + ":" + targetSec);
+    if (item) cached.set(feedId, item);
+  }
+  if (cached.size === unique.length) return cached;
+
+  const pathName = "/api/v1/reports/bulk?feedIDs=" +
+    unique.map(encodeURIComponent).join(",") + "&timestamp=" + targetSec;
+  const data = await chainlinkJsonDirect(pathName);
+  const reports = Array.isArray(data?.reports) ? data.reports : [];
+  for (const report of reports) {
+    if (!report?.feedID || !report?.fullReport) continue;
+    const normalized = {
+      feedId: report.feedID,
+      validFromTimestamp: Number(report.validFromTimestamp),
+      observationsTimestamp: Number(report.observationsTimestamp),
+      fullReport: report.fullReport,
+      requestedTimestamp: targetSec
+    };
+    bulkReportCache.set(report.feedID + ":" + targetSec, normalized);
+    cached.set(report.feedID, normalized);
+  }
+  log("CHAINLINK_BULK", {
+    timestamp: targetSec,
+    requested: unique.length,
+    returned: reports.length,
+    partial: reports.length !== unique.length
+  });
+  return cached;
+}
+
 async function discoverChainlinkFeeds() {
   const now = Date.now();
   if (chainlinkDiscoveryCache.feeds.length && now - chainlinkDiscoveryCache.at < CHAINLINK_DISCOVERY_CACHE_MS) {
@@ -394,6 +433,7 @@ async function decodeTwapReport(fullReport, feedId) {
 async function fetchChainlinkReport(feedId, timestamp) {
   const targetSec = Math.floor(timestamp / 1000);
   const cacheKey = feedId + ":" + targetSec;
+  if (bulkReportCache.has(cacheKey)) return bulkReportCache.get(cacheKey);
   if (reportCache.has(cacheKey)) return reportCache.get(cacheKey);
   const offsets = [0, -1, -2, -5, -10, -30, -60];
   const candidates = [];
@@ -773,6 +813,20 @@ async function processClosedPeriod(state) {
     if (state.periods[periodKey]) return;
 
     const results = {};
+    try {
+      const feeds = [];
+      for (const asset of ASSETS) {
+        const feed = await resolveTwap60Feed(asset);
+        if (feed?.feedId) feeds.push(feed.feedId);
+      }
+      await fetchChainlinkBulkReports(feeds, periodStart);
+      await fetchChainlinkBulkReports(feeds, currentStart);
+    } catch (e) {
+      log("CHAINLINK_BULK_FALLBACK", {
+        periodKey,
+        error: String(e.message || e)
+      });
+    }
     for (const asset of ASSETS) {
       const slug = asset.slug + "-" + Math.floor(periodStart / 1000);
       try {
