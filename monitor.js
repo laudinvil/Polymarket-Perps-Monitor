@@ -167,9 +167,6 @@ function connectAssetRtds(asset) {
       windowSeconds: 60
     });
 
-    if (ASSETS.every(a => latest.has(a.key))) {
-      sendTelegramDiagnosticOnce().catch(e => log("TELEGRAM_DIAGNOSTIC_ERROR", {error:String(e.message || e)}));
-    }
 
     clearInterval(heartbeatTimers.get(asset.key));
     heartbeatTimers.set(asset.key, setInterval(() => {
@@ -208,6 +205,10 @@ function connectAssetRtds(asset) {
 
     const point = { ts, value, exact, receivedAt: Date.now() };
     latest.set(asset.key, point);
+
+    if (ASSETS.every(a => latest.has(a.key))) {
+      sendTelegramDiagnosticOnce().catch(e => log("TELEGRAM_DIAGNOSTIC_ERROR", {error:String(e.message || e)}));
+    }
 
     let arr = history.get(asset.key);
     if (!arr) { arr = []; history.set(asset.key, arr); }
