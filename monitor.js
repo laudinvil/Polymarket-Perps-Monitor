@@ -125,7 +125,7 @@ async function backfill(state) {
   const counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
 
   while (true) {
-    const url = API + "/markets?closed=true&tag_slug=crypto" +
+    const url = API + "/markets?closed=true&tag_slug=crypto&q=" + encodeURIComponent("Up or Down") +
       "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
       "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
     const rows = await getJson(url);
