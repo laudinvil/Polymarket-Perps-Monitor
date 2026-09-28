@@ -2,7 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.0.0";
+const VERSION = "9.1.0";
+const OPPOSITE_SIDE_COOLDOWN_MS = 60_000;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -35,7 +36,8 @@ function defaultState() {
     seen: [],
     alertsSent: 0,
     lastEventTs: null,
-    lastEventKey: null
+    lastEventKey: null,
+    sideLocks: {}
   };
 }
 
@@ -217,6 +219,21 @@ async function processFeed() {
 
     const symbol = String(event.symbol || event.coin || "UNKNOWN").toUpperCase();
     const side = sideLabel(event.side);
+    const lock = state.sideLocks && state.sideLocks[symbol];
+    if (lock && lock.side && lock.side !== side && eventMs - Number(lock.eventMs || 0) < OPPOSITE_SIDE_COOLDOWN_MS) {
+      log("OPPOSITE_SIDE_SUPPRESSED", {
+        exchange: EXCHANGE,
+        symbol,
+        suppressedSide: event.side,
+        acceptedSide: lock.side,
+        eventTs: rawTs,
+        acceptedEventTs: lock.eventTs,
+        cooldownMs: OPPOSITE_SIDE_COOLDOWN_MS,
+        eventKey: key,
+        rawEvent: event
+      });
+      continue;
+    }
     const price = formatPrice(event.price);
     const qty = formatQty(event.qty ?? event.size);
     const notional = formatUsd(event.notional);
@@ -238,6 +255,8 @@ async function processFeed() {
     state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
     state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
     state.lastEventKey = key;
+    state.sideLocks = state.sideLocks || {};
+    state.sideLocks[symbol] = { side, eventMs, eventTs: rawTs };
 
     log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
       exchange: EXCHANGE,
@@ -350,6 +369,7 @@ async function main() {
     const previous = state.version || "unknown";
     state.version = VERSION;
     state.strategy = "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS";
+    state.sideLocks = {};
     log("VERSION_CHANGE", { from: previous, to: VERSION });
     saveState();
   }
@@ -364,6 +384,7 @@ async function main() {
     source: FEED_URL,
     exchange: EXCHANGE,
     pollingMs: POLL_MS,
+    oppositeSideCooldownMs: OPPOSITE_SIDE_COOLDOWN_MS,
     allSymbols: true,
     links: false,
     persistentState: true,
