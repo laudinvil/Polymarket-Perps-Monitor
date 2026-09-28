@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.1";
+const VERSION = "7.3.2";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -596,7 +596,7 @@ function parseClosed5mMarket(market) {
   };
 }
 
-async function fetchGammaSeriesPage(seriesSlug, offset, cutoffMs) {
+async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       await waitForGammaRateLimit();
@@ -606,36 +606,42 @@ async function fetchGammaSeriesPage(seriesSlug, offset, cutoffMs) {
         order: "endDate",
         ascending: "true",
         limit: String(GAMMA_PAGE_SIZE),
-        offset: String(offset),
         end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
         end_date_max: new Date(cutoffMs).toISOString()
       });
+      if (afterCursor) params.set("after_cursor", afterCursor);
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
       let response;
       try {
-        response = await fetch("https://gamma-api.polymarket.com/events?" + params.toString(), {
+        response = await fetch("https://gamma-api.polymarket.com/events/keyset?" + params.toString(), {
           signal: controller.signal,
           headers: { accept: "application/json" }
         });
       } finally {
         clearTimeout(timer);
       }
+
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        throw new Error("GAMMA_EVENTS_HTTP_" + response.status + ":" + body.slice(0, 300));
+        throw new Error("GAMMA_EVENTS_KEYSET_HTTP_" + response.status + ":" + body.slice(0, 500));
       }
+
       const body = await response.json();
-      return Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
+      const events = Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
+      const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
+      return { events, nextCursor };
     } catch (e) {
       log("GAMMA_HISTORY_PAGE_RETRY", {
-        seriesSlug, offset, attempt, error: String(e.message || e)
+        seriesSlug, afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
+        attempt, error: String(e.message || e)
       });
       if (attempt === 5) throw e;
       await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
     }
   }
-  return [];
+  return { events: [], nextCursor: null };
 }
 
 async function fetchHistoricalMarketBaseline(cutoffMs) {
@@ -663,11 +669,13 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
   // roughly 27 pages per asset instead of thousands of generic market pages.
   for (const asset of ASSETS) {
     const seriesSlug = seriesByAsset[asset.key];
-    let offset = 0;
+    let afterCursor = null;
     let pages = 0;
 
     while (true) {
-      const events = await fetchGammaSeriesPage(seriesSlug, offset, cutoffMs);
+      const page = await fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs);
+      const events = page.events;
+      const nextCursor = page.nextCursor;
       pages++;
       rawEvents += events.length;
 
@@ -697,15 +705,15 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
         asset: asset.key,
         seriesSlug,
         pages,
-        offset,
+        afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
         events: events.length,
+        hasNextCursor: !!nextCursor,
         periodsFound: byPeriod.size,
         expectedPeriods: expectedStarts.size
       });
 
-      if (events.length === 0) break;
-      offset += events.length;
-      if (events.length < GAMMA_PAGE_SIZE) break;
+      if (events.length === 0 || !nextCursor) break;
+      afterCursor = nextCursor;
     }
   }
 
