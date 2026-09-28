@@ -243,11 +243,19 @@ function pointAtOrAfter(assetKey, targetMs) {
 }
 
 function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
-  // LIVE calculation intentionally requires exact boundary observations from
-  // RTDS. Never substitute an older/future observation for a 5m boundary.
+  // Fresh pre-boundary observation only; never future or stale data.
   const arr = history.get(assetKey) || [];
-  const exactAt = target => arr.find(p => p.ts === target) || null;
-  return { open: exactAt(openTargetMs), close: exactAt(closeTargetMs) };
+  const select = target => {
+    let selected = null;
+    for (const p of arr) {
+      if (!p || !Number.isFinite(p.ts) || p.ts > target) continue;
+      const age = target - p.ts;
+      if (age < 0 || age > LIVE_BOUNDARY_LOOKBACK_MS) continue;
+      if (!selected || p.ts > selected.ts) selected = p;
+    }
+    return selected;
+  };
+  return { open: select(openTargetMs), close: select(closeTargetMs) };
 }onst fs = require("fs");
 const path = require("path");
 const http = require("http");
