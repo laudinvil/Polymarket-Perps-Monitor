@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.3";
+const VERSION = "4.1.4";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -275,23 +275,11 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
 }
 
 async function sendOnlineAlert() {
-  if (onlineAlertSent) return;
-  const available = ASSETS.filter(a => latest.get(a.key));
-  if (!available.length) return;
-
-  const lines = [
-    "TWAP60 MONITOR ONLINE",
-    "",
-    ...available.map(a => a.key + " " + latest.get(a.key).value.toFixed(6)),
-    "",
-    "5M PERIOD ALERTS ACTIVE"
-  ];
-
-  const sent = await sendTelegram(lines.join("\n"), "MONITOR_ONLINE");
-  if (sent) {
-    onlineAlertSent = true;
-    log("MONITOR_ONLINE_ALERT_SENT", { available: available.map(a => a.key) });
-  }
+  // Startup connectivity is logged only; Telegram is reserved for actual period alerts.
+  log("ONLINE_READY", {
+    assets:Object.fromEntries(ASSETS.map(a => [a.key, latest.get(a.key) || null]))
+  });
+  return false;
 }
 
 async function processClosedPeriod() {
@@ -396,16 +384,11 @@ async function processClosedPeriod() {
     : "https://polymarket.com/event/" + nextSlug;
 
   const lines = [
-    "5M CHAINLINK TWAP 60s", "",
-    ...ASSETS.filter(a => mergedResults[a.key]).map(a => {
-      const r = mergedResults[a.key];
-      return a.key + " → " + r.winner + " (" + r.open.toFixed(6) + " → " + r.close.toFixed(6) + ")";
-    }),
-    newlyComplete ? "COMPLETE: 7/7" : "MISSING: " + ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key).join(", "),
+    "5M CHAINLINK TWAP 60s",
     "",
     ...ranking().map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
-    "IMBALANCE: " + top.asset + " " + (top.score >= 0 ? "+" : "") + top.score,
+    "NEXT: " + top.asset + " " + (top.score >= 0 ? "UP" : "DOWN"),
     link
   ];
 
@@ -443,8 +426,7 @@ async function main() {
   });
 
   startHealth(); connectRtds();
-  const startupSent = await sendTelegram("TWAP60 MONITOR STARTED\nversion " + VERSION + "\nTelegram delivery test", "STARTUP_TEST");
-  log("STARTUP_TELEGRAM_RESULT", { sent: startupSent });
+  log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
   await poll();
   setInterval(poll, POLL_MS);
 
