@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.2.0";
+const VERSION = "4.2.1";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -402,6 +402,8 @@ async function processClosedPeriod() {
     results:mergedResults, newResults, complete:newlyComplete, counts:state.counts
   });
 
+  // The score must choose the current 5m market direction, but a missing Gamma
+  // response must never block the Telegram alert.
   const market = await gammaMarket(nextSlug);
   const link = market?.slug
     ? "https://polymarket.com/event/" + market.slug
