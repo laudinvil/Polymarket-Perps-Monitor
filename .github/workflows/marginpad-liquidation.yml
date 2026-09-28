@@ -2,9 +2,11 @@ name: MarginPad Liquidation 5M
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - monitor-start.trigger
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_run:
+    workflows: ["MarginPad Liquidation 5M"]
+    types: [completed]
 
 concurrency:
   group: marginpad-liquidation-monitor
