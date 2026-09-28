@@ -103,26 +103,12 @@ function eventIsLive(event) {
   if (event?.live === true) return true;
   if (event?.ended === true) return false;
   if (isLiveStatus(event?.gameStatus)) return true;
-
-  const now = Date.now();
-  const start = Date.parse(event?.gameStartTime || event?.startTime || event?.startDate || "");
-  if (Number.isFinite(start) && start <= now && now - start <= 5 * 60 * 60 * 1000) {
-    if (isEndedStatus(event?.gameStatus)) return false;
-    return event?.acceptingOrders !== false;
-  }
-
   return false;
 }
 
 function isSupportedMarket(market) {
   const type = norm(market?.sportsMarketType || market?.marketType || "");
-  return [
-    "moneyline",
-    "esports match result",
-    "tennis completed match",
-    "match winner",
-    "winner"
-  ].includes(type);
+  return /(^| )(moneyline|child moneyline|esports match result|tennis completed match|cricket completed match|match winner|winner|race winner|head to head)( |$)/.test(type);
 }
 
 function parseTokenIds(market) {
@@ -249,7 +235,8 @@ function updateCompression(candidate, price) {
       url: candidate.url,
       sport: candidate.sport,
       marketType: candidate.marketType,
-      gameStatus: candidate.gameStatus
+      gameStatus: candidate.gameStatus,
+      breakoutCandidate: null
     };
     markets.set(candidate.key, state);
   }
@@ -283,9 +270,26 @@ function updateCompression(candidate, price) {
   let direction = null;
   if (current >= previousMax + BREAKOUT_CONFIRM_PRICE) direction = "UP";
   if (current <= previousMin - BREAKOUT_CONFIRM_PRICE) direction = "DOWN";
-  if (!direction) return;
+
+  if (!direction) {
+    state.breakoutCandidate = null;
+    return;
+  }
 
   if (now - state.alertedAt < ALERT_COOLDOWN_MS) return;
+
+  if (!state.breakoutCandidate || state.breakoutCandidate.direction !== direction) {
+    state.breakoutCandidate = {direction, price: current, ts: now};
+    log("BREAKOUT_CANDIDATE", {
+      title: state.title,
+      outcome: state.outcome,
+      direction,
+      price: current
+    });
+    return;
+  }
+
+  state.breakoutCandidate = null;
 
   state.alertedAt = now;
   alertsSent++;
