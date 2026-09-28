@@ -578,7 +578,9 @@ async function backfill(state) {
     verification: "polymarket_finalized_settlement"
   });
 
-  const counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+  const counts = state.backfillCounts && typeof state.backfillCounts === "object"
+    ? Object.fromEntries(ASSETS.map(a => [a.key, Number(state.backfillCounts[a.key] || 0)]))
+    : Object.fromEntries(ASSETS.map(a => [a.key, 0]));
   const seen = new Set();
   const endMs = Math.floor(Date.now() / 300000) * 300000;
   const windowMs = 24 * 60 * 60 * 1000;
@@ -593,7 +595,7 @@ async function backfill(state) {
     let offset = 0;
 
     while (true) {
-      const url = API + "/markets?closed=true" +
+      const url = API + "/markets?closed=true&tag_slug=crypto" +
         "&start_date_min=" + encodeURIComponent(new Date(cursorMs).toISOString()) +
         "&end_date_max=" + encodeURIComponent(new Date(windowEndMs).toISOString()) +
         "&limit=500&offset=" + offset + "&order=endDate&ascending=true";
