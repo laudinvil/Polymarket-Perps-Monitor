@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "10.0.0-LIQUIDATION";
+const VERSION = "9.0.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
