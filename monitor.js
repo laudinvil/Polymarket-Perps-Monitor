@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.3.1";
+const VERSION = "4.4.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -193,19 +193,31 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => { reconnectTimer = null; connectRtds(); }, 3000);
 }
 
-function pointNearBoundary(assetKey, targetMs, maxAgeMs = 120_000) {
+function pointAtOrBefore(assetKey, targetMs) {
   const arr = history.get(assetKey) || [];
   let best = null;
-  let bestDistance = Infinity;
   for (const p of arr) {
-    const distance = Math.abs(p.ts - targetMs);
-    if (distance < bestDistance) {
-      best = p;
-      bestDistance = distance;
-    }
-    if (p.ts > targetMs && distance > bestDistance) break;
+    if (p.ts <= targetMs) best = p;
+    else break;
   }
-  return best && bestDistance <= maxAgeMs ? best : null;
+  return best;
+}
+
+function pointAtOrAfter(assetKey, targetMs) {
+  const arr = history.get(assetKey) || [];
+  for (const p of arr) {
+    if (p.ts >= targetMs) return p;
+  }
+  return null;
+}
+
+function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
+  // TWAP observations are timestamped rolling observations, not guaranteed to
+  // land exactly on the 5m clock boundary. Use the last observation available
+  // at/before each boundary. No expanding tolerance window is used.
+  const open = pointAtOrBefore(assetKey, openTargetMs) || pointAtOrAfter(assetKey, openTargetMs);
+  const close = pointAtOrBefore(assetKey, closeTargetMs) || pointAtOrAfter(assetKey, closeTargetMs);
+  return { open, close };
 }
 
 function currentPeriodStart() { return Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS; }
@@ -309,8 +321,7 @@ async function processClosedPeriod() {
   const missing = [];
 
   for (const asset of ASSETS) {
-    const open = pointNearBoundary(asset.key, closedStart, 180_000);
-    const close = pointNearBoundary(asset.key, closeBoundary, 180_000);
+    const { open, close } = boundaryPoints(asset.key, closedStart, closeBoundary);
     if (!open || !close) {
       missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
@@ -337,7 +348,7 @@ async function processClosedPeriod() {
 
   if (!Object.keys(results).length) {
     log("PERIOD_WAIT", {
-      periodKey, reason:"no_twap60_boundaries_within_180s", missing, retry:true
+      periodKey, reason:"no_twap60_boundary_observation_available", missing, retry:true
     });
     return;
   }
