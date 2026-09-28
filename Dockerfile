@@ -5,8 +5,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 
-COPY monitor.js ./
-COPY live-monitor.js ./
+COPY . .
 
 ENV NODE_ENV=production
 EXPOSE 8080
