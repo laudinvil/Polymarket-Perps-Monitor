@@ -1,3 +1,4 @@
+# Deplexo deployment: run the continuous CASCADE16 monitor
 framework: node
 install: npm install
 start: node monitor.js
