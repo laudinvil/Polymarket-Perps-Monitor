@@ -17,7 +17,6 @@ const CHAINLINK_DISCOVERY_CACHE_MS = 5 * 60 * 1000;
 let chainlinkDiscoveryCache = { at: 0, feeds: [] };
 const START_MS = Date.parse("2026-08-14T00:00:00Z");
 const POLL_MS = 10_000;
-// Conservative self-imposed limits so the monitor stays well below public/free API ceilings.
 const GAMMA_MIN_INTERVAL_MS = 250;
 const CHAINLINK_MIN_INTERVAL_MS = 1000;
 let lastGammaRequestAt = 0;
@@ -76,7 +75,6 @@ function startHealthServer() {
   server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port }));
   server.on("error", e => log("HEALTH_ERROR", { error: String(e.message || e), port }));
 }
-
 
 function ensureDir(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -272,7 +270,6 @@ async function getJson(url, headers = {}) {
   }
 }
 
-
 function hmacHeaders(method, fullPath) {
   if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) return {};
   const crypto = require("crypto");
@@ -358,6 +355,7 @@ async function decodeTwapReport(fullReport, feedId) {
   }
   return decoded;
 }
+
 async function fetchChainlinkReport(feedId, timestamp) {
   const targetSec = Math.floor(timestamp / 1000);
   const cacheKey = feedId + ":" + targetSec;
@@ -508,9 +506,6 @@ async function fetchMarketBySlug(slug) {
 async function backfill(state) {
   if (state.initialized) return state;
 
-  // Historical initialization uses the finalized Polymarket settlement. Live periods
-  // are still verified against Chainlink TWAP60 before they affect the counters.
-  // This avoids tens of thousands of historical Chainlink report requests on free limits.
   log("BACKFILL_START", {
     start: new Date(START_MS).toISOString(),
     assets: ASSETS.map(a => a.key),
@@ -527,7 +522,19 @@ async function backfill(state) {
       "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
       "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
 
-    let rows;\n    try {\n      rows = await getJson(url);\n    } catch (e) {\n      log("BACKFILL_PAGE_ERROR", { pages, offset, error: String(e.message || e) });\n      state.counts = counts;\n      state.initialized = true;\n      state.lastBackfillAt = nowIso();\n      state.backfillIncomplete = true;\n      await saveState(state);\n      log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason: String(e.message || e) });\n      return state;\n    }
+    let rows;
+    try {
+      rows = await getJson(url);
+    } catch (e) {
+      log("BACKFILL_PAGE_ERROR", { pages, offset, error: String(e.message || e) });
+      state.counts = counts;
+      state.initialized = true;
+      state.lastBackfillAt = nowIso();
+      state.backfillIncomplete = true;
+      await saveState(state);
+      log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason: String(e.message || e) });
+      return state;
+    }
     if (!Array.isArray(rows) || rows.length === 0) break;
     pages++;
 
@@ -611,94 +618,95 @@ async function processClosedPeriod(state) {
   if (cycleBusy) return;
   cycleBusy = true;
   try {
-  const now = Date.now();
-  const currentStart = Math.floor(now / 300000) * 300000;
-  const periodStart = currentStart - 300000;
-  if (periodStart < START_MS) return;
+    const now = Date.now();
+    const currentStart = Math.floor(now / 300000) * 300000;
+    const periodStart = currentStart - 300000;
+    if (periodStart < START_MS) return;
 
-  const periodKey = "period-" + Math.floor(periodStart / 1000);
-  if (state.periods[periodKey]) return;
+    const periodKey = "period-" + Math.floor(periodStart / 1000);
+    if (state.periods[periodKey]) return;
 
-  const results = {};
-  for (const asset of ASSETS) {
-    const slug = asset.slug + "-" + Math.floor(periodStart / 1000);
-    try {
-      const m = await fetchMarketBySlug(slug);
-      if (!m) {
-        log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "market_not_found", slug });
+    const results = {};
+    for (const asset of ASSETS) {
+      const slug = asset.slug + "-" + Math.floor(periodStart / 1000);
+      try {
+        const m = await fetchMarketBySlug(slug);
+        if (!m) {
+          log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "market_not_found", slug });
+          return;
+        }
+        const w = winnerOf(m);
+        if (!w) {
+          log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "winner_not_final", slug });
+          return;
+        }
+        if (!isTargetMarket(m, asset)) {
+          log("PERIOD_REJECTED", { periodKey, asset: asset.key, reason: "not_verified_twap60", slug });
+          return;
+        }
+        const chainlink = await verifyTwapSettlement(asset, m, periodStart);
+        results[asset.key] = { winner: w, chainlink };
+      } catch (e) {
+        log("PERIOD_ERROR", { periodKey, asset: asset.key, error: String(e.message || e) });
         return;
       }
-      const w = winnerOf(m);
-      if (!w) {
-        log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "winner_not_final", slug });
-        return;
-      }
-      if (!isTargetMarket(m, asset)) {
-        log("PERIOD_REJECTED", { periodKey, asset: asset.key, reason: "not_verified_twap60", slug });
-        return;
-      }
-      const chainlink = await verifyTwapSettlement(asset, m, periodStart);
-      results[asset.key] = { winner: w, chainlink };
-    } catch (e) {
-      log("PERIOD_ERROR", { periodKey, asset: asset.key, error: String(e.message || e) });
-      return;
     }
-  }
 
-  if (Object.keys(results).length !== ASSETS.length) return;
+    if (Object.keys(results).length !== ASSETS.length) return;
 
-  const winners = Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].winner]));
-  for (const asset of ASSETS) state.counts[asset.key] += winners[asset.key] === "Up" ? 1 : -1;
-  state.periods[periodKey] = results;
-  state.lastProcessedPeriod = periodKey;
-  state.lastProcessedAt = nowIso();
+    const winners = Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].winner]));
+    for (const asset of ASSETS) state.counts[asset.key] += winners[asset.key] === "Up" ? 1 : -1;
+    state.periods[periodKey] = results;
+    state.lastProcessedPeriod = periodKey;
+    state.lastProcessedAt = nowIso();
 
-  const top = ranking(state.counts)[0];
-  state.leader = top;
-  state.diagnostic = {
-    lastCycleAt: nowIso(),
-    lastResults: winners,
-    lastChainlink: Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].chainlink])),
-    processedAssets: Object.keys(results).length,
-    pollingMs: POLL_MS,
-    storage: db ? "postgres+file" : "file"
-  };
+    const top = ranking(state.counts)[0];
+    state.leader = top;
+    state.diagnostic = {
+      lastCycleAt: nowIso(),
+      lastResults: winners,
+      lastChainlink: Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].chainlink])),
+      processedAssets: Object.keys(results).length,
+      pollingMs: POLL_MS,
+      storage: db ? "postgres+file" : "file"
+    };
 
-  await saveState(state);
-  await persistPeriod(periodKey, periodStart, winners, state);
-
-  const nextStart = currentStart + 300000;
-  const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
-  let nextMarket = null;
-  try { nextMarket = await fetchMarketBySlug(nextSlug); } catch (e) {
-    log("NEXT_MARKET_LOOKUP_ERROR", { asset: top.asset, slug: nextSlug, error: String(e.message || e) });
-  }
-  const link = nextMarket?.slug
-    ? "https://polymarket.com/event/" + nextMarket.slug
-    : "https://polymarket.com/event/" + nextSlug;
-  const lines = [
-    "5M CHAINLINK TWAP 60s",
-    "",
-    ...ASSETS.map(a => a.key + " → " + winners[a.key]),
-    "",
-    ...ranking(state.counts).map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
-    "",
-    "IMBALANCE: " + top.asset + " " + (top.score >= 0 ? "+" : "") + top.score,
-    link
-  ];
-
-  try {
-    await sendTelegram(lines.join("\\n"));
-    log("ALERT_SENT", { period: periodKey, results: winners, chainlink: state.diagnostic.lastChainlink, counts: state.counts, leader: top });
-  } catch (e) {
-    delete state.periods[periodKey];
-    for (const asset of ASSETS) state.counts[asset.key] -= winners[asset.key] === "Up" ? 1 : -1;
-    state.lastProcessedPeriod = null;
     await saveState(state);
-    log("TELEGRAM_ERROR", { period: periodKey, error: String(e.message || e) });
-  }
+    await persistPeriod(periodKey, periodStart, winners, state);
 
-  } finally { cycleBusy = false; }
+    const nextStart = currentStart + 300000;
+    const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
+    let nextMarket = null;
+    try { nextMarket = await fetchMarketBySlug(nextSlug); } catch (e) {
+      log("NEXT_MARKET_LOOKUP_ERROR", { asset: top.asset, slug: nextSlug, error: String(e.message || e) });
+    }
+    const link = nextMarket?.slug
+      ? "https://polymarket.com/event/" + nextMarket.slug
+      : "https://polymarket.com/event/" + nextSlug;
+    const lines = [
+      "5M CHAINLINK TWAP 60s",
+      "",
+      ...ASSETS.map(a => a.key + " → " + winners[a.key]),
+      "",
+      ...ranking(state.counts).map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
+      "",
+      "IMBALANCE: " + top.asset + " " + (top.score >= 0 ? "+" : "") + top.score,
+      link
+    ];
+
+    try {
+      await sendTelegram(lines.join("\n"));
+      log("ALERT_SENT", { period: periodKey, results: winners, chainlink: state.diagnostic.lastChainlink, counts: state.counts, leader: top });
+    } catch (e) {
+      delete state.periods[periodKey];
+      for (const asset of ASSETS) state.counts[asset.key] -= winners[asset.key] === "Up" ? 1 : -1;
+      state.lastProcessedPeriod = null;
+      await saveState(state);
+      log("TELEGRAM_ERROR", { period: periodKey, error: String(e.message || e) });
+    }
+  } finally {
+    cycleBusy = false;
+  }
 }
 
 async function main() {
