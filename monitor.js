@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.5.0";
+const MONITOR_VERSION = "2.6.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -275,6 +275,7 @@ async function restoreAndMigrate() {
   if (!state.counts) state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
   for (const a of ASSETS) if (!Number.isFinite(Number(state.counts[a.key]))) state.counts[a.key] = 0;
   if (!state.periods) state.periods = {};
+  if (state.backfillIncomplete) state.initialized = false;
 
   if (state.version !== MONITOR_VERSION) {
     await snapshotState(state, "PRE_VERSION_CHANGE");
@@ -537,98 +538,120 @@ async function fetchMarketBySlug(slug) {
   return market;
 }
 
-async function getBackfillPage(urls, pages, offset, state, counts) {
-  const errors = [];
-  for (const url of urls) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const rows = await getJson(url);
-        if (Array.isArray(rows)) {
-          log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: url.includes("q=") ? "filtered" : "fallback", rows: rows.length });
-          return rows;
-        }
-        errors.push("invalid_response");
-      } catch (e) {
-        const reason = String(e.message || e);
-        errors.push(reason);
-        log("BACKFILL_RETRY", {
-          pages,
-          offset,
-          attempt,
-          source: url.includes("q=") ? "filtered" : "fallback",
-          error: reason
-        });
-        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+async function getBackfillPage(url, pages, offset, state) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const rows = await getJson(url);
+      if (Array.isArray(rows)) {
+        log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: "gamma_markets_date_window", rows: rows.length });
+        return rows;
       }
+      throw new Error("invalid_response");
+    } catch (e) {
+      const reason = String(e.message || e);
+      log("BACKFILL_RETRY", {
+        pages,
+        offset,
+        attempt,
+        source: "gamma_markets_date_window",
+        error: reason
+      });
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
     }
   }
 
-  const reason = errors.join(" | ").slice(0, 1000) || "no rows";
-  log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
-  state.counts = counts;
-  state.initialized = true;
-  state.lastBackfillAt = nowIso();
+  const reason = "gamma_page_failed";
   state.backfillIncomplete = true;
+  state.lastBackfillAt = nowIso();
   await saveState(state);
-  log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason });
+  log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
   return null;
 }
 
 async function backfill(state) {
-  if (state.initialized) return state;
+  if (state.initialized && !state.backfillIncomplete) return state;
 
   log("BACKFILL_START", {
     start: new Date(START_MS).toISOString(),
     assets: ASSETS.map(a => a.key),
+    source: "gamma_markets_date_windows",
     verification: "polymarket_finalized_settlement"
   });
 
-  let offset = 0;
-  let pages = 0;
-  const seen = new Set();
   const counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+  const seen = new Set();
+  const endMs = Math.floor(Date.now() / 300000) * 300000;
+  const windowMs = 24 * 60 * 60 * 1000;
+  let cursorMs = Number.isFinite(Number(state.backfillCursorMs)) && Number(state.backfillCursorMs) >= START_MS
+    ? Number(state.backfillCursorMs)
+    : START_MS;
+  let windows = 0;
+  let pages = 0;
 
-  while (true) {
-    const base = API + "/markets?closed=true&tag_slug=crypto" +
-      "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
-      "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
-    const urls = [
-      base + "&q=" + encodeURIComponent("Up or Down"),
-      base
-    ];
+  while (cursorMs < endMs) {
+    const windowEndMs = Math.min(cursorMs + windowMs, endMs);
+    let offset = 0;
 
-    const rows = await getBackfillPage(urls, pages, offset, state, counts);
-    if (rows === null) return state;
-    if (!Array.isArray(rows) || rows.length === 0) break;
-    pages++;
+    while (true) {
+      const url = API + "/markets?closed=true" +
+        "&start_date_min=" + encodeURIComponent(new Date(cursorMs).toISOString()) +
+        "&end_date_max=" + encodeURIComponent(new Date(windowEndMs).toISOString()) +
+        "&limit=500&offset=" + offset + "&order=endDate&ascending=true";
 
-    for (const m of rows) {
-      for (const asset of ASSETS) {
-        if (!isTargetMarket(m, asset) || seen.has(m.id)) continue;
+      const rows = await getBackfillPage(url, pages, offset, state);
+      if (rows === null) return state;
+      pages++;
 
-        const w = winnerOf(m);
-        if (!w) {
-          log("BACKFILL_NO_FINAL_WINNER", { asset: asset.key, marketId: m.id, slug: m.slug });
-          continue;
+      for (const m of rows) {
+        for (const asset of ASSETS) {
+          if (!isTargetMarket(m, asset) || seen.has(asset.key + ":" + m.id)) continue;
+
+          const w = winnerOf(m);
+          if (!w) {
+            log("BACKFILL_NO_FINAL_WINNER", { asset: asset.key, marketId: m.id, slug: m.slug });
+            continue;
+          }
+
+          seen.add(asset.key + ":" + m.id);
+          counts[asset.key] += w === "Up" ? 1 : -1;
         }
-
-        seen.add(m.id);
-        counts[asset.key] += w === "Up" ? 1 : -1;
       }
+
+      log("BACKFILL_PAGE", {
+        windows,
+        pages,
+        windowStart: new Date(cursorMs).toISOString(),
+        windowEnd: new Date(windowEndMs).toISOString(),
+        offset,
+        rows: rows.length,
+        counts
+      });
+
+      if (rows.length < 500) break;
+      offset += 500;
     }
 
-    log("BACKFILL_PAGE", { pages, offset, rows: rows.length, counts });
-    if (rows.length < 100) break;
-    offset += 100;
+    cursorMs = windowEndMs;
+    state.backfillCursorMs = cursorMs;
+    state.backfillWindows = windows + 1;
+    state.backfillCounts = counts;
+    state.backfillIncomplete = true;
+    await saveState(state);
+    windows++;
   }
 
   state.counts = counts;
   state.initialized = true;
+  state.backfillIncomplete = false;
+  state.backfillCursorMs = endMs;
   state.lastBackfillAt = nowIso();
+  state.backfillSource = "gamma_markets_date_windows";
   await saveState(state);
   log("BACKFILL_DONE", {
+    windows,
     pages,
     counts,
+    source: "gamma_markets_date_windows",
     verification: "polymarket_finalized_settlement",
     liveVerification: "chainlink_twap60"
   });
