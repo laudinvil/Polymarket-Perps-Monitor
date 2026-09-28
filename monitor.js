@@ -425,13 +425,13 @@ async function fetchHistoricalBoundaries(targets) {
   const boundaryMaps=Object.fromEntries(ASSETS.map(a=>[a.key,new Map()]));
   const cutoffSec=Math.floor(targets[targets.length-1]/1000);
   const startSec=Math.floor(HISTORY_START_MS/1000);
-  const targetSet=new Set(targets);
   const LIMIT=1000;
 
   for (const asset of ASSETS) {
     let cursor=startSec;
     let pages=0;
     let lastObservationSec=0;
+    const points=[];
     log("HISTORY_ASSET_START",{asset:asset.key,feedId:feedIds[asset.key],startSec,cutoffSec});
     while(cursor<=cutoffSec) {
       const reports=await fetchHistoricalBoundaryPage(feedIds[asset.key],cursor,LIMIT);
@@ -446,8 +446,7 @@ async function fetchHistoricalBoundaries(targets) {
         if(sec>maxObservationSec) maxObservationSec=sec;
         const covered=(decoded.validFromTimestamp==null||decoded.validFromTimestamp<=ots)&&(decoded.expiresAt==null||ots<=decoded.expiresAt);
         if(!covered || sec<startSec || sec>cutoffSec) continue;
-        const ts=sec*1000;
-        if(targetSet.has(ts)) boundaryMaps[asset.key].set(ts,decoded);
+        points.push({ts:sec*1000,decoded});
       }
       if(maxObservationSec<=lastObservationSec) {
         throw new Error("CHAINLINK_HISTORY_PAGINATION_STALLED:"+asset.key+":"+cursor);
@@ -455,9 +454,19 @@ async function fetchHistoricalBoundaries(targets) {
       lastObservationSec=maxObservationSec;
       if(lastObservationSec>=cutoffSec) break;
       cursor=lastObservationSec+1;
-      if(pages%10===0) log("HISTORY_ASSET_PROGRESS",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,lastObservationSec});
+      if(pages%10===0) log("HISTORY_ASSET_PROGRESS",{asset:asset.key,pages,points:points.length,lastObservationSec});
     }
-    log("HISTORY_ASSET_COMPLETE",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,expectedBoundaries:targets.length});
+    points.sort((a,b)=>a.ts-b.ts);
+    let pi=0, previous=null;
+    for(const targetMs of targets) {
+      while(pi<points.length && points[pi].ts<=targetMs) {
+        previous=points[pi].decoded;
+        pi++;
+      }
+      const chosen=previous || (points.find(x=>x.ts>=targetMs)?.decoded || null);
+      if(chosen) boundaryMaps[asset.key].set(targetMs,chosen);
+    }
+    log("HISTORY_ASSET_COMPLETE",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,expectedBoundaries:targets.length,points:points.length});
   }
 
   const valuesByBoundary={};
