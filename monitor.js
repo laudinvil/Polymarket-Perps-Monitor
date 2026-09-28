@@ -483,8 +483,10 @@ async function bootstrapHistoricalCounts() {
       while(nextIndex<targets.length&&boundaryCache.has(targets[nextIndex])) nextIndex++;
       state.historyBootstrap.completedBoundaries=nextIndex;
       state.historyBootstrap.observations=Array.from(boundaryCache.values()).reduce((n,x)=>n+Object.keys(x).length,0);
-      saveState();
-      if(nextIndex%100===0||nextIndex===targets.length) log("HISTORY_PROGRESS",{completedBoundaries:nextIndex,totalBoundaries:targets.length,percent:Number((nextIndex/targets.length*100).toFixed(2))});
+      if(nextIndex%100===0||nextIndex===targets.length) {
+        saveState();
+        log("HISTORY_PROGRESS",{completedBoundaries:nextIndex,totalBoundaries:targets.length,percent:Number((nextIndex/targets.length*100).toFixed(2))});
+      }
     }
     const historicalCounts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
     const historicalPeriods={}, assetCoverage=Object.fromEntries(ASSETS.map(a=>[a.key,{periods:0,missing:0}])), invalidPeriods=[];
