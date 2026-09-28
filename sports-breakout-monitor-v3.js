@@ -8,7 +8,8 @@ const BREAKOUT = 0.003;
 const RUNTIME_MS = 5 * 60 * 60 * 1000 + 45 * 60 * 1000;
 const MAX_CANDIDATES = 500;
 
-const GAMMA_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&related_tags=true&active=true&closed=false&limit=500";
+const GAMMA_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&active=true&closed=false&order=startTime&ascending=true&limit=500&offset=";
+const GAMMA_PAGES = 4;
 const CLOB_PRICE_URL = "https://clob.polymarket.com/price";
 const EVENT_URL = "https://polymarket.com/event/";
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -23,6 +24,7 @@ let alertsSent = 0;
 let lastPollAt = null;
 let lastError = null;
 let emptyPolls = 0;
+let pollsSinceAlert = 0;
 
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), version: VERSION, event, ...data }));
@@ -86,11 +88,24 @@ async function json(url) {
   return r.json();
 }
 
+async function gammaEvents() {
+  const all = [];
+  for (let page = 0; page < GAMMA_PAGES; page++) {
+    const offset = page * 500;
+    const body = await json(GAMMA_URL + offset);
+    const events = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
+    all.push(...events);
+    if (events.length < 500 || body?.has_more === false) break;
+  }
+  return Array.from(new Map(all.map(e => [String(e.id), e])).values());
+}
+
 async function clobPrice(tokenId) {
   try {
     const body = await json(CLOB_PRICE_URL + "?token_id=" + encodeURIComponent(tokenId) + "&side=BUY");
     const p = num(body?.price ?? body?.data?.price);
     return p != null && p > 0 && p < 1 ? p : null;
+    if (alertsSent > 0) pollsSinceAlert = 0;
   } catch (e) {
     log("CLOB_ERROR", { tokenId, error: String(e.message || e) });
     return null;
@@ -182,8 +197,7 @@ async function poll() {
   if (polling) return;
   polling = true;
   try {
-    const body = await json(GAMMA_URL);
-    const events = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
+    const events = await gammaEvents();
     const live = events.filter(explicitLive);
     const candidates = liveMarkets(events);
     const ps = await prices(candidates);
@@ -194,7 +208,12 @@ async function poll() {
     lastPollAt = new Date().toISOString();
     lastError = null;
     emptyPolls = candidates.length === 0 || ps.size === 0 ? emptyPolls + 1 : 0;
+    pollsSinceAlert++;
     if (emptyPolls === 3) await telegram("SPORTS MONITOR DIAGNOSTIC\nNo live CLOB candidates detected after 3 polls.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size);
+    if (pollsSinceAlert >= 6 && alertsSent === 0 && candidates.length > 0 && ps.size > 0) {
+      await telegram("SPORTS MONITOR DIAGNOSTIC\nLive CLOB data is arriving, but no breakout alert yet.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size + "\nTRACKED: " + states.size + "\nHISTORY READY: " + Array.from(states.values()).filter(s => s.history.length >= 6).length);
+      pollsSinceAlert = 0;
+    }
     log("POLL", {
       events: events.length,
       liveEvents: live.length,
@@ -222,7 +241,7 @@ http.createServer((req, res) => {
   res.writeHead(404); res.end();
 }).listen(PORT, "0.0.0.0", () => log("HEALTH_LISTENING", { port: PORT, healthPath: "/health" }));
 
-log("MONITOR_STARTING", { version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", gamma: GAMMA_URL, clob: CLOB_PRICE_URL, pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT, maxCandidates: MAX_CANDIDATES });
+log("MONITOR_STARTING", { version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", gamma: GAMMA_URL + "0", gammaPages: GAMMA_PAGES, clob: CLOB_PRICE_URL, pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT, maxCandidates: MAX_CANDIDATES });
 
 (async () => {
   while (Date.now() - startedAt < RUNTIME_MS) {
