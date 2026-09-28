@@ -20,7 +20,7 @@ function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true })
 
 function log(event, data = {}) {
   const row = { ts: nowIso(), version: VERSION, event, ...data };
-  console.log(JSON.stringify(row));
+  let serialized;\n  try {\n    serialized = JSON.stringify(row, (_, value) => {\n      if (typeof value === "bigint") return value.toString();\n      return value;\n    });\n  } catch (e) {\n    serialized = JSON.stringify({ ts: nowIso(), version: VERSION, event: "LOG_SERIALIZATION_ERROR", error: String(e.message || e) });\n  }\n  console.log(serialized);
   try {
     ensureDir(LOG_FILE);
     fs.appendFileSync(LOG_FILE, JSON.stringify(row) + "\n");
