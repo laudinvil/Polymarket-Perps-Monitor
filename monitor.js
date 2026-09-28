@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.5.0";
+const VERSION = "4.5.1";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -30,7 +30,6 @@ let state = null;
 let collectionStartedAt = null;
 const latest = new Map();
 const history = new Map();
-let onlineAlertSent = false;
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -334,6 +333,8 @@ async function processClosedPeriod() {
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
 
+  state.periods = state.periods || {};
+  state.periodAlerted = state.periodAlerted || {};
   const savedPeriod = state.periods[periodKey] || {};
   const savedCount = Object.keys(savedPeriod).length;
   const alreadySent = !!state.periodAlerted?.[periodKey]?.sent;
@@ -553,6 +554,6 @@ async function main() {
 }
 
 process.on("SIGTERM", () => { for (const t of heartbeatTimers.values()) clearInterval(t); for (const socket of sockets.values()) { try { socket.close(); } catch {} } process.exit(0); });
-process.on("SIGINT", () => { clearInterval(heartbeatTimer); if (ws) ws.close(); process.exit(0); });
+process.on("SIGINT", () => { for (const t of heartbeatTimers.values()) clearInterval(t); for (const socket of sockets.values()) { try { socket.close(); } catch {} } process.exit(0); });
 
 main().catch(e => { log("FATAL", { error:String(e.stack||e) }); process.exit(1); });
