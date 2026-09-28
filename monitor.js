@@ -330,7 +330,9 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v7";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v8";
+const GAMMA_MIN_INTERVAL_MS = 750;
+let gammaNextRequestAt = 0;
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
 
 function parseJsonField(value, fallback = []) {
@@ -353,6 +355,14 @@ function resolvedWinner(market) {
   if (best.label === "up") return "Up";
   if (best.label === "down") return "Down";
   return null;
+}
+
+async function gammaFetch(url, options = {}) {
+  const now = Date.now();
+  const waitMs = Math.max(0, gammaNextRequestAt - now);
+  if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+  gammaNextRequestAt = Date.now() + GAMMA_MIN_INTERVAL_MS;
+  return fetch(url, options);
 }
 
 async function fetchHistoricalSeries(asset, cutoffMs) {
@@ -391,7 +401,7 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
       }
 
       pages++;
-      const r = await fetch(url, {
+      const r = await gammaFetch(url, {
         signal: controller.signal,
         headers: { accept: "application/json" }
       });
@@ -757,6 +767,7 @@ async function main() {
     persistentState:true, postgres:false
   });
 
+  startHealth();
   const historyReady = await bootstrapHistoricalCounts();
   if (!historyReady) {
     log("MONITOR_BLOCKED", { reason:"historical_bootstrap_incomplete" });
@@ -764,7 +775,6 @@ async function main() {
     return;
   }
 
-  startHealth();
   connectRtds();
   log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
   await poll();
