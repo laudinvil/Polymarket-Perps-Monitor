@@ -635,7 +635,10 @@ async function processClosedPeriod(state) {
   }
 }
 
-  } finally { cycleBusy = false; }\n}\n\nasync function main() {
+  } finally { cycleBusy = false; }
+}
+
+async function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
   await initDb();
