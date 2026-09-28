@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "6.2.0";
+const VERSION = "7.0.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -49,7 +49,8 @@ function defaultState() {
     counts: Object.fromEntries(ASSETS.map(a => [a.key, 0])),
     periods: {}, lastProcessedPeriod: null, leader: null,
     updatedAt: nowIso(), source: "Polymarket RTDS Chainlink TWAP60",
-    pollingMs: POLL_MS
+    pollingMs: POLL_MS,
+    historyBootstrap: null
   };
 }
 
@@ -322,7 +323,7 @@ async function sendOnlineAlert() {
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
 const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-chainlink-twap60-boundaries-v2";
 const HISTORY_PERIOD_MS = PERIOD_MS;
-const HISTORY_BATCH_SIZE = 10;\nconst LIVE_BOUNDARY_LOOKBACK_MS = 70_000;
+const HISTORY_BATCH_SIZE = 10;
 const HISTORY_RETRY_MS = 5000;
 const CHAINLINK_MIN_REQUEST_INTERVAL_MS = 125; // <= 8 requests/sec at request start
 let chainlinkLastRequestAt = 0;
@@ -499,11 +500,14 @@ async function bootstrapHistoricalCounts() {
   historicalBootstrapRunning=true;
   try {
     const previousHistory=state.historyBootstrap||{};
+    // Only fully closed 5m periods belong to the historical baseline.
     const cutoffMs=currentPeriodStart(), targets=historyBoundaryTargets(cutoffMs), expectedPeriods=targets.length-1;
     const sameBaseline=previousHistory.version===HISTORY_BOOTSTRAP_VERSION && previousHistory.from===new Date(HISTORY_START_MS).toISOString();
     if(sameBaseline && previousHistory.complete===true && previousHistory.to===new Date(cutoffMs).toISOString()) {
       log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE",{version:HISTORY_BOOTSTRAP_VERSION,periods:expectedPeriods,counts:state.counts}); return true;
     }
+    // Rebuild cumulative state only from the persisted Chainlink boundary cache.
+    // This deliberately discards any pre-7.0 live-only counters.
     state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
     state.periods={}; state.periodAlerted={}; state.leader=null; state.lastProcessedPeriod=null;
     state.historyBootstrap={
@@ -570,6 +574,15 @@ async function bootstrapHistoricalCounts() {
 }
 
 async function processClosedPeriod() {
+  if (!historyReady || !state.historyBootstrap?.complete) {
+    log("PERIOD_WAIT", {
+      reason:"historical_baseline_not_ready",
+      historyReady,
+      historyBootstrapComplete:!!state.historyBootstrap?.complete
+    });
+    return;
+  }
+
   const start = currentPeriodStart();
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
@@ -780,36 +793,55 @@ async function main() {
   if (state.version !== VERSION) {
     snapshot("PRE_VERSION_CHANGE");
     log("VERSION_CHANGE", { from:state.version||"unknown", to:VERSION });
+    const keepHistory = !!state.historyBootstrap?.complete &&
+      state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION;
     state.version = VERSION;
-    state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-    state.periods = {};
-    state.periodAlerted = {};
-    state.leader = null;
-    state.lastProcessedPeriod = null;
-    state.historyBootstrap = null;
-    state.strategy = "LIVE_RTDs_EXACT_BOUNDARY_TWAP60";
+    if (!keepHistory) {
+      state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+      state.periods = {};
+      state.periodAlerted = {};
+      state.leader = null;
+      state.lastProcessedPeriod = null;
+    }
+    state.strategy = "CHAINLINK_HISTORY_PLUS_RTDs_LIVE";
     saveState();
   }
 
   log("MONITOR_STARTING", {
     version:VERSION, source:"Polymarket RTDS crypto_prices_twap_sixty",
     pollingMs:POLL_MS, windowSeconds:60, assets:ASSETS.map(a=>a.key),
-    persistentState:true, postgres:false, strategy:"LIVE_RTDs_TWAP60_FROM_RESTART"
+    persistentState:true, postgres:false, strategy:"CHAINLINK_HISTORY_PLUS_RTDs_LIVE"
   });
 
   startHealth();
 
-  // LIVE MODE: do not block Telegram on a multi-hour historical REST bootstrap.
-  // The monitor starts scoring closed 5m periods as soon as RTDS has enough data.
-  historyReady = true;
-  state.strategy = "LIVE_RTDs_TWAP60_FROM_RESTART";
+  historyReady = false;
+  state.strategy = "CHAINLINK_HISTORY_PLUS_RTDs_LIVE";
   connectRtds();
-  log("STARTUP_ALERTS_ENABLED", {
-    source:"Polymarket RTDS crypto_prices_twap_sixty exact 5m boundaries",
-    mode:"live_5m_boundary",
-    historicalBootstrap:false,
-    firstAlert:"after_first_complete_5m_period"
+
+  log("HISTORY_BOOTSTRAP_SCHEDULED", {
+    source:"Chainlink Data Streams REST paginated TWAP60",
+    from:new Date(HISTORY_START_MS).toISOString(),
+    mode:"historical_baseline_required_before_cumulative_alert"
   });
+
+  // Historical data is rebuilt/persisted separately from the live RTDS stream.
+  // Health and RTDS stay online while the REST bootstrap runs.
+  bootstrapHistoricalCounts()
+    .then(ok => {
+      historyReady = !!ok;
+      log("HISTORY_BOOTSTRAP_RESULT", {
+        complete:!!ok,
+        counts:state.counts,
+        periods:Object.keys(state.periods||{}).length
+      });
+      if (ok) poll().catch(e => log("POST_HISTORY_POLL_ERROR",{error:String(e.stack||e)}));
+    })
+    .catch(e => {
+      historyReady = false;
+      log("HISTORY_BOOTSTRAP_FATAL",{error:String(e.stack||e),retry:true});
+    });
+
   await poll();
   setInterval(poll, POLL_MS);
 
