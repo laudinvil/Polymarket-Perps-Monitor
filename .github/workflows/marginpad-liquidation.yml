@@ -2,6 +2,9 @@ name: MarginPad Liquidation 5M
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - monitor-start.trigger
 
 concurrency:
   group: marginpad-liquidation-monitor
