@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.4";
+const VERSION = "4.1.5";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -194,15 +194,19 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => { reconnectTimer = null; connectRtds(); }, 3000);
 }
 
-function pointAtOrBefore(assetKey, targetMs, maxAgeMs = 20_000) {
+function pointNearBoundary(assetKey, targetMs, maxAgeMs = 65_000) {
   const arr = history.get(assetKey) || [];
-  let candidate = null;
+  let best = null;
+  let bestDistance = Infinity;
   for (const p of arr) {
-    if (p.ts <= targetMs) candidate = p;
-    else break;
+    const distance = Math.abs(p.ts - targetMs);
+    if (distance < bestDistance) {
+      best = p;
+      bestDistance = distance;
+    }
+    if (p.ts > targetMs && distance > bestDistance) break;
   }
-  if (!candidate || targetMs - candidate.ts > maxAgeMs) return null;
-  return candidate;
+  return best && bestDistance <= maxAgeMs ? best : null;
 }
 
 function currentPeriodStart() { return Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS; }
@@ -298,23 +302,13 @@ async function processClosedPeriod() {
     });
   }
 
-  if (collectionStartedAt && closedStart < collectionStartedAt) {
-    if (!state.skippedStartupPeriods) state.skippedStartupPeriods = {};
-    if (!state.skippedStartupPeriods[periodKey]) {
-      state.skippedStartupPeriods[periodKey] = { reason:"started_before_rtds_collection", skippedAt:nowIso() };
-      saveState();
-      log("PERIOD_SKIPPED_STARTUP", { periodKey, closedStart, collectionStartedAt });
-    }
-    return;
-  }
-
   const closeBoundary = start;
   const results = {};
   const missing = [];
 
   for (const asset of ASSETS) {
-    const open = pointAtOrBefore(asset.key, closedStart, 60_000);
-    const close = pointAtOrBefore(asset.key, closeBoundary, 60_000);
+    const open = pointNearBoundary(asset.key, closedStart, 65_000);
+    const close = pointNearBoundary(asset.key, closeBoundary, 65_000);
     if (!open || !close) {
       missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
@@ -328,7 +322,7 @@ async function processClosedPeriod() {
 
   if (!Object.keys(results).length) {
     log("PERIOD_WAIT", {
-      periodKey, reason:"no_twap60_boundaries", missing, retry:true
+      periodKey, reason:"no_twap60_boundaries_within_65s", missing, retry:true
     });
     return;
   }
