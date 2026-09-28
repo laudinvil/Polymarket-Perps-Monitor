@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.6";
+const VERSION = "4.1.7";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -358,7 +358,13 @@ async function processClosedPeriod() {
     }
   }
 
-  if (!Object.keys(newResults).length) {
+  const mergedResults = { ...savedPeriod, ...newResults };
+  const newlyComplete = Object.keys(mergedResults).length >= ASSETS.length;
+
+  // A period may already contain results from an earlier version/run but have
+  // never produced a Telegram alert. Do not wait for another asset to arrive.
+  const alreadyAlerted = !!state.periodAlerted?.[periodKey];
+  if (!Object.keys(newResults).length && alreadyAlerted) {
     log("PERIOD_WAIT", {
       periodKey,
       reason:"no_new_twap60_assets",
@@ -369,8 +375,6 @@ async function processClosedPeriod() {
     return;
   }
 
-  const mergedResults = { ...savedPeriod, ...newResults };
-  const newlyComplete = Object.keys(mergedResults).length >= ASSETS.length;
   state.periods[periodKey] = mergedResults;
   state.lastProcessedPeriod = periodKey;
   state.leader = ranking()[0];
@@ -400,6 +404,11 @@ async function processClosedPeriod() {
   ];
 
   const sent = await sendTelegram(lines.join("\n"), "PERIOD_ALERT");
+  if (sent) {
+    state.periodAlerted = state.periodAlerted || {};
+    state.periodAlerted[periodKey] = { sentAt: nowIso(), complete: newlyComplete };
+    saveState();
+  }
   log("PERIOD_PROCESSED", {
     periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:top, telegram:sent,
     source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
