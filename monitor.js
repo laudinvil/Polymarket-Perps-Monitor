@@ -75,10 +75,15 @@ function isTargetMarket(m, asset) {
   if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
   if (start < START_MS || end - start < 4 * 60 * 1000 || end - start > 6 * 60 * 1000) return false;
 
+  const resolution = String(m.resolutionSource || "").toLowerCase();
+  const description = String(m.description || "").toLowerCase();
   const raw = m.raw;
   const cfg = raw && raw.cryptoMarketConfig;
   const lookback = cfg && Number(cfg.twapLookbackSeconds);
-  if (lookback && lookback !== 60) return false;
+  const explicitly60 = lookback === 60 ||
+    resolution.includes("twap-60s") ||
+    description.includes("twap-60s");
+  if (!explicitly60) return false;
 
   const q = String(m.question || "").toLowerCase();
   return q.includes("up or down") || m.slug.includes("updown-5m");
@@ -189,78 +194,70 @@ async function sendTelegram(text) {
 }
 
 async function processClosedPeriods(state) {
+  const now = Date.now();
+  const currentStart = Math.floor(now / 300000) * 300000;
+  const periodStart = currentStart - 300000;
+  if (periodStart < START_MS) return;
+
+  const periodKey = "period-" + Math.floor(periodStart / 1000);
+  if (state.periods && state.periods[periodKey]) return;
+
+  const results = {};
   for (const asset of ASSETS) {
-    const now = Date.now();
-    const currentStart = Math.floor(now / 300000) * 300000;
-    const candidates = [currentStart - 300000, currentStart - 600000];
-
-    for (const start of candidates) {
-      if (start < START_MS) continue;
-      const slug = asset.slug + "-" + Math.floor(start / 1000);
-      if (state.processed[slug]) continue;
-
-      try {
-        const m = await fetchMarketBySlug(slug);
-        if (!m) continue;
-
-        const mStart = Date.parse(m.startDate || "");
-        const mEnd = Date.parse(m.endDate || "");
-        if (!Number.isFinite(mStart) || !Number.isFinite(mEnd) || mStart < START_MS) continue;
-
-        const w = winnerOf(m);
-        if (!w) continue;
-
-        state.counts[asset.key] += w === "Up" ? 1 : -1;
-        state.processed[slug] = w;
-        state.lastProcessedAt = new Date().toISOString();
-        save(state);
-
-        const top = ranking(state.counts)[0];
-        const leader = ASSETS.find(a => a.key === top.asset);
-        const link = "https://polymarket.com/event/" + nextSlug(leader);
-
-        const lines = [
-          "5M CHAINLINK TWAP 60s",
-          "",
-          asset.key + " → " + w,
-          "",
-          ...ranking(state.counts).map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
-          "",
-          "IMBALANCE: " + top.asset + " " + (top.score >= 0 ? "+" : "") + top.score,
-          link
-        ];
-
-        await sendTelegram(lines.join("\n"));
-        log("ALERT_SENT", { asset: asset.key, winner: w, counts: state.counts, leader: top });
-      } catch (e) {
-        log("PERIOD_ERROR", { asset: asset.key, slug, error: String(e.message || e) });
-      }
-    }
-  }
-}
-
-async function main() {
-  log("MONITOR_START", {
-    start: new Date(START_MS).toISOString(),
-    twapSeconds: 60,
-    assets: ASSETS.map(a => a.key),
-    pollMs: POLL_MS
-  });
-
-  let state = load();
-  state = await backfill(state);
-
-  while (true) {
+    const slug = asset.slug + "-" + Math.floor(periodStart / 1000);
     try {
-      await processClosedPeriods(state);
+      const m = await fetchMarketBySlug(slug);
+      if (!m) return;
+
+      const mStart = Date.parse(m.startDate || "");
+      const mEnd = Date.parse(m.endDate || "");
+      if (!Number.isFinite(mStart) || !Number.isFinite(mEnd) || mStart < START_MS) return;
+
+      const w = winnerOf(m);
+      if (!w) return;
+      results[asset.key] = w;
     } catch (e) {
-      log("LOOP_ERROR", { error: String(e.message || e) });
+      log("PERIOD_ERROR", { asset: asset.key, slug, error: String(e.message || e) });
+      return;
     }
-    await new Promise(r => setTimeout(r, POLL_MS));
+  }
+
+  if (Object.keys(results).length !== ASSETS.length) return;
+
+  if (!state.periods) state.periods = {};
+  for (const asset of ASSETS) {
+    state.counts[asset.key] += results[asset.key] === "Up" ? 1 : -1;
+  }
+  state.periods[periodKey] = results;
+  state.lastProcessedAt = new Date().toISOString();
+  save(state);
+
+  const top = ranking(state.counts)[0];
+  const leader = ASSETS.find(a => a.key === top.asset);
+  const nextStart = currentStart + 300000;
+  const link = "https://polymarket.com/event/" + leader.slug + "-" + Math.floor(nextStart / 1000);
+
+  const lines = [
+    "5M CHAINLINK TWAP 60s",
+    "",
+    ...ASSETS.map(a => a.key + " → " + results[a.key]),
+    "",
+    ...ranking(state.counts).map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
+    "",
+    "IMBALANCE: " + top.asset + " " + (top.score >= 0 ? "+" : "") + top.score,
+    link
+  ];
+
+  try {
+    await sendTelegram(lines.join("\\n"));
+    log("ALERT_SENT", { period: periodKey, results, counts: state.counts, leader: top });
+  } catch (e) {
+    delete state.periods[periodKey];
+    for (const asset of ASSETS) {
+      state.counts[asset.key] -= results[asset.key] === "Up" ? 1 : -1;
+    }
+    save(state);
+    log("TELEGRAM_ERROR", { period: periodKey, error: String(e.message || e) });
   }
 }
 
-main().catch(e => {
-  log("FATAL", { error: String(e.stack || e) });
-  process.exit(1);
-});
