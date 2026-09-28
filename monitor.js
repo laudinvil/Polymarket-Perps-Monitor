@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.4.0";
+const VERSION = "4.5.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -22,9 +22,9 @@ const ASSETS = [
 const STATE_FILE = process.env.STATE_FILE || "/data/chainlink-twap60-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/chainlink-twap60.jsonl";
 
-let ws = null;
-let reconnectTimer = null;
-let heartbeatTimer = null;
+const sockets = new Map();
+const reconnectTimers = new Map();
+const heartbeatTimers = new Map();
 let connected = false;
 let state = null;
 let collectionStartedAt = null;
@@ -111,53 +111,78 @@ function startHealth() {
 }
 
 function connectRtds() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  clearTimeout(reconnectTimer);
-  log("RTDS_CONNECTING", { url: RTDS_URL });
-  ws = new WebSocket(RTDS_URL);
+  for (const asset of ASSETS) connectAssetRtds(asset);
+}
 
-  ws.on("open", () => {
+function connectAssetRtds(asset) {
+  const existing = sockets.get(asset.key);
+  if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) return;
+
+  clearTimeout(reconnectTimers.get(asset.key));
+  log("RTDS_CONNECTING", { url: RTDS_URL, asset: asset.key });
+
+  const socket = new WebSocket(RTDS_URL);
+  sockets.set(asset.key, socket);
+
+  socket.on("open", () => {
     connected = true;
     if (!collectionStartedAt) {
       collectionStartedAt = Date.now();
       log("COLLECTION_STARTED", { at: collectionStartedAt, nextPeriodStart: currentPeriodStart() + PERIOD_MS });
     }
-    log("RTDS_CONNECTED");
-    const subscriptions = ASSETS.map(a => ({
-      topic: "crypto_prices_twap_sixty", type: "update", filters: JSON.stringify({ symbol: a.symbol })
-    }));
-    ws.send(JSON.stringify({ action: "subscribe", subscriptions }));
+
+    log("RTDS_CONNECTED", { asset: asset.key });
+
+    // RTDS currently rejects a multi-symbol TWAP subscription batch.
+    // Use one WebSocket/subscription per asset so one bad symbol cannot
+    // suppress the other six streams.
+    const subscription = {
+      action: "subscribe",
+      subscriptions: [{
+        topic: "crypto_prices_twap_sixty",
+        type: "update",
+        filters: JSON.stringify({ symbol: asset.symbol })
+      }]
+    };
+    socket.send(JSON.stringify(subscription));
     log("RTDS_SUBSCRIBED", {
       topic: "crypto_prices_twap_sixty",
-      symbols: ASSETS.map(a => a.symbol), windowSeconds: 60
+      asset: asset.key,
+      symbol: asset.symbol,
+      windowSeconds: 60
     });
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try { ws.send("PING"); } catch {}
+
+    clearInterval(heartbeatTimers.get(asset.key));
+    heartbeatTimers.set(asset.key, setInterval(() => {
+      const current = sockets.get(asset.key);
+      if (current && current.readyState === WebSocket.OPEN) {
+        try { current.send("PING"); } catch {}
       }
-    }, 5000);
+    }, 5000));
   });
 
-  ws.on("message", raw => {
+  socket.on("message", raw => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
-    if (msg.message) { log("RTDS_MESSAGE", { message: msg.message }); return; }
+    if (msg.message) {
+      log("RTDS_MESSAGE", { asset: asset.key, message: msg.message });
+      return;
+    }
 
     const p = msg.payload;
     if (!p || msg.topic !== "crypto_prices_twap_sixty") return;
     if (Number(p.window_s) !== 60) {
-      log("TWAP_REJECTED", { reason: "window_not_60", payload: p });
+      log("TWAP_REJECTED", { asset: asset.key, reason: "window_not_60", payload: p });
       return;
     }
 
     const symbol = String(p.symbol || "").toLowerCase();
-    const asset = ASSETS.find(a => a.symbol === symbol);
-    if (!asset) return;
+    if (symbol !== asset.symbol) return;
 
-    const ts = Number(p.timestamp);
+    let ts = Number(p.timestamp);
     const exact = String(p.full_accuracy_value || "");
     if (!Number.isFinite(ts) || !exact) return;
+    if (ts > 0 && ts < 1_000_000_000_000) ts *= 1000;
 
     const value = Number(exact) / 1e18;
     if (!Number.isFinite(value)) return;
@@ -180,17 +205,24 @@ function connectRtds() {
     }
   });
 
-  ws.on("close", (code, reason) => {
-    connected = false; clearInterval(heartbeatTimer);
-    log("RTDS_CLOSED", { code, reason: reason ? reason.toString() : "" });
-    scheduleReconnect();
+  socket.on("close", (code, reason) => {
+    connected = Array.from(sockets.values()).some(x => x && x.readyState === WebSocket.OPEN);
+    clearInterval(heartbeatTimers.get(asset.key));
+    heartbeatTimers.delete(asset.key);
+    if (sockets.get(asset.key) === socket) sockets.delete(asset.key);
+    log("RTDS_CLOSED", { asset: asset.key, code, reason: reason ? reason.toString() : "" });
+    scheduleReconnect(asset);
   });
-  ws.on("error", e => log("RTDS_ERROR", { error: String(e.message || e) }));
+
+  socket.on("error", e => log("RTDS_ERROR", { asset: asset.key, error: String(e.message || e) }));
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => { reconnectTimer = null; connectRtds(); }, 3000);
+function scheduleReconnect(asset) {
+  if (reconnectTimers.get(asset.key)) return;
+  reconnectTimers.set(asset.key, setTimeout(() => {
+    reconnectTimers.delete(asset.key);
+    connectAssetRtds(asset);
+  }, 3000));
 }
 
 function pointAtOrBefore(assetKey, targetMs) {
@@ -520,7 +552,7 @@ async function main() {
   }), 60_000);
 }
 
-process.on("SIGTERM", () => { clearInterval(heartbeatTimer); if (ws) ws.close(); process.exit(0); });
+process.on("SIGTERM", () => { for (const t of heartbeatTimers.values()) clearInterval(t); for (const socket of sockets.values()) { try { socket.close(); } catch {} } process.exit(0); });
 process.on("SIGINT", () => { clearInterval(heartbeatTimer); if (ws) ws.close(); process.exit(0); });
 
 main().catch(e => { log("FATAL", { error:String(e.stack||e) }); process.exit(1); });
