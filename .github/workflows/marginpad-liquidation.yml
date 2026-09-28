@@ -33,6 +33,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_FILE: /tmp/marginpad-liquidation-state.json
           LOG_FILE: /tmp/marginpad-liquidation.jsonl
+          DEDUPE_CLAIM_URL: ${{ secrets.DEDUPE_CLAIM_URL }}
+          DEDUPE_CLAIM_SECRET: ${{ secrets.DEDUPE_CLAIM_SECRET }}
           # Shared dedupe lease is handled by Convex when configured.
         run: |
           node monitor.js
