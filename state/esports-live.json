@@ -840,32 +840,32 @@
       }
     }
   },
-  "updatedAt": "2026-09-28T07:02:48.821Z",
+  "updatedAt": "2026-09-28T07:04:07.970Z",
   "stage": "POLL_RESULT",
   "runId": "36388609546",
   "sha": "39e9123b9b4ecaa60f209e854420c23c0dc88d3b",
   "telemetry": {
     "startedAt": "2026-09-28T06:52:39.174Z",
-    "events": 1092,
-    "polls": 14,
+    "events": 1173,
+    "polls": 16,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 236,
-      "HTTP_RESPONSE": 236,
-      "HTTP_JSON": 219,
-      "GAME1_EVIDENCE": 344,
-      "HTTP_NONRETRYABLE": 16,
-      "HTTP_ERROR": 16,
-      "GAME_DETAILS_ERROR": 8,
-      "GAME_SCORE_ENRICH_ERROR": 8,
-      "POLL_RESULT": 7,
+      "HTTP_REQUEST": 247,
+      "HTTP_RESPONSE": 247,
+      "HTTP_JSON": 228,
+      "GAME1_EVIDENCE": 387,
+      "HTTP_NONRETRYABLE": 18,
+      "HTTP_ERROR": 18,
+      "GAME_DETAILS_ERROR": 9,
+      "GAME_SCORE_ENRICH_ERROR": 9,
+      "POLL_RESULT": 8,
       "HTTP_RETRY": 1
     },
     "recent": [
       {
-        "ts": "2026-09-28T07:02:30.848Z",
+        "ts": "2026-09-28T07:03:50.208Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
@@ -873,7 +873,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:30.850Z",
+        "ts": "2026-09-28T07:03:50.209Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
@@ -881,7 +881,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:30.850Z",
+        "ts": "2026-09-28T07:03:50.210Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
@@ -889,7 +889,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:30.851Z",
+        "ts": "2026-09-28T07:03:50.211Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/lives",
@@ -897,17 +897,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.020Z",
+        "ts": "2026-09-28T07:03:50.334Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
           "status": 200,
           "ok": true,
-          "elapsedMs": 170
+          "elapsedMs": 124
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.081Z",
+        "ts": "2026-09-28T07:03:50.398Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&tag_slug=esports",
@@ -916,7 +916,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.081Z",
+        "ts": "2026-09-28T07:03:50.398Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
@@ -924,17 +924,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.104Z",
+        "ts": "2026-09-28T07:03:50.416Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
           "status": 200,
           "ok": true,
-          "elapsedMs": 23
+          "elapsedMs": 18
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.153Z",
+        "ts": "2026-09-28T07:03:50.473Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=500&order=startDate&ascending=true",
@@ -943,27 +943,27 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.278Z",
+        "ts": "2026-09-28T07:03:50.634Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 428
+          "elapsedMs": 425
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.296Z",
+        "ts": "2026-09-28T07:03:50.687Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/lives",
           "status": 200,
           "ok": true,
-          "elapsedMs": 445
+          "elapsedMs": 477
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.296Z",
+        "ts": "2026-09-28T07:03:50.687Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/lives",
@@ -972,7 +972,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.388Z",
+        "ts": "2026-09-28T07:03:50.743Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
@@ -981,17 +981,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.394Z",
+        "ts": "2026-09-28T07:03:50.795Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 546
+          "elapsedMs": 587
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.939Z",
+        "ts": "2026-09-28T07:03:51.352Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
@@ -1000,7 +1000,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:31.939Z",
+        "ts": "2026-09-28T07:03:51.353Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
@@ -1008,17 +1008,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:32.139Z",
+        "ts": "2026-09-28T07:03:51.546Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 200
+          "elapsedMs": 193
         }
       },
       {
-        "ts": "2026-09-28T07:02:32.584Z",
+        "ts": "2026-09-28T07:03:51.983Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
@@ -1027,7 +1027,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:32.584Z",
+        "ts": "2026-09-28T07:03:51.983Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
@@ -1035,17 +1035,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:32.829Z",
+        "ts": "2026-09-28T07:03:52.210Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 245
+          "elapsedMs": 227
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.048Z",
+        "ts": "2026-09-28T07:03:52.435Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
@@ -1054,7 +1054,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.048Z",
+        "ts": "2026-09-28T07:03:52.435Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1062,17 +1062,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.227Z",
+        "ts": "2026-09-28T07:03:52.706Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 179
+          "elapsedMs": 271
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.452Z",
+        "ts": "2026-09-28T07:03:52.925Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
@@ -1081,7 +1081,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.452Z",
+        "ts": "2026-09-28T07:03:52.925Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1089,17 +1089,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.661Z",
+        "ts": "2026-09-28T07:03:53.135Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
           "status": 200,
           "ok": true,
-          "elapsedMs": 209
+          "elapsedMs": 210
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.773Z",
+        "ts": "2026-09-28T07:03:53.359Z",
         "event": "HTTP_JSON",
         "data": {
           "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
@@ -1108,7 +1108,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.781Z",
+        "ts": "2026-09-28T07:03:53.366Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1697653",
@@ -1127,7 +1127,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.781Z",
+        "ts": "2026-09-28T07:03:53.367Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/games/284306",
@@ -1135,17 +1135,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.896Z",
+        "ts": "2026-09-28T07:03:53.479Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/games/284306",
           "status": 404,
           "ok": false,
-          "elapsedMs": 115
+          "elapsedMs": 112
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.896Z",
+        "ts": "2026-09-28T07:03:53.479Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/games/284306",
@@ -1153,7 +1153,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.896Z",
+        "ts": "2026-09-28T07:03:53.479Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/games/284306",
@@ -1162,7 +1162,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.897Z",
+        "ts": "2026-09-28T07:03:53.480Z",
         "event": "GAME_DETAILS_ERROR",
         "data": {
           "matchId": "1697653",
@@ -1171,7 +1171,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:33.897Z",
+        "ts": "2026-09-28T07:03:53.480Z",
         "event": "HTTP_REQUEST",
         "data": {
           "url": "https://api.pandascore.co/lol/games/284306/frames",
@@ -1179,17 +1179,17 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.011Z",
+        "ts": "2026-09-28T07:03:53.600Z",
         "event": "HTTP_RESPONSE",
         "data": {
           "url": "https://api.pandascore.co/lol/games/284306/frames",
           "status": 403,
           "ok": false,
-          "elapsedMs": 114
+          "elapsedMs": 120
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.011Z",
+        "ts": "2026-09-28T07:03:53.600Z",
         "event": "HTTP_NONRETRYABLE",
         "data": {
           "url": "https://api.pandascore.co/lol/games/284306/frames",
@@ -1197,7 +1197,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.011Z",
+        "ts": "2026-09-28T07:03:53.600Z",
         "event": "HTTP_ERROR",
         "data": {
           "url": "https://api.pandascore.co/lol/games/284306/frames",
@@ -1206,7 +1206,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.011Z",
+        "ts": "2026-09-28T07:03:53.600Z",
         "event": "GAME_SCORE_ENRICH_ERROR",
         "data": {
           "matchId": "1697653",
@@ -1216,7 +1216,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.013Z",
+        "ts": "2026-09-28T07:03:53.602Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711996",
@@ -1235,7 +1235,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.015Z",
+        "ts": "2026-09-28T07:03:53.604Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712147",
@@ -1254,7 +1254,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:34.851Z",
+        "ts": "2026-09-28T07:03:54.571Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700472",
@@ -1273,7 +1273,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:35.517Z",
+        "ts": "2026-09-28T07:03:55.258Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1684183",
@@ -1292,7 +1292,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:36.182Z",
+        "ts": "2026-09-28T07:03:56.150Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1683303",
@@ -1311,7 +1311,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:36.853Z",
+        "ts": "2026-09-28T07:03:56.816Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1637687",
@@ -1330,7 +1330,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:36.854Z",
+        "ts": "2026-09-28T07:03:56.818Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713028",
@@ -1349,7 +1349,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:36.860Z",
+        "ts": "2026-09-28T07:03:56.823Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1704623",
@@ -1368,7 +1368,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:37.557Z",
+        "ts": "2026-09-28T07:03:57.483Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1697654",
@@ -1387,7 +1387,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:37.559Z",
+        "ts": "2026-09-28T07:03:57.485Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713029",
@@ -1406,7 +1406,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:37.560Z",
+        "ts": "2026-09-28T07:03:57.486Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712148",
@@ -1425,7 +1425,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:38.184Z",
+        "ts": "2026-09-28T07:03:58.244Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1683304",
@@ -1444,7 +1444,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:38.811Z",
+        "ts": "2026-09-28T07:03:58.902Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700473",
@@ -1463,7 +1463,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:39.427Z",
+        "ts": "2026-09-28T07:03:59.515Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1689003",
@@ -1482,7 +1482,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:40.056Z",
+        "ts": "2026-09-28T07:04:00.171Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1684184",
@@ -1501,7 +1501,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:40.676Z",
+        "ts": "2026-09-28T07:04:00.770Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1637688",
@@ -1520,7 +1520,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:40.678Z",
+        "ts": "2026-09-28T07:04:00.772Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1714226",
@@ -1539,7 +1539,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:41.291Z",
+        "ts": "2026-09-28T07:04:01.371Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1713030",
@@ -1558,7 +1558,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:41.297Z",
+        "ts": "2026-09-28T07:04:01.376Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700474",
@@ -1577,7 +1577,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:41.923Z",
+        "ts": "2026-09-28T07:04:01.986Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1714923",
@@ -1596,7 +1596,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:41.924Z",
+        "ts": "2026-09-28T07:04:01.988Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1702603",
@@ -1615,7 +1615,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:42.552Z",
+        "ts": "2026-09-28T07:04:02.592Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1661630",
@@ -1634,7 +1634,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:43.164Z",
+        "ts": "2026-09-28T07:04:03.206Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700475",
@@ -1653,7 +1653,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:43.944Z",
+        "ts": "2026-09-28T07:04:03.824Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1661632",
@@ -1672,7 +1672,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:44.634Z",
+        "ts": "2026-09-28T07:04:04.460Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1661631",
@@ -1691,7 +1691,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:45.313Z",
+        "ts": "2026-09-28T07:04:05.075Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1714933",
@@ -1710,7 +1710,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:45.315Z",
+        "ts": "2026-09-28T07:04:05.077Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712192",
@@ -1729,7 +1729,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:45.983Z",
+        "ts": "2026-09-28T07:04:05.712Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1702604",
@@ -1748,7 +1748,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:46.654Z",
+        "ts": "2026-09-28T07:04:06.356Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700639",
@@ -1767,7 +1767,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:47.494Z",
+        "ts": "2026-09-28T07:04:06.888Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1691676",
@@ -1786,7 +1786,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:47.495Z",
+        "ts": "2026-09-28T07:04:06.889Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711030",
@@ -1805,7 +1805,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:47.497Z",
+        "ts": "2026-09-28T07:04:06.890Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711027",
@@ -1824,7 +1824,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:47.498Z",
+        "ts": "2026-09-28T07:04:06.892Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1700599",
@@ -1843,7 +1843,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.128Z",
+        "ts": "2026-09-28T07:04:07.455Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711031",
@@ -1862,7 +1862,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.129Z",
+        "ts": "2026-09-28T07:04:07.456Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711028",
@@ -1881,7 +1881,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.132Z",
+        "ts": "2026-09-28T07:04:07.458Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711998",
@@ -1900,7 +1900,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.134Z",
+        "ts": "2026-09-28T07:04:07.459Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711032",
@@ -1919,7 +1919,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.135Z",
+        "ts": "2026-09-28T07:04:07.460Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711029",
@@ -1938,7 +1938,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.138Z",
+        "ts": "2026-09-28T07:04:07.463Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712932",
@@ -1957,7 +1957,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.816Z",
+        "ts": "2026-09-28T07:04:07.967Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711999",
@@ -1976,7 +1976,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.818Z",
+        "ts": "2026-09-28T07:04:07.969Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711036",
@@ -1995,7 +1995,7 @@
         }
       },
       {
-        "ts": "2026-09-28T07:02:48.821Z",
+        "ts": "2026-09-28T07:04:07.970Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1711033",
@@ -2016,7 +2016,7 @@
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-28T07:02:48.821Z"
+    "updatedAt": "2026-09-28T07:04:07.970Z"
   },
   "diagnostics": {
     "events": 503,
