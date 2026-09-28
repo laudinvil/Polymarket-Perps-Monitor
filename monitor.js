@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "5.1.0";
+const VERSION = "6.0.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -559,13 +559,6 @@ async function bootstrapHistoricalCounts() {
 }
 
 async function processClosedPeriod() {
-  if (!historyReady) {
-    log("PERIOD_WAIT", {
-      reason:"historical_bootstrap_not_ready",
-      action:"live_rtds_running_alerts_gated_until_cumulative_baseline_loaded"
-    });
-    return;
-  }
   const start = currentPeriodStart();
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
@@ -769,53 +762,37 @@ async function main() {
     snapshot("PRE_VERSION_CHANGE");
     log("VERSION_CHANGE", { from:state.version||"unknown", to:VERSION });
     state.version = VERSION;
-    state.historyBootstrap = null;
     state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
     state.periods = {};
     state.periodAlerted = {};
     state.leader = null;
     state.lastProcessedPeriod = null;
+    state.historyBootstrap = null;
+    state.strategy = "LIVE_RTDs_TWAP60_FROM_RESTART";
     saveState();
   }
 
   log("MONITOR_STARTING", {
-    version:VERSION, source:"Polymarket RTDS / Chainlink crypto_prices_twap_sixty",
+    version:VERSION, source:"Polymarket RTDS crypto_prices_twap_sixty",
     pollingMs:POLL_MS, windowSeconds:60, assets:ASSETS.map(a=>a.key),
-    persistentState:true, postgres:false
+    persistentState:true, postgres:false, strategy:"LIVE_RTDs_TWAP60_FROM_RESTART"
   });
 
   startHealth();
 
-  // Live TWAP collection may start immediately, but Telegram alerts remain
-  // strictly gated until the complete Chainlink historical baseline validates.
+  // LIVE MODE: do not block Telegram on a multi-hour historical REST bootstrap.
+  // The monitor starts scoring closed 5m periods as soon as RTDS has enough data.
+  historyReady = true;
+  state.strategy = "LIVE_RTDs_TWAP60_FROM_RESTART";
   connectRtds();
-  log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_historical_baseline_required" });
+  log("STARTUP_ALERTS_ENABLED", {
+    source:"Polymarket RTDS crypto_prices_twap_sixty",
+    mode:"live_5m_boundary",
+    historicalBootstrap:false,
+    firstAlert:"after_first_complete_5m_period"
+  });
   await poll();
   setInterval(poll, POLL_MS);
-
-  const runHistoricalBootstrap = async () => {
-    try {
-      const ready = await bootstrapHistoricalCounts();
-      if (ready) {
-        historyReady = true;
-        log("HISTORY_BOOTSTRAP_APPLIED", {
-          counts:state.counts, leader:state.leader,
-          periods:state.historyBootstrap?.completePeriods || 0
-        });
-        await poll();
-        return;
-      }
-      log("HISTORY_BOOTSTRAP_DEFERRED", {
-        reason:"chainlink_historical_baseline_incomplete",
-        action:"retry_in_30s", counts:state.counts
-      });
-      setTimeout(runHistoricalBootstrap, 30_000);
-    } catch (e) {
-      log("HISTORY_BOOTSTRAP_FATAL", { error:String(e.stack||e), action:"retry_in_30s" });
-      setTimeout(runHistoricalBootstrap, 30_000);
-    }
-  };
-  runHistoricalBootstrap();
 
   setInterval(() => log("HEARTBEAT", {
     websocket:connected, pollingMs:POLL_MS, collectionStartedAt,
