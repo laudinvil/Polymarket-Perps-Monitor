@@ -1,7 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
-const { decodeReport } = require("@chainlink/data-streams-sdk");
+let chainlinkSdkPromise = null;
+async function getChainlinkDecoder() {
+  if (!chainlinkSdkPromise) chainlinkSdkPromise = import("@chainlink/data-streams-sdk");
+  return chainlinkSdkPromise;
+}
 
 const API = "https://gamma-api.polymarket.com";
 const MONITOR_VERSION = "2.2.0";
@@ -299,7 +303,8 @@ async function resolveTwap60Feed(asset) {
   return { feedId: preferred.feedId, name: preferred.name, schemaVersion: preferred.schemaVersion, source: "discovery" };
 }
 
-function decodeTwapReport(fullReport, feedId) {
+async function decodeTwapReport(fullReport, feedId) {
+  const { decodeReport } = await getChainlinkDecoder();
   const decoded = decodeReport(fullReport, feedId);
   if (!decoded || typeof decoded.price !== "bigint") {
     throw new Error("Chainlink decoded report has no bigint price");
@@ -331,8 +336,8 @@ async function verifyTwapSettlement(asset, market, periodStart) {
   const feed = await resolveTwap60Feed(asset);
   const start = await fetchChainlinkReport(feed.feedId, periodStart);
   const end = await fetchChainlinkReport(feed.feedId, periodStart + 300000);
-  const openDecoded = decodeTwapReport(start.fullReport, start.feedId);
-  const closeDecoded = decodeTwapReport(end.fullReport, end.feedId);
+  const openDecoded = await decodeTwapReport(start.fullReport, start.feedId);
+  const closeDecoded = await decodeTwapReport(end.fullReport, end.feedId);
   const openPrice = openDecoded.price;
   const closePrice = closeDecoded.price;
   const expected = closePrice >= openPrice ? "Up" : "Down";
