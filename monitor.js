@@ -464,12 +464,23 @@ async function bootstrapHistoricalCounts() {
     log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST bulk",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
     await discoverChainlinkTwap60Feeds();
     const boundaryCache=new Map();
+    const persistedBoundaries=state.historyBootstrap.boundaries||{};
+    for(const [ts,values] of Object.entries(persistedBoundaries)) boundaryCache.set(Number(ts),values);
     let nextIndex=0;
+    while(nextIndex<targets.length && boundaryCache.has(targets[nextIndex])) nextIndex++;
     while(nextIndex<targets.length) {
-      const batch=targets.slice(nextIndex,nextIndex+HISTORY_BATCH_SIZE);
+      const batch=[];
+      for(let i=nextIndex;i<targets.length&&batch.length<HISTORY_BATCH_SIZE;i++) {
+        if(!boundaryCache.has(targets[i])) batch.push(targets[i]);
+      }
+      if(!batch.length) { nextIndex++; continue; }
       const results=await Promise.all(batch.map(async ts=>({ts,values:await fetchHistoricalBoundary(ts)})));
-      for(const item of results) boundaryCache.set(item.ts,item.values);
-      nextIndex+=batch.length;
+      for(const item of results) {
+        boundaryCache.set(item.ts,item.values);
+        state.historyBootstrap.boundaries=state.historyBootstrap.boundaries||{};
+        state.historyBootstrap.boundaries[String(item.ts)]=item.values;
+      }
+      while(nextIndex<targets.length&&boundaryCache.has(targets[nextIndex])) nextIndex++;
       state.historyBootstrap.completedBoundaries=nextIndex;
       state.historyBootstrap.observations=Array.from(boundaryCache.values()).reduce((n,x)=>n+Object.keys(x).length,0);
       saveState();
