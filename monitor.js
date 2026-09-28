@@ -1,22 +1,28 @@
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
+const { AbiCoder } = require("ethers");
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.0.0";
+const MONITOR_VERSION = "2.1.0";
+const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
+const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
+const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
+const CHAINLINK_DISCOVERY_CACHE_MS = 5 * 60 * 1000;
+let chainlinkDiscoveryCache = { at: 0, feeds: [] };
 const START_MS = Date.parse("2026-08-14T00:00:00Z");
 const POLL_MS = 10_000;
 const STATE_FILE = process.env.STATE_FILE || "/data/chainlink-imbalance-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/chainlink-imbalance.jsonl";
 
 const ASSETS = [
-  { key: "BTC", slug: "btc-updown-5m" },
-  { key: "ETH", slug: "eth-updown-5m" },
-  { key: "SOL", slug: "sol-updown-5m" },
-  { key: "BNB", slug: "bnb-updown-5m" },
-  { key: "XRP", slug: "xrp-updown-5m" },
-  { key: "DOGE", slug: "doge-updown-5m" },
-  { key: "HYPE", slug: "hype-updown-5m" }
+  { key: "BTC", slug: "btc-updown-5m", symbol: "BTC" },
+  { key: "ETH", slug: "eth-updown-5m", symbol: "ETH" },
+  { key: "SOL", slug: "sol-updown-5m", symbol: "SOL" },
+  { key: "BNB", slug: "bnb-updown-5m", symbol: "BNB" },
+  { key: "XRP", slug: "xrp-updown-5m", symbol: "XRP" },
+  { key: "DOGE", slug: "doge-updown-5m", symbol: "DOGE" },
+  { key: "HYPE", slug: "hype-updown-5m", symbol: "HYPE" }
 ];
 
 let db = null;
@@ -201,19 +207,158 @@ async function restoreAndMigrate() {
   return state;
 }
 
-async function getJson(url) {
+async function getJson(url, headers = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const r = await fetch(url, {
       signal: controller.signal,
-      headers: { accept: "application/json", "user-agent": "Polymarket-Chainlink-Imbalance/2.0" }
+      headers: { accept: "application/json", "user-agent": "Polymarket-Chainlink-Imbalance/2.1", ...headers }
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     return await r.json();
   } finally {
     clearTimeout(timer);
   }
+}
+
+
+function hmacHeaders(method, fullPath) {
+  if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) return {};
+  const crypto = require("crypto");
+  const ts = Date.now().toString();
+  const bodyHash = crypto.createHash("sha256").update("").digest("hex");
+  const message = [method.toUpperCase(), fullPath, bodyHash, CHAINLINK_API_KEY, ts].join(" ");
+  const signature = crypto.createHmac("sha256", CHAINLINK_API_SECRET).update(message).digest("hex");
+  return {
+    Authorization: CHAINLINK_API_KEY,
+    "X-Authorization-Timestamp": ts,
+    "X-Authorization-Signature-SHA256": signature
+  };
+}
+
+async function chainlinkJson(fullPath) {
+  const headers = { accept: "application/json", ...hmacHeaders("GET", fullPath) };
+  return getJson(CHAINLINK_ENDPOINT + fullPath, headers);
+}
+
+async function getJsonWithHeaders(url, headers = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const r = await fetch(url, {
+      signal: controller.signal,
+      headers: { accept: "application/json", "user-agent": "Polymarket-Chainlink-Imbalance/2.1", ...headers }
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => "");
+      throw new Error("HTTP " + r.status + (body ? " " + body.slice(0, 300) : ""));
+    }
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function chainlinkJsonDirect(fullPath) {
+  return getJsonWithHeaders(CHAINLINK_ENDPOINT + fullPath, hmacHeaders("GET", fullPath));
+}
+
+async function discoverChainlinkFeeds() {
+  const now = Date.now();
+  if (chainlinkDiscoveryCache.feeds.length && now - chainlinkDiscoveryCache.at < CHAINLINK_DISCOVERY_CACHE_MS) {
+    return chainlinkDiscoveryCache.feeds;
+  }
+  if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) {
+    throw new Error("Chainlink credentials missing");
+  }
+  const data = await chainlinkJsonDirect("/api/v1/discovery?asset_class=Crypto&quote_asset=USD&status=live&hidden=true");
+  const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
+  chainlinkDiscoveryCache = { at: now, feeds };
+  log("CHAINLINK_DISCOVERY", {
+    feeds: feeds.length,
+    twap60: feeds.filter(f => /twap.*60|60.*twap/i.test(String(f.name || ""))).map(f => ({ name: f.name, feedId: f.feedId, schemaVersion: f.schemaVersion }))
+  });
+  return feeds;
+}
+
+async function resolveTwap60Feed(asset) {
+  const explicit = process.env["CHAINLINK_FEED_" + asset.key] || process.env["CHAINLINK_TWAP60_" + asset.key];
+  if (explicit) return { feedId: explicit, source: "env" };
+
+  const feeds = await discoverChainlinkFeeds();
+  const symbol = asset.symbol.toLowerCase();
+  const candidates = feeds.filter(f => {
+    const name = String(f.name || "").toLowerCase();
+    const base = String(f.baseAsset || "").toLowerCase();
+    const quote = String(f.quoteAsset || "").toLowerCase();
+    return base === symbol && quote === "usd" && /twap/.test(name) && /60/.test(name);
+  });
+  if (!candidates.length) throw new Error("No live Chainlink TWAP60 feed discovered for " + asset.key);
+  const preferred = candidates.find(f => /twap-?60s|60s-?twap|twap.*60/.test(String(f.name || "").toLowerCase())) || candidates[0];
+  return { feedId: preferred.feedId, name: preferred.name, schemaVersion: preferred.schemaVersion, source: "discovery" };
+}
+
+function decodeTwapV2(fullReport) {
+  const coder = AbiCoder.defaultAbiCoder();
+  const outer = coder.decode(
+    ["bytes32[3]", "bytes", "bytes32[]", "bytes32[]", "bytes32"],
+    fullReport
+  );
+  const blob = String(outer[1]);
+  const words = [];
+  for (let i = 2; i + 64 <= blob.length; i += 64) words.push(blob.slice(i, i + 64));
+  if (words.length < 7) throw new Error("Chainlink report blob too short for V2");
+  const signedWord = BigInt("0x" + words[6]);
+  const signed = signedWord >= (1n << 255n) ? signedWord - (1n << 256n) : signedWord;
+  return signed;
+}
+
+async function fetchChainlinkReport(feedId, timestamp) {
+  const pathName = "/api/v1/reports?feedID=" + encodeURIComponent(feedId) + "&timestamp=" + Math.floor(timestamp / 1000);
+  const data = await chainlinkJsonDirect(pathName);
+  if (!data?.report?.fullReport) throw new Error("Chainlink report missing");
+  return {
+    feedId: data.report.feedID,
+    validFromTimestamp: Number(data.report.validFromTimestamp),
+    observationsTimestamp: Number(data.report.observationsTimestamp),
+    fullReport: data.report.fullReport
+  };
+}
+
+async function verifyTwapSettlement(asset, market, periodStart) {
+  const resolution = String(market.resolutionSource || "").toLowerCase();
+  const description = String(market.description || "").toLowerCase();
+  if (!resolution.includes("twap-60s") && !description.includes("twap-60s")) {
+    throw new Error("market does not explicitly reference Chainlink TWAP60");
+  }
+  if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) {
+    throw new Error("Chainlink credentials missing");
+  }
+
+  const feed = await resolveTwap60Feed(asset);
+  const start = await fetchChainlinkReport(feed.feedId, periodStart);
+  const end = await fetchChainlinkReport(feed.feedId, periodStart + 300000);
+  const openPrice = decodeTwapV2(start.fullReport);
+  const closePrice = decodeTwapV2(end.fullReport);
+  const expected = closePrice >= openPrice ? "Up" : "Down";
+  const actual = winnerOf(market);
+
+  const diagnostics = {
+    feedId: feed.feedId,
+    feedName: feed.name || null,
+    schemaVersion: feed.schemaVersion || "V2",
+    open: { requested: Math.floor(periodStart / 1000), observed: start.observationsTimestamp, validFrom: start.validFromTimestamp, price: openPrice.toString() },
+    close: { requested: Math.floor((periodStart + 300000) / 1000), observed: end.observationsTimestamp, validFrom: end.validFromTimestamp, price: closePrice.toString() },
+    expected,
+    marketWinner: actual,
+    match: actual === expected
+  };
+
+  if (actual !== expected) {
+    throw new Error("Chainlink mismatch: expected " + expected + ", market=" + actual);
+  }
+  return diagnostics;
 }
 
 function parseJsonField(v, fallback) {
@@ -357,7 +502,8 @@ async function processClosedPeriod(state) {
         log("PERIOD_REJECTED", { periodKey, asset: asset.key, reason: "not_verified_twap60", slug });
         return;
       }
-      results[asset.key] = w;
+      const chainlink = await verifyTwapSettlement(asset, m, periodStart);
+      results[asset.key] = { winner: w, chainlink };
     } catch (e) {
       log("PERIOD_ERROR", { periodKey, asset: asset.key, error: String(e.message || e) });
       return;
@@ -366,7 +512,8 @@ async function processClosedPeriod(state) {
 
   if (Object.keys(results).length !== ASSETS.length) return;
 
-  for (const asset of ASSETS) state.counts[asset.key] += results[asset.key] === "Up" ? 1 : -1;
+  const winners = Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].winner]));
+  for (const asset of ASSETS) state.counts[asset.key] += winners[asset.key] === "Up" ? 1 : -1;
   state.periods[periodKey] = results;
   state.lastProcessedPeriod = periodKey;
   state.lastProcessedAt = nowIso();
@@ -375,21 +522,22 @@ async function processClosedPeriod(state) {
   state.leader = top;
   state.diagnostic = {
     lastCycleAt: nowIso(),
-    lastResults: results,
+    lastResults: winners,
+    lastChainlink: Object.fromEntries(ASSETS.map(a => [a.key, results[a.key].chainlink])),
     processedAssets: Object.keys(results).length,
     pollingMs: POLL_MS,
     storage: db ? "postgres+file" : "file"
   };
 
   await saveState(state);
-  await persistPeriod(periodKey, periodStart, results, state);
+  await persistPeriod(periodKey, periodStart, winners, state);
 
   const nextStart = currentStart + 300000;
   const link = "https://polymarket.com/event/" + top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
   const lines = [
     "5M CHAINLINK TWAP 60s",
     "",
-    ...ASSETS.map(a => a.key + " → " + results[a.key]),
+    ...ASSETS.map(a => a.key + " → " + winners[a.key]),
     "",
     ...ranking(state.counts).map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
@@ -399,10 +547,10 @@ async function processClosedPeriod(state) {
 
   try {
     await sendTelegram(lines.join("\\n"));
-    log("ALERT_SENT", { period: periodKey, results, counts: state.counts, leader: top });
+    log("ALERT_SENT", { period: periodKey, results: winners, chainlink: state.diagnostic.lastChainlink, counts: state.counts, leader: top });
   } catch (e) {
     delete state.periods[periodKey];
-    for (const asset of ASSETS) state.counts[asset.key] -= results[asset.key] === "Up" ? 1 : -1;
+    for (const asset of ASSETS) state.counts[asset.key] -= winners[asset.key] === "Up" ? 1 : -1;
     state.lastProcessedPeriod = null;
     await saveState(state);
     log("TELEGRAM_ERROR", { period: periodKey, error: String(e.message || e) });
@@ -421,6 +569,7 @@ async function main() {
     assets: ASSETS.map(a => a.key),
     persistentState: true,
     postgres: !!db,
+    chainlink: !!(CHAINLINK_API_KEY && CHAINLINK_API_SECRET),
     startDate: new Date(START_MS).toISOString()
   });
 
