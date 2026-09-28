@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.2.1";
+const VERSION = "4.2.2";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -366,6 +366,12 @@ async function processClosedPeriod() {
 
   // If there is no new RTDS data but this period is already saved, still retry
   // Telegram delivery. Only a confirmed send ends processing.
+  // Once this period was delivered, only newly arrived asset results may
+  // justify another message. Otherwise the 10s polling loop would spam Telegram.
+  if (alreadySent && !Object.keys(newResults).length) {
+    return;
+  }
+
   if (!Object.keys(newResults).length && !newlyComplete && savedCount === 0) {
     log("PERIOD_WAIT", {
       periodKey,
