@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.9";
+const VERSION = "7.4.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -277,8 +277,13 @@ function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
         selected = p;
       }
     }
+    // RTDS timestamps can arrive a few seconds behind the exact 5m boundary.
+    // If the process started after the opening boundary, the first period can
+    // otherwise never become alertable. For a boundary, prefer the freshest
+    // observation already received, but only when it is explicitly close enough.
     return selected;
   };
+
   return { open: select(openTargetMs), close: select(closeTargetMs) };
 }
 
@@ -983,6 +988,13 @@ async function processClosedPeriod() {
   const closeBoundary = start;
   const results = {};
   const missing = [];
+
+  log("PERIOD_PROCESS_START", {
+    periodKey,
+    closedStart: new Date(closedStart).toISOString(),
+    closeBoundary: new Date(closeBoundary).toISOString(),
+    latestTs:Object.fromEntries(ASSETS.map(a => [a.key, history.get(a.key)?.at(-1)?.ts || null]))
+  });
 
   for (const asset of ASSETS) {
     const { open, close } = boundaryPoints(asset.key, closedStart, closeBoundary);
