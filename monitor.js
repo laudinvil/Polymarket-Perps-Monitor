@@ -1,36 +1,19 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
-const WebSocket = require("ws");
 
-const VERSION = "7.5.13";
+const VERSION = "8.0.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
-const POLL_MS = 10_000;
-const PERIOD_MS = 300_000;
-const RTDS_URL = "wss://ws-live-data.polymarket.com";
+const POLL_MS = 3000;
+const FEED_URL = "https://marginpad.io/api/v1/feed";
+const EXCHANGE = "hyperliquid";
+const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
+const LOG_FILE = process.env.LOG_FILE || "/data/marginpad-liquidation.jsonl";
+const MAX_SEEN = 10000;
 
-const ASSETS = [
-  { key: "BTC", symbol: "btc/usd", slug: "btc-updown-5m" },
-  { key: "ETH", symbol: "eth/usd", slug: "eth-updown-5m" },
-  { key: "SOL", symbol: "sol/usd", slug: "sol-updown-5m" },
-  { key: "BNB", symbol: "bnb/usd", slug: "bnb-updown-5m" },
-  { key: "XRP", symbol: "xrp/usd", slug: "xrp-updown-5m" },
-  { key: "DOGE", symbol: "doge/usd", slug: "doge-updown-5m" },
-  { key: "HYPE", symbol: "hype/usd", slug: "hype-updown-5m" }
-];
-
-const STATE_FILE = process.env.STATE_FILE || "/data/chainlink-twap60-state.json";
-const LOG_FILE = process.env.LOG_FILE || "/data/chainlink-twap60.jsonl";
-
-const sockets = new Map();
-const reconnectTimers = new Map();
-const heartbeatTimers = new Map();
-let connected = false;
 let state = null;
+let pollRunning = false;
 let collectionStartedAt = null;
-const latest = new Map();
-const history = new Map();
-let historyReady = false;
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -46,20 +29,20 @@ function log(event, data = {}) {
 
 function defaultState() {
   return {
-    version: VERSION, initialized: true,
-    counts: Object.fromEntries(ASSETS.map(a => [a.key, 0])),
-    periods: {}, lastProcessedPeriod: null, leader: null,
-    updatedAt: nowIso(), source: "Polymarket RTDS Chainlink TWAP60",
-    pollingMs: POLL_MS,
-    historyBootstrap: null,
-    liveBoundaryCache: {}
+    version: VERSION,
+    strategy: "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS",
+    updatedAt: nowIso(),
+    seen: [],
+    alertsSent: 0,
+    lastEventTs: null,
+    lastEventKey: null
   };
 }
 
 function loadState() {
   try {
-    const s = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    if (s && typeof s === "object") return s;
+    const value = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    if (value && typeof value === "object") return value;
   } catch {}
   return defaultState();
 }
@@ -71,62 +54,225 @@ function saveState() {
     const tmp = STATE_FILE + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
     fs.renameSync(tmp, STATE_FILE);
-  } catch (e) { log("STATE_WRITE_ERROR", { error: String(e.message || e) }); }
+  } catch (e) {
+    log("STATE_WRITE_ERROR", { error: String(e.message || e) });
+  }
 }
 
-function snapshot(reason) {
-  const file = STATE_FILE.replace(/\.json$/, "") + "-snapshots.jsonl";
-  try {
-    ensureDir(file);
-    fs.appendFileSync(file, JSON.stringify({ ts: nowIso(), reason, version: VERSION, state }) + "\n");
-  } catch {}
-  log("STATE_SNAPSHOT", {
-    reason, counts: state.counts,
-    lastProcessedPeriod: state.lastProcessedPeriod, leader: state.leader
+function seenSet() {
+  return new Set(Array.isArray(state.seen) ? state.seen : []);
+}
+
+function remember(key) {
+  state.seen = Array.isArray(state.seen) ? state.seen : [];
+  state.seen.push(key);
+  if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
+}
+
+function eventKey(e) {
+  // MarginPad's feed is an observed liquidation stream. Prefer a native id
+  // when present; otherwise use the complete event fingerprint.
+  const nativeId = e.id ?? e.eventId ?? e.liquidationId;
+  if (nativeId !== undefined && nativeId !== null && String(nativeId) !== "") {
+    return "id:" + String(nativeId);
+  }
+  return [
+    e.ts ?? e.timestamp ?? "",
+    e.exchange ?? "",
+    e.symbol ?? "",
+    e.side ?? "",
+    e.price ?? "",
+    e.qty ?? e.size ?? "",
+    e.notional ?? ""
+  ].join("|");
+}
+
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatUsd(v) {
+  const n = num(v);
+  if (n === null) return "—";
+  return "$" + n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
   });
 }
 
-function runtimeDiagnostics() {
-  const currentStart = currentPeriodStart();
-  const periods = {};
-  for (const [key, value] of Object.entries(state.periods || {})) {
-    if (!/^period-\\d+$/.test(key)) continue;
-    const start = Number(key.slice(7)) * 1000;
-    if (!Number.isFinite(start) || start < currentStart - 2 * PERIOD_MS || start >= currentStart) continue;
-    periods[key] = {
-      start: new Date(start).toISOString(),
-      assets: Object.keys(value || {}),
-      complete: Object.keys(value || {}).length >= ASSETS.length,
-      telegramSent: !!state.periodAlerted?.[key]?.sent,
-      telegramAttempts: state.periodAlerted?.[key]?.attempts || 0
-    };
+function formatPrice(v) {
+  const n = num(v);
+  if (n === null) return "—";
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 8
+  });
+}
+
+function formatQty(v) {
+  const n = num(v);
+  if (n === null) return "—";
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 8
+  });
+}
+
+function eventTime(e) {
+  const raw = num(e.ts ?? e.timestamp ?? e.time);
+  if (raw === null) return "—";
+  const ms = raw < 1e12 ? raw * 1000 : raw;
+  return new Date(ms).toLocaleTimeString("en-GB", {
+    hour12: false,
+    timeZone: "Europe/Kyiv"
+  });
+}
+
+function sideLabel(side) {
+  const s = String(side || "").toLowerCase();
+  if (s === "long_liquidated" || s === "long") return "LONG LIQUIDATED";
+  if (s === "short_liquidated" || s === "short") return "SHORT LIQUIDATED";
+  return String(side || "LIQUIDATED").toUpperCase();
+}
+
+async function sendTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    log("TELEGRAM_NOT_CONFIGURED");
+    return false;
   }
-  const assets = Object.fromEntries(ASSETS.map(a => {
-    const p = latest.get(a.key);
-    return [a.key, {
-      received: !!p,
-      observationTimestamp: p?.ts || null,
-      ageMs: p?.ts ? Date.now() - p.ts : null,
-      boundaryCache: Object.values(state.liveBoundaryCache || {}).filter(x => x?.[a.key]).length
-    }];
-  }));
+
+  try {
+    const response = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      log("TELEGRAM_ERROR", { status: response.status, body: body.slice(0, 1000) });
+      return false;
+    }
+    return true;
+  } catch (e) {
+    log("TELEGRAM_ERROR", { error: String(e.message || e) });
+    return false;
+  }
+}
+
+function normalizeFeed(body) {
+  if (!body || typeof body !== "object") return [];
+  if (Array.isArray(body.events)) return body.events;
+  if (Array.isArray(body.data)) return body.data;
+  if (body.data && Array.isArray(body.data.events)) return body.data.events;
+  if (Array.isArray(body.result)) return body.result;
+  return [];
+}
+
+async function fetchFeed() {
+  const response = await fetch(FEED_URL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error("HTTP " + response.status + " " + body.slice(0, 300));
+  }
+  return response.json();
+}
+
+async function processFeed() {
+  const body = await fetchFeed();
+  const events = normalizeFeed(body);
+  const seen = seenSet();
+
+  const hyperliquid = events.filter(e =>
+    String(e?.exchange || "").toLowerCase() === EXCHANGE
+  );
+
+  hyperliquid.sort((a, b) =>
+    (num(a.ts ?? a.timestamp ?? a.time) || 0) -
+    (num(b.ts ?? b.timestamp ?? b.time) || 0)
+  );
+
+  let fresh = 0;
+
+  for (const event of hyperliquid) {
+    const key = eventKey(event);
+    if (!key || seen.has(key)) continue;
+
+    remember(key);
+    seen.add(key);
+    fresh++;
+
+    const symbol = String(event.symbol || event.coin || "UNKNOWN").toUpperCase();
+    const side = sideLabel(event.side);
+    const price = formatPrice(event.price);
+    const qty = formatQty(event.qty ?? event.size);
+    const notional = formatUsd(event.notional);
+    const time = eventTime(event);
+
+    const message = [
+      "MARGINPAD LIQUIDATION",
+      "",
+      symbol + " " + side,
+      "PRICE: " + price,
+      "SIZE: " + qty,
+      "VALUE: " + notional,
+      time
+    ].join("\n");
+
+    const sent = await sendTelegram(message);
+
+    state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
+    state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
+    state.lastEventKey = key;
+
+    log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
+      exchange: EXCHANGE,
+      symbol,
+      side: event.side,
+      price: event.price ?? null,
+      qty: event.qty ?? event.size ?? null,
+      notional: event.notional ?? null,
+      eventTs: event.ts ?? event.timestamp ?? event.time ?? null,
+      eventKey: key
+    });
+
+    saveState();
+  }
+
+  if (fresh > 0) {
+    log("FEED_PROCESSED", {
+      received: events.length,
+      hyperliquid: hyperliquid.length,
+      fresh
+    });
+  }
+}
+
+function runtimeDiagnostics() {
   return {
+    status: "ok",
     version: VERSION,
     buildSha: BUILD_SHA,
-    now: nowIso(),
-    websocket: connected,
+    strategy: state.strategy,
+    exchange: EXCHANGE,
     pollingMs: POLL_MS,
-    historyReady,
-    historyBootstrap: state.historyBootstrap || null,
-    assets,
-    periods,
-    counts: state.counts,
-    leader: state.leader,
-    lastProcessedPeriod: state.lastProcessedPeriod,
-    telegram: {
-      configured: !!process.env.TELEGRAM_BOT_TOKEN && !!process.env.TELEGRAM_CHAT_ID,
-      lastPeriod: Object.keys(state.periodAlerted || {}).sort().at(-1) || null
-    }
+    feed: FEED_URL,
+    collectionStartedAt,
+    updatedAt: state.updatedAt,
+    alertsSent: state.alertsSent,
+    lastEventTs: state.lastEventTs,
+    lastEventKey: state.lastEventKey,
+    seenEvents: Array.isArray(state.seen) ? state.seen.length : 0
   };
 }
 
@@ -134,1310 +280,107 @@ function startHealth() {
   const port = Number(process.env.PORT || 8080);
   const server = http.createServer((req, res) => {
     const requestPath = String(req.url || "/").split("?")[0];
-    if (requestPath === "/status" || requestPath === "/health" || requestPath === "/") {
-      const payload = {
-        status: "ok",
-        uptimeSec: Math.floor(process.uptime()),
-        collectionStartedAt,
-        updatedAt: state.updatedAt,
-        ...runtimeDiagnostics()
-      };
-      res.writeHead(200, {"content-type":"application/json","cache-control":"no-store"});
-      return res.end(JSON.stringify(payload));
+
+    if (requestPath === "/" || requestPath === "/health" || requestPath === "/status") {
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      });
+      return res.end(JSON.stringify(runtimeDiagnostics()));
     }
+
     if (requestPath === "/logs") {
       const url = new URL(req.url || "/logs", "http://127.0.0.1");
       const requested = Number(url.searchParams.get("lines") || 300);
       const lines = Math.max(1, Math.min(1000, Number.isFinite(requested) ? requested : 300));
       let rows = [];
       try {
-        const raw = fs.readFileSync(LOG_FILE, "utf8");
-        rows = raw.split("\\n").filter(Boolean).slice(-lines).map(line => {
-          try { return JSON.parse(line); } catch { return { raw: line }; }
-        });
+        rows = fs.readFileSync(LOG_FILE, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .slice(-lines)
+          .map(x => {
+            try { return JSON.parse(x); } catch { return { raw: x }; }
+          });
       } catch (e) {
-        rows = [{ ts: nowIso(), version: VERSION, event: "LOG_READ_ERROR", error: String(e.message || e) }];
+        rows = [{ event: "LOG_READ_ERROR", error: String(e.message || e) }];
       }
-      res.writeHead(200, {"content-type":"application/json; charset=utf-8","cache-control":"no-store"});
-      return res.end(JSON.stringify({
-        status:"ok", version:VERSION, logFile:LOG_FILE, lines:rows.length, events:rows
-      }));
-    }
-    res.writeHead(404); res.end();
-  });
-  server.on("error", error => log("HEALTH_SERVER_ERROR", { port, error: String(error && error.stack || error) }));
-  server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port, healthPath: "/health", rootPath: "/" }));
-}
-
-function connectRtds() {
-  for (const asset of ASSETS) connectAssetRtds(asset);
-}
-
-function connectAssetRtds(asset) {
-  const existing = sockets.get(asset.key);
-  if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) return;
-
-  clearTimeout(reconnectTimers.get(asset.key));
-  log("RTDS_CONNECTING", { url: RTDS_URL, asset: asset.key });
-
-  const socket = new WebSocket(RTDS_URL);
-  sockets.set(asset.key, socket);
-
-  socket.on("open", () => {
-    connected = true;
-    if (!collectionStartedAt) {
-      collectionStartedAt = Date.now();
-      log("COLLECTION_STARTED", { at: collectionStartedAt, nextPeriodStart: currentPeriodStart() + PERIOD_MS });
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      });
+      return res.end(JSON.stringify({ status: "ok", events: rows }));
     }
 
-    log("RTDS_CONNECTED", { asset: asset.key });
-
-    // RTDS currently rejects a multi-symbol TWAP subscription batch.
-    // Use one WebSocket/subscription per asset so one bad symbol cannot
-    // suppress the other six streams.
-    const subscription = {
-      action: "subscribe",
-      subscriptions: [{
-        topic: "crypto_prices_twap_sixty",
-        type: "update",
-        filters: JSON.stringify({ symbol: asset.symbol })
-      }]
-    };
-    socket.send(JSON.stringify(subscription));
-    log("RTDS_SUBSCRIBED", {
-      topic: "crypto_prices_twap_sixty",
-      asset: asset.key,
-      symbol: asset.symbol,
-      windowSeconds: 60
-    });
-
-
-    clearInterval(heartbeatTimers.get(asset.key));
-    heartbeatTimers.set(asset.key, setInterval(() => {
-      const current = sockets.get(asset.key);
-      if (current && current.readyState === WebSocket.OPEN) {
-        try { current.send("PING"); } catch {}
-      }
-    }, 5000));
+    res.writeHead(404);
+    res.end();
   });
 
-  socket.on("message", raw => {
-    let msg;
-    try { msg = JSON.parse(raw.toString()); } catch { return; }
-    if (msg.message) {
-      log("RTDS_MESSAGE", { asset: asset.key, message: msg.message });
-      return;
-    }
-
-    const p = msg.payload;
-    if (!p || msg.topic !== "crypto_prices_twap_sixty") return;
-    if (Number(p.window_s) !== 60) {
-      log("TWAP_REJECTED", { asset: asset.key, reason: "window_not_60", payload: p });
-      return;
-    }
-
-    const symbol = String(p.symbol || "").toLowerCase();
-    if (symbol !== asset.symbol) return;
-
-    let ts = Number(p.timestamp);
-    const exact = String(p.full_accuracy_value || "");
-    if (!Number.isFinite(ts) || !exact) return;
-    if (ts > 0 && ts < 1_000_000_000_000) ts *= 1000;
-
-    const value = Number(exact) / 1e18;
-    if (!Number.isFinite(value)) return;
-
-    const point = { ts, value, exact, receivedAt: Date.now() };
-    latest.set(asset.key, point);
-
-    let arr = history.get(asset.key);
-    if (!arr) { arr = []; history.set(asset.key, arr); }
-    const last = arr[arr.length - 1];
-    if (!last || ts > last.ts) arr.push(point);
-
-    // Persist only the boundary candidates needed to survive a restart.
-    // Keep two points per asset: the nearest observation to each 5m boundary
-    // (one boundary can serve as the close of one period and open of the next).
-    state.liveBoundaryCache = state.liveBoundaryCache || {};
-    const periodStart = Math.floor(ts / PERIOD_MS) * PERIOD_MS;
-    const boundaryCandidates = [periodStart, periodStart + PERIOD_MS];
-    let cacheChanged = false;
-    for (const boundary of boundaryCandidates) {
-      const distance = Math.abs(ts - boundary);
-      if (distance > LIVE_BOUNDARY_LOOKBACK_MS) continue;
-      const key = String(boundary);
-      const prev = state.liveBoundaryCache[key]?.[asset.key];
-      if (!prev || Math.abs(prev.ts - boundary) > distance) {
-        if (!state.liveBoundaryCache[key]) state.liveBoundaryCache[key] = {};
-        state.liveBoundaryCache[key][asset.key] = point;
-        cacheChanged = true;
-      }
-    }
-    // Prune old boundary snapshots; only the current and previous period are needed.
-    const minBoundary = periodStart - 2 * PERIOD_MS;
-    for (const key of Object.keys(state.liveBoundaryCache)) {
-      if (Number(key) < minBoundary) {
-        delete state.liveBoundaryCache[key];
-        cacheChanged = true;
-      }
-    }
-    if (cacheChanged) state.liveBoundaryCacheDirty = true;
-
-    const cutoff = Date.now() - 12 * 60 * 1000;
-    while (arr.length && arr[0].ts < cutoff) arr.shift();
-
-    if (!last || ts > last.ts) {
-      log("TWAP60_UPDATE", {
-        asset: asset.key, symbol, observationTimestamp: ts, value, windowSeconds: 60
-      });
-    }
-  });
-
-  socket.on("close", (code, reason) => {
-    connected = Array.from(sockets.values()).some(x => x && x.readyState === WebSocket.OPEN);
-    clearInterval(heartbeatTimers.get(asset.key));
-    heartbeatTimers.delete(asset.key);
-    if (sockets.get(asset.key) === socket) sockets.delete(asset.key);
-    log("RTDS_CLOSED", { asset: asset.key, code, reason: reason ? reason.toString() : "" });
-    scheduleReconnect(asset);
-  });
-
-  socket.on("error", e => log("RTDS_ERROR", { asset: asset.key, error: String(e.message || e) }));
-}
-
-function scheduleReconnect(asset) {
-  if (reconnectTimers.get(asset.key)) return;
-  reconnectTimers.set(asset.key, setTimeout(() => {
-    reconnectTimers.delete(asset.key);
-    connectAssetRtds(asset);
-  }, 3000));
-}
-
-function pointAtOrBefore(assetKey, targetMs) {
-  const arr = history.get(assetKey) || [];
-  let best = null;
-  for (const p of arr) {
-    if (p.ts <= targetMs) best = p;
-    else break;
-  }
-  return best;
-}
-
-function pointAtOrAfter(assetKey, targetMs) {
-  const arr = history.get(assetKey) || [];
-  for (const p of arr) {
-    if (p.ts >= targetMs) return p;
-  }
-  return null;
-}
-
-const LIVE_BOUNDARY_LOOKBACK_MS = 70_000;
-
-function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
-  // RTDS observation timestamps can lag or lead the exact 5m boundary by a
-  // few seconds. Use the closest TWAP60 observation within +/-70s. This keeps
-  // the boundary anchored to the actual Chainlink observation instead of
-  // waiting forever when the stream timestamp is slightly offset.
-  const arr = history.get(assetKey) || [];
-  const persisted = state?.liveBoundaryCache || {};
-  const select = target => {
-    let selected = null;
-    let bestDistance = Infinity;
-    const persistedPoint = persisted[String(target)]?.[assetKey];
-    if (persistedPoint && Number.isFinite(persistedPoint.ts)) {
-      const d = Math.abs(persistedPoint.ts - target);
-      if (d <= LIVE_BOUNDARY_LOOKBACK_MS) {
-        selected = persistedPoint;
-        bestDistance = d;
-      }
-    }
-    for (const p of arr) {
-      if (!p || !Number.isFinite(p.ts)) continue;
-      const distance = Math.abs(p.ts - target);
-      if (distance > LIVE_BOUNDARY_LOOKBACK_MS) continue;
-      if (distance < bestDistance || (distance === bestDistance && p.ts < selected.ts)) {
-        selected = p;
-        bestDistance = distance;
-      }
-    }
-    return selected;
-  };
-  return { open: select(openTargetMs), close: select(closeTargetMs) };
-}
-
-function currentPeriodStart() { return Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS; }
-
-function ranking() {
-  return ASSETS.map(a => ({ asset: a.key, score: Number(state.counts[a.key] || 0) }))
-    .sort((a,b) => Math.abs(b.score)-Math.abs(a.score) || a.asset.localeCompare(b.asset));
-}
-
-async function sendTelegram(text, kind = "PERIOD_ALERT") {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
-  log("TELEGRAM_TARGET", { kind, chatConfigured: !!chat, chatIdTail: chat ? String(chat).slice(-4) : null });
-  log("TELEGRAM_ATTEMPT", { kind, configured: !!token && !!chat, textPreview: text.slice(0, 300) });
-
-  if (!token || !chat) {
-    log("TELEGRAM_NOT_CONFIGURED", { kind });
-    return false;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-      signal: controller.signal,
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: false })
-    });
-    if (!r.ok) {
-      const body = await r.text().catch(() => "");
-      log("TELEGRAM_ERROR", { kind, status: r.status, body: body.slice(0, 1000) });
-      return false;
-    }
-    let data = null;
-    try { data = await r.json(); } catch {}
-    clearTimeout(timeout);
-    if (!data || data.ok !== true) {
-      log("TELEGRAM_ERROR", { kind, status: r.status, body: JSON.stringify(data).slice(0, 1000) });
-      return false;
-    }
-    log("TELEGRAM_SENT", { kind, messageId: data?.result?.message_id || null });
-    return true;
-  } catch (e) {
-    clearTimeout(timeout);
-    log("TELEGRAM_ERROR", { kind, error: String(e.message || e) });
-    return false;
-  }
-}
-
-async function sendOnlineAlert() {
-  log("ONLINE_READY", {
-    assets:Object.fromEntries(ASSETS.map(a => [a.key, latest.get(a.key) || null]))
-  });
-  return false;
-}
-
-const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v4";
-const HISTORY_PERIOD_MS = PERIOD_MS;
-const HISTORY_BATCH_SIZE = 10;
-const HISTORY_RETRY_MS = 5000;
-const CHAINLINK_MIN_REQUEST_INTERVAL_MS = 125; // <= 8 requests/sec at request start
-let chainlinkLastRequestAt = 0;
-const CHAINLINK_REST = process.env.CHAINLINK_REST_URL || "https://api.dataengine.chain.link";
-const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.CHAINLINK_API_KEY || process.env.API_KEY || "";
-const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.STREAMS_API_SECRET || process.env.USER_SECRET || "";
-const CHAINLINK_FEED_IDS_ENV = process.env.CHAINLINK_TWAP60_FEED_IDS || "";
-const GAMMA_MARKETS_KEYSET = "https://gamma-api.polymarket.com/markets/keyset";
-const GAMMA_PAGE_SIZE = 100;
-const GAMMA_HTTP_TIMEOUT_MS = 5000;
-const GAMMA_MIN_REQUEST_INTERVAL_MS = 40;
-let gammaLastRequestAt = 0;
-let chainlinkClient = null;
-let chainlinkFeedIds = null;
-let historicalBootstrapRunning = false;
-
-async function waitForGammaRateLimit() {
-  const now = Date.now();
-  const waitMs = Math.max(0, GAMMA_MIN_REQUEST_INTERVAL_MS - (now - gammaLastRequestAt));
-  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
-  gammaLastRequestAt = Date.now();
-}
-
-function exactToBigInt(value) {
-  const s = String(value || "").trim();
-  if (!/^-?\d+$/.test(s)) throw new Error("invalid_e18:" + s.slice(0, 40));
-  return BigInt(s);
-}
-function normalizeFeedList(value) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.feeds)) return value.feeds;
-  if (Array.isArray(value?.result?.feeds)) return value.result.feeds;
-  return [];
-}
-function feedText(feed) { try { return JSON.stringify(feed).toLowerCase(); } catch { return ""; } }
-function feedIdOf(feed) { return feed?.feedID || feed?.feedId || feed?.id || feed?.streamId || feed?.streamID || null; }
-
-async function initChainlinkHistoricalClient() {
-  if (chainlinkClient) return chainlinkClient;
-  if (!CHAINLINK_API_KEY || !CHAINLINK_USER_SECRET) throw new Error("CHAINLINK_CREDENTIALS_MISSING");
-  const sdk = await import("@chainlink/data-streams-sdk");
-  const createClient = sdk.createClient || sdk.default?.createClient;
-  if (!createClient) throw new Error("CHAINLINK_SDK_CREATE_CLIENT_UNAVAILABLE");
-  chainlinkClient = createClient({
-    apiKey: CHAINLINK_API_KEY,
-    userSecret: CHAINLINK_USER_SECRET,
-    endpoint: CHAINLINK_REST,
-    wsEndpoint: process.env.CHAINLINK_WS_URL || "wss://ws.dataengine.chain.link"
-  });
-  return chainlinkClient;
-}
-function parseFeedIdEnv() {
-  const raw=CHAINLINK_FEED_IDS_ENV.trim();
-  if(!raw) return {};
-  try { const parsed=JSON.parse(raw); if(parsed&&typeof parsed==="object") return parsed; } catch {}
-  const parts=raw.split(",").map(x=>x.trim()).filter(Boolean);
-  return parts.length===ASSETS.length ? Object.fromEntries(ASSETS.map((a,i)=>[a.key,parts[i]])) : {};
-}
-async function discoverChainlinkTwap60Feeds() {
-  if(chainlinkFeedIds) return chainlinkFeedIds;
-  const fromEnv=parseFeedIdEnv();
-  if(Object.keys(fromEnv).length===ASSETS.length) { chainlinkFeedIds=fromEnv; log("CHAINLINK_FEEDS_CONFIGURED",{assets:ASSETS.map(a=>a.key)}); return chainlinkFeedIds; }
-  const client=await initChainlinkHistoricalClient();
-  const listed=normalizeFeedList(await client.listFeeds());
-  log("CHAINLINK_FEED_DISCOVERY",{total:listed.length});
-  const result={}, candidates={};
-  for(const asset of ASSETS) {
-    const symbol=asset.symbol.replace("/","").toLowerCase();
-    const matches=listed.filter(feed=>{
-      const t=feedText(feed), id=String(feedIdOf(feed)||"").toLowerCase();
-      return (t.includes(asset.key.toLowerCase())||t.includes(symbol)||t.includes(asset.symbol.toLowerCase())) &&
-        t.includes("twap") && (t.includes("60")||t.includes("sixty")) && /^0x[0-9a-f]+$/.test(id);
-    });
-    candidates[asset.key]=matches.map(feed=>({feedId:feedIdOf(feed),name:feed?.name||feed?.feedName||feed?.description||null}));
-    if(matches.length===1) result[asset.key]=feedIdOf(matches[0]);
-    else if(matches.length>1) {
-      const exact=matches.find(feed=>{const t=feedText(feed);return t.includes(asset.symbol.toLowerCase())&&(t.includes("60s")||t.includes("60-second")||t.includes("sixty"));});
-      if(exact) result[asset.key]=feedIdOf(exact);
-    }
-  }
-  log("CHAINLINK_FEED_CANDIDATES",{candidates,selected:result});
-  const missing=ASSETS.filter(a=>!result[a.key]).map(a=>a.key);
-  if(missing.length) throw new Error("CHAINLINK_TWAP60_FEEDS_NOT_RESOLVED:"+missing.join(","));
-  chainlinkFeedIds=result;
-  return result;
-}
-async function decodeChainlinkReport(report) {
-  const sdk=await import("@chainlink/data-streams-sdk");
-  const decodeReport=sdk.decodeReport||sdk.default?.decodeReport;
-  if(!decodeReport) throw new Error("CHAINLINK_SDK_DECODE_REPORT_UNAVAILABLE");
-  const decoded=decodeReport(report.fullReport,report.feedID||report.feedId);
-  if(decoded?.price===undefined||decoded?.price===null) throw new Error("CHAINLINK_TWAP_PRICE_MISSING");
-  const price=typeof decoded.price==="bigint"?decoded.price.toString():String(decoded.price);
-  const ots=Number(report.observationsTimestamp??decoded.observationsTimestamp);
-  const vts=Number(report.validFromTimestamp??decoded.validFromTimestamp);
-  const exp=Number(decoded.expiresAt??report.expiresAt);
-  return {exact:price,observationTimestamp:Number.isFinite(ots)?ots*1000:null,validFromTimestamp:Number.isFinite(vts)?vts*1000:null,expiresAt:Number.isFinite(exp)?exp*1000:null};
-}
-async function waitForChainlinkRateLimit() {
-  const now = Date.now();
-  const waitMs = Math.max(0, CHAINLINK_MIN_REQUEST_INTERVAL_MS - (now - chainlinkLastRequestAt));
-  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
-  chainlinkLastRequestAt = Date.now();
-}
-async function fetchHistoricalBoundaryPage(feedId, startSec, limit=1000) {
-  const client=await initChainlinkHistoricalClient();
-  for(let attempt=1;attempt<=5;attempt++) {
-    try {
-      await waitForChainlinkRateLimit();
-      const response=await client.getReportsPage(feedId,startSec,limit);
-      return Array.isArray(response)?response:(response?.reports||[]);
-    } catch(e) {
-      log("CHAINLINK_HISTORY_PAGE_RETRY",{feedId,startSec,limit,attempt,error:String(e.message||e)});
-      if(attempt===5) throw e;
-      await new Promise(resolve=>setTimeout(resolve,HISTORY_RETRY_MS*attempt));
-    }
-  }
-  return [];
-}
-async function fetchHistoricalBoundaries(targets) {
-  const client=await initChainlinkHistoricalClient();
-  const feedIds=await discoverChainlinkTwap60Feeds();
-  const boundaryMaps=Object.fromEntries(ASSETS.map(a=>[a.key,new Map()]));
-  const cutoffSec=Math.floor(targets[targets.length-1]/1000);
-  const startSec=Math.floor(HISTORY_START_MS/1000);
-  const LIMIT=1000;
-
-  for (const asset of ASSETS) {
-    let cursor=startSec;
-    let pages=0;
-    let lastObservationSec=0;
-    const points=[];
-    log("HISTORY_ASSET_START",{asset:asset.key,feedId:feedIds[asset.key],startSec,cutoffSec});
-    while(cursor<=cutoffSec) {
-      const reports=await fetchHistoricalBoundaryPage(feedIds[asset.key],cursor,LIMIT);
-      pages++;
-      if(!reports.length) break;
-      let maxObservationSec=lastObservationSec;
-      for(const report of reports) {
-        const decoded=await decodeChainlinkReport(report);
-        const ots=decoded.observationTimestamp;
-        if(!Number.isFinite(ots)) continue;
-        const sec=Math.floor(ots/1000);
-        if(sec>maxObservationSec) maxObservationSec=sec;
-        const covered=(decoded.validFromTimestamp==null||decoded.validFromTimestamp<=ots)&&(decoded.expiresAt==null||ots<=decoded.expiresAt);
-        if(!covered || sec<startSec || sec>cutoffSec) continue;
-        points.push({ts:sec*1000,decoded});
-      }
-      if(maxObservationSec<=lastObservationSec) {
-        throw new Error("CHAINLINK_HISTORY_PAGINATION_STALLED:"+asset.key+":"+cursor);
-      }
-      lastObservationSec=maxObservationSec;
-      if(lastObservationSec>=cutoffSec) break;
-      cursor=lastObservationSec+1;
-      if(pages%10===0) log("HISTORY_ASSET_PROGRESS",{asset:asset.key,pages,points:points.length,lastObservationSec});
-    }
-    points.sort((a,b)=>a.ts-b.ts);
-    let pi=0, previous=null;
-    for(const targetMs of targets) {
-      while(pi<points.length && points[pi].ts<=targetMs) {
-        previous=points[pi].decoded;
-        pi++;
-      }
-      const chosen=previous || (points.find(x=>x.ts>=targetMs)?.decoded || null);
-      if(chosen) boundaryMaps[asset.key].set(targetMs,chosen);
-    }
-    log("HISTORY_ASSET_COMPLETE",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,expectedBoundaries:targets.length,points:points.length});
-  }
-
-  const valuesByBoundary={};
-  for(const ts of targets) {
-    const values={};
-    for(const asset of ASSETS) {
-      const v=boundaryMaps[asset.key].get(ts);
-      if(v) values[asset.key]=v;
-    }
-    valuesByBoundary[String(ts)]=values;
-  }
-  return valuesByBoundary;
-}
-function historyBoundaryTargets(cutoffMs) {
-  const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
-}
-async function fetchGammaKeysetPage(params) {
-  const now = Date.now();
-  const waitMs = Math.max(0, GAMMA_MIN_REQUEST_INTERVAL_MS - (now - gammaLastRequestAt));
-  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
-  gammaLastRequestAt = Date.now();
-
-  const url = new URL(GAMMA_MARKETS_KEYSET);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
-  }
-
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { accept: "application/json" }
-      });
-      clearTimeout(timeout);
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error("GAMMA_HTTP_" + response.status + ":" + body.slice(0, 300));
-      }
-      const body = await response.json();
-      const markets = Array.isArray(body) ? body : (body.markets || []);
-      const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
-      return { markets, nextCursor };
-    } catch (e) {
-      log("GAMMA_HISTORY_PAGE_RETRY", {
-        attempt,
-        error: String(e.message || e)
-      });
-      if (attempt === 5) throw e;
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-  return { markets: [], nextCursor: null };
-}
-
-function parseJsonArray(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-async function fetchGammaClosedPeriodFallback(periodStartMs) {
-  const results = {};
-  for (const asset of ASSETS) {
-    const slug = asset.slug + "-" + Math.floor(periodStartMs / 1000);
-    await waitForGammaRateLimit();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
-    try {
-      const url = "https://gamma-api.polymarket.com/markets?slug=" + encodeURIComponent(slug);
-      const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
-      if (!response.ok) throw new Error("GAMMA_MARKET_HTTP_" + response.status);
-      const body = await response.json();
-      const market = Array.isArray(body) ? body.find(x => String(x?.slug || "").toLowerCase() === slug) : null;
-      const parsed = parseClosed5mMarket(market);
-      if (parsed && parsed.startMs === periodStartMs) {
-        results[asset.key] = {
-          winner: parsed.winner,
-          source: "polymarket_gamma_resolved_market",
-          marketId: parsed.marketId,
-          slug: parsed.slug
-        };
-      }
-      log("GAMMA_LIVE_FALLBACK", {
-        asset: asset.key,
-        periodStart: periodStartMs,
-        slug,
-        found: !!parsed,
-        winner: parsed?.winner || null,
-        closed: market?.closed === true
-      });
-    } catch (e) {
-      log("GAMMA_LIVE_FALLBACK_ERROR", {
-        asset: asset.key,
-        periodStart: periodStartMs,
-        slug,
-        error: String(e.message || e)
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return results;
-}
-
-function parseClosed5mMarket(market) {
-  if (!market || market.closed !== true) return null;
-  const slug = String(market.slug || "").toLowerCase();
-  const match = ASSETS.find(asset => slug.startsWith(asset.slug + "-"));
-  if (!match) return null;
-
-  const suffix = slug.slice(match.slug.length + 1);
-  if (!/^\d+$/.test(suffix)) return null;
-  const startSec = Number(suffix);
-  if (!Number.isSafeInteger(startSec)) return null;
-  const startMs = startSec * 1000;
-  if (startMs < HISTORY_START_MS || startMs >= currentPeriodStart()) return null;
-
-  const outcomes = parseJsonArray(market.outcomes);
-  const prices = parseJsonArray(market.outcomePrices);
-  let winner = null;
-  for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
-    const price = String(prices[i]);
-    if (price === "1" || price === "1.0" || price === "1.00") {
-      const label = String(outcomes[i]).toLowerCase();
-      if (label === "up") winner = "Up";
-      else if (label === "down") winner = "Down";
-    }
-  }
-  if (!winner) return null;
-
-  return {
-    asset: match.key,
-    startMs,
-    winner,
-    marketId: String(market.id || ""),
-    slug: market.slug,
-    endDate: market.endDate || null
-  };
-}
-
-async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await waitForGammaRateLimit();
-    const params = new URLSearchParams({
-      series_id: seriesSlug,
-      closed: "true",
-      order: "endDate",
-      ascending: "true",
-      limit: String(GAMMA_PAGE_SIZE),
-      end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
-      end_date_max: new Date(cutoffMs).toISOString()
-    });
-    if (afterCursor) params.set("after_cursor", afterCursor);
-    const url = "https://gamma-api.polymarket.com/events/keyset?" + params.toString();
-    log("GAMMA_HISTORY_REQUEST", {
-      seriesId: seriesSlug, attempt, cursor: afterCursor ? String(afterCursor).slice(0,24) + "..." : null
-    });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { accept: "application/json" }
-      });
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error("GAMMA_EVENTS_KEYSET_HTTP_" + response.status + ":" + body.slice(0, 500));
-      }
-      const body = await response.json();
-      const events = Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
-      const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
-      log("GAMMA_HISTORY_RESPONSE", {
-        seriesId: seriesSlug, events: events.length, hasNextCursor: !!nextCursor,
-        cursor: nextCursor ? String(nextCursor).slice(0,24) + "..." : null
-      });
-      return { events, nextCursor };
-    } catch (e) {
-      log("GAMMA_HISTORY_PAGE_RETRY", {
-        seriesId: seriesSlug, afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
-        attempt, error: String(e.message || e)
-      });
-      if (attempt === 3) throw e;
-      await new Promise(resolve => setTimeout(resolve, 500));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-}
-
-async function resolveGammaSeriesId(seriesSlug) {
-  await waitForGammaRateLimit();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
-  try {
-    const url = "https://gamma-api.polymarket.com/series?slug=" + encodeURIComponent(seriesSlug);
-    log("GAMMA_SERIES_RESOLVE_REQUEST", { seriesSlug });
-    const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error("GAMMA_SERIES_HTTP_" + response.status);
-    const body = await response.json();
-    const rows = Array.isArray(body) ? body : (Array.isArray(body.series) ? body.series : []);
-    const exact = rows.find(x => String(x?.slug || "") === seriesSlug) || rows[0];
-    const id = exact?.id != null ? String(exact.id) : null;
-    log("GAMMA_SERIES_RESOLVE_RESPONSE", { seriesSlug, id, rows: rows.length });
-    if (!id) throw new Error("GAMMA_SERIES_NOT_FOUND:" + seriesSlug);
-    return id;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchHistoricalMarketBaseline(cutoffMs) {
-  const expectedTargets = historyBoundaryTargets(cutoffMs);
-  const expectedStarts = new Set(expectedTargets.slice(0, -1));
-  const byPeriod = new Map();
-
-  let rawEvents = 0;
-  let rawMarkets = 0;
-  let matchedMarkets = 0;
-
-  log("GAMMA_HISTORY_START", {
-    source: "Polymarket Gamma events by 5m series",
-    from: new Date(HISTORY_START_MS).toISOString(),
-    to: new Date(cutoffMs).toISOString(),
-    expectedPeriods: expectedStarts.size,
-    pageSize: GAMMA_PAGE_SIZE
-  });
-
-  const seriesByAsset = Object.fromEntries(
-    ASSETS.map(asset => [asset.key, asset.slug.replace("-updown-5m", "-up-or-down-5m")])
+  server.on("error", e => log("HEALTH_SERVER_ERROR", { error: String(e.message || e) }));
+  server.listen(port, "0.0.0.0", () =>
+    log("HEALTH_LISTENING", { port, healthPath: "/health" })
   );
-
-  // Each 5m series contains one event per 5m period. 500 events/page means
-  // roughly 27 pages per asset instead of thousands of generic market pages.
-  for (const asset of ASSETS) {
-    const seriesSlug = seriesByAsset[asset.key];
-    const seriesId = await resolveGammaSeriesId(seriesSlug);
-    let afterCursor = null;
-    let pages = 0;
-
-    while (true) {
-      const page = await fetchGammaSeriesPage(seriesId, afterCursor, cutoffMs);
-      const events = page.events;
-      const nextCursor = page.nextCursor;
-      pages++;
-      rawEvents += events.length;
-
-      for (const event of events) {
-        const nestedMarkets = Array.isArray(event?.markets) ? event.markets : [];
-        rawMarkets += nestedMarkets.length;
-
-        for (const market of nestedMarkets) {
-          const parsed = parseClosed5mMarket(market);
-          if (!parsed || parsed.asset !== asset.key || !expectedStarts.has(parsed.startMs)) continue;
-
-          matchedMarkets++;
-          let period = byPeriod.get(parsed.startMs);
-          if (!period) {
-            period = {};
-            byPeriod.set(parsed.startMs, period);
-          }
-
-          if (period[parsed.asset] && period[parsed.asset].marketId !== parsed.marketId) {
-            throw new Error("GAMMA_DUPLICATE_5M_MARKET:" + parsed.asset + ":" + parsed.startMs);
-          }
-          period[parsed.asset] = parsed;
-        }
-      }
-
-      log("GAMMA_HISTORY_ASSET_PROGRESS", {
-        asset: asset.key,
-        seriesSlug,
-        seriesId,
-        pages,
-        afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
-        events: events.length,
-        hasNextCursor: !!nextCursor,
-        periodsFound: byPeriod.size,
-        expectedPeriods: expectedStarts.size
-      });
-
-      if (events.length === 0 || !nextCursor) break;
-      afterCursor = nextCursor;
-    }
-  }
-
-  const historicalCounts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-  const historicalPeriods = {};
-  const assetCoverage = Object.fromEntries(
-    ASSETS.map(a => [a.key, { periods: 0, missing: 0 }])
-  );
-  const invalidPeriods = [];
-
-  for (const startMs of expectedStarts) {
-    const period = byPeriod.get(startMs) || {};
-    const available = Object.keys(period);
-
-    if (available.length !== ASSETS.length) {
-      invalidPeriods.push({
-        periodKey: "period-" + Math.floor(startMs / 1000),
-        open: new Date(startMs).toISOString(),
-        close: new Date(startMs + PERIOD_MS).toISOString(),
-        available
-      });
-      for (const asset of ASSETS) {
-        if (!period[asset.key]) assetCoverage[asset.key].missing++;
-      }
-      continue;
-    }
-
-    const periodKey = "period-" + Math.floor(startMs / 1000);
-    const result = {};
-
-    for (const asset of ASSETS) {
-      const item = period[asset.key];
-      historicalCounts[asset.key] += item.winner === "Up" ? 1 : -1;
-      assetCoverage[asset.key].periods++;
-      result[asset.key] = {
-        winner: item.winner,
-        source: "polymarket_gamma_closed_market",
-        marketId: item.marketId,
-        slug: item.slug,
-        endDate: item.endDate
-      };
-    }
-
-    historicalPeriods[periodKey] = result;
-  }
-
-  const completePeriods = Object.keys(historicalPeriods).length;
-  const missingAssets = ASSETS
-    .filter(a => assetCoverage[a.key].periods !== expectedStarts.size)
-    .map(a => ({
-      asset: a.key,
-      periods: assetCoverage[a.key].periods,
-      expected: expectedStarts.size,
-      missing: assetCoverage[a.key].missing
-    }));
-
-  log("GAMMA_HISTORY_VALIDATION", {
-    pages: "per-series",
-    rawEvents,
-    rawMarkets,
-    matchedMarkets,
-    expectedPeriods: expectedStarts.size,
-    completePeriods,
-    invalidPeriods: invalidPeriods.length,
-    missingAssets,
-    counts: historicalCounts
-  });
-
-  if (completePeriods !== expectedStarts.size || missingAssets.length) {
-    log("GAMMA_HISTORY_INCOMPLETE_DETAIL", {
-      expectedPeriods: expectedStarts.size,
-      completePeriods,
-      missingAssets,
-      invalidSample: invalidPeriods.slice(0, 20),
-      invalidPeriodsTotal: invalidPeriods.length
-    });
-    throw new Error(
-      "GAMMA_HISTORY_INCOMPLETE:expected=" + expectedStarts.size +
-      ":complete=" + completePeriods +
-      ":missing=" + JSON.stringify(missingAssets)
-    );
-  }
-
-  return {
-    counts: historicalCounts,
-    periods: historicalPeriods,
-    rawEvents,
-    rawMarkets,
-    matchedMarkets,
-    expectedPeriods: expectedStarts.size,
-    completePeriods
-  };
-}
-async function bootstrapHistoricalCounts() {
-  if (historicalBootstrapRunning) return false;
-  historicalBootstrapRunning = true;
-  try {
-    const previousHistory = state.historyBootstrap || {};
-    const cutoffMs = currentPeriodStart();
-    const targets = historyBoundaryTargets(cutoffMs);
-    const expectedPeriods = targets.length - 1;
-    // A completed historical baseline remains valid after the clock moves
-    // forward. New 5m periods are handled by the live processor; do not rebuild
-    // the entire history every 5 minutes just because expectedPeriods increased.
-    const sameBaseline =
-      previousHistory.version === HISTORY_BOOTSTRAP_VERSION &&
-      previousHistory.from === new Date(HISTORY_START_MS).toISOString() &&
-      previousHistory.complete === true &&
-      Number(previousHistory.completePeriods || 0) === Number(previousHistory.expectedPeriods || 0);
-
-    if (sameBaseline && previousHistory.complete === true) {
-      log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE", {
-        version: HISTORY_BOOTSTRAP_VERSION,
-        storedTo: previousHistory.to || null,
-        currentTo: new Date(cutoffMs).toISOString(),
-        periods: Object.keys(state.periods || {}).length,
-        counts: state.counts
-      });
-      return true;
-    }
-
-    state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-    state.periods = {};
-    state.periodAlerted = {};
-    state.leader = null;
-    state.lastProcessedPeriod = null;
-    state.historyBootstrap = {
-      version: HISTORY_BOOTSTRAP_VERSION,
-      complete: false,
-      from: new Date(HISTORY_START_MS).toISOString(),
-      to: new Date(cutoffMs).toISOString(),
-      expectedPeriods,
-      source: "Polymarket Gamma events by 5m series",
-      startedAt: nowIso()
-    };
-    saveState();
-    snapshot("PRE_POLYMARKET_5M_SERIES_REBUILD");
-
-    log("HISTORY_BOOTSTRAP_START", {
-      version: HISTORY_BOOTSTRAP_VERSION,
-      source: "Polymarket Gamma closed 5m markets keyset",
-      from: new Date(HISTORY_START_MS).toISOString(),
-      to: new Date(cutoffMs).toISOString(),
-      boundaries: targets.length,
-      periods: expectedPeriods
-    });
-
-    const result = await fetchHistoricalMarketBaseline(cutoffMs);
-
-    // Historical bootstrap can finish after the live 5m loop has already
-    // processed a boundary. Never overwrite live state blindly: merge the
-    // authoritative historical baseline with any live periods accumulated
-    // while the bootstrap was running.
-    const livePeriods = state.periods || {};
-    const liveAlerted = state.periodAlerted || {};
-    const mergedPeriods = { ...result.periods, ...livePeriods };
-    const mergedCounts = { ...result.counts };
-    for (const [periodKey, period] of Object.entries(livePeriods)) {
-      if (result.periods?.[periodKey]) continue;
-      for (const asset of ASSETS) {
-        if (period?.[asset.key]?.winner) {
-          mergedCounts[asset.key] += period[asset.key].winner === "Up" ? 1 : -1;
-        }
-      }
-    }
-    state.periods = mergedPeriods;
-    state.periodAlerted = liveAlerted;
-    state.counts = mergedCounts;
-    state.leader = ranking()[0];
-    state.historyBootstrap = {
-      version: HISTORY_BOOTSTRAP_VERSION,
-      complete: true,
-      from: new Date(HISTORY_START_MS).toISOString(),
-      to: new Date(cutoffMs).toISOString(),
-      expectedPeriods: result.expectedPeriods,
-      completePeriods: result.completePeriods,
-      matchedMarkets: result.matchedMarkets,
-      pages: result.pages,
-      rawMarkets: result.rawMarkets,
-      assetCoverage: Object.fromEntries(
-        ASSETS.map(a => [a.key, { periods: result.completePeriods, missing: 0 }])
-      ),
-      source: "Polymarket Gamma closed 5m markets keyset",
-      completedAt: nowIso()
-    };
-    saveState();
-    snapshot("HISTORY_BOOTSTRAP_COMPLETE");
-
-    log("HISTORY_BOOTSTRAP_COMPLETE", {
-      periods: result.completePeriods,
-      expectedPeriods: result.expectedPeriods,
-      counts: state.counts,
-      from: new Date(HISTORY_START_MS).toISOString(),
-      to: new Date(cutoffMs).toISOString(),
-      source: "Polymarket Gamma closed 5m markets keyset"
-    });
-    return true;
-  } finally {
-    historicalBootstrapRunning = false;
-  }
-}
-
-async function processClosedPeriodAt(forcedStart = null) {
-  // forcedStart is the CLOSE boundary / start of the next 5m period.
-  // A retry must therefore pass saved period start + PERIOD_MS.
-
-  const start = forcedStart || currentPeriodStart();
-  const historicalReady = historyReady && state.historyBootstrap?.complete === true;
-  if (!historicalReady) {
-    log("LIVE_PERIOD_PROCESS_WITHOUT_HISTORY", {
-      historyReady,
-      historyBootstrapComplete:!!state.historyBootstrap?.complete,
-      reason:"live_alerts_are_not_blocked_by_historical_bootstrap"
-    });
-  }
-  const closedStart = start - PERIOD_MS;
-  const periodKey = "period-" + Math.floor(closedStart / 1000);
-
-  state.periods = state.periods || {};
-  state.periodAlerted = state.periodAlerted || {};
-  const savedPeriod = state.periods[periodKey] || {};
-  const savedCount = Object.keys(savedPeriod).length;
-  const alreadySent = !!state.periodAlerted?.[periodKey]?.sent;
-
-  // Once Telegram has confirmed delivery, this period is finished.
-  if (savedCount >= ASSETS.length && alreadySent) return;
-
-  if (savedCount > 0) {
-    log("PERIOD_RETRY_PARTIAL", {
-      periodKey,
-      savedAssets: Object.keys(savedPeriod)
-    });
-  }
-
-  const closeBoundary = start;
-  const results = {};
-  const missing = [];
-
-  log("PERIOD_PROCESS_START", {
-    periodKey,
-    closedStart: new Date(closedStart).toISOString(),
-    closeBoundary: new Date(closeBoundary).toISOString(),
-    latestTs:Object.fromEntries(ASSETS.map(a => [a.key, history.get(a.key)?.at(-1)?.ts || null]))
-  });
-
-  for (const asset of ASSETS) {
-    const { open, close } = boundaryPoints(asset.key, closedStart, closeBoundary);
-    if (!open || !close) {
-      missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null, reason:"no_valid_observation_within_70s_before_boundary" });
-      continue;
-    }
-    const winner = exactToBigInt(close.exact) >= exactToBigInt(open.exact) ? "Up" : "Down";
-    results[asset.key] = {
-      winner, open:open.value, close:close.value, openExact:open.exact, closeExact:close.exact, change:close.value-open.value,
-      openTimestamp:open.ts, closeTimestamp:close.ts
-    };
-    log("BOUNDARY_SELECTED", {
-      asset:asset.key,
-      periodStart:closedStart,
-      openTs:open.ts,
-      openAgeMs:closedStart-open.ts,
-      closeTs:close.ts,
-      closeAgeMs:closeBoundary-close.ts
-    });
-  }
-
-  log("PERIOD_BOUNDARY_CHECK", {
-    periodKey,
-    closedStart,
-    closeBoundary,
-    available:Object.keys(results),
-    missing:missing.map(x => ({
-      asset:x.asset,
-      open:x.open,
-      close:x.close,
-      latestTs:x.latest?.ts || null
-    }))
-  });
-
-  // If RTDS boundary observations are late/missing, use the already
-  // resolved Polymarket 5m markets as a settlement fallback. This is not
-  // reconstructed price data: Gamma is only accepted when the market is
-  // closed and has a definitive Up/Down outcome.
-  if (missing.length) {
-    const gammaFallback = await fetchGammaClosedPeriodFallback(closedStart);
-    for (const asset of ASSETS) {
-      if (!results[asset.key] && gammaFallback[asset.key]) {
-        results[asset.key] = gammaFallback[asset.key];
-      }
-    }
-  }
-
-  if (!Object.keys(results).length) {
-    log("PERIOD_WAIT", {
-      periodKey, reason:"no_twap60_or_resolved_gamma_result_available", missing, retry:true
-    });
-    return;
-  }
-
-  if (missing.length) {
-    log("PERIOD_PARTIAL", {
-      periodKey,
-      reason:"some_assets_missing_boundary",
-      missing,
-      available:Object.keys(results),
-      alerting:true
-    });
-  }
-
-  const newResults = {};
-  for (const asset of ASSETS) {
-    if (results[asset.key] && !savedPeriod[asset.key]) {
-      newResults[asset.key] = results[asset.key];
-      // Do not mutate the cumulative baseline while historical bootstrap is
-      // still running. Live results are persisted and merged after bootstrap.
-      if (historicalReady) {
-        state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
-      }
-    }
-  }
-
-  const mergedResults = { ...savedPeriod, ...newResults };
-  const newlyComplete = Object.keys(mergedResults).length >= ASSETS.length;
-
-  // If there is no new RTDS data but this period is already saved, still retry
-  // Telegram delivery. Only a confirmed send ends processing.
-  // Once this period was delivered, only newly arrived asset results may
-  // justify another message. Otherwise the 10s polling loop would spam Telegram.
-  if (alreadySent && !Object.keys(newResults).length) {
-    return;
-  }
-
-  if (!Object.keys(newResults).length && !newlyComplete && savedCount === 0) {
-    log("PERIOD_WAIT", {
-      periodKey,
-      reason:"no_new_twap60_assets",
-      savedAssets:Object.keys(savedPeriod),
-      available:Object.keys(results),
-      retry:true
-    });
-    return;
-  }
-
-  state.periods[periodKey] = mergedResults;
-  state.lastProcessedPeriod = periodKey;
-  state.leader = ranking()[0];
-  saveState();
-
-  // Do not wait indefinitely for a late asset. The cumulative alert can
-  // be sent once the period has at least one authoritative TWAP60 result;
-  // missing assets remain retryable and are added on later polls.
-  if (!newlyComplete && Object.keys(newResults).length === 0) {
-    // Avoid writing the same diagnostic every 10 seconds. Blitz has no
-    // request/credit meter, but unnecessary persistent log writes consume
-    // storage and I/O.
-    const waitSig = Object.keys(mergedResults).sort().join(",");
-    if (state.lastPartialWaitSignature !== periodKey + "|" + waitSig) {
-      state.lastPartialWaitSignature = periodKey + "|" + waitSig;
-      saveState();
-      log("PERIOD_WAIT", {
-        periodKey,
-        reason:"period_waiting_for_more_assets",
-        available:Object.keys(mergedResults),
-        missing:ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key),
-        counts:state.counts,
-        retry:true
-      });
-    }
-  }
-
-  // Do not allow a failed historical bootstrap to silence the live monitor.
-  // When the Aug-14 baseline is unavailable, send a clearly separated live
-  // alert instead of pretending that zeroed counts are historical statistics.
-  const alertIsCumulative = historicalReady;
-  if (!alertIsCumulative) {
-    log("PERIOD_ALERT_LIVE_FALLBACK", {
-      periodKey,
-      reason:"historical_baseline_not_ready",
-      complete:newlyComplete,
-      counts:state.counts
-    });
-  }
-
-  // If a period is complete but Telegram was unavailable, retry it on every
-  // 10-second cycle. Do not require another RTDS observation.
-  const alertAttempt = state.periodAlerted?.[periodKey]?.attempts || 0;
-  state.periodAlerted = state.periodAlerted || {};
-  state.periodAlerted[periodKey] = {
-    ...(state.periodAlerted[periodKey] || {}),
-    attempts: alertAttempt + 1,
-    lastAttemptAt: nowIso()
-  };
-  saveState();
-
-  const nextStart = start;
-  const cumulativeRanking = ranking();
-  const cumulativeTop = cumulativeRanking[0];
-  if (!cumulativeTop?.asset) {
-    log("PERIOD_ALERT_BLOCKED", {
-      periodKey,
-      reason:"no_cumulative_leader",
-      counts:state.counts
-    });
-    return;
-  }
-  const nextSlug = cumulativeTop.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
-
-  log("PERIOD_READY_TO_ALERT", {
-    periodKey, nextStart, leader:cumulativeTop, nextSlug,
-    results:mergedResults, newResults, complete:newlyComplete, counts:state.counts
-  });
-
-  // The market URL is deterministic from the same cumulative leader
-  // displayed in NEXT. Never use a stale state.leader or a partial Gamma match.
-  const link = "https://polymarket.com/event/" + nextSlug;
-
-  // Telegram shows the cumulative result from August 14, not only the
-  // just-closed 5m period. The same cumulative leader determines NEXT
-  // and the Polymarket link.
-  const cumulativeDirection = cumulativeTop.score >= 0 ? "UP" : "DOWN";
-  const lines = [
-    "5M CHAINLINK TWAP 60s",
-    alertIsCumulative ? "CUMULATIVE FROM 14 AUGUST" : "CURRENT 5M — HISTORICAL BASELINE NOT READY",
-    "",
-    ...cumulativeRanking.map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
-    "",
-    "NEXT: " + cumulativeTop.asset + " " + cumulativeDirection,
-    link
-  ];
-
-  const sent = await sendTelegram(lines.join("\n"), "PERIOD_ALERT");
-  if (sent) {
-    state.periodAlerted[periodKey] = {
-      ...(state.periodAlerted[periodKey] || {}),
-      sentAt: nowIso(),
-      complete: newlyComplete,
-      sent: true
-    };
-    saveState();
-  }
-  log("PERIOD_PROCESSED", {
-    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:cumulativeTop, telegram:sent,
-    source:"polymarket_closed_5m_baseline_plus_rtds_live", marketSlug:nextSlug
-  });
-  snapshot("POST_PERIOD_" + periodKey);
-}
-
-async function processClosedPeriod() {
-  return processClosedPeriodAt(currentPeriodStart());
 }
 
 async function poll() {
-  if (!connected) connectRtds();
+  if (pollRunning) {
+    log("POLL_SKIPPED", { reason: "previous_poll_still_running" });
+    return;
+  }
+  pollRunning = true;
   try {
-    // Process the latest closed period, then also retry any recent incomplete
-    // period saved in state. This prevents a late TWAP60 boundary from being
-    // permanently abandoned when the 5m window advances.
-    await processClosedPeriod();
-    const currentStart = currentPeriodStart();
-    const periodKeys = Object.keys(state.periods || {})
-      .filter(k => /^period-\\d+$/.test(k))
-      .map(k => ({ key:k, start:Number(k.slice(7))*1000 }))
-      .filter(x => Number.isFinite(x.start) && x.start >= currentStart - 2 * PERIOD_MS && x.start < currentStart)
-      .sort((a,b) => b.start - a.start);
-    for (const item of periodKeys) {
-      const saved = state.periods[item.key] || {};
-      const sent = !!state.periodAlerted?.[item.key]?.sent;
-      if (Object.keys(saved).length < ASSETS.length && !sent) {
-        await processClosedPeriodAt(item.start + PERIOD_MS);
-      }
-    }
-    if (state.liveBoundaryCacheDirty) {
-      state.liveBoundaryCacheDirty = false;
-      saveState();
-    }
+    await processFeed();
   } catch (e) {
-    log("CYCLE_ERROR", { error:String(e.stack||e) });
+    log("POLL_ERROR", { error: String(e.stack || e) });
+  } finally {
+    pollRunning = false;
   }
 }
 
 async function main() {
-  ensureDir(STATE_FILE); ensureDir(LOG_FILE);
-  state = loadState();
+  ensureDir(STATE_FILE);
+  ensureDir(LOG_FILE);
 
+  state = loadState();
   if (state.version !== VERSION) {
-    snapshot("PRE_VERSION_CHANGE");
-    log("VERSION_CHANGE", { from:state.version||"unknown", to:VERSION });
-    const keepHistory = !!state.historyBootstrap?.complete &&
-      state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION;
+    const previous = state.version || "unknown";
     state.version = VERSION;
-    if (!keepHistory) {
-      state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-      state.periods = {};
-      state.periodAlerted = {};
-      state.leader = null;
-      state.lastProcessedPeriod = null;
-    }
-    state.strategy = "CHAINLINK_HISTORY_PLUS_RTDs_LIVE";
+    state.strategy = "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS";
+    log("VERSION_CHANGE", { from: previous, to: VERSION });
     saveState();
   }
 
+  collectionStartedAt = nowIso();
+
   log("MONITOR_STARTING", {
-    version:VERSION, buildSha:BUILD_SHA, source:"Polymarket RTDS crypto_prices_twap_sixty",
-    pollingMs:POLL_MS, windowSeconds:60, assets:ASSETS.map(a=>a.key),
-    persistentState:true, postgres:false, strategy:"CHAINLINK_HISTORY_PLUS_RTDs_LIVE"
+    version: VERSION,
+    buildSha: BUILD_SHA,
+    strategy: "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS",
+    source: FEED_URL,
+    exchange: EXCHANGE,
+    pollingMs: POLL_MS,
+    allSymbols: true,
+    links: false,
+    persistentState: true
   });
 
   startHealth();
-
-  // Reuse a previously completed persisted baseline immediately. This
-  // prevents a restart from creating an alert blackout while the validator
-  // checks the historical state in the background.
-  historyReady = !!state.historyBootstrap?.complete &&
-    state.historyBootstrap?.version === HISTORY_BOOTSTRAP_VERSION;
-  state.strategy = "CHAINLINK_HISTORY_PLUS_RTDs_LIVE";
-  connectRtds();
-
-  log("HISTORY_BOOTSTRAP_SCHEDULED", {
-    source:"Polymarket Gamma closed 5m markets keyset",
-    from:new Date(HISTORY_START_MS).toISOString(),
-    mode:"historical_baseline_required_before_cumulative_alert"
-  });
-
-  // Historical data is rebuilt/persisted separately from the live RTDS stream.
-  // Health and RTDS stay online while the REST bootstrap runs.
-  const runHistoryBootstrap = () => bootstrapHistoricalCounts()
-    .then(ok => {
-      historyReady = !!ok;
-      log("HISTORY_BOOTSTRAP_RESULT", {
-        complete:!!ok,
-        counts:state.counts,
-        periods:Object.keys(state.periods||{}).length
-      });
-      if (ok) poll().catch(e => log("POST_HISTORY_POLL_ERROR",{error:String(e.stack||e)}));
-    })
-    .catch(e => {
-      historyReady = false;
-      log("HISTORY_BOOTSTRAP_FATAL",{error:String(e.stack||e),retry:true});
-    });
-
-  // A transient Gamma/API failure must not permanently disable the historical
-  // baseline. Retry automatically; the running guard prevents overlap.
-  runHistoryBootstrap();
-  setInterval(() => {
-    if (!historyReady && !historicalBootstrapRunning) runHistoryBootstrap();
-  }, 30_000);
-
   await poll();
   setInterval(poll, POLL_MS);
-
-  setInterval(() => log("HEARTBEAT", {
-    websocket:connected, pollingMs:POLL_MS, collectionStartedAt,
-    latest:Object.fromEntries(ASSETS.map(a=>[a.key,latest.get(a.key)||null])),
-    lastProcessedPeriod:state.lastProcessedPeriod, leader:state.leader, counts:state.counts
-  }), 60_000);
+  setInterval(() => {
+    log("HEARTBEAT", runtimeDiagnostics());
+  }, 60_000);
 }
 
-process.on("SIGTERM", () => { for (const t of heartbeatTimers.values()) clearInterval(t); for (const socket of sockets.values()) { try { socket.close(); } catch {} } process.exit(0); });
-process.on("SIGINT", () => { for (const t of heartbeatTimers.values()) clearInterval(t); for (const socket of sockets.values()) { try { socket.close(); } catch {} } process.exit(0); });
+function shutdown() {
+  log("MONITOR_STOPPING");
+  process.exit(0);
+}
 
-main().catch(e => { log("FATAL", { error:String(e.stack||e) }); process.exit(1); });
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
+main().catch(e => {
+  log("FATAL", { error: String(e.stack || e) });
+  process.exit(1);
+});
