@@ -1,12 +1,12 @@
 const http = require("http");
 
-const VERSION = "3.3.0";
+const VERSION = "3.4.0";
 const POLL_MS = 10000;
 const WINDOW_MS = 60000;
 const MAX_RANGE = 0.03;
 const BREAKOUT = 0.003;
 const RUNTIME_MS = 5 * 60 * 60 * 1000 + 45 * 60 * 1000;
-const MAX_CANDIDATES = 500;
+const MAX_CANDIDATES = 2000;
 
 const GAMMA_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&active=true&closed=false&order=startTime&ascending=true&limit=500&offset=";
 const GAMMA_PAGES = 4;
@@ -25,6 +25,7 @@ let lastPollAt = null;
 let lastError = null;
 let emptyPolls = 0;
 let pollsSinceAlert = 0;
+let lastPollStats = { events: 0, liveEvents: 0, candidates: 0, clobPrices: 0, historyReady: 0 };
 
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), version: VERSION, event, ...data }));
@@ -215,6 +216,13 @@ async function poll() {
       await telegram("SPORTS MONITOR DIAGNOSTIC\nLive CLOB data is arriving, but no breakout alert yet.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size + "\nTRACKED: " + states.size + "\nHISTORY READY: " + Array.from(states.values()).filter(s => s.history.length >= 6).length);
       pollsSinceAlert = 0;
     }
+    lastPollStats = {
+      events: events.length,
+      liveEvents: live.length,
+      candidates: candidates.length,
+      clobPrices: ps.size,
+      historyReady: Array.from(states.values()).filter(s => s.history.length >= 6).length
+    };
     log("POLL", {
       events: events.length,
       liveEvents: live.length,
@@ -231,7 +239,7 @@ async function poll() {
 }
 
 function health() {
-  return { status: "ok", version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT, tracked: states.size, alertsSent, lastPollAt, lastError };
+  return { status: "ok", version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT, maxCandidates: MAX_CANDIDATES, tracked: states.size, alertsSent, lastPollAt, lastError, ...lastPollStats };
 }
 
 http.createServer((req, res) => {
