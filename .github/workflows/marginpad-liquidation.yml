@@ -1,0 +1,41 @@
+name: MarginPad Liquidation 5M
+
+on:
+  schedule:
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: marginpad-liquidation-monitor
+  cancel-in-progress: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --omit=dev
+
+      - name: Run MarginPad Hyperliquid liquidation monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATE_FILE: /tmp/marginpad-liquidation-state.json
+          LOG_FILE: /tmp/marginpad-liquidation.jsonl
+        run: |
+          node monitor.js &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true; wait $PID 2>/dev/null || true' EXIT
+          sleep 270
