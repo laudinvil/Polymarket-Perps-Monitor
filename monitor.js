@@ -16,6 +16,22 @@ const CHAINLINK_DISCOVERY_CACHE_MS = 5 * 60 * 1000;
 let chainlinkDiscoveryCache = { at: 0, feeds: [] };
 const START_MS = Date.parse("2026-08-14T00:00:00Z");
 const POLL_MS = 10_000;
+// Conservative self-imposed limits so the monitor stays well below public/free API ceilings.
+const GAMMA_MIN_INTERVAL_MS = 250;
+const CHAINLINK_MIN_INTERVAL_MS = 1000;
+let lastGammaRequestAt = 0;
+let lastChainlinkRequestAt = 0;
+let cycleBusy = false;
+const marketCache = new Map();
+const reportCache = new Map();
+async function pace(kind) {
+  const min = kind === "chainlink" ? CHAINLINK_MIN_INTERVAL_MS : GAMMA_MIN_INTERVAL_MS;
+  const last = kind === "chainlink" ? lastChainlinkRequestAt : lastGammaRequestAt;
+  const wait = Math.max(0, min - (Date.now() - last));
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  if (kind === "chainlink") lastChainlinkRequestAt = Date.now();
+  else lastGammaRequestAt = Date.now();
+}
 const STATE_FILE = process.env.STATE_FILE || "/data/chainlink-imbalance-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/chainlink-imbalance.jsonl";
 
@@ -265,6 +281,7 @@ async function getJsonWithHeaders(url, headers = {}) {
 }
 
 async function chainlinkJsonDirect(fullPath) {
+  await pace("chainlink");
   return getJsonWithHeaders(CHAINLINK_ENDPOINT + fullPath, hmacHeaders("GET", fullPath));
 }
 
@@ -313,6 +330,8 @@ async function decodeTwapReport(fullReport, feedId) {
 }
 async function fetchChainlinkReport(feedId, timestamp) {
   const targetSec = Math.floor(timestamp / 1000);
+  const cacheKey = feedId + ":" + targetSec;
+  if (reportCache.has(cacheKey)) return reportCache.get(cacheKey);
   const offsets = [0, -1, 1, -2, 2, -5, 5, -10, 10, -30, 30, -60, 60];
   const candidates = [];
   const seen = new Set();
@@ -346,7 +365,9 @@ async function fetchChainlinkReport(feedId, timestamp) {
     .sort((a, b) => Math.abs(a.report.validFromTimestamp - targetSec) - Math.abs(b.report.validFromTimestamp - targetSec))[0];
 
   if (!chosen) throw new Error("No usable Chainlink report near " + targetSec);
-  return { ...chosen.report, requestedTimestamp: targetSec, requestedQuery: chosen.requested };
+  const result = { ...chosen.report, requestedTimestamp: targetSec, requestedQuery: chosen.requested };
+  reportCache.set(cacheKey, result);
+  return result;
 }
 
 async function verifyTwapSettlement(asset, market, periodStart) {
@@ -446,8 +467,12 @@ function winnerOf(m) {
 }
 
 async function fetchMarketBySlug(slug) {
+  if (marketCache.has(slug)) return marketCache.get(slug);
+  await pace("gamma");
   const data = await getJson(API + "/markets?slug=" + encodeURIComponent(slug));
-  return Array.isArray(data) ? data[0] : null;
+  const market = Array.isArray(data) ? data[0] : null;
+  if (market) marketCache.set(slug, market);
+  return market;
 }
 
 async function backfill(state) {
@@ -518,13 +543,16 @@ async function persistPeriod(periodKey, periodStart, results, state) {
 }
 
 async function processClosedPeriod(state) {
+  if (cycleBusy) return;
+  cycleBusy = true;
+  try {
   const now = Date.now();
   const currentStart = Math.floor(now / 300000) * 300000;
   const periodStart = currentStart - 300000;
-  if (periodStart < START_MS) return;
+  if (periodStart < START_MS) { cycleBusy = false; return; }
 
   const periodKey = "period-" + Math.floor(periodStart / 1000);
-  if (state.periods[periodKey]) return;
+  if (state.periods[periodKey]) { cycleBusy = false; return; }
 
   const results = {};
   for (const asset of ASSETS) {
@@ -606,7 +634,7 @@ async function processClosedPeriod(state) {
   }
 }
 
-async function main() {
+  } finally { cycleBusy = false; }\n}\n\nasync function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
   await initDb();
