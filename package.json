@@ -1,9 +1,0 @@
-{
-  "name": "polymarket-live-soccer-monitor",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "node scripts/deplexo-log-server.js"
-  },
-  "dependencies": {}
-}
