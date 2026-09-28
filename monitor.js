@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.3.1";
+const MONITOR_VERSION = "2.4.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -34,6 +34,7 @@ async function pace(kind) {
 }
 const STATE_FILE = process.env.STATE_FILE || "/data/chainlink-imbalance-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/chainlink-imbalance.jsonl";
+const RUNTIME_LOG_FILE = process.env.RUNTIME_LOG_FILE || "/data/deplexo-runtime.log";
 
 const ASSETS = [
   { key: "BTC", slug: "btc-updown-5m", symbol: "BTC" },
@@ -49,9 +50,40 @@ let db = null;
 let runtimeState = null;
 
 function nowIso() { return new Date().toISOString(); }
+function tailFile(file, maxBytes = 120000) {
+  try {
+    const stat = fs.statSync(file);
+    const start = Math.max(0, stat.size - maxBytes);
+    const fd = fs.openSync(file, "r");
+    const buffer = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buffer, 0, buffer.length, start);
+    fs.closeSync(fd);
+    return buffer.toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function runtimeLog(record) {
+  try {
+    ensureDir(RUNTIME_LOG_FILE);
+    fs.appendFileSync(RUNTIME_LOG_FILE, JSON.stringify(record) + "\n");
+  } catch {}
+}
+
 function startHealthServer() {
   const port = Number(process.env.PORT || 8080);
   const server = http.createServer((req, res) => {
+    if (req.url === "/logs") {
+      const payload = { status: "ok", version: MONITOR_VERSION, logFile: RUNTIME_LOG_FILE, runtime: tailFile(RUNTIME_LOG_FILE), monitor: tailFile(LOG_FILE) };
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return res.end(JSON.stringify(payload));
+    }
+    if (req.url === "/status") {
+      const payload = { status: "ok", version: MONITOR_VERSION, uptimeSec: Math.floor(process.uptime()), pollingMs: POLL_MS, chainlink: !!(CHAINLINK_API_KEY && CHAINLINK_API_SECRET), postgres: !!db, initialized: !!runtimeState?.initialized, lastProcessedPeriod: runtimeState?.lastProcessedPeriod || null, leader: runtimeState?.leader || null, counts: runtimeState?.counts || Object.fromEntries(ASSETS.map(a => [a.key, 0])), updatedAt: runtimeState?.updatedAt || null };
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return res.end(JSON.stringify(payload));
+    }
     if (req.url === "/health" || req.url === "/") {
       const payload = {
         status: "ok",
@@ -141,7 +173,9 @@ function appendFileLog(record) {
 
 function log(event, data = {}) {
   const record = { ts: nowIso(), version: MONITOR_VERSION, event, ...data };
-  console.log(JSON.stringify(record));
+  const line = JSON.stringify(record);
+  console.log(line);
+  runtimeLog(record);
   appendFileLog(record);
   if (db) {
     db.query(
