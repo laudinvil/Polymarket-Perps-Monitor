@@ -369,14 +369,14 @@ function parseJsonField(v, fallback) {
 
 function isTargetMarket(m, asset) {
   if (!m || typeof m.slug !== "string") return false;
-  if (!m.slug.startsWith(asset.slug + "-") || !m.slug.match(/-\\d+$/)) return false;
+  if (!m.slug.startsWith(asset.slug + "-") || !m.slug.match(/-\d+$/)) return false;
 
   const start = Date.parse(m.startDate || "");
   const end = Date.parse(m.endDate || "");
   if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
   if (start < START_MS || end - start < 4 * 60 * 1000 || end - start > 6 * 60 * 1000) return false;
 
-  const raw = m.raw;
+  const raw = typeof m.raw === "string" ? parseJsonField(m.raw, {}) : (m.raw || {});
   const cfg = raw && raw.cryptoMarketConfig;
   const lookback = cfg && Number(cfg.twapLookbackSeconds);
   const resolution = String(m.resolutionSource || "").toLowerCase();
@@ -533,7 +533,14 @@ async function processClosedPeriod(state) {
   await persistPeriod(periodKey, periodStart, winners, state);
 
   const nextStart = currentStart + 300000;
-  const link = "https://polymarket.com/event/" + top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
+  const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
+  let nextMarket = null;
+  try { nextMarket = await fetchMarketBySlug(nextSlug); } catch (e) {
+    log("NEXT_MARKET_LOOKUP_ERROR", { asset: top.asset, slug: nextSlug, error: String(e.message || e) });
+  }
+  const link = nextMarket?.slug
+    ? "https://polymarket.com/event/" + nextMarket.slug
+    : "https://polymarket.com/event/" + nextSlug;
   const lines = [
     "5M CHAINLINK TWAP 60s",
     "",
