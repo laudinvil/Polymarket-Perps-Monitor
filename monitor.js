@@ -312,30 +312,57 @@ async function decodeTwapReport(fullReport, feedId) {
   return decoded;
 }
 async function fetchChainlinkReport(feedId, timestamp) {
-  const pathName = "/api/v1/reports?feedID=" + encodeURIComponent(feedId) + "&timestamp=" + Math.floor(timestamp / 1000);
-  const data = await chainlinkJsonDirect(pathName);
-  if (!data?.report?.fullReport) throw new Error("Chainlink report missing");
-  return {
-    feedId: data.report.feedID,
-    validFromTimestamp: Number(data.report.validFromTimestamp),
-    observationsTimestamp: Number(data.report.observationsTimestamp),
-    fullReport: data.report.fullReport
-  };
+  const targetSec = Math.floor(timestamp / 1000);
+  const offsets = [0, -1, 1, -2, 2, -5, 5, -10, 10, -30, 30, -60, 60];
+  const candidates = [];
+  const seen = new Set();
+
+  for (const offset of offsets) {
+    const requested = targetSec + offset;
+    if (requested <= 0 || seen.has(requested)) continue;
+    seen.add(requested);
+    try {
+      const pathName = "/api/v1/reports?feedID=" + encodeURIComponent(feedId) + "&timestamp=" + requested;
+      const data = await chainlinkJsonDirect(pathName);
+      if (!data?.report?.fullReport) continue;
+      const report = {
+        feedId: data.report.feedID,
+        validFromTimestamp: Number(data.report.validFromTimestamp),
+        observationsTimestamp: Number(data.report.observationsTimestamp),
+        fullReport: data.report.fullReport
+      };
+      if (!Number.isFinite(report.validFromTimestamp) || !Number.isFinite(report.observationsTimestamp)) continue;
+      candidates.push({ requested, report });
+    } catch {}
+  }
+
+  if (!candidates.length) throw new Error("Chainlink report missing near " + targetSec);
+
+  const atOrBefore = candidates
+    .filter(x => x.report.validFromTimestamp <= targetSec && x.report.observationsTimestamp <= targetSec)
+    .sort((a, b) => b.report.validFromTimestamp - a.report.validFromTimestamp);
+
+  const chosen = atOrBefore[0] || candidates
+    .sort((a, b) => Math.abs(a.report.validFromTimestamp - targetSec) - Math.abs(b.report.validFromTimestamp - targetSec))[0];
+
+  if (!chosen) throw new Error("No usable Chainlink report near " + targetSec);
+  return { ...chosen.report, requestedTimestamp: targetSec, requestedQuery: chosen.requested };
 }
 
 async function verifyTwapSettlement(asset, market, periodStart) {
-  const resolution = String(market.resolutionSource || "").toLowerCase();
-  const description = String(market.description || "").toLowerCase();
-  if (!resolution.includes("twap-60s") && !description.includes("twap-60s")) {
-    throw new Error("market does not explicitly reference Chainlink TWAP60");
-  }
   if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) {
     throw new Error("Chainlink credentials missing");
   }
 
+  const marketStart = Date.parse(market.startDate || "");
+  const marketEnd = Date.parse(market.endDate || "");
+  if (!Number.isFinite(marketStart) || !Number.isFinite(marketEnd)) {
+    throw new Error("market start/end timestamps missing");
+  }
+
   const feed = await resolveTwap60Feed(asset);
-  const start = await fetchChainlinkReport(feed.feedId, periodStart);
-  const end = await fetchChainlinkReport(feed.feedId, periodStart + 300000);
+  const start = await fetchChainlinkReport(feed.feedId, marketStart);
+  const end = await fetchChainlinkReport(feed.feedId, marketEnd);
   const openDecoded = await decodeTwapReport(start.fullReport, start.feedId);
   const closeDecoded = await decodeTwapReport(end.fullReport, end.feedId);
   const openPrice = openDecoded.price;
@@ -347,8 +374,24 @@ async function verifyTwapSettlement(asset, market, periodStart) {
     feedId: feed.feedId,
     feedName: feed.name || null,
     schemaVersion: feed.schemaVersion || "V2",
-    open: { requested: Math.floor(periodStart / 1000), observed: start.observationsTimestamp, validFrom: start.validFromTimestamp, price: openPrice.toString(), decodedObservations: openDecoded.observationsTimestamp },
-    close: { requested: Math.floor((periodStart + 300000) / 1000), observed: end.observationsTimestamp, validFrom: end.validFromTimestamp, price: closePrice.toString(), decodedObservations: closeDecoded.observationsTimestamp },
+    marketStart: new Date(marketStart).toISOString(),
+    marketEnd: new Date(marketEnd).toISOString(),
+    open: {
+      requested: Math.floor(marketStart / 1000),
+      query: start.requestedQuery,
+      observed: start.observationsTimestamp,
+      validFrom: start.validFromTimestamp,
+      price: openPrice.toString(),
+      decodedObservations: openDecoded.observationsTimestamp
+    },
+    close: {
+      requested: Math.floor(marketEnd / 1000),
+      query: end.requestedQuery,
+      observed: end.observationsTimestamp,
+      validFrom: end.validFromTimestamp,
+      price: closePrice.toString(),
+      decodedObservations: closeDecoded.observationsTimestamp
+    },
     expected,
     marketWinner: actual,
     match: actual === expected
