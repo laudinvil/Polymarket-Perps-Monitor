@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.6";
+const VERSION = "7.5.7";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -421,7 +421,7 @@ async function sendOnlineAlert() {
 }
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v2";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v3";
 const HISTORY_PERIOD_MS = PERIOD_MS;
 const HISTORY_BATCH_SIZE = 10;
 const HISTORY_RETRY_MS = 5000;
