@@ -6,6 +6,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY monitor.js ./
+COPY live-monitor.js ./
 
 ENV NODE_ENV=production
 EXPOSE 8080
