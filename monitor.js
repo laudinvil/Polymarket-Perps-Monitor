@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.7";
+const VERSION = "4.0.8";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -410,7 +410,8 @@ async function main() {
   });
 
   startHealth(); connectRtds();
-  await sendTelegram("TWAP60 MONITOR STARTED\\nversion " + VERSION + "\\nTelegram delivery test", "STARTUP_TEST");
+  const startupSent = await sendTelegram("TWAP60 MONITOR STARTED\nversion " + VERSION + "\nTelegram delivery test", "STARTUP_TEST");
+  log("STARTUP_TELEGRAM_RESULT", { sent: startupSent });
   await poll();
   setInterval(poll, POLL_MS);
 
