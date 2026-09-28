@@ -361,8 +361,27 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
   let offset = 0;
   const limit = 500;
 
+  let seriesId = null;
+  try {
+    const seriesUrl = GAMMA + "/series?slug=" + encodeURIComponent(slug) + "&limit=10";
+    const sr = await fetch(seriesUrl, { headers: { accept: "application/json" } });
+    if (sr.ok) {
+      const sd = await sr.json();
+      const rows = Array.isArray(sd) ? sd : (Array.isArray(sd?.data) ? sd.data : []);
+      const hit = rows.find(x => String(x.slug || "") === slug) || rows[0];
+      if (hit?.id != null) seriesId = String(hit.id);
+    }
+  } catch (e) {
+    log("HISTORY_SERIES_ERROR", { asset: asset.key, error: String(e.message || e) });
+  }
+
+  if (!seriesId) {
+    log("HISTORY_SERIES_MISSING", { asset: asset.key, slug });
+    return all;
+  }
+
   while (true) {
-    const url = GAMMA + "/markets?series_slug=" + encodeURIComponent(slug)
+    const url = GAMMA + "/events?series_id=" + encodeURIComponent(seriesId)
       + "&closed=true&limit=" + limit
       + "&offset=" + offset
       + "&order=endDate&ascending=true";
@@ -371,22 +390,23 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
     try {
       const r = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
       if (!r.ok) {
-        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset, endpoint:"markets" });
+        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset, endpoint:"events", seriesId });
         break;
       }
       const data = await r.json();
-      const markets = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-      if (!markets.length) break;
+      const events = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      if (!events.length) break;
 
       let reachedFuture = false;
-      for (const market of markets) {
-        const startMs = Date.parse(market.startDate || market.eventStartTime || "");
-        const endMs = Date.parse(market.endDate || "");
+      for (const event of events) {
+        const startMs = Date.parse(event.startDate || event.eventStartTime || "");
+        const endMs = Date.parse(event.endDate || "");
         if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
         if (endMs < HISTORY_START_MS) continue;
         if (startMs >= cutoffMs) { reachedFuture = true; break; }
 
-        const winner = resolvedWinner(market);
+        const market = Array.isArray(event.markets) ? event.markets[0] : null;
+        const winner = resolvedWinner(market || event);
         if (!winner) continue;
 
         all.push({
@@ -397,10 +417,10 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         });
       }
 
-      if (reachedFuture || markets.length < limit) break;
+      if (reachedFuture || events.length < limit) break;
       offset += limit;
     } catch (e) {
-      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e), endpoint:"markets" });
+      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e), endpoint:"events", seriesId });
       break;
     } finally {
       clearTimeout(timer);
