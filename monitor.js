@@ -2,8 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.3.0";
-const CASCADE_WINDOW_MS = 10_000;
+const VERSION = "9.4.0";
+const CASCADE_WINDOW_MS = 3_000;
 const CASCADE_MIN_EVENTS = 5;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
@@ -260,7 +260,7 @@ async function processFeed() {
         symbol,
         eventsInWindow: active.length,
         lastEventTs: rawTs,
-        waitAfterLastEventMs: CASCADE_WINDOW_MS
+        waitAfterLastEventMs: POLL_MS
       });
     }
   }
