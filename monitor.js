@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.7.2";
+const MONITOR_VERSION = "2.8.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -538,42 +538,81 @@ async function fetchMarketBySlug(slug) {
   return market;
 }
 
-async function getBackfillEventsPage(url, pages, offset, state) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const rows = await getJson(url);
-      if (Array.isArray(rows)) {
-        log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: "gamma_events_date_windows", rows: rows.length });
-        return rows;
-      }
-      throw new Error("invalid_response");
-    } catch (e) {
-      const reason = String(e.message || e);
-      log("BACKFILL_RETRY", { pages, offset, attempt, source: "gamma_events_date_windows", error: reason });
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-    }
-  }
-  state.backfillIncomplete = true;
-  state.lastBackfillAt = nowIso();
-  await saveState(state);
-  log("BACKFILL_PAGE_ERROR", { pages, offset, error: "gamma_events_page_failed" });
-  return null;
-}
+async function getHistoricalBoundaryReports(feedId, assetKey, fromMs, toMs, state) {
+  const boundaries = [];
+  const first = Math.ceil(fromMs / 300000) * 300000;
+  for (let t = first; t <= toMs; t += 300000) boundaries.push(Math.floor(t / 1000));
 
-function collectTargetMarketsFromEvents(events) {
-  const out = [];
-  for (const event of events) {
-    const markets = Array.isArray(event?.markets) ? event.markets : [];
-    for (const market of markets) {
-      for (const asset of ASSETS) {
-        if (isTargetMarket(market, asset)) {
-          out.push({ asset, market });
-          break;
-        }
+  const found = new Map();
+  let boundaryIndex = 0;
+  let cursor = Math.floor(fromMs / 1000);
+  let pages = 0;
+  const limit = 10000;
+
+  while (cursor <= Math.floor(toMs / 1000) && boundaryIndex < boundaries.length) {
+    let payload = null;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        payload = await chainlinkJsonDirect(
+          "/api/v1/reports/page?feedID=" + encodeURIComponent(feedId) +
+          "&startTimestamp=" + cursor + "&limit=" + limit
+        );
+        break;
+      } catch (e) {
+        log("CHAINLINK_BACKFILL_RETRY", {
+          asset: assetKey,
+          feedId,
+          cursor,
+          attempt,
+          error: String(e.message || e)
+        });
+        if (attempt < 4) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
       }
     }
+
+    const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+    if (!reports.length) break;
+    pages++;
+
+    for (const report of reports) {
+      const validFrom = Number(report.validFromTimestamp);
+      const observed = Number(report.observationsTimestamp);
+      if (!Number.isFinite(validFrom) || !Number.isFinite(observed)) continue;
+
+      while (boundaryIndex < boundaries.length && observed > boundaries[boundaryIndex]) {
+        boundaryIndex++;
+      }
+      if (boundaryIndex >= boundaries.length) break;
+
+      const boundary = boundaries[boundaryIndex];
+      if (validFrom <= boundary && observed <= boundary) {
+        found.set(boundary, report);
+      }
+    }
+
+    const last = reports[reports.length - 1];
+    const lastObserved = Number(last?.observationsTimestamp);
+    if (!Number.isFinite(lastObserved) || lastObserved < cursor) break;
+    cursor = lastObserved + 1;
+
+    state.backfillChainlinkPages = Number(state.backfillChainlinkPages || 0) + 1;
+    state.backfillChainlinkCursor = state.backfillChainlinkCursor || {};
+    state.backfillChainlinkCursor[assetKey] = cursor;
+    await saveState(state);
+
+    log("CHAINLINK_BACKFILL_PAGE", {
+      asset: assetKey,
+      pages,
+      cursor,
+      reports: reports.length,
+      boundariesFound: found.size,
+      totalBoundaries: boundaries.length
+    });
+
+    if (reports.length < limit) break;
   }
-  return out;
+
+  return { boundaries, found, pages };
 }
 
 async function backfill(state) {
@@ -582,72 +621,102 @@ async function backfill(state) {
   log("BACKFILL_START", {
     start: new Date(START_MS).toISOString(),
     assets: ASSETS.map(a => a.key),
-    source: "gamma_events_official_settlement",
-    verification: "official_polymarket_winner",
-    chainlinkRole: "live_and_closed_period_verification"
+    source: "chainlink_reports_page_bulk",
+    verification: "chainlink_twap60",
+    gammaRole: "metadata_and_optional_winner_crosscheck"
   });
 
+  const endMs = Math.floor(Date.now() / 300000) * 300000;
   const counts = state.backfillCounts && typeof state.backfillCounts === "object"
     ? Object.fromEntries(ASSETS.map(a => [a.key, Number(state.backfillCounts[a.key] || 0)]))
     : Object.fromEntries(ASSETS.map(a => [a.key, 0]));
-  const processedMarkets = new Set(Array.isArray(state.backfillProcessedMarkets) ? state.backfillProcessedMarkets : []);
-  const endMs = Math.floor(Date.now() / 300000) * 300000;
-  const windowMs = 24 * 60 * 60 * 1000;
-  let cursorMs = Number.isFinite(Number(state.backfillCursorMs)) && Number(state.backfillCursorMs) >= START_MS ? Number(state.backfillCursorMs) : START_MS;
-  let windows = Number(state.backfillWindows || 0);
-  let pages = Number(state.backfillPages || 0);
 
-  while (cursorMs < endMs) {
-    const windowEndMs = Math.min(cursorMs + windowMs, endMs);
-    let offset = 0;
-    while (true) {
-      const url = API + "/events?closed=true&tag_slug=crypto" +
-        "&start_date_min=" + encodeURIComponent(new Date(cursorMs).toISOString()) +
-        "&end_date_max=" + encodeURIComponent(new Date(windowEndMs).toISOString()) +
-        "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
-      const rows = await getBackfillEventsPage(url, pages, offset, state);
-      if (rows === null) return state;
-      pages++;
-      const targets = collectTargetMarketsFromEvents(rows);
-      let added = 0;
-      for (const { asset, market } of targets) {
-        const key = asset.key + ":" + String(market.id || market.slug);
-        if (processedMarkets.has(key)) continue;
-        const winner = winnerOf(market);
-        if (!winner) continue;
-        processedMarkets.add(key);
-        counts[asset.key] += winner === "Up" ? 1 : -1;
-        added++;
+  const processed = new Set(Array.isArray(state.backfillProcessedPeriods) ? state.backfillProcessedPeriods : []);
+  const feeds = {};
+  for (const asset of ASSETS) {
+    const feed = await resolveTwap60Feed(asset);
+    feeds[asset.key] = feed;
+    log("CHAINLINK_BACKFILL_FEED", { asset: asset.key, feedId: feed.feedId, source: feed.source });
+  }
+
+  for (const asset of ASSETS) {
+    const result = await getHistoricalBoundaryReports(
+      feeds[asset.key].feedId,
+      asset.key,
+      START_MS,
+      endMs,
+      state
+    );
+
+    const boundaryReports = result.found;
+    const boundaries = result.boundaries;
+    let added = 0;
+    let undetermined = 0;
+
+    for (let i = 1; i < boundaries.length; i++) {
+      const closeTs = boundaries[i];
+      const openTs = boundaries[i - 1];
+      const periodKey = "period-" + openTs;
+      if (processed.has(periodKey)) continue;
+
+      const openReport = boundaryReports.get(openTs);
+      const closeReport = boundaryReports.get(closeTs);
+      if (!openReport || !closeReport) {
+        undetermined++;
+        continue;
       }
-      log("BACKFILL_PAGE", { windows, pages, windowStart: new Date(cursorMs).toISOString(), windowEnd: new Date(windowEndMs).toISOString(), offset, events: rows.length, targetMarkets: targets.length, added, counts });
-      if (rows.length < 100) break;
-      offset += 100;
+
+      try {
+        const openDecoded = await decodeTwapReport(openReport.fullReport, openReport.feedID);
+        const closeDecoded = await decodeTwapReport(closeReport.fullReport, closeReport.feedID);
+        const winner = closeDecoded.price >= openDecoded.price ? "Up" : "Down";
+        counts[asset.key] += winner === "Up" ? 1 : -1;
+        processed.add(periodKey);
+        added++;
+      } catch (e) {
+        undetermined++;
+        log("CHAINLINK_BACKFILL_DECODE_ERROR", {
+          asset: asset.key,
+          periodKey,
+          error: String(e.message || e)
+        });
+      }
     }
-    cursorMs = windowEndMs;
-    windows++;
-    state.backfillCursorMs = cursorMs;
-    state.backfillWindows = windows;
-    state.backfillPages = pages;
+
     state.backfillCounts = counts;
-    state.backfillProcessedMarkets = Array.from(processedMarkets);
+    state.backfillProcessedPeriods = Array.from(processed);
     state.backfillIncomplete = true;
     await saveState(state);
+
+    log("CHAINLINK_BACKFILL_ASSET_DONE", {
+      asset: asset.key,
+      feedId: feeds[asset.key].feedId,
+      pages: result.pages,
+      boundaries: boundaries.length,
+      added,
+      undetermined,
+      counts
+    });
   }
 
   state.counts = counts;
   state.initialized = true;
   state.backfillIncomplete = false;
-  state.backfillCursorMs = endMs;
-  state.backfillWindows = windows;
-  state.backfillPages = pages;
-  state.backfillCounts = counts;
-  state.backfillProcessedMarkets = Array.from(processedMarkets);
+  state.backfillSource = "chainlink_reports_page_bulk";
+  state.backfillVerification = "chainlink_twap60";
+  state.backfillProcessedPeriods = Array.from(processed);
   state.lastBackfillAt = nowIso();
-  state.backfillSource = "gamma_events_official_settlement";
   await saveState(state);
-  log("BACKFILL_DONE", { windows, pages, counts, processedMarkets: processedMarkets.size, source: "gamma_events_official_settlement", verification: "official_polymarket_winner", chainlinkRole: "live_and_closed_period_verification" });
+
+  log("BACKFILL_DONE", {
+    counts,
+    processedPeriods: processed.size,
+    source: "chainlink_reports_page_bulk",
+    verification: "chainlink_twap60"
+  });
   return state;
 }
+
 function ranking(counts) {
   return ASSETS.map(a => ({ asset: a.key, score: Number(counts[a.key] || 0) }))
     .sort((a, b) => Math.abs(b.score) - Math.abs(a.score) || a.asset.localeCompare(b.asset));
