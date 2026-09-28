@@ -324,7 +324,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-chainlink-twap60-boundaries-v2";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v1";
 const HISTORY_PERIOD_MS = PERIOD_MS;
 const HISTORY_BATCH_SIZE = 10;
 const HISTORY_RETRY_MS = 5000;
@@ -334,6 +334,10 @@ const CHAINLINK_REST = process.env.CHAINLINK_REST_URL || "https://api.dataengine
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.CHAINLINK_API_KEY || process.env.API_KEY || "";
 const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.STREAMS_API_SECRET || process.env.USER_SECRET || "";
 const CHAINLINK_FEED_IDS_ENV = process.env.CHAINLINK_TWAP60_FEED_IDS || "";
+const GAMMA_MARKETS_KEYSET = "https://gamma-api.polymarket.com/markets/keyset";
+const GAMMA_PAGE_SIZE = 100;
+const GAMMA_MIN_REQUEST_INTERVAL_MS = 40;
+let gammaLastRequestAt = 0;
 let chainlinkClient = null;
 let chainlinkFeedIds = null;
 let historicalBootstrapRunning = false;
@@ -498,82 +502,320 @@ async function fetchHistoricalBoundaries(targets) {
 function historyBoundaryTargets(cutoffMs) {
   const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
 }
-async function bootstrapHistoricalCounts() {
-  if(historicalBootstrapRunning) return false;
-  historicalBootstrapRunning=true;
+async function fetchGammaKeysetPage(params) {
+  const now = Date.now();
+  const waitMs = Math.max(0, GAMMA_MIN_REQUEST_INTERVAL_MS - (now - gammaLastRequestAt));
+  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+  gammaLastRequestAt = Date.now();
+
+  const url = new URL(GAMMA_MARKETS_KEYSET);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: "application/json" }
+      });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error("GAMMA_HTTP_" + response.status + ":" + body.slice(0, 300));
+      }
+      const body = await response.json();
+      const markets = Array.isArray(body) ? body : (body.markets || []);
+      const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
+      return { markets, nextCursor };
+    } catch (e) {
+      log("GAMMA_HISTORY_PAGE_RETRY", {
+        attempt,
+        error: String(e.message || e)
+      });
+      if (attempt === 5) throw e;
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return { markets: [], nextCursor: null };
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
   try {
-    const previousHistory=state.historyBootstrap||{};
-    // Only fully closed 5m periods belong to the historical baseline.
-    const cutoffMs=currentPeriodStart(), targets=historyBoundaryTargets(cutoffMs), expectedPeriods=targets.length-1;
-    const sameBaseline=previousHistory.version===HISTORY_BOOTSTRAP_VERSION && previousHistory.from===new Date(HISTORY_START_MS).toISOString();
-    if(sameBaseline && previousHistory.complete===true && previousHistory.to===new Date(cutoffMs).toISOString()) {
-      log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE",{version:HISTORY_BOOTSTRAP_VERSION,periods:expectedPeriods,counts:state.counts}); return true;
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseClosed5mMarket(market) {
+  if (!market || market.closed !== true) return null;
+  const slug = String(market.slug || "").toLowerCase();
+  const match = ASSETS.find(asset => slug.startsWith(asset.slug + "-"));
+  if (!match) return null;
+
+  const suffix = slug.slice(match.slug.length + 1);
+  if (!/^\\d+$/.test(suffix)) return null;
+  const startSec = Number(suffix);
+  if (!Number.isSafeInteger(startSec)) return null;
+  const startMs = startSec * 1000;
+  if (startMs < HISTORY_START_MS || startMs >= currentPeriodStart()) return null;
+
+  const outcomes = parseJsonArray(market.outcomes);
+  const prices = parseJsonArray(market.outcomePrices);
+  let winner = null;
+  for (let i = 0; i < Math.min(outcomes.length, prices.length); i++) {
+    const price = String(prices[i]);
+    if (price === "1" || price === "1.0" || price === "1.00") {
+      const label = String(outcomes[i]).toLowerCase();
+      if (label === "up") winner = "Up";
+      else if (label === "down") winner = "Down";
     }
-    // Rebuild cumulative state only from the persisted Chainlink boundary cache.
-    // This deliberately discards any pre-7.0 live-only counters.
-    state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
-    state.periods={}; state.periodAlerted={}; state.leader=null; state.lastProcessedPeriod=null;
-    state.historyBootstrap={
-      ...previousHistory,
-      version:HISTORY_BOOTSTRAP_VERSION,
-      complete:false,
-      from:new Date(HISTORY_START_MS).toISOString(),
-      to:new Date(cutoffMs).toISOString(),
-      expectedPeriods,
-      completedBoundaries:previousHistory.completedBoundaries||0,
-      observations:previousHistory.observations||0,
-      boundaries:previousHistory.boundaries||{},
-      source:"Chainlink Data Streams REST paginated TWAP60",
-      startedAt:previousHistory.startedAt||nowIso()
+  }
+  if (!winner) return null;
+
+  return {
+    asset: match.key,
+    startMs,
+    winner,
+    marketId: String(market.id || ""),
+    slug: market.slug,
+    endDate: market.endDate || null
+  };
+}
+
+async function fetchHistoricalMarketBaseline(cutoffMs) {
+  const expectedTargets = historyBoundaryTargets(cutoffMs);
+  const expectedStarts = new Set(expectedTargets.slice(0, -1));
+  const byPeriod = new Map();
+  let cursor = null;
+  let pages = 0;
+  let rawMarkets = 0;
+  let matchedMarkets = 0;
+
+  log("GAMMA_HISTORY_START", {
+    source: "Polymarket Gamma closed markets keyset",
+    from: new Date(HISTORY_START_MS).toISOString(),
+    to: new Date(cutoffMs).toISOString(),
+    expectedPeriods: expectedStarts.size,
+    pageSize: GAMMA_PAGE_SIZE
+  });
+
+  while (true) {
+    const params = {
+      closed: "true",
+      order: "endDate",
+      ascending: "true",
+      limit: GAMMA_PAGE_SIZE,
+      end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
+      end_date_max: new Date(cutoffMs).toISOString()
     };
-    saveState(); snapshot("PRE_CHAINLINK_TWAP60_REBUILD");
-    log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST paginated",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
-    await discoverChainlinkTwap60Feeds();
-    const boundaryCache=new Map();
-    const persistedBoundaries=state.historyBootstrap.boundaries||{};
-    for(const [ts,values] of Object.entries(persistedBoundaries)) boundaryCache.set(Number(ts),values);
-    const missingTargets=targets.filter(ts=>!boundaryCache.has(ts));
-    if(missingTargets.length) {
-      log("HISTORY_PAGE_BOOTSTRAP_START",{missingBoundaries:missingTargets.length,totalBoundaries:targets.length});
-      const fetched=await fetchHistoricalBoundaries(missingTargets);
-      for(const [ts,values] of Object.entries(fetched)) {
-        boundaryCache.set(Number(ts),values);
-        state.historyBootstrap.boundaries=state.historyBootstrap.boundaries||{};
-        state.historyBootstrap.boundaries[ts]=values;
+    if (cursor) params.after_cursor = cursor;
+
+    const page = await fetchGammaKeysetPage(params);
+    pages++;
+    rawMarkets += page.markets.length;
+
+    for (const market of page.markets) {
+      const parsed = parseClosed5mMarket(market);
+      if (!parsed || !expectedStarts.has(parsed.startMs)) continue;
+      matchedMarkets++;
+      let period = byPeriod.get(parsed.startMs);
+      if (!period) {
+        period = {};
+        byPeriod.set(parsed.startMs, period);
       }
-      state.historyBootstrap.completedBoundaries=targets.filter(ts=>boundaryCache.has(ts)).length;
-      state.historyBootstrap.observations=Array.from(boundaryCache.values()).reduce((n,x)=>n+Object.keys(x).length,0);
-      saveState();
-      log("HISTORY_PROGRESS",{completedBoundaries:state.historyBootstrap.completedBoundaries,totalBoundaries:targets.length,percent:Number((state.historyBootstrap.completedBoundaries/targets.length*100).toFixed(2))});
-    }
-    const historicalCounts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
-    const historicalPeriods={}, assetCoverage=Object.fromEntries(ASSETS.map(a=>[a.key,{periods:0,missing:0}])), invalidPeriods=[];
-    for(let i=0;i<targets.length-1;i++) {
-      const openTs=targets[i],closeTs=targets[i+1],openValues=boundaryCache.get(openTs)||{},closeValues=boundaryCache.get(closeTs)||{},periodKey="period-"+Math.floor(openTs/1000),period={};
-      for(const asset of ASSETS) {
-        const open=openValues[asset.key],close=closeValues[asset.key];
-        if(!open||!close){assetCoverage[asset.key].missing++;continue;}
-        const winner=exactToBigInt(close.exact)>=exactToBigInt(open.exact)?"Up":"Down";
-        historicalCounts[asset.key]+=winner==="Up"?1:-1; assetCoverage[asset.key].periods++;
-        period[asset.key]={winner,openExact:open.exact,closeExact:close.exact,openTimestamp:open.observationTimestamp||openTs,closeTimestamp:close.observationTimestamp||closeTs,source:"chainlink_twap60"};
+      if (period[parsed.asset] && period[parsed.asset].marketId !== parsed.marketId) {
+        throw new Error("GAMMA_DUPLICATE_5M_MARKET:" + parsed.asset + ":" + parsed.startMs);
       }
-      if(Object.keys(period).length!==ASSETS.length){invalidPeriods.push({periodKey,open:new Date(openTs).toISOString(),close:new Date(closeTs).toISOString(),available:Object.keys(period)});continue;}
-      historicalPeriods[periodKey]=period;
+      period[parsed.asset] = parsed;
     }
-    const totalComplete=Object.keys(historicalPeriods).length;
-    const missingAssets=ASSETS.filter(a=>assetCoverage[a.key].periods!==expectedPeriods).map(a=>({asset:a.key,periods:assetCoverage[a.key].periods,expected:expectedPeriods,missing:assetCoverage[a.key].missing}));
-    log("HISTORY_VALIDATION",{expectedPeriods,completePeriods:totalComplete,invalidPeriods:invalidPeriods.length,missingAssets,counts:historicalCounts});
-    if(totalComplete!==expectedPeriods||missingAssets.length) {
-      state.historyBootstrap.complete=false; state.historyBootstrap.validationFailed=true; state.historyBootstrap.completePeriods=totalComplete; state.historyBootstrap.invalidPeriods=invalidPeriods.slice(0,20); state.historyBootstrap.assetCoverage=assetCoverage;
-      state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0])); state.periods={}; state.leader=null; saveState();
-      log("HISTORY_BOOTSTRAP_INCOMPLETE",{reason:"every_asset_every_period_required",expectedPeriods,completePeriods:totalComplete,missingAssets,retry:true}); return false;
+
+    if (pages % 20 === 0) {
+      log("GAMMA_HISTORY_PROGRESS", {
+        pages,
+        rawMarkets,
+        matchedMarkets,
+        periodsFound: byPeriod.size,
+        expectedPeriods: expectedStarts.size,
+        cursorPresent: !!page.nextCursor
+      });
     }
-    state.periods=historicalPeriods; state.counts=historicalCounts; state.leader=ranking()[0];
-    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:true,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completePeriods:totalComplete,observations:expectedPeriods*ASSETS.length,assetCoverage,source:"Chainlink Data Streams REST paginated TWAP60",completedAt:nowIso()};
-    saveState(); snapshot("HISTORY_BOOTSTRAP_COMPLETE");
-    log("HISTORY_BOOTSTRAP_COMPLETE",{periods:totalComplete,expectedPeriods,counts:state.counts,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),source:"Chainlink Data Streams REST paginated TWAP60"});
+
+    if (!page.nextCursor || page.nextCursor === cursor) break;
+    cursor = page.nextCursor;
+  }
+
+  const historicalCounts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+  const historicalPeriods = {};
+  const assetCoverage = Object.fromEntries(ASSETS.map(a => [a.key, { periods: 0, missing: 0 }]));
+  const invalidPeriods = [];
+
+  for (const startMs of expectedStarts) {
+    const period = byPeriod.get(startMs) || {};
+    const available = Object.keys(period);
+    if (available.length !== ASSETS.length) {
+      invalidPeriods.push({
+        periodKey: "period-" + Math.floor(startMs / 1000),
+        open: new Date(startMs).toISOString(),
+        close: new Date(startMs + PERIOD_MS).toISOString(),
+        available
+      });
+      for (const asset of ASSETS) {
+        if (!period[asset.key]) assetCoverage[asset.key].missing++;
+      }
+      continue;
+    }
+
+    const periodKey = "period-" + Math.floor(startMs / 1000);
+    const result = {};
+    for (const asset of ASSETS) {
+      const item = period[asset.key];
+      historicalCounts[asset.key] += item.winner === "Up" ? 1 : -1;
+      assetCoverage[asset.key].periods++;
+      result[asset.key] = {
+        winner: item.winner,
+        source: "polymarket_gamma_closed_market",
+        marketId: item.marketId,
+        slug: item.slug,
+        endDate: item.endDate
+      };
+    }
+    historicalPeriods[periodKey] = result;
+  }
+
+  const completePeriods = Object.keys(historicalPeriods).length;
+  const missingAssets = ASSETS
+    .filter(a => assetCoverage[a.key].periods !== expectedStarts.size)
+    .map(a => ({
+      asset: a.key,
+      periods: assetCoverage[a.key].periods,
+      expected: expectedStarts.size,
+      missing: assetCoverage[a.key].missing
+    }));
+
+  log("GAMMA_HISTORY_VALIDATION", {
+    pages,
+    rawMarkets,
+    matchedMarkets,
+    expectedPeriods: expectedStarts.size,
+    completePeriods,
+    invalidPeriods: invalidPeriods.length,
+    missingAssets,
+    counts: historicalCounts
+  });
+
+  if (completePeriods !== expectedStarts.size || missingAssets.length) {
+    throw new Error(
+      "GAMMA_HISTORY_INCOMPLETE:expected=" + expectedStarts.size +
+      ":complete=" + completePeriods +
+      ":missing=" + JSON.stringify(missingAssets)
+    );
+  }
+
+  return {
+    counts: historicalCounts,
+    periods: historicalPeriods,
+    pages,
+    rawMarkets,
+    matchedMarkets,
+    expectedPeriods: expectedStarts.size,
+    completePeriods
+  };
+}
+
+async function bootstrapHistoricalCounts() {
+  if (historicalBootstrapRunning) return false;
+  historicalBootstrapRunning = true;
+  try {
+    const previousHistory = state.historyBootstrap || {};
+    const cutoffMs = currentPeriodStart();
+    const targets = historyBoundaryTargets(cutoffMs);
+    const expectedPeriods = targets.length - 1;
+    const sameBaseline =
+      previousHistory.version === HISTORY_BOOTSTRAP_VERSION &&
+      previousHistory.from === new Date(HISTORY_START_MS).toISOString();
+
+    if (
+      sameBaseline &&
+      previousHistory.complete === true &&
+      previousHistory.to === new Date(cutoffMs).toISOString()
+    ) {
+      log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE", {
+        version: HISTORY_BOOTSTRAP_VERSION,
+        periods: expectedPeriods,
+        counts: state.counts
+      });
+      return true;
+    }
+
+    state.counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
+    state.periods = {};
+    state.periodAlerted = {};
+    state.leader = null;
+    state.lastProcessedPeriod = null;
+    state.historyBootstrap = {
+      version: HISTORY_BOOTSTRAP_VERSION,
+      complete: false,
+      from: new Date(HISTORY_START_MS).toISOString(),
+      to: new Date(cutoffMs).toISOString(),
+      expectedPeriods,
+      source: "Polymarket Gamma closed 5m markets keyset",
+      startedAt: nowIso()
+    };
+    saveState();
+    snapshot("PRE_POLYMARKET_CLOSED_5M_REBUILD");
+
+    log("HISTORY_BOOTSTRAP_START", {
+      version: HISTORY_BOOTSTRAP_VERSION,
+      source: "Polymarket Gamma closed 5m markets keyset",
+      from: new Date(HISTORY_START_MS).toISOString(),
+      to: new Date(cutoffMs).toISOString(),
+      boundaries: targets.length,
+      periods: expectedPeriods
+    });
+
+    const result = await fetchHistoricalMarketBaseline(cutoffMs);
+
+    state.periods = result.periods;
+    state.counts = result.counts;
+    state.leader = ranking()[0];
+    state.historyBootstrap = {
+      version: HISTORY_BOOTSTRAP_VERSION,
+      complete: true,
+      from: new Date(HISTORY_START_MS).toISOString(),
+      to: new Date(cutoffMs).toISOString(),
+      expectedPeriods: result.expectedPeriods,
+      completePeriods: result.completePeriods,
+      matchedMarkets: result.matchedMarkets,
+      pages: result.pages,
+      rawMarkets: result.rawMarkets,
+      assetCoverage: Object.fromEntries(
+        ASSETS.map(a => [a.key, { periods: result.completePeriods, missing: 0 }])
+      ),
+      source: "Polymarket Gamma closed 5m markets keyset",
+      completedAt: nowIso()
+    };
+    saveState();
+    snapshot("HISTORY_BOOTSTRAP_COMPLETE");
+
+    log("HISTORY_BOOTSTRAP_COMPLETE", {
+      periods: result.completePeriods,
+      expectedPeriods: result.expectedPeriods,
+      counts: state.counts,
+      from: new Date(HISTORY_START_MS).toISOString(),
+      to: new Date(cutoffMs).toISOString(),
+      source: "Polymarket Gamma closed 5m markets keyset"
+    });
     return true;
-  } finally { historicalBootstrapRunning=false; }
+  } finally {
+    historicalBootstrapRunning = false;
+  }
 }
 
 async function processClosedPeriod() {
@@ -775,7 +1017,7 @@ async function processClosedPeriod() {
   }
   log("PERIOD_PROCESSED", {
     periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:cumulativeTop, telegram:sent,
-    source:"crypto_prices_twap_sixty_exact_boundary", marketSlug:nextSlug
+    source:"polymarket_closed_5m_baseline_plus_rtds_live", marketSlug:nextSlug
   });
   snapshot("POST_PERIOD_" + periodKey);
 }
@@ -823,7 +1065,7 @@ async function main() {
   connectRtds();
 
   log("HISTORY_BOOTSTRAP_SCHEDULED", {
-    source:"Chainlink Data Streams REST paginated TWAP60",
+    source:"Polymarket Gamma closed 5m markets keyset",
     from:new Date(HISTORY_START_MS).toISOString(),
     mode:"historical_baseline_required_before_cumulative_alert"
   });
