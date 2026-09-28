@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.3";
+const VERSION = "7.3.4";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -601,7 +601,7 @@ async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     await waitForGammaRateLimit();
     const params = new URLSearchParams({
-      series_slug: seriesSlug,
+      series_id: seriesSlug,
       closed: "true",
       order: "endDate",
       ascending: "true",
@@ -612,7 +612,7 @@ async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
     if (afterCursor) params.set("after_cursor", afterCursor);
     const url = "https://gamma-api.polymarket.com/events/keyset?" + params.toString();
     log("GAMMA_HISTORY_REQUEST", {
-      seriesSlug, attempt, cursor: afterCursor ? String(afterCursor).slice(0,24) + "..." : null
+      seriesId: seriesSlug, attempt, cursor: afterCursor ? String(afterCursor).slice(0,24) + "..." : null
     });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
@@ -629,13 +629,13 @@ async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
       const events = Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
       const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
       log("GAMMA_HISTORY_RESPONSE", {
-        seriesSlug, events: events.length, hasNextCursor: !!nextCursor,
+        seriesId: seriesSlug, events: events.length, hasNextCursor: !!nextCursor,
         cursor: nextCursor ? String(nextCursor).slice(0,24) + "..." : null
       });
       return { events, nextCursor };
     } catch (e) {
       log("GAMMA_HISTORY_PAGE_RETRY", {
-        seriesSlug, afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
+        seriesId: seriesSlug, afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
         attempt, error: String(e.message || e)
       });
       if (attempt === 3) throw e;
@@ -643,6 +643,27 @@ async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+async function resolveGammaSeriesId(seriesSlug) {
+  await waitForGammaRateLimit();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
+  try {
+    const url = "https://gamma-api.polymarket.com/series?slug=" + encodeURIComponent(seriesSlug);
+    log("GAMMA_SERIES_RESOLVE_REQUEST", { seriesSlug });
+    const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+    if (!response.ok) throw new Error("GAMMA_SERIES_HTTP_" + response.status);
+    const body = await response.json();
+    const rows = Array.isArray(body) ? body : (Array.isArray(body.series) ? body.series : []);
+    const exact = rows.find(x => String(x?.slug || "") === seriesSlug) || rows[0];
+    const id = exact?.id != null ? String(exact.id) : null;
+    log("GAMMA_SERIES_RESOLVE_RESPONSE", { seriesSlug, id, rows: rows.length });
+    if (!id) throw new Error("GAMMA_SERIES_NOT_FOUND:" + seriesSlug);
+    return id;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -660,7 +681,7 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
     from: new Date(HISTORY_START_MS).toISOString(),
     to: new Date(cutoffMs).toISOString(),
     expectedPeriods: expectedStarts.size,
-    pageSize: 500
+    pageSize: GAMMA_PAGE_SIZE
   });
 
   const seriesByAsset = Object.fromEntries(
@@ -671,11 +692,12 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
   // roughly 27 pages per asset instead of thousands of generic market pages.
   for (const asset of ASSETS) {
     const seriesSlug = seriesByAsset[asset.key];
+    const seriesId = await resolveGammaSeriesId(seriesSlug);
     let afterCursor = null;
     let pages = 0;
 
     while (true) {
-      const page = await fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs);
+      const page = await fetchGammaSeriesPage(seriesId, afterCursor, cutoffMs);
       const events = page.events;
       const nextCursor = page.nextCursor;
       pages++;
@@ -706,6 +728,7 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
       log("GAMMA_HISTORY_ASSET_PROGRESS", {
         asset: asset.key,
         seriesSlug,
+        seriesId,
         pages,
         afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
         events: events.length,
