@@ -27,8 +27,8 @@ jobs:
         run: |
           set -u
           while true; do
-            echo "STARTING SPORTS BREAKOUT MONITOR"
-            timeout --signal=TERM --kill-after=30s 5h45m node sports-breakout-monitor.js || true
-            echo "RESTARTING SPORTS BREAKOUT MONITOR"
+            echo "STARTING SPORTS BREAKOUT MONITOR V3"
+            timeout --signal=TERM --kill-after=30s 5h45m node sports-breakout-monitor-v3.js || true
+            echo "RESTARTING SPORTS BREAKOUT MONITOR V3"
             sleep 5
           done
