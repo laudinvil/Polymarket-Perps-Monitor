@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.6.1";
+const VERSION = "4.6.2";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -660,7 +660,7 @@ async function processClosedPeriod() {
     saveState();
   }
   log("PERIOD_PROCESSED", {
-    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:periodTop, telegram:sent,
+    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:cumulativeTop, telegram:sent,
     source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
   });
   snapshot("POST_PERIOD_" + periodKey);
