@@ -1,10 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
-const { AbiCoder } = require("ethers");
+const { decodeReport } = require("@chainlink/data-streams-sdk");
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.1.0";
+const MONITOR_VERSION = "2.2.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -299,21 +299,13 @@ async function resolveTwap60Feed(asset) {
   return { feedId: preferred.feedId, name: preferred.name, schemaVersion: preferred.schemaVersion, source: "discovery" };
 }
 
-function decodeTwapV2(fullReport) {
-  const coder = AbiCoder.defaultAbiCoder();
-  const outer = coder.decode(
-    ["bytes32[3]", "bytes", "bytes32[]", "bytes32[]", "bytes32"],
-    fullReport
-  );
-  const blob = String(outer[1]);
-  const words = [];
-  for (let i = 2; i + 64 <= blob.length; i += 64) words.push(blob.slice(i, i + 64));
-  if (words.length < 7) throw new Error("Chainlink report blob too short for V2");
-  const signedWord = BigInt("0x" + words[6]);
-  const signed = signedWord >= (1n << 255n) ? signedWord - (1n << 256n) : signedWord;
-  return signed;
+function decodeTwapReport(fullReport, feedId) {
+  const decoded = decodeReport(fullReport, feedId);
+  if (!decoded || typeof decoded.price !== "bigint") {
+    throw new Error("Chainlink decoded report has no bigint price");
+  }
+  return decoded;
 }
-
 async function fetchChainlinkReport(feedId, timestamp) {
   const pathName = "/api/v1/reports?feedID=" + encodeURIComponent(feedId) + "&timestamp=" + Math.floor(timestamp / 1000);
   const data = await chainlinkJsonDirect(pathName);
@@ -339,8 +331,10 @@ async function verifyTwapSettlement(asset, market, periodStart) {
   const feed = await resolveTwap60Feed(asset);
   const start = await fetchChainlinkReport(feed.feedId, periodStart);
   const end = await fetchChainlinkReport(feed.feedId, periodStart + 300000);
-  const openPrice = decodeTwapV2(start.fullReport);
-  const closePrice = decodeTwapV2(end.fullReport);
+  const openDecoded = decodeTwapReport(start.fullReport, start.feedId);
+  const closeDecoded = decodeTwapReport(end.fullReport, end.feedId);
+  const openPrice = openDecoded.price;
+  const closePrice = closeDecoded.price;
   const expected = closePrice >= openPrice ? "Up" : "Down";
   const actual = winnerOf(market);
 
@@ -348,8 +342,8 @@ async function verifyTwapSettlement(asset, market, periodStart) {
     feedId: feed.feedId,
     feedName: feed.name || null,
     schemaVersion: feed.schemaVersion || "V2",
-    open: { requested: Math.floor(periodStart / 1000), observed: start.observationsTimestamp, validFrom: start.validFromTimestamp, price: openPrice.toString() },
-    close: { requested: Math.floor((periodStart + 300000) / 1000), observed: end.observationsTimestamp, validFrom: end.validFromTimestamp, price: closePrice.toString() },
+    open: { requested: Math.floor(periodStart / 1000), observed: start.observationsTimestamp, validFrom: start.validFromTimestamp, price: openPrice.toString(), decodedObservations: openDecoded.observationsTimestamp },
+    close: { requested: Math.floor((periodStart + 300000) / 1000), observed: end.observationsTimestamp, validFrom: end.validFromTimestamp, price: closePrice.toString(), decodedObservations: closeDecoded.observationsTimestamp },
     expected,
     marketWinner: actual,
     match: actual === expected
