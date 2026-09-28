@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.4.0";
+const VERSION = "9.5.0";
 const CASCADE_WINDOW_MS = 3_000;
 const CASCADE_MIN_EVENTS = 5;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -235,6 +235,7 @@ async function processFeed() {
       notional: num(event.notional)
     });
     state.cascadeEvents[symbol] = active;
+    state.cascadeLastFreshAt[symbol] = Date.now();
 
     log("LIQUIDATION_RAW_EVENT", {
       exchange: EXCHANGE,
@@ -268,16 +269,19 @@ async function processFeed() {
   const nowMs = Date.now();
   state.cascadeEvents = state.cascadeEvents || {};
   state.cascadeLastAlertMs = state.cascadeLastAlertMs || {};
+  state.cascadeLastFreshAt = state.cascadeLastFreshAt || {};
 
   for (const [symbol, bucket] of Object.entries(state.cascadeEvents)) {
     if (!Array.isArray(bucket) || bucket.length < CASCADE_MIN_EVENTS) continue;
 
     const latestEventMs = Math.max(...bucket.map(x => Number(x.eventMs) || 0));
-    if (!latestEventMs || nowMs - latestEventMs < CASCADE_WINDOW_MS) continue;
+    const lastFreshAt = Number(state.cascadeLastFreshAt[symbol] || 0);
+    if (!latestEventMs || !lastFreshAt || nowMs - lastFreshAt < POLL_MS) continue;
 
     const lastAlertMs = Number(state.cascadeLastAlertMs[symbol] || 0);
     if (latestEventMs <= lastAlertMs) {
       state.cascadeEvents[symbol] = [];
+    delete state.cascadeLastFreshAt[symbol];
       continue;
     }
 
@@ -423,6 +427,7 @@ async function main() {
     state.strategy = "MARGINPAD_HYPERLIQUID_CASCADES";
     state.cascadeEvents = {};
     state.cascadeLastAlertMs = {};
+    state.cascadeLastFreshAt = {};
     log("VERSION_CHANGE", { from: previous, to: VERSION });
     saveState();
   }
