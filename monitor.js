@@ -503,6 +503,22 @@ async function fetchMarketBySlug(slug) {
   return market;
 }
 
+async function getBackfillPage(url, pages, offset, state, counts) {
+  try {
+    return await getJson(url);
+  } catch (e) {
+    const reason = String(e.message || e);
+    log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
+    state.counts = counts;
+    state.initialized = true;
+    state.lastBackfillAt = nowIso();
+    state.backfillIncomplete = true;
+    await saveState(state);
+    log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason });
+    return null;
+  }
+}
+
 async function backfill(state) {
   if (state.initialized) return state;
 
@@ -522,19 +538,8 @@ async function backfill(state) {
       "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
       "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
 
-    let rows;
-    try {
-      rows = await getJson(url);
-    } catch (e) {
-      log("BACKFILL_PAGE_ERROR", { pages, offset, error: String(e.message || e) });
-      state.counts = counts;
-      state.initialized = true;
-      state.lastBackfillAt = nowIso();
-      state.backfillIncomplete = true;
-      await saveState(state);
-      log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason: String(e.message || e) });
-      return state;
-    }
+    const rows = await getBackfillPage(url, pages, offset, state, counts);
+    if (rows === null) return state;
     if (!Array.isArray(rows) || rows.length === 0) break;
     pages++;
 
