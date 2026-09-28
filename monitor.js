@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.1";
+const VERSION = "7.5.2";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1034,6 +1034,9 @@ async function bootstrapHistoricalCounts() {
 }
 
 async function processClosedPeriodAt(forcedStart = null) {
+  // forcedStart is the CLOSE boundary / start of the next 5m period.
+  // A retry must therefore pass saved period start + PERIOD_MS.
+
   const start = forcedStart || currentPeriodStart();
   const historicalReady = historyReady && state.historyBootstrap?.complete === true;
   if (!historicalReady) {
@@ -1264,7 +1267,7 @@ async function poll() {
       const saved = state.periods[item.key] || {};
       const sent = !!state.periodAlerted?.[item.key]?.sent;
       if (Object.keys(saved).length < ASSETS.length && !sent) {
-        await processClosedPeriodAt(item.start);
+        await processClosedPeriodAt(item.start + PERIOD_MS);
       }
     }
     if (state.liveBoundaryCacheDirty) {
