@@ -361,52 +361,57 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
   let offset = 0;
   const limit = 500;
 
-  let seriesId = null;
-  try {
-    const seriesUrl = GAMMA + "/series?slug=" + encodeURIComponent(slug) + "&limit=10";
-    const sr = await fetch(seriesUrl, { headers: { accept: "application/json" } });
-    if (sr.ok) {
-      const sd = await sr.json();
-      const rows = Array.isArray(sd) ? sd : (Array.isArray(sd?.data) ? sd.data : []);
-      const hit = rows.find(x => String(x.slug || "") === slug) || rows[0];
-      if (hit?.id != null) seriesId = String(hit.id);
-    }
-  } catch (e) {
-    log("HISTORY_SERIES_ERROR", { asset: asset.key, error: String(e.message || e) });
-  }
-
-  if (!seriesId) {
-    log("HISTORY_SERIES_MISSING", { asset: asset.key, slug });
-    return all;
-  }
-
   while (true) {
-    const url = GAMMA + "/events?series_id=" + encodeURIComponent(seriesId)
-      + "&closed=true&limit=" + limit
+    const url = GAMMA + "/events?series_slug=" + encodeURIComponent(slug)
+      + "&limit=" + limit
       + "&offset=" + offset
       + "&order=endDate&ascending=true";
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
+
     try {
-      const r = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+      const r = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: "application/json" }
+      });
       if (!r.ok) {
-        log("HISTORY_ERROR", { asset: asset.key, status: r.status, offset, endpoint:"events", seriesId });
+        log("HISTORY_ERROR", {
+          asset: asset.key, status: r.status, offset,
+          endpoint:"events", seriesSlug:slug
+        });
         break;
       }
+
       const data = await r.json();
-      const events = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      const events = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.data) ? data.data : []);
+
+      log("HISTORY_PAGE", {
+        asset: asset.key,
+        seriesSlug: slug,
+        offset,
+        rows: events.length,
+        firstSlug: events[0]?.slug || null,
+        lastSlug: events[events.length - 1]?.slug || null
+      });
+
       if (!events.length) break;
 
       let reachedFuture = false;
       for (const event of events) {
-        const startMs = Date.parse(event.startDate || event.eventStartTime || "");
-        const endMs = Date.parse(event.endDate || "");
+        const startMs = Date.parse(event.startDate || event.eventStartTime || event.startTime || "");
+        const endMs = Date.parse(event.endDate || event.endTime || "");
         if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
         if (endMs < HISTORY_START_MS) continue;
-        if (startMs >= cutoffMs) { reachedFuture = true; break; }
+        if (startMs >= cutoffMs) {
+          reachedFuture = true;
+          break;
+        }
 
-        const market = Array.isArray(event.markets) ? event.markets[0] : null;
-        const winner = resolvedWinner(market || event);
+        const markets = Array.isArray(event.markets) ? event.markets : [];
+        const market = markets.find(m => resolvedWinner(m)) || markets[0] || event;
+        const winner = resolvedWinner(market);
         if (!winner) continue;
 
         all.push({
@@ -420,7 +425,11 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
       if (reachedFuture || events.length < limit) break;
       offset += limit;
     } catch (e) {
-      log("HISTORY_ERROR", { asset: asset.key, offset, error: String(e.message || e), endpoint:"events", seriesId });
+      log("HISTORY_ERROR", {
+        asset: asset.key, offset,
+        error: String(e.message || e),
+        endpoint:"events", seriesSlug:slug
+      });
       break;
     } finally {
       clearTimeout(timer);
