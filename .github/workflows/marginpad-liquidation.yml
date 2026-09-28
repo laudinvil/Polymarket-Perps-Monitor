@@ -5,9 +5,6 @@ on:
   push:
     paths:
       - monitor-start.trigger
-  workflow_run:
-    workflows: ["MarginPad Liquidation 5M"]
-    types: [completed]
 
 concurrency:
   group: marginpad-liquidation-monitor
@@ -36,5 +33,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_FILE: /tmp/marginpad-liquidation-state.json
           LOG_FILE: /tmp/marginpad-liquidation.jsonl
+          # Shared dedupe lease is handled by Convex when configured.
         run: |
           node monitor.js
