@@ -470,7 +470,6 @@ function winnerOf(m) {
 
 async function fetchMarketBySlug(slug) {
   if (marketCache.has(slug)) return marketCache.get(slug);
-  await pace("gamma");
   const data = await getJson(API + "/markets?slug=" + encodeURIComponent(slug));
   const market = Array.isArray(data) ? data[0] : null;
   if (market) marketCache.set(slug, market);
