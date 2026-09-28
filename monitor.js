@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.7.0";
+const VERSION = "4.7.1";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -330,7 +330,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v8";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v9-live-first";
 const GAMMA_MIN_INTERVAL_MS = 750;
 let gammaNextRequestAt = 0;
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
@@ -768,17 +768,32 @@ async function main() {
   });
 
   startHealth();
-  const historyReady = await bootstrapHistoricalCounts();
-  if (!historyReady) {
-    log("MONITOR_BLOCKED", { reason:"historical_bootstrap_incomplete" });
-    setTimeout(() => process.exit(1), 1000);
-    return;
-  }
 
+  // Start RTDS immediately. Historical bootstrap is deliberately non-blocking:
+  // a slow/free-tier historical source must never prevent live 5m alerts.
   connectRtds();
   log("STARTUP_TELEGRAM_RESULT", { sent:false, reason:"startup_message_disabled_actual_alerts_only" });
   await poll();
   setInterval(poll, POLL_MS);
+
+  bootstrapHistoricalCounts()
+    .then(historyReady => {
+      if (!historyReady) {
+        log("HISTORY_BOOTSTRAP_DEFERRED", {
+          reason:"historical_bootstrap_incomplete",
+          action:"keep_live_rtds_running_and_retry_next_process"
+        });
+      } else {
+        log("HISTORY_BOOTSTRAP_APPLIED", {
+          counts:state.counts,
+          leader:state.leader
+        });
+      }
+    })
+    .catch(e => log("HISTORY_BOOTSTRAP_FATAL", {
+      error:String(e.stack||e),
+      action:"keep_live_rtds_running"
+    }));
 
   setInterval(() => log("HEARTBEAT", {
     websocket:connected, pollingMs:POLL_MS, collectionStartedAt,
