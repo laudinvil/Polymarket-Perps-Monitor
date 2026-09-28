@@ -262,25 +262,25 @@ function pointAtOrAfter(assetKey, targetMs) {
 const LIVE_BOUNDARY_LOOKBACK_MS = 70_000;
 
 function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
-  // Select the freshest observation at/before each boundary, but only within
-  // 70s. Future observations and stale observations are never substituted.
+  // RTDS observation timestamps can lag or lead the exact 5m boundary by a
+  // few seconds. Use the closest TWAP60 observation within +/-70s. This keeps
+  // the boundary anchored to the actual Chainlink observation instead of
+  // waiting forever when the stream timestamp is slightly offset.
   const arr = history.get(assetKey) || [];
   const select = target => {
     let selected = null;
+    let bestDistance = Infinity;
     for (const p of arr) {
-      if (!p || !Number.isFinite(p.ts) || p.ts > target) continue;
-      const age = target - p.ts;
-      if (age <= LIVE_BOUNDARY_LOOKBACK_MS && (!selected || p.ts > selected.ts)) {
+      if (!p || !Number.isFinite(p.ts)) continue;
+      const distance = Math.abs(p.ts - target);
+      if (distance > LIVE_BOUNDARY_LOOKBACK_MS) continue;
+      if (distance < bestDistance || (distance === bestDistance && p.ts < selected.ts)) {
         selected = p;
+        bestDistance = distance;
       }
     }
-    // RTDS timestamps can arrive a few seconds behind the exact 5m boundary.
-    // If the process started after the opening boundary, the first period can
-    // otherwise never become alertable. For a boundary, prefer the freshest
-    // observation already received, but only when it is explicitly close enough.
     return selected;
   };
-
   return { open: select(openTargetMs), close: select(closeTargetMs) };
 }
 
