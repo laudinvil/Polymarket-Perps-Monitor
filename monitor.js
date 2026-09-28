@@ -27,7 +27,7 @@ async function getChainlinkClient() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.8.2";
+const MONITOR_VERSION = "2.8.3";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -418,7 +418,19 @@ async function discoverChainlinkFeeds() {
   try {
     const client = await getChainlinkClient();
     const listed = await client.listFeeds();
-    feeds = Array.isArray(listed) ? listed : [];
+    feeds = Array.isArray(listed)
+      ? listed
+      : Array.isArray(listed?.feeds)
+        ? listed.feeds
+        : Array.isArray(listed?.data)
+          ? listed.data
+          : [];
+    if (!feeds.length) {
+      log("CHAINLINK_SDK_DISCOVERY_EMPTY", {
+        responseType: typeof listed,
+        responseKeys: listed && typeof listed === "object" ? Object.keys(listed) : []
+      });
+    }
   } catch (error) {
     source = "rest";
     log("CHAINLINK_SDK_DISCOVERY_ERROR", { error: error.message });
