@@ -18,12 +18,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Pull published image
-        run: docker pull ghcr.io/laudinvil/polymarket-perps-monitor:latest
+      - name: Node syntax check
+        run: node --check monitor.js
+
+      - name: Build smoke image from checked commit
+        run: docker build -t monitor-smoke-image .
 
       - name: Start container
         run: |
-          docker run -d --name monitor-smoke -p 8080:8080 -e PORT=8080 ghcr.io/laudinvil/polymarket-perps-monitor:latest
+          docker run -d --name monitor-smoke -p 8080:8080 -e PORT=8080 monitor-smoke-image
 
       - name: Wait for container
         run: |
