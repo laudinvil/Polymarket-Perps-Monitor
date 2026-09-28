@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.7";
+const VERSION = "7.3.8";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -932,16 +932,15 @@ async function bootstrapHistoricalCounts() {
 }
 
 async function processClosedPeriod() {
-  if (!historyReady || !state.historyBootstrap?.complete) {
-    log("PERIOD_WAIT", {
-      reason:"historical_baseline_not_ready",
-      historyReady,
-      historyBootstrapComplete:!!state.historyBootstrap?.complete
-    });
-    return;
-  }
-
   const start = currentPeriodStart();
+  const historicalReady = historyReady && state.historyBootstrap?.complete === true;
+  if (!historicalReady) {
+    log("LIVE_PERIOD_PROCESS_WITHOUT_HISTORY", {
+      historyReady,
+      historyBootstrapComplete:!!state.historyBootstrap?.complete,
+      reason:"live_alerts_are_not_blocked_by_historical_bootstrap"
+    });
+  }
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
 
