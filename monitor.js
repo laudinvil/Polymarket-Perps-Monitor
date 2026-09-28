@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.0";
+const VERSION = "7.3.1";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -341,6 +341,13 @@ let gammaLastRequestAt = 0;
 let chainlinkClient = null;
 let chainlinkFeedIds = null;
 let historicalBootstrapRunning = false;
+
+async function waitForGammaRateLimit() {
+  const now = Date.now();
+  const waitMs = Math.max(0, GAMMA_MIN_REQUEST_INTERVAL_MS - (now - gammaLastRequestAt));
+  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+  gammaLastRequestAt = Date.now();
+}
 
 function exactToBigInt(value) {
   const s = String(value || "").trim();
