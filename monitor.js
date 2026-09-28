@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.6.3";
+const VERSION = "4.6.4";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -646,10 +646,11 @@ async function processClosedPeriod() {
 
   // The score must choose the current 5m market direction, but a missing Gamma
   // response must never block the Telegram alert.
-  const market = await gammaMarket(nextSlug);
-  const link = market?.slug
-    ? "https://polymarket.com/event/" + market.slug
-    : "https://polymarket.com/event/" + nextSlug;
+  // The next market URL is deterministic from the selected asset and period.
+  // Never replace it with Gamma's first/partial match: that can return a
+  // different asset and produce a link that contradicts NEXT.
+  const market = null;
+  const link = "https://polymarket.com/event/" + nextSlug;
 
   // Telegram shows the cumulative result from August 14, not only the
   // just-closed 5m period. The same cumulative leader determines NEXT
@@ -679,7 +680,7 @@ async function processClosedPeriod() {
   }
   log("PERIOD_PROCESSED", {
     periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:cumulativeTop, telegram:sent,
-    source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
+    source:"crypto_prices_twap_sixty", marketSlug:nextSlug
   });
   snapshot("POST_PERIOD_" + periodKey);
 }
