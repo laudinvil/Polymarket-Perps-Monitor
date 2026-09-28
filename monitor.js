@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.3";
+const VERSION = "4.0.4";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -30,6 +30,7 @@ let state = null;
 let collectionStartedAt = null;
 const latest = new Map();
 const history = new Map();
+let onlineAlertSent = false;
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -262,6 +263,25 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
   }
 }
 
+async function sendOnlineAlert() {
+  if (onlineAlertSent) return;
+  if (ASSETS.some(a => !latest.get(a.key))) return;
+
+  const lines = [
+    "TWAP60 MONITOR ONLINE",
+    "",
+    ...ASSETS.map(a => a.key + " " + latest.get(a.key).value.toFixed(6)),
+    "",
+    "5M PERIOD ALERTS ACTIVE"
+  ];
+
+  const sent = await sendTelegram(lines.join("\\n"), "MONITOR_ONLINE");
+  if (sent) {
+    onlineAlertSent = true;
+    log("MONITOR_ONLINE_ALERT_SENT");
+  }
+}
+
 async function processClosedPeriod() {
   const start = currentPeriodStart();
   const closedStart = start - PERIOD_MS;
@@ -363,8 +383,12 @@ async function processClosedPeriod() {
 
 async function poll() {
   if (!connected) connectRtds();
-  try { await processClosedPeriod(); }
-  catch (e) { log("CYCLE_ERROR", { error:String(e.stack||e) }); }
+  try {
+    await sendOnlineAlert();
+    await processClosedPeriod();
+  } catch (e) {
+    log("CYCLE_ERROR", { error:String(e.stack||e) });
+  }
 }
 
 async function main() {
