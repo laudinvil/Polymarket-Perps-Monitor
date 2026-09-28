@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.4";
+const VERSION = "7.3.5";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -101,11 +101,23 @@ function startHealth() {
       res.writeHead(200, {"content-type":"application/json","cache-control":"no-store"});
       return res.end(JSON.stringify(payload));
     }
-    if (req.url === "/logs") {
-      let text = "";
-      try { text = fs.readFileSync(LOG_FILE, "utf8").slice(-120000); } catch {}
-      res.writeHead(200, {"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});
-      return res.end(text);
+    if (requestPath === "/logs") {
+      const url = new URL(req.url || "/logs", "http://127.0.0.1");
+      const requested = Number(url.searchParams.get("lines") || 300);
+      const lines = Math.max(1, Math.min(1000, Number.isFinite(requested) ? requested : 300));
+      let rows = [];
+      try {
+        const raw = fs.readFileSync(LOG_FILE, "utf8");
+        rows = raw.split("\\n").filter(Boolean).slice(-lines).map(line => {
+          try { return JSON.parse(line); } catch { return { raw: line }; }
+        });
+      } catch (e) {
+        rows = [{ ts: nowIso(), version: VERSION, event: "LOG_READ_ERROR", error: String(e.message || e) }];
+      }
+      res.writeHead(200, {"content-type":"application/json; charset=utf-8","cache-control":"no-store"});
+      return res.end(JSON.stringify({
+        status:"ok", version:VERSION, logFile:LOG_FILE, lines:rows.length, events:rows
+      }));
     }
     res.writeHead(404); res.end();
   });
