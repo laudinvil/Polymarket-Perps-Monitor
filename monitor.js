@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.4.2";
+const VERSION = "7.5.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -86,18 +86,61 @@ function snapshot(reason) {
   });
 }
 
+function runtimeDiagnostics() {
+  const currentStart = currentPeriodStart();
+  const periods = {};
+  for (const [key, value] of Object.entries(state.periods || {})) {
+    if (!/^period-\\d+$/.test(key)) continue;
+    const start = Number(key.slice(7)) * 1000;
+    if (!Number.isFinite(start) || start < currentStart - 2 * PERIOD_MS || start >= currentStart) continue;
+    periods[key] = {
+      start: new Date(start).toISOString(),
+      assets: Object.keys(value || {}),
+      complete: Object.keys(value || {}).length >= ASSETS.length,
+      telegramSent: !!state.periodAlerted?.[key]?.sent,
+      telegramAttempts: state.periodAlerted?.[key]?.attempts || 0
+    };
+  }
+  const assets = Object.fromEntries(ASSETS.map(a => {
+    const p = latest.get(a.key);
+    return [a.key, {
+      received: !!p,
+      observationTimestamp: p?.ts || null,
+      ageMs: p?.ts ? Date.now() - p.ts : null,
+      boundaryCache: Object.values(state.liveBoundaryCache || {}).filter(x => x?.[a.key]).length
+    }];
+  }));
+  return {
+    version: VERSION,
+    buildSha: BUILD_SHA,
+    now: nowIso(),
+    websocket: connected,
+    pollingMs: POLL_MS,
+    historyReady,
+    historyBootstrap: state.historyBootstrap || null,
+    assets,
+    periods,
+    counts: state.counts,
+    leader: state.leader,
+    lastProcessedPeriod: state.lastProcessedPeriod,
+    telegram: {
+      configured: !!process.env.TELEGRAM_BOT_TOKEN && !!process.env.TELEGRAM_CHAT_ID,
+      lastPeriod: Object.keys(state.periodAlerted || {}).sort().at(-1) || null
+    }
+  };
+}
+
 function startHealth() {
   const port = Number(process.env.PORT || 8080);
   const server = http.createServer((req, res) => {
     const requestPath = String(req.url || "/").split("?")[0];
     if (requestPath === "/status" || requestPath === "/health" || requestPath === "/") {
       const payload = {
-        status: "ok", version: VERSION, buildSha: BUILD_SHA,
-        source: "Polymarket RTDS Chainlink TWAP60",
-        websocket: connected, collectionStartedAt, pollingMs: POLL_MS,
-        assets: ASSETS.map(a => ({ asset: a.key, symbol: a.symbol, latest: latest.get(a.key) || null })),
-        lastProcessedPeriod: state.lastProcessedPeriod, leader: state.leader,
-        counts: state.counts, uptimeSec: Math.floor(process.uptime()), updatedAt: state.updatedAt
+        status: "ok",
+        uptimeSec: Math.floor(process.uptime()),
+        collectionStartedAt,
+        updatedAt: state.updatedAt,
+        ...runtimeDiagnostics()
       };
       res.writeHead(200, {"content-type":"application/json","cache-control":"no-store"});
       return res.end(JSON.stringify(payload));
