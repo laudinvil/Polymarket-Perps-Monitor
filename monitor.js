@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "8.2.1";
+const VERSION = "10.0.0-LIQUIDATION";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -350,10 +350,11 @@ async function main() {
 
   collectionStartedAt = nowIso();
 
-  log("MONITOR_STARTING", {
+  log("LIQUIDATION_MONITOR_STARTING", {
     version: VERSION,
     buildSha: BUILD_SHA,
     strategy: "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS",
+    monitor: "MARGINPAD_HYPERLIQUID_ONLY",
     source: FEED_URL,
     exchange: EXCHANGE,
     pollingMs: POLL_MS,
