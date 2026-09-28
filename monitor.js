@@ -2,9 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "8.1.0";
+const VERSION = "8.1.1";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
-const POLL_MS = 1000;
+const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const EXCHANGE = "hyperliquid";
 const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
@@ -154,7 +154,7 @@ async function sendTelegram(text) {
         text,
         disable_web_page_preview: true
       }),
-      signal: AbortSignal.timeout(900)
+      signal: AbortSignal.timeout(8000)
     });
     const body = await response.text();
     if (!response.ok) {
