@@ -1,3 +1,4 @@
 framework: node
-start: node dedupe-server.js
-port: 3000
+install: npm ci
+start: node monitor.js
+port: 8080
