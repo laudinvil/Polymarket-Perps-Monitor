@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.5";
+const VERSION = "7.3.6";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -820,6 +820,13 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
   });
 
   if (completePeriods !== expectedStarts.size || missingAssets.length) {
+    log("GAMMA_HISTORY_INCOMPLETE_DETAIL", {
+      expectedPeriods: expectedStarts.size,
+      completePeriods,
+      missingAssets,
+      invalidSample: invalidPeriods.slice(0, 20),
+      invalidPeriodsTotal: invalidPeriods.length
+    });
     throw new Error(
       "GAMMA_HISTORY_INCOMPLETE:expected=" + expectedStarts.size +
       ":complete=" + completePeriods +
