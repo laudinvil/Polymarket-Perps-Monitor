@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.2.0";
+const VERSION = "7.3.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -324,7 +324,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v1";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v2";
 const HISTORY_PERIOD_MS = PERIOD_MS;
 const HISTORY_BATCH_SIZE = 10;
 const HISTORY_RETRY_MS = 5000;
@@ -589,76 +589,129 @@ function parseClosed5mMarket(market) {
   };
 }
 
+async function fetchGammaSeriesPage(seriesSlug, offset, cutoffMs) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await waitForGammaRateLimit();
+      const params = new URLSearchParams({
+        series_slug: seriesSlug,
+        closed: "true",
+        order: "endDate",
+        ascending: "true",
+        limit: "500",
+        offset: String(offset),
+        end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
+        end_date_max: new Date(cutoffMs).toISOString()
+      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      let response;
+      try {
+        response = await fetch("https://gamma-api.polymarket.com/events?" + params.toString(), {
+          signal: controller.signal,
+          headers: { accept: "application/json" }
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error("GAMMA_EVENTS_HTTP_" + response.status + ":" + body.slice(0, 300));
+      }
+      const body = await response.json();
+      return Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
+    } catch (e) {
+      log("GAMMA_HISTORY_PAGE_RETRY", {
+        seriesSlug, offset, attempt, error: String(e.message || e)
+      });
+      if (attempt === 5) throw e;
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return [];
+}
+
 async function fetchHistoricalMarketBaseline(cutoffMs) {
   const expectedTargets = historyBoundaryTargets(cutoffMs);
   const expectedStarts = new Set(expectedTargets.slice(0, -1));
   const byPeriod = new Map();
-  let cursor = null;
-  let pages = 0;
+
+  let rawEvents = 0;
   let rawMarkets = 0;
   let matchedMarkets = 0;
 
   log("GAMMA_HISTORY_START", {
-    source: "Polymarket Gamma closed markets keyset",
+    source: "Polymarket Gamma events by 5m series",
     from: new Date(HISTORY_START_MS).toISOString(),
     to: new Date(cutoffMs).toISOString(),
     expectedPeriods: expectedStarts.size,
-    pageSize: GAMMA_PAGE_SIZE
+    pageSize: 500
   });
 
-  while (true) {
-    const params = {
-      closed: "true",
-      order: "endDate",
-      ascending: "true",
-      limit: GAMMA_PAGE_SIZE,
-      end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
-      end_date_max: new Date(cutoffMs).toISOString()
-    };
-    if (cursor) params.after_cursor = cursor;
+  const seriesByAsset = Object.fromEntries(
+    ASSETS.map(asset => [asset.key, asset.slug.replace("-updown-5m", "-up-or-down-5m")])
+  );
 
-    const page = await fetchGammaKeysetPage(params);
-    pages++;
-    rawMarkets += page.markets.length;
+  // Each 5m series contains one event per 5m period. 500 events/page means
+  // roughly 27 pages per asset instead of thousands of generic market pages.
+  for (const asset of ASSETS) {
+    const seriesSlug = seriesByAsset[asset.key];
+    let offset = 0;
+    let pages = 0;
 
-    for (const market of page.markets) {
-      const parsed = parseClosed5mMarket(market);
-      if (!parsed || !expectedStarts.has(parsed.startMs)) continue;
-      matchedMarkets++;
-      let period = byPeriod.get(parsed.startMs);
-      if (!period) {
-        period = {};
-        byPeriod.set(parsed.startMs, period);
+    while (true) {
+      const events = await fetchGammaSeriesPage(seriesSlug, offset, cutoffMs);
+      pages++;
+      rawEvents += events.length;
+
+      for (const event of events) {
+        const nestedMarkets = Array.isArray(event?.markets) ? event.markets : [];
+        rawMarkets += nestedMarkets.length;
+
+        for (const market of nestedMarkets) {
+          const parsed = parseClosed5mMarket(market);
+          if (!parsed || parsed.asset !== asset.key || !expectedStarts.has(parsed.startMs)) continue;
+
+          matchedMarkets++;
+          let period = byPeriod.get(parsed.startMs);
+          if (!period) {
+            period = {};
+            byPeriod.set(parsed.startMs, period);
+          }
+
+          if (period[parsed.asset] && period[parsed.asset].marketId !== parsed.marketId) {
+            throw new Error("GAMMA_DUPLICATE_5M_MARKET:" + parsed.asset + ":" + parsed.startMs);
+          }
+          period[parsed.asset] = parsed;
+        }
       }
-      if (period[parsed.asset] && period[parsed.asset].marketId !== parsed.marketId) {
-        throw new Error("GAMMA_DUPLICATE_5M_MARKET:" + parsed.asset + ":" + parsed.startMs);
-      }
-      period[parsed.asset] = parsed;
-    }
 
-    if (pages % 20 === 0) {
-      log("GAMMA_HISTORY_PROGRESS", {
+      log("GAMMA_HISTORY_ASSET_PROGRESS", {
+        asset: asset.key,
+        seriesSlug,
         pages,
-        rawMarkets,
-        matchedMarkets,
+        offset,
+        events: events.length,
         periodsFound: byPeriod.size,
-        expectedPeriods: expectedStarts.size,
-        cursorPresent: !!page.nextCursor
+        expectedPeriods: expectedStarts.size
       });
-    }
 
-    if (!page.nextCursor || page.nextCursor === cursor) break;
-    cursor = page.nextCursor;
+      if (events.length < 500) break;
+      offset += 500;
+    }
   }
 
   const historicalCounts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
   const historicalPeriods = {};
-  const assetCoverage = Object.fromEntries(ASSETS.map(a => [a.key, { periods: 0, missing: 0 }]));
+  const assetCoverage = Object.fromEntries(
+    ASSETS.map(a => [a.key, { periods: 0, missing: 0 }])
+  );
   const invalidPeriods = [];
 
   for (const startMs of expectedStarts) {
     const period = byPeriod.get(startMs) || {};
     const available = Object.keys(period);
+
     if (available.length !== ASSETS.length) {
       invalidPeriods.push({
         periodKey: "period-" + Math.floor(startMs / 1000),
@@ -674,6 +727,7 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
 
     const periodKey = "period-" + Math.floor(startMs / 1000);
     const result = {};
+
     for (const asset of ASSETS) {
       const item = period[asset.key];
       historicalCounts[asset.key] += item.winner === "Up" ? 1 : -1;
@@ -686,6 +740,7 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
         endDate: item.endDate
       };
     }
+
     historicalPeriods[periodKey] = result;
   }
 
@@ -700,7 +755,8 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
     }));
 
   log("GAMMA_HISTORY_VALIDATION", {
-    pages,
+    pages: "per-series",
+    rawEvents,
     rawMarkets,
     matchedMarkets,
     expectedPeriods: expectedStarts.size,
@@ -721,14 +777,13 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
   return {
     counts: historicalCounts,
     periods: historicalPeriods,
-    pages,
+    rawEvents,
     rawMarkets,
     matchedMarkets,
     expectedPeriods: expectedStarts.size,
     completePeriods
   };
 }
-
 async function bootstrapHistoricalCounts() {
   if (historicalBootstrapRunning) return false;
   historicalBootstrapRunning = true;
@@ -765,11 +820,11 @@ async function bootstrapHistoricalCounts() {
       from: new Date(HISTORY_START_MS).toISOString(),
       to: new Date(cutoffMs).toISOString(),
       expectedPeriods,
-      source: "Polymarket Gamma closed 5m markets keyset",
+      source: "Polymarket Gamma events by 5m series",
       startedAt: nowIso()
     };
     saveState();
-    snapshot("PRE_POLYMARKET_CLOSED_5M_REBUILD");
+    snapshot("PRE_POLYMARKET_5M_SERIES_REBUILD");
 
     log("HISTORY_BOOTSTRAP_START", {
       version: HISTORY_BOOTSTRAP_VERSION,
