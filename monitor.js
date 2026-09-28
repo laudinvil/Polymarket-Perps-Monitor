@@ -206,10 +206,6 @@ function connectAssetRtds(asset) {
     const point = { ts, value, exact, receivedAt: Date.now() };
     latest.set(asset.key, point);
 
-    if (ASSETS.every(a => latest.has(a.key))) {
-      sendTelegramDiagnosticOnce().catch(e => log("TELEGRAM_DIAGNOSTIC_ERROR", {error:String(e.message || e)}));
-    }
-
     let arr = history.get(asset.key);
     if (!arr) { arr = []; history.set(asset.key, arr); }
     const last = arr[arr.length - 1];
@@ -342,24 +338,6 @@ async function sendOnlineAlert() {
   });
   return false;
 }
-
-async function sendTelegramDiagnosticOnce() {
-  state.telegramDiagnosticSent = !!state.telegramDiagnosticSent;
-  if (state.telegramDiagnosticSent) return;
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chat) {
-    log("TELEGRAM_DIAGNOSTIC_SKIPPED", { reason:"not_configured" });
-    return;
-  }
-  const text = "TWAP MONITOR TEST\\nVERSION: " + VERSION + "\\nRTDS: CONNECTED\\nTELEGRAM: OK";
-  const sent = await sendTelegram(text, "DIAGNOSTIC_TEST");
-  if (sent) {
-    state.telegramDiagnosticSent = true;
-    saveState();
-  }
-}
-
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
 const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-polymarket-closed-5m-baseline-v2";
