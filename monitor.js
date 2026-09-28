@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.2";
+const VERSION = "7.5.3";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -658,6 +658,50 @@ function parseJsonArray(value) {
   }
 }
 
+async function fetchGammaClosedPeriodFallback(periodStartMs) {
+  const results = {};
+  for (const asset of ASSETS) {
+    const slug = asset.slug + "-" + Math.floor(periodStartMs / 1000);
+    await waitForGammaRateLimit();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
+    try {
+      const url = "https://gamma-api.polymarket.com/markets?slug=" + encodeURIComponent(slug);
+      const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error("GAMMA_MARKET_HTTP_" + response.status);
+      const body = await response.json();
+      const market = Array.isArray(body) ? body.find(x => String(x?.slug || "").toLowerCase() === slug) : null;
+      const parsed = parseClosed5mMarket(market);
+      if (parsed && parsed.startMs === periodStartMs) {
+        results[asset.key] = {
+          winner: parsed.winner,
+          source: "polymarket_gamma_resolved_market",
+          marketId: parsed.marketId,
+          slug: parsed.slug
+        };
+      }
+      log("GAMMA_LIVE_FALLBACK", {
+        asset: asset.key,
+        periodStart: periodStartMs,
+        slug,
+        found: !!parsed,
+        winner: parsed?.winner || null,
+        closed: market?.closed === true
+      });
+    } catch (e) {
+      log("GAMMA_LIVE_FALLBACK_ERROR", {
+        asset: asset.key,
+        periodStart: periodStartMs,
+        slug,
+        error: String(e.message || e)
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return results;
+}
+
 function parseClosed5mMarket(market) {
   if (!market || market.closed !== true) return null;
   const slug = String(market.slug || "").toLowerCase();
@@ -1110,9 +1154,22 @@ async function processClosedPeriodAt(forcedStart = null) {
     }))
   });
 
+  // If RTDS boundary observations are late/missing, use the already
+  // resolved Polymarket 5m markets as a settlement fallback. This is not
+  // reconstructed price data: Gamma is only accepted when the market is
+  // closed and has a definitive Up/Down outcome.
+  if (missing.length) {
+    const gammaFallback = await fetchGammaClosedPeriodFallback(closedStart);
+    for (const asset of ASSETS) {
+      if (!results[asset.key] && gammaFallback[asset.key]) {
+        results[asset.key] = gammaFallback[asset.key];
+      }
+    }
+  }
+
   if (!Object.keys(results).length) {
     log("PERIOD_WAIT", {
-      periodKey, reason:"no_twap60_boundary_observation_available", missing, retry:true
+      periodKey, reason:"no_twap60_or_resolved_gamma_result_available", missing, retry:true
     });
     return;
   }
