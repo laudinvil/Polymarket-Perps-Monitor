@@ -1,6 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json ./
+RUN node -e "const fs=require('fs'); const p='/app/package.json'; const s=fs.readFileSync(p,'utf8'); JSON.parse(s); console.log('package.json OK')"
 RUN npm install --omit=dev
 COPY monitor.js ./
 RUN mkdir -p /data && chown -R node:node /app /data
