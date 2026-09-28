@@ -1,6 +1,6 @@
 const http = require("http");
 
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 const POLL_MS = 10000;
 const WINDOW_MS = 60000;
 const MAX_RANGE = 0.02;
@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT || 8080);
 
 const startedAt = Date.now();
 const states = new Map();
+const alertedMarkets = new Map();
 let polling = false;
 let alertsSent = 0;
 let lastPollAt = null;
@@ -25,7 +26,6 @@ let lastError = null;
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), version: VERSION, event, ...data }));
 }
-
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function arr(v) {
@@ -42,16 +42,12 @@ function explicitLive(event) {
   if (["live", "in progress", "inprogress", "playing", "ongoing", "started", "halftime", "half time"].includes(status)) return true;
   if (["ended", "finished", "final", "cancelled", "canceled", "postponed", "suspended"].includes(status)) return false;
   const start = Date.parse(event?.gameStartTime || event?.startTime || event?.startDate || "");
-  if (Number.isFinite(start) && start <= Date.now() && Date.now() - start <= 6 * 60 * 60 * 1000) return true;
-  return false;
+  return Number.isFinite(start) && start <= Date.now() && Date.now() - start <= 6 * 60 * 60 * 1000;
 }
 
-function tokenIds(market) {
-  return arr(market?.clobTokenIds).map(String).filter(Boolean);
-}
-function outcomes(market) {
-  return arr(market?.outcomes).map(String);
-}
+function tokenIds(market) { return arr(market?.clobTokenIds).map(String).filter(Boolean); }
+function outcomes(market) { return arr(market?.outcomes).map(String); }
+
 function liveMarkets(events) {
   const out = [];
   for (const event of events) {
@@ -62,26 +58,27 @@ function liveMarkets(events) {
       const ids = tokenIds(market);
       if (!ids.length) continue;
       const outs = outcomes(market);
+      const marketKey = String(market.id || market.conditionId || event.id);
       for (let i = 0; i < ids.length; i++) {
         out.push({
-          key: String(market.id || market.conditionId || event.id) + ":" + ids[i],
+          key: marketKey + ":" + ids[i],
+          marketKey,
           tokenId: ids[i],
           outcome: outs[i] || "OUTCOME " + (i + 1),
           title: String(event.title || event.name || market.question || "SPORTS"),
-          url: EVENT_URL + String(event.slug || market.slug || "").trim(),
+          url: String(event.slug || market.slug || "").trim() ? EVENT_URL + String(event.slug || market.slug).trim() : String(event.url || market.url || ""),
           marketType: String(market.sportsMarketType || market.marketType || ""),
           gameStatus: String(event.gameStatus || market.gameStatus || "")
         });
       }
     }
   }
-  const unique = new Map(out.map(x => [x.key, x]));
-  return Array.from(unique.values()).slice(0, MAX_CANDIDATES);
+  return Array.from(new Map(out.map(x => [x.key, x])).values()).slice(0, MAX_CANDIDATES);
 }
 
 async function json(url) {
   const r = await fetch(url, {
-    headers: { accept: "application/json", "user-agent": "Polymarket-Sports-Breakout-Monitor/3.0" },
+    headers: { accept: "application/json", "user-agent": "Polymarket-Sports-Breakout-Monitor/3.1" },
     signal: AbortSignal.timeout(8000)
   });
   if (!r.ok) throw new Error("HTTP " + r.status);
@@ -89,9 +86,8 @@ async function json(url) {
 }
 
 async function clobPrice(tokenId) {
-  const url = CLOB_PRICE_URL + "?token_id=" + encodeURIComponent(tokenId) + "&side=BUY";
   try {
-    const body = await json(url);
+    const body = await json(CLOB_PRICE_URL + "?token_id=" + encodeURIComponent(tokenId) + "&side=BUY");
     const p = num(body?.price ?? body?.data?.price);
     return p != null && p > 0 && p < 1 ? p : null;
   } catch (e) {
@@ -117,10 +113,7 @@ async function prices(candidates) {
 }
 
 async function telegram(text) {
-  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-    log("TELEGRAM_NOT_CONFIGURED");
-    return;
-  }
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return log("TELEGRAM_NOT_CONFIGURED");
   try {
     const r = await fetch("https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage", {
       method: "POST",
@@ -136,7 +129,7 @@ function observe(c, price) {
   const now = Date.now();
   let s = states.get(c.key);
   if (!s) {
-    s = { history: [], candidate: null, title: c.title, outcome: c.outcome, url: c.url };
+    s = { history: [], candidate: null, title: c.title, outcome: c.outcome, url: c.url, marketKey: c.marketKey };
     states.set(c.key, s);
   }
   s.title = c.title; s.outcome = c.outcome; s.url = c.url;
@@ -157,11 +150,15 @@ function observe(c, price) {
 
   if (!s.candidate || s.candidate.direction !== direction) {
     s.candidate = { direction, price: current, t: now };
-    log("BREAKOUT_CANDIDATE", { title: s.title, outcome: s.outcome, direction, price: current });
+    log("BREAKOUT_CANDIDATE", { title: s.title, outcome: s.outcome, direction, price: current, marketKey: s.marketKey });
     return;
   }
 
   s.candidate = null;
+  const lastAlert = alertedMarkets.get(s.marketKey) || 0;
+  if (now - lastAlert < WINDOW_MS) return;
+  alertedMarkets.set(s.marketKey, now);
+
   alertsSent++;
   const anchor = direction === "UP" ? hi : lo;
   const move = (current - anchor) * 100;
