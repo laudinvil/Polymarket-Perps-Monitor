@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.4.1";
+const VERSION = "7.4.2";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -973,8 +973,8 @@ async function bootstrapHistoricalCounts() {
   }
 }
 
-async function processClosedPeriod() {
-  const start = currentPeriodStart();
+async function processClosedPeriodAt(forcedStart = null) {
+  const start = forcedStart || currentPeriodStart();
   const historicalReady = historyReady && state.historyBootstrap?.complete === true;
   if (!historicalReady) {
     log("LIVE_PERIOD_PROCESS_WITHOUT_HISTORY", {
@@ -1183,10 +1183,30 @@ async function processClosedPeriod() {
   snapshot("POST_PERIOD_" + periodKey);
 }
 
+async function processClosedPeriod() {
+  return processClosedPeriodAt(currentPeriodStart());
+}
+
 async function poll() {
   if (!connected) connectRtds();
   try {
+    // Process the latest closed period, then also retry any recent incomplete
+    // period saved in state. This prevents a late TWAP60 boundary from being
+    // permanently abandoned when the 5m window advances.
     await processClosedPeriod();
+    const currentStart = currentPeriodStart();
+    const periodKeys = Object.keys(state.periods || {})
+      .filter(k => /^period-\\d+$/.test(k))
+      .map(k => ({ key:k, start:Number(k.slice(7))*1000 }))
+      .filter(x => Number.isFinite(x.start) && x.start >= currentStart - 2 * PERIOD_MS && x.start < currentStart)
+      .sort((a,b) => b.start - a.start);
+    for (const item of periodKeys) {
+      const saved = state.periods[item.key] || {};
+      const sent = !!state.periodAlerted?.[item.key]?.sent;
+      if (Object.keys(saved).length < ASSETS.length && !sent) {
+        await processClosedPeriodAt(item.start);
+      }
+    }
     if (state.liveBoundaryCacheDirty) {
       state.liveBoundaryCacheDirty = false;
       saveState();
