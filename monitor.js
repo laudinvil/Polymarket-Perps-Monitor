@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.2.5";
+const VERSION = "4.3.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -437,12 +437,21 @@ async function processClosedPeriod() {
     ? "https://polymarket.com/event/" + market.slug
     : "https://polymarket.com/event/" + nextSlug;
 
+  // The alert describes the just-closed 5m period, not the cumulative
+  // lifetime counters. Cumulative counters remain in state for statistics.
+  const periodRanking = ASSETS.map(a => {
+    const result = mergedResults[a.key];
+    const score = result?.winner === "Up" ? 1 : result?.winner === "Down" ? -1 : 0;
+    return { asset:a.key, score };
+  }).sort((a,b) => Math.abs(b.score)-Math.abs(a.score) || a.asset.localeCompare(b.asset));
+
+  const periodTop = periodRanking[0];
   const lines = [
     "5M CHAINLINK TWAP 60s",
     "",
-    ...ranking().map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
+    ...periodRanking.map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
-    "NEXT: " + top.asset + " " + (top.score >= 0 ? "UP" : "DOWN"),
+    "NEXT: " + periodTop.asset + " " + (periodTop.score >= 0 ? "UP" : "DOWN"),
     link
   ];
 
@@ -457,7 +466,7 @@ async function processClosedPeriod() {
     saveState();
   }
   log("PERIOD_PROCESSED", {
-    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:top, telegram:sent,
+    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:periodTop, telegram:sent,
     source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
   });
   snapshot("POST_PERIOD_" + periodKey);
