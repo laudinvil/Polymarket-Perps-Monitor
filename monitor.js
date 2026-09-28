@@ -332,7 +332,7 @@ const CHAINLINK_MIN_REQUEST_INTERVAL_MS = 125; // <= 8 requests/sec at request s
 let chainlinkLastRequestAt = 0;
 const CHAINLINK_REST = process.env.CHAINLINK_REST_URL || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.CHAINLINK_API_KEY || process.env.API_KEY || "";
-const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.USER_SECRET || "";
+const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.STREAMS_API_SECRET || process.env.USER_SECRET || "";
 const CHAINLINK_FEED_IDS_ENV = process.env.CHAINLINK_TWAP60_FEED_IDS || "";
 let chainlinkClient = null;
 let chainlinkFeedIds = null;
