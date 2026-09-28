@@ -499,8 +499,19 @@ async function backfill(state) {
         if (!isTargetMarket(m, asset) || seen.has(m.id)) continue;
         const w = winnerOf(m);
         if (!w) continue;
-        seen.add(m.id);
-        counts[asset.key] += w === "Up" ? 1 : -1;
+        // Historical counters must use the same Chainlink TWAP60 verification as live periods.
+        // Pace/caching keep the backfill within conservative API budgets.
+        try {
+          const chainlink = await verifyTwapSettlement(asset, m, Date.parse(m.startDate));
+          if (chainlink.expected !== w || !chainlink.match) {
+            log("BACKFILL_REJECTED", { asset: asset.key, marketId: m.id, slug: m.slug, winner: w, chainlink });
+            continue;
+          }
+          seen.add(m.id);
+          counts[asset.key] += w === "Up" ? 1 : -1;
+        } catch (e) {
+          log("BACKFILL_VERIFY_ERROR", { asset: asset.key, marketId: m.id, slug: m.slug, error: String(e.message || e) });
+        }
       }
     }
 
