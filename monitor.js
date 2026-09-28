@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.1.0";
+const VERSION = "9.1.1";
 const OPPOSITE_SIDE_COOLDOWN_MS = 60_000;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
