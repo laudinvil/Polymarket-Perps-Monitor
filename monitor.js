@@ -2,8 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "9.1.1";
-const OPPOSITE_SIDE_COOLDOWN_MS = 60_000;
+const VERSION = "9.2.0";
+const CASCADE_WINDOW_MS = 10_000;
+const CASCADE_MIN_EVENTS = 5;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -31,13 +32,14 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS",
+    strategy: "MARGINPAD_HYPERLIQUID_CASCADES",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
     lastEventTs: null,
     lastEventKey: null,
-    sideLocks: {}
+    cascadeEvents: {},
+    cascadeLastAlertMs: {}
   };
 }
 
@@ -210,6 +212,7 @@ async function processFeed() {
     const rawTs = num(event.ts ?? event.timestamp ?? event.time);
     const eventMs = rawTs === null ? null : (rawTs < 1e12 ? rawTs * 1000 : rawTs);
     if (eventMs === null) continue;
+
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
 
@@ -218,57 +221,86 @@ async function processFeed() {
     fresh++;
 
     const symbol = String(event.symbol || event.coin || "UNKNOWN").toUpperCase();
-    const side = sideLabel(event.side);
-    const lock = state.sideLocks && state.sideLocks[symbol];
-    if (lock && lock.side && lock.side !== side && eventMs - Number(lock.eventMs || 0) < OPPOSITE_SIDE_COOLDOWN_MS) {
-      log("OPPOSITE_SIDE_SUPPRESSED", {
-        exchange: EXCHANGE,
-        symbol,
-        suppressedSide: event.side,
-        acceptedSide: lock.side,
-        eventTs: rawTs,
-        acceptedEventTs: lock.eventTs,
-        cooldownMs: OPPOSITE_SIDE_COOLDOWN_MS,
-        eventKey: key,
-        rawEvent: event
-      });
-      continue;
-    }
-    const price = formatPrice(event.price);
-    const qty = formatQty(event.qty ?? event.size);
-    const notional = formatUsd(event.notional);
-    const message = [
-      symbol + " " + side,
-      "PRICE: " + price,
-      "SIZE: " + qty,
-      "VALUE: " + notional
-    ].join("\n");
+    state.cascadeEvents = state.cascadeEvents || {};
+    const bucket = Array.isArray(state.cascadeEvents[symbol]) ? state.cascadeEvents[symbol] : [];
+    const cutoff = eventMs - CASCADE_WINDOW_MS;
+    const active = bucket.filter(x => Number(x.eventMs) >= cutoff);
+
+    active.push({
+      eventMs,
+      eventTs: rawTs,
+      side: sideLabel(event.side),
+      price: num(event.price),
+      qty: num(event.qty ?? event.size),
+      notional: num(event.notional)
+    });
+    state.cascadeEvents[symbol] = active;
 
     log("LIQUIDATION_RAW_EVENT", {
       exchange: EXCHANGE,
       symbol,
-      rawEvent: event
+      rawEvent: event,
+      cascadeWindowMs: CASCADE_WINDOW_MS,
+      cascadeEventsInWindow: active.length
     });
+
+    if (active.length < CASCADE_MIN_EVENTS) {
+      log("LIQUIDATION_IGNORED_SINGLE", {
+        exchange: EXCHANGE,
+        symbol,
+        side: event.side,
+        eventTs: rawTs,
+        eventKey: key,
+        cascadeEventsInWindow: active.length,
+        required: CASCADE_MIN_EVENTS
+      });
+      continue;
+    }
+
+    const lastAlertMs = Number(state.cascadeLastAlertMs?.[symbol] || 0);
+    if (eventMs <= lastAlertMs) continue;
+
+    const totalValue = active.reduce((sum, x) => sum + (Number(x.notional) || 0), 0);
+    const totalQty = active.reduce((sum, x) => sum + (Number(x.qty) || 0), 0);
+    const longCount = active.filter(x => x.side === "LONG").length;
+    const shortCount = active.filter(x => x.side === "SHORT").length;
+    const prices = active.map(x => x.price).filter(Number.isFinite);
+    const minPrice = prices.length ? Math.min(...prices) : null;
+    const maxPrice = prices.length ? Math.max(...prices) : null;
+
+    const message = [
+      symbol + " CASCADE",
+      "EVENTS: " + active.length,
+      "LONG: " + longCount + " | SHORT: " + shortCount,
+      "VALUE: " + formatUsd(totalValue),
+      "SIZE: " + formatQty(totalQty),
+      "PRICE RANGE: " + formatPrice(minPrice) + " - " + formatPrice(maxPrice)
+    ].join("\n");
 
     const sent = await sendTelegram(message);
 
     state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
     state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
     state.lastEventKey = key;
-    state.sideLocks = state.sideLocks || {};
-    state.sideLocks[symbol] = { side, eventMs, eventTs: rawTs };
+    state.cascadeLastAlertMs = state.cascadeLastAlertMs || {};
+    state.cascadeLastAlertMs[symbol] = eventMs;
 
-    log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
+    log(sent ? "LIQUIDATION_CASCADE_ALERT_SENT" : "LIQUIDATION_CASCADE_ALERT_FAILED", {
       exchange: EXCHANGE,
       symbol,
-      side: event.side,
-      price: event.price ?? null,
-      qty: event.qty ?? event.size ?? null,
-      notional: event.notional ?? null,
-      eventTs: event.ts ?? event.timestamp ?? event.time ?? null,
+      events: active.length,
+      longCount,
+      shortCount,
+      totalValue,
+      totalQty,
+      minPrice,
+      maxPrice,
+      windowMs: CASCADE_WINDOW_MS,
+      eventTs: rawTs,
       eventKey: key
     });
 
+    state.cascadeEvents[symbol] = [];
     saveState();
   }
 
@@ -280,7 +312,6 @@ async function processFeed() {
     });
   }
 }
-
 function runtimeDiagnostics() {
   return {
     status: "ok",
@@ -295,7 +326,9 @@ function runtimeDiagnostics() {
     alertsSent: state.alertsSent,
     lastEventTs: state.lastEventTs,
     lastEventKey: state.lastEventKey,
-    seenEvents: Array.isArray(state.seen) ? state.seen.length : 0
+    seenEvents: Array.isArray(state.seen) ? state.seen.length : 0,
+    cascadeWindowMs: CASCADE_WINDOW_MS,
+    cascadeMinEvents: CASCADE_MIN_EVENTS
   };
 }
 
@@ -368,8 +401,9 @@ async function main() {
   if (state.version !== VERSION) {
     const previous = state.version || "unknown";
     state.version = VERSION;
-    state.strategy = "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS";
-    state.sideLocks = {};
+    state.strategy = "MARGINPAD_HYPERLIQUID_CASCADES";
+    state.cascadeEvents = {};
+    state.cascadeLastAlertMs = {};
     log("VERSION_CHANGE", { from: previous, to: VERSION });
     saveState();
   }
@@ -379,12 +413,11 @@ async function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     version: VERSION,
     buildSha: BUILD_SHA,
-    strategy: "MARGINPAD_HYPERLIQUID_ALL_LIQUIDATIONS",
+    strategy: "MARGINPAD_HYPERLIQUID_CASCADES",
     monitor: "MARGINPAD_HYPERLIQUID_ONLY",
     source: FEED_URL,
     exchange: EXCHANGE,
     pollingMs: POLL_MS,
-    oppositeSideCooldownMs: OPPOSITE_SIDE_COOLDOWN_MS,
     allSymbols: true,
     links: false,
     persistentState: true,
