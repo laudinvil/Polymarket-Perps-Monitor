@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
+const http = require("http");
 let chainlinkSdkPromise = null;
 async function getChainlinkDecoder() {
   if (!chainlinkSdkPromise) chainlinkSdkPromise = import("@chainlink/data-streams-sdk");
@@ -46,8 +47,35 @@ const ASSETS = [
 ];
 
 let db = null;
+let runtimeState = null;
 
 function nowIso() { return new Date().toISOString(); }
+function startHealthServer() {
+  const port = Number(process.env.PORT || 8080);
+  const server = http.createServer((req, res) => {
+    if (req.url === "/health" || req.url === "/") {
+      const payload = {
+        status: "ok",
+        version: MONITOR_VERSION,
+        pollingMs: POLL_MS,
+        chainlink: !!(CHAINLINK_API_KEY && CHAINLINK_API_SECRET),
+        postgres: !!db,
+        initialized: !!runtimeState?.initialized,
+        lastProcessedPeriod: runtimeState?.lastProcessedPeriod || null,
+        leader: runtimeState?.leader || null,
+        counts: runtimeState?.counts || Object.fromEntries(ASSETS.map(a => [a.key, 0])),
+        updatedAt: runtimeState?.updatedAt || null
+      };
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      return res.end(JSON.stringify(payload));
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not_found" }));
+  });
+  server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port }));
+  server.on("error", e => log("HEALTH_ERROR", { error: String(e.message || e), port }));
+}
+
 
 function ensureDir(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -662,6 +690,8 @@ async function main() {
   await initDb();
 
   let state = await restoreAndMigrate();
+  runtimeState = state;
+  startHealthServer();
   log("MONITOR_STARTING", {
     version: MONITOR_VERSION,
     pollingMs: POLL_MS,
@@ -673,12 +703,12 @@ async function main() {
   });
 
   try {
-    state = await backfill(state);
+    state = await backfill(state);\n    runtimeState = state;
   } catch (e) {
     log("BACKFILL_ERROR", { error: String(e.message || e) });
   }
 
-  await processClosedPeriod(state).catch(e => log("CYCLE_ERROR", { error: String(e.message || e) }));
+  await processClosedPeriod(state).catch(e => log("CYCLE_ERROR", { error: String(e.message || e) }));\n  runtimeState = state;
 
   setInterval(async () => {
     try {
