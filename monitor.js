@@ -227,7 +227,7 @@ async function processFeed() {
       "VALUE: " + notional
     ].join("\n");
 
-    const sent = await sendTelegram(message);
+    log("LIQUIDATION_RAW_EVENT", {\n      exchange: EXCHANGE,\n      symbol,\n      event: event\n    });\n\n    const sent = await sendTelegram(message);
 
     state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
     state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
