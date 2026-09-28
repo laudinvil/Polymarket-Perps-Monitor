@@ -20,48 +20,7 @@ function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true })
 
 function log(event, data = {}) {
   const row = { ts: nowIso(), version: VERSION, event, ...data };
-  let serialized;
-  try {
-    serialized = JSON.stringify(row, (_, value) => {
-      if (typeof value === "bigint") return value.toString();
-      return value;
-    });
-  } catch (e) {
-    serialized = JSON.stringify({
-      ts: nowIso(),
-      version: VERSION,
-      event: "LOG_SERIALIZATION_ERROR",
-      error: String(e.message || e)
-    });
-  }
-  console.log(serialized);
-  try {
-    ensureDir(LOG_FILE);
-    fs.appendFileSync(LOG_FILE, serialized + "\n");
-  } catch {}
-}onst fs = require("fs");
-const path = require("path");
-const http = require("http");
-
-const VERSION = "9.0.0";
-const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
-const POLL_MS = 3000;
-const FEED_URL = "https://marginpad.io/api/v1/feed";
-const EXCHANGE = "hyperliquid";
-const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
-const LOG_FILE = process.env.LOG_FILE || "/data/marginpad-liquidation.jsonl";
-const MAX_SEEN = 10000;
-
-let state = null;
-let pollRunning = false;
-let collectionStartedAt = null;
-
-function nowIso() { return new Date().toISOString(); }
-function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
-
-function log(event, data = {}) {
-  const row = { ts: nowIso(), version: VERSION, event, ...data };
-  let serialized;\n  try {\n    serialized = JSON.stringify(row, (_, value) => {\n      if (typeof value === "bigint") return value.toString();\n      return value;\n    });\n  } catch (e) {\n    serialized = JSON.stringify({ ts: nowIso(), version: VERSION, event: "LOG_SERIALIZATION_ERROR", error: String(e.message || e) });\n  }\n  console.log(serialized);
+  console.log(JSON.stringify(row));
   try {
     ensureDir(LOG_FILE);
     fs.appendFileSync(LOG_FILE, JSON.stringify(row) + "\n");
@@ -268,7 +227,7 @@ async function processFeed() {
       "VALUE: " + notional
     ].join("\n");
 
-    log("LIQUIDATION_RAW_EVENT", {\n      exchange: EXCHANGE,\n      symbol,\n      event: (() => {\n        try { return event; } catch { return { rawEventSerializationError: true }; }\n      })()\n    });\n\n    const sent = await sendTelegram(message);
+    log("LIQUIDATION_RAW_EVENT", {\n      exchange: EXCHANGE,\n      symbol,\n      rawEvent: event\n    });\n\n    const sent = await sendTelegram(message);
 
     state.alertsSent = Number(state.alertsSent || 0) + (sent ? 1 : 0);
     state.lastEventTs = event.ts ?? event.timestamp ?? event.time ?? null;
