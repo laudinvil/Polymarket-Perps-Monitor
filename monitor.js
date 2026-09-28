@@ -256,7 +256,7 @@ function boundaryPoints(assetKey, openTargetMs, closeTargetMs) {
     return selected;
   };
   return { open: select(openTargetMs), close: select(closeTargetMs) };
-}onst fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
