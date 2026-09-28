@@ -14,6 +14,7 @@ const MAX_SEEN = 10000;
 let state = null;
 let pollRunning = false;
 let collectionStartedAt = null;
+let monitorStartedAtMs = Date.now();
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -205,6 +206,12 @@ async function processFeed() {
   let fresh = 0;
 
   for (const event of hyperliquid) {
+    const rawTs = num(event.ts ?? event.timestamp ?? event.time);
+    const eventMs = rawTs === null ? null : (rawTs < 1e12 ? rawTs * 1000 : rawTs);
+    // Each GitHub Actions run is intentionally stateless. Only alert events
+    // observed after this run started, so the next scheduled run cannot
+    // resend the previous run's feed history.
+    if (eventMs === null || eventMs < monitorStartedAtMs) continue;
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
 
@@ -351,6 +358,7 @@ async function main() {
   }
 
   collectionStartedAt = nowIso();
+  monitorStartedAtMs = Date.now();
 
   log("MONITOR_STARTING", {
     version: VERSION,
