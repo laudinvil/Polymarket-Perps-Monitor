@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.2";
+const VERSION = "7.3.3";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -336,6 +336,7 @@ const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env
 const CHAINLINK_FEED_IDS_ENV = process.env.CHAINLINK_TWAP60_FEED_IDS || "";
 const GAMMA_MARKETS_KEYSET = "https://gamma-api.polymarket.com/markets/keyset";
 const GAMMA_PAGE_SIZE = 100;
+const GAMMA_HTTP_TIMEOUT_MS = 5000;
 const GAMMA_MIN_REQUEST_INTERVAL_MS = 40;
 let gammaLastRequestAt = 0;
 let chainlinkClient = null;
@@ -597,51 +598,52 @@ function parseClosed5mMarket(market) {
 }
 
 async function fetchGammaSeriesPage(seriesSlug, afterCursor, cutoffMs) {
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await waitForGammaRateLimit();
+    const params = new URLSearchParams({
+      series_slug: seriesSlug,
+      closed: "true",
+      order: "endDate",
+      ascending: "true",
+      limit: String(GAMMA_PAGE_SIZE),
+      end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
+      end_date_max: new Date(cutoffMs).toISOString()
+    });
+    if (afterCursor) params.set("after_cursor", afterCursor);
+    const url = "https://gamma-api.polymarket.com/events/keyset?" + params.toString();
+    log("GAMMA_HISTORY_REQUEST", {
+      seriesSlug, attempt, cursor: afterCursor ? String(afterCursor).slice(0,24) + "..." : null
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GAMMA_HTTP_TIMEOUT_MS);
     try {
-      await waitForGammaRateLimit();
-      const params = new URLSearchParams({
-        series_slug: seriesSlug,
-        closed: "true",
-        order: "endDate",
-        ascending: "true",
-        limit: String(GAMMA_PAGE_SIZE),
-        end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
-        end_date_max: new Date(cutoffMs).toISOString()
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: "application/json" }
       });
-      if (afterCursor) params.set("after_cursor", afterCursor);
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
-      let response;
-      try {
-        response = await fetch("https://gamma-api.polymarket.com/events/keyset?" + params.toString(), {
-          signal: controller.signal,
-          headers: { accept: "application/json" }
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new Error("GAMMA_EVENTS_KEYSET_HTTP_" + response.status + ":" + body.slice(0, 500));
       }
-
       const body = await response.json();
       const events = Array.isArray(body) ? body : (Array.isArray(body.events) ? body.events : []);
       const nextCursor = Array.isArray(body) ? null : (body.next_cursor || body.nextCursor || null);
+      log("GAMMA_HISTORY_RESPONSE", {
+        seriesSlug, events: events.length, hasNextCursor: !!nextCursor,
+        cursor: nextCursor ? String(nextCursor).slice(0,24) + "..." : null
+      });
       return { events, nextCursor };
     } catch (e) {
       log("GAMMA_HISTORY_PAGE_RETRY", {
         seriesSlug, afterCursor: afterCursor ? String(afterCursor).slice(0, 24) + "..." : null,
         attempt, error: String(e.message || e)
       });
-      if (attempt === 5) throw e;
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      if (attempt === 3) throw e;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } finally {
+      clearTimeout(timer);
     }
   }
-  return { events: [], nextCursor: null };
 }
 
 async function fetchHistoricalMarketBaseline(cutoffMs) {
