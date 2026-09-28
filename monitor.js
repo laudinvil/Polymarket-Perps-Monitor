@@ -721,12 +721,14 @@ async function main() {
   });
 
   try {
-    state = await backfill(state);\n    runtimeState = state;
+    state = await backfill(state);
+    runtimeState = state;
   } catch (e) {
     log("BACKFILL_ERROR", { error: String(e.message || e) });
   }
 
-  await processClosedPeriod(state).catch(e => log("CYCLE_ERROR", { error: String(e.message || e) }));\n  runtimeState = state;
+  await processClosedPeriod(state).catch(e => log("CYCLE_ERROR", { error: String(e.message || e) }));
+  runtimeState = state;
 
   setInterval(async () => {
     try {
