@@ -1,12 +1,12 @@
 const http = require("http");
 
-const VERSION = "3.1.0";
+const VERSION = "3.2.0";
 const POLL_MS = 10000;
 const WINDOW_MS = 60000;
-const MAX_RANGE = 0.02;
-const BREAKOUT = 0.005;
+const MAX_RANGE = 0.03;
+const BREAKOUT = 0.003;
 const RUNTIME_MS = 5 * 60 * 60 * 1000 + 45 * 60 * 1000;
-const MAX_CANDIDATES = 240;
+const MAX_CANDIDATES = 500;
 
 const GAMMA_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&related_tags=true&active=true&closed=false&limit=500";
 const CLOB_PRICE_URL = "https://clob.polymarket.com/price";
@@ -22,6 +22,7 @@ let polling = false;
 let alertsSent = 0;
 let lastPollAt = null;
 let lastError = null;
+let emptyPolls = 0;
 
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), version: VERSION, event, ...data }));
@@ -42,7 +43,7 @@ function explicitLive(event) {
   if (["live", "in progress", "inprogress", "playing", "ongoing", "started", "halftime", "half time"].includes(status)) return true;
   if (["ended", "finished", "final", "cancelled", "canceled", "postponed", "suspended"].includes(status)) return false;
   const start = Date.parse(event?.gameStartTime || event?.startTime || event?.startDate || "");
-  return Number.isFinite(start) && start <= Date.now() && Date.now() - start <= 6 * 60 * 60 * 1000;
+  return Number.isFinite(start) && start <= Date.now() && Date.now() - start <= 12 * 60 * 60 * 1000;
 }
 
 function tokenIds(market) { return arr(market?.clobTokenIds).map(String).filter(Boolean); }
@@ -192,6 +193,8 @@ async function poll() {
     }
     lastPollAt = new Date().toISOString();
     lastError = null;
+    emptyPolls = candidates.length === 0 || ps.size === 0 ? emptyPolls + 1 : 0;
+    if (emptyPolls === 3) await telegram("SPORTS MONITOR DIAGNOSTIC\nNo live CLOB candidates detected after 3 polls.\nEVENTS: " + events.length + "\nLIVE EVENTS: " + live.length + "\nCANDIDATES: " + candidates.length + "\nCLOB PRICES: " + ps.size);
     log("POLL", {
       events: events.length,
       liveEvents: live.length,
@@ -219,7 +222,7 @@ http.createServer((req, res) => {
   res.writeHead(404); res.end();
 }).listen(PORT, "0.0.0.0", () => log("HEALTH_LISTENING", { port: PORT, healthPath: "/health" }));
 
-log("MONITOR_STARTING", { version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", gamma: GAMMA_URL, clob: CLOB_PRICE_URL, pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT });
+log("MONITOR_STARTING", { version: VERSION, strategy: "POLYMARKET_SPORTS_CLOB_COMPRESSION_BREAKOUT", gamma: GAMMA_URL, clob: CLOB_PRICE_URL, pollingMs: POLL_MS, windowMs: WINDOW_MS, maxRange: MAX_RANGE, breakout: BREAKOUT, maxCandidates: MAX_CANDIDATES });
 
 (async () => {
   while (Date.now() - startedAt < RUNTIME_MS) {
