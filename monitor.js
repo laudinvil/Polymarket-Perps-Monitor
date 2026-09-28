@@ -3,7 +3,8 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.0.0";
+const VERSION = "7.1.0";
+const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -89,7 +90,7 @@ function startHealth() {
   const server = http.createServer((req, res) => {
     if (req.url === "/status" || req.url === "/health" || req.url === "/") {
       const payload = {
-        status: "ok", version: VERSION,
+        status: "ok", version: VERSION, buildSha: BUILD_SHA,
         source: "Polymarket RTDS Chainlink TWAP60",
         websocket: connected, collectionStartedAt, pollingMs: POLL_MS,
         assets: ASSETS.map(a => ({ asset: a.key, symbol: a.symbol, latest: latest.get(a.key) || null })),
@@ -808,7 +809,7 @@ async function main() {
   }
 
   log("MONITOR_STARTING", {
-    version:VERSION, source:"Polymarket RTDS crypto_prices_twap_sixty",
+    version:VERSION, buildSha:BUILD_SHA, source:"Polymarket RTDS crypto_prices_twap_sixty",
     pollingMs:POLL_MS, windowSeconds:60, assets:ASSETS.map(a=>a.key),
     persistentState:true, postgres:false, strategy:"CHAINLINK_HISTORY_PLUS_RTDs_LIVE"
   });
