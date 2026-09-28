@@ -1,3 +1,0 @@
-framework: dockerfile
-dockerfile: Dockerfile
-start: node monitor.js
