@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.1.0";
+const VERSION = "7.2.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -560,7 +560,7 @@ function parseClosed5mMarket(market) {
   if (!match) return null;
 
   const suffix = slug.slice(match.slug.length + 1);
-  if (!/^\\d+$/.test(suffix)) return null;
+  if (!/^\d+$/.test(suffix)) return null;
   const startSec = Number(suffix);
   if (!Number.isSafeInteger(startSec)) return null;
   const startMs = startSec * 1000;
