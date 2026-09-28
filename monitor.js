@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.6.8";
+const VERSION = "4.7.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -330,7 +330,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-offset-v6";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v7";
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
 
 function parseJsonField(value, fallback = []) {
@@ -359,10 +359,13 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
   const slug = SERIES_SLUGS[asset.key];
   const all = [];
   const limit = 100;
-  let offset = 0;
+  let afterCursor = null;
   let pages = 0;
-  const maxPages = 100;
+  const maxPages = 500;
 
+  // Gamma offset pagination is deliberately not used here. The public
+  // keyset endpoint is the supported way to traverse beyond the 2,000-row
+  // offset boundary and avoids silently truncating the historical series.
   while (true) {
     const params = new URLSearchParams();
     params.set("series_slug", slug);
@@ -372,17 +375,21 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
     params.set("order", "startDate");
     params.set("ascending", "true");
     params.set("limit", String(limit));
-    params.set("offset", String(offset));
+    if (afterCursor) params.set("after_cursor", afterCursor);
 
-    const url = GAMMA + "/events?" + params.toString();
+    const url = GAMMA + "/events/keyset?" + params.toString();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
 
     try {
       if (pages >= maxPages) {
-        log("HISTORY_ERROR", { asset: asset.key, endpoint: "events", seriesSlug: slug, error: "max_pages_reached", pages });
+        log("HISTORY_ERROR", {
+          asset: asset.key, endpoint: "events/keyset", seriesSlug: slug,
+          error: "max_pages_reached", pages
+        });
         break;
       }
+
       pages++;
       const r = await fetch(url, {
         signal: controller.signal,
@@ -394,24 +401,30 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         log("HISTORY_ERROR", {
           asset: asset.key,
           status: r.status,
-          endpoint: "events",
+          endpoint: "events/keyset",
           seriesSlug: slug,
-          offset,
+          page: pages,
           body: body.slice(0, 500)
         });
         break;
       }
 
       const data = await r.json();
-      const events = Array.isArray(data) ? data : (Array.isArray(data?.events) ? data.events : []);
+      const events = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.events) ? data.events : []);
+
+      const nextCursor = data?.next_cursor || data?.nextCursor || null;
+
       log("HISTORY_PAGE", {
         asset: asset.key,
         seriesSlug: slug,
-        endpoint: "events",
-        offset,
+        endpoint: "events/keyset",
+        page: pages,
         rows: events.length,
         firstSlug: events[0]?.slug || null,
-        lastSlug: events[events.length - 1]?.slug || null
+        lastSlug: events[events.length - 1]?.slug || null,
+        hasNextCursor: !!nextCursor
       });
 
       if (!events.length) break;
@@ -435,15 +448,25 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         });
       }
 
-      if (events.length < limit) break;
-      offset += limit;
+      if (!nextCursor || events.length < limit) break;
+      if (nextCursor === afterCursor) {
+        log("HISTORY_ERROR", {
+          asset: asset.key,
+          endpoint: "events/keyset",
+          seriesSlug: slug,
+          error: "cursor_did_not_advance",
+          page: pages
+        });
+        break;
+      }
+      afterCursor = nextCursor;
     } catch (e) {
       log("HISTORY_ERROR", {
         asset: asset.key,
         error: String(e.message || e),
-        endpoint: "events",
+        endpoint: "events/keyset",
         seriesSlug: slug,
-        offset
+        page: pages
       });
       break;
     } finally {
