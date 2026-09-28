@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.1";
+const VERSION = "4.0.2";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -32,10 +32,7 @@ const latest = new Map();
 const history = new Map();
 
 function nowIso() { return new Date().toISOString(); }
-
-function ensureDir(file) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-}
+function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
 
 function log(event, data = {}) {
   const row = { ts: nowIso(), version: VERSION, event, ...data };
@@ -48,14 +45,10 @@ function log(event, data = {}) {
 
 function defaultState() {
   return {
-    version: VERSION,
-    initialized: true,
+    version: VERSION, initialized: true,
     counts: Object.fromEntries(ASSETS.map(a => [a.key, 0])),
-    periods: {},
-    lastProcessedPeriod: null,
-    leader: null,
-    updatedAt: nowIso(),
-    source: "Polymarket RTDS Chainlink TWAP60",
+    periods: {}, lastProcessedPeriod: null, leader: null,
+    updatedAt: nowIso(), source: "Polymarket RTDS Chainlink TWAP60",
     pollingMs: POLL_MS
   };
 }
@@ -75,27 +68,18 @@ function saveState() {
     const tmp = STATE_FILE + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
     fs.renameSync(tmp, STATE_FILE);
-  } catch (e) {
-    log("STATE_WRITE_ERROR", { error: String(e.message || e) });
-  }
+  } catch (e) { log("STATE_WRITE_ERROR", { error: String(e.message || e) }); }
 }
 
 function snapshot(reason) {
   const file = STATE_FILE.replace(/\.json$/, "") + "-snapshots.jsonl";
   try {
     ensureDir(file);
-    fs.appendFileSync(file, JSON.stringify({
-      ts: nowIso(),
-      reason,
-      version: VERSION,
-      state
-    }) + "\n");
+    fs.appendFileSync(file, JSON.stringify({ ts: nowIso(), reason, version: VERSION, state }) + "\n");
   } catch {}
   log("STATE_SNAPSHOT", {
-    reason,
-    counts: state.counts,
-    lastProcessedPeriod: state.lastProcessedPeriod,
-    leader: state.leader
+    reason, counts: state.counts,
+    lastProcessedPeriod: state.lastProcessedPeriod, leader: state.leader
   });
 }
 
@@ -104,83 +88,48 @@ function startHealth() {
   const server = http.createServer((req, res) => {
     if (req.url === "/status" || req.url === "/health" || req.url === "/") {
       const payload = {
-        status: "ok",
-        version: VERSION,
+        status: "ok", version: VERSION,
         source: "Polymarket RTDS Chainlink TWAP60",
-        websocket: connected,
-        collectionStartedAt,
-        pollingMs: POLL_MS,
-        assets: ASSETS.map(a => ({
-          asset: a.key,
-          symbol: a.symbol,
-          latest: latest.get(a.key) || null
-        })),
-        lastProcessedPeriod: state.lastProcessedPeriod,
-        leader: state.leader,
-        counts: state.counts,
-        uptimeSec: Math.floor(process.uptime()),
-        updatedAt: state.updatedAt
+        websocket: connected, collectionStartedAt, pollingMs: POLL_MS,
+        assets: ASSETS.map(a => ({ asset: a.key, symbol: a.symbol, latest: latest.get(a.key) || null })),
+        lastProcessedPeriod: state.lastProcessedPeriod, leader: state.leader,
+        counts: state.counts, uptimeSec: Math.floor(process.uptime()), updatedAt: state.updatedAt
       };
-      res.writeHead(200, {
-        "content-type": "application/json",
-        "cache-control": "no-store"
-      });
+      res.writeHead(200, {"content-type":"application/json","cache-control":"no-store"});
       return res.end(JSON.stringify(payload));
     }
     if (req.url === "/logs") {
       let text = "";
-      try {
-        const b = fs.readFileSync(LOG_FILE, "utf8");
-        text = b.slice(-120000);
-      } catch {}
-      res.writeHead(200, {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store"
-      });
+      try { text = fs.readFileSync(LOG_FILE, "utf8").slice(-120000); } catch {}
+      res.writeHead(200, {"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});
       return res.end(text);
     }
-    res.writeHead(404);
-    res.end();
+    res.writeHead(404); res.end();
   });
   server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port }));
 }
 
 function connectRtds() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
   clearTimeout(reconnectTimer);
   log("RTDS_CONNECTING", { url: RTDS_URL });
-
   ws = new WebSocket(RTDS_URL);
 
   ws.on("open", () => {
     connected = true;
     if (!collectionStartedAt) {
       collectionStartedAt = Date.now();
-      log("COLLECTION_STARTED", {
-        at: collectionStartedAt,
-        nextPeriodStart: currentPeriodStart() + PERIOD_MS
-      });
+      log("COLLECTION_STARTED", { at: collectionStartedAt, nextPeriodStart: currentPeriodStart() + PERIOD_MS });
     }
     log("RTDS_CONNECTED");
-
     const subscriptions = ASSETS.map(a => ({
-      topic: "crypto_prices_twap_sixty",
-      type: "update",
-      filters: JSON.stringify({ symbol: a.symbol })
+      topic: "crypto_prices_twap_sixty", type: "update", filters: JSON.stringify({ symbol: a.symbol })
     }));
-
-    ws.send(JSON.stringify({
-      action: "subscribe",
-      subscriptions
-    }));
-
+    ws.send(JSON.stringify({ action: "subscribe", subscriptions }));
     log("RTDS_SUBSCRIBED", {
       topic: "crypto_prices_twap_sixty",
-      symbols: ASSETS.map(a => a.symbol),
-      windowSeconds: 60
+      symbols: ASSETS.map(a => a.symbol), windowSeconds: 60
     });
-
     clearInterval(heartbeatTimer);
     heartbeatTimer = setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -192,11 +141,7 @@ function connectRtds() {
   ws.on("message", raw => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
-
-    if (msg.message) {
-      log("RTDS_MESSAGE", { message: msg.message });
-      return;
-    }
+    if (msg.message) { log("RTDS_MESSAGE", { message: msg.message }); return; }
 
     const p = msg.payload;
     if (!p || msg.topic !== "crypto_prices_twap_sixty") return;
@@ -220,11 +165,7 @@ function connectRtds() {
     latest.set(asset.key, point);
 
     let arr = history.get(asset.key);
-    if (!arr) {
-      arr = [];
-      history.set(asset.key, arr);
-    }
-
+    if (!arr) { arr = []; history.set(asset.key, arr); }
     const last = arr[arr.length - 1];
     if (!last || ts > last.ts) arr.push(point);
 
@@ -233,36 +174,22 @@ function connectRtds() {
 
     if (!last || ts > last.ts) {
       log("TWAP60_UPDATE", {
-        asset: asset.key,
-        symbol,
-        observationTimestamp: ts,
-        value,
-        windowSeconds: 60
+        asset: asset.key, symbol, observationTimestamp: ts, value, windowSeconds: 60
       });
     }
   });
 
   ws.on("close", (code, reason) => {
-    connected = false;
-    clearInterval(heartbeatTimer);
-    log("RTDS_CLOSED", {
-      code,
-      reason: reason ? reason.toString() : ""
-    });
+    connected = false; clearInterval(heartbeatTimer);
+    log("RTDS_CLOSED", { code, reason: reason ? reason.toString() : "" });
     scheduleReconnect();
   });
-
-  ws.on("error", e => {
-    log("RTDS_ERROR", { error: String(e.message || e) });
-  });
+  ws.on("error", e => log("RTDS_ERROR", { error: String(e.message || e) }));
 }
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectRtds();
-  }, 3000);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connectRtds(); }, 3000);
 }
 
 function pointAtOrBefore(assetKey, targetMs, maxAgeMs = 20_000) {
@@ -272,19 +199,15 @@ function pointAtOrBefore(assetKey, targetMs, maxAgeMs = 20_000) {
     if (p.ts <= targetMs) candidate = p;
     else break;
   }
-  if (!candidate) return null;
-  if (targetMs - candidate.ts > maxAgeMs) return null;
+  if (!candidate || targetMs - candidate.ts > maxAgeMs) return null;
   return candidate;
 }
 
-function currentPeriodStart() {
-  return Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
-}
+function currentPeriodStart() { return Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS; }
 
 function ranking() {
-  return ASSETS
-    .map(a => ({ asset: a.key, score: Number(state.counts[a.key] || 0) }))
-    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score) || a.asset.localeCompare(b.asset));
+  return ASSETS.map(a => ({ asset: a.key, score: Number(state.counts[a.key] || 0) }))
+    .sort((a,b) => Math.abs(b.score)-Math.abs(a.score) || a.asset.localeCompare(b.asset));
 }
 
 async function gammaMarket(slug) {
@@ -292,24 +215,29 @@ async function gammaMarket(slug) {
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const r = await fetch(GAMMA + "/markets?slug=" + encodeURIComponent(slug), {
-      signal: controller.signal,
-      headers: { accept: "application/json" }
+      signal: controller.signal, headers: { accept: "application/json" }
     });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      log("GAMMA_ERROR", { slug, status: r.status });
+      return null;
+    }
     const data = await r.json();
-    return Array.isArray(data) ? data[0] || null : null;
-  } catch {
+    const market = Array.isArray(data) ? data[0] || null : null;
+    log("GAMMA_RESULT", { slug, found: !!market, marketSlug: market?.slug || null });
+    return market;
+  } catch (e) {
+    log("GAMMA_ERROR", { slug, error: String(e.message || e) });
     return null;
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }
 
-async function sendTelegram(text) {
+async function sendTelegram(text, kind = "PERIOD_ALERT") {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chat = process.env.TELEGRAM_CHAT_ID;
+  log("TELEGRAM_ATTEMPT", { kind, configured: !!token && !!chat, textPreview: text.slice(0, 300) });
+
   if (!token || !chat) {
-    log("TELEGRAM_NOT_CONFIGURED");
+    log("TELEGRAM_NOT_CONFIGURED", { kind });
     return false;
   }
 
@@ -317,19 +245,19 @@ async function sendTelegram(text) {
     const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chat,
-        text,
-        disable_web_page_preview: false
-      })
+      body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: false })
     });
     if (!r.ok) {
-      log("TELEGRAM_ERROR", { status: r.status, body: await r.text().catch(() => "") });
+      const body = await r.text().catch(() => "");
+      log("TELEGRAM_ERROR", { kind, status: r.status, body: body.slice(0, 1000) });
       return false;
     }
+    let data = null;
+    try { data = await r.json(); } catch {}
+    log("TELEGRAM_SENT", { kind, messageId: data?.result?.message_id || null });
     return true;
   } catch (e) {
-    log("TELEGRAM_ERROR", { error: String(e.message || e) });
+    log("TELEGRAM_ERROR", { kind, error: String(e.message || e) });
     return false;
   }
 }
@@ -341,21 +269,12 @@ async function processClosedPeriod() {
 
   if (state.periods[periodKey]) return;
 
-  // Never try to reconstruct a period that began before this monitor
-  // started receiving RTDS data. It cannot have a trustworthy opening point.
   if (collectionStartedAt && closedStart < collectionStartedAt) {
     if (!state.skippedStartupPeriods) state.skippedStartupPeriods = {};
     if (!state.skippedStartupPeriods[periodKey]) {
-      state.skippedStartupPeriods[periodKey] = {
-        reason: "started_before_rtds_collection",
-        skippedAt: nowIso()
-      };
+      state.skippedStartupPeriods[periodKey] = { reason:"started_before_rtds_collection", skippedAt:nowIso() };
       saveState();
-      log("PERIOD_SKIPPED_STARTUP", {
-        periodKey,
-        closedStart,
-        collectionStartedAt
-      });
+      log("PERIOD_SKIPPED_STARTUP", { periodKey, closedStart, collectionStartedAt });
     }
     return;
   }
@@ -367,52 +286,39 @@ async function processClosedPeriod() {
   for (const asset of ASSETS) {
     const open = pointAtOrBefore(asset.key, closedStart, 20_000);
     const close = pointAtOrBefore(asset.key, closeBoundary, 20_000);
-
     if (!open || !close) {
-      missing.push({
-        asset: asset.key,
-        open: !!open,
-        close: !!close,
-        latest: latest.get(asset.key) || null
-      });
+      missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
     }
-
     const winner = close.value >= open.value ? "Up" : "Down";
     results[asset.key] = {
-      winner,
-      open: open.value,
-      close: close.value,
-      change: close.value - open.value,
-      openTimestamp: open.ts,
-      closeTimestamp: close.ts
+      winner, open:open.value, close:close.value, change:close.value-open.value,
+      openTimestamp:open.ts, closeTimestamp:close.ts
     };
   }
 
   if (missing.length) {
     log("PERIOD_WAIT", {
-      periodKey,
-      reason: "missing_twap60_boundary",
-      missing,
-      retry: true
+      periodKey, reason:"missing_twap60_boundary", missing, retry:true
     });
     return;
   }
 
-  for (const asset of ASSETS) {
-    state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
-  }
+  for (const asset of ASSETS) state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
 
   state.periods[periodKey] = results;
   state.lastProcessedPeriod = periodKey;
   state.leader = ranking()[0];
   saveState();
 
-  // The next tradable 5m market begins exactly at the close boundary
-  // of the period we just evaluated.
   const nextStart = start;
   const top = state.leader;
   const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
+
+  log("PERIOD_READY_TO_ALERT", {
+    periodKey, nextStart, leader:top, nextSlug,
+    results, counts:state.counts
+  });
 
   const market = await gammaMarket(nextSlug);
   const link = market?.slug
@@ -420,8 +326,7 @@ async function processClosedPeriod() {
     : "https://polymarket.com/event/" + nextSlug;
 
   const lines = [
-    "5M CHAINLINK TWAP 60s",
-    "",
+    "5M CHAINLINK TWAP 60s", "",
     ...ASSETS.map(a => {
       const r = results[a.key];
       return a.key + " → " + r.winner + " (" + r.open.toFixed(6) + " → " + r.close.toFixed(6) + ")";
@@ -433,91 +338,47 @@ async function processClosedPeriod() {
     link
   ];
 
-  const sent = await sendTelegram(lines.join("\n"));
-
+  const sent = await sendTelegram(lines.join("\n"), "PERIOD_ALERT");
   log("PERIOD_PROCESSED", {
-    periodKey,
-    results,
-    counts: state.counts,
-    leader: top,
-    telegram: sent,
-    source: "crypto_prices_twap_sixty",
-    marketSlug: market?.slug || null
+    periodKey, results, counts:state.counts, leader:top, telegram:sent,
+    source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
   });
-
   snapshot("POST_PERIOD_" + periodKey);
 }
 
 async function poll() {
   if (!connected) connectRtds();
-
-  try {
-    await processClosedPeriod();
-  } catch (e) {
-    log("CYCLE_ERROR", { error: String(e.stack || e) });
-  }
+  try { await processClosedPeriod(); }
+  catch (e) { log("CYCLE_ERROR", { error:String(e.stack||e) }); }
 }
 
 async function main() {
-  ensureDir(STATE_FILE);
-  ensureDir(LOG_FILE);
-
+  ensureDir(STATE_FILE); ensureDir(LOG_FILE);
   state = loadState();
 
   if (state.version !== VERSION) {
     snapshot("PRE_VERSION_CHANGE");
-    log("VERSION_CHANGE", {
-      from: state.version || "unknown",
-      to: VERSION
-    });
-    state.version = VERSION;
-    saveState();
+    log("VERSION_CHANGE", { from:state.version||"unknown", to:VERSION });
+    state.version = VERSION; saveState();
   }
 
   log("MONITOR_STARTING", {
-    version: VERSION,
-    source: "Polymarket RTDS / Chainlink crypto_prices_twap_sixty",
-    pollingMs: POLL_MS,
-    windowSeconds: 60,
-    assets: ASSETS.map(a => a.key),
-    persistentState: true,
-    postgres: false
+    version:VERSION, source:"Polymarket RTDS / Chainlink crypto_prices_twap_sixty",
+    pollingMs:POLL_MS, windowSeconds:60, assets:ASSETS.map(a=>a.key),
+    persistentState:true, postgres:false
   });
 
-  startHealth();
-  connectRtds();
-  await poll();
-
+  startHealth(); connectRtds(); await poll();
   setInterval(poll, POLL_MS);
 
-  setInterval(() => {
-    log("HEARTBEAT", {
-      websocket: connected,
-      pollingMs: POLL_MS,
-      collectionStartedAt,
-      latest: Object.fromEntries(
-        ASSETS.map(a => [a.key, latest.get(a.key) || null])
-      ),
-      lastProcessedPeriod: state.lastProcessedPeriod,
-      leader: state.leader,
-      counts: state.counts
-    });
-  }, 60_000);
+  setInterval(() => log("HEARTBEAT", {
+    websocket:connected, pollingMs:POLL_MS, collectionStartedAt,
+    latest:Object.fromEntries(ASSETS.map(a=>[a.key,latest.get(a.key)||null])),
+    lastProcessedPeriod:state.lastProcessedPeriod, leader:state.leader, counts:state.counts
+  }), 60_000);
 }
 
-process.on("SIGTERM", () => {
-  clearInterval(heartbeatTimer);
-  if (ws) ws.close();
-  process.exit(0);
-});
+process.on("SIGTERM", () => { clearInterval(heartbeatTimer); if (ws) ws.close(); process.exit(0); });
+process.on("SIGINT", () => { clearInterval(heartbeatTimer); if (ws) ws.close(); process.exit(0); });
 
-process.on("SIGINT", () => {
-  clearInterval(heartbeatTimer);
-  if (ws) ws.close();
-  process.exit(0);
-});
-
-main().catch(e => {
-  log("FATAL", { error: String(e.stack || e) });
-  process.exit(1);
-});
+main().catch(e => { log("FATAL", { error:String(e.stack||e) }); process.exit(1); });
