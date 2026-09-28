@@ -8,7 +8,7 @@ const BREAKOUT_CONFIRM_PRICE = 0.005;
 const ALERT_COOLDOWN_MS = 120000;
 const RUNTIME_MS = 5 * 60 * 60 * 1000 + 45 * 60 * 1000;
 
-const SPORTS_EVENTS_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&related_tags=true&closed=false&limit=500";
+const SPORTS_EVENTS_URL = "https://gamma-api.polymarket.com/events?tag_id=100639&related_tags=true&live=true&closed=false&limit=500";
 const CLOB_PRICE_URL = "https://clob.polymarket.com/price";
 const POLYMARKET_EVENT_URL = "https://polymarket.com/event/";
 
