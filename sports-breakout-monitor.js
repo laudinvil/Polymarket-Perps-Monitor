@@ -1,7 +1,7 @@
 const http = require("http");
 
-const VERSION = "2.0.0";
-const POLL_MS = 15000;
+const VERSION = "2.1.0";
+const POLL_MS = 10000;
 const COMPRESSION_WINDOW_MS = 60000;
 const MAX_COMPRESSION_RANGE = 0.02;
 const BREAKOUT_CONFIRM_PRICE = 0.005;
@@ -23,6 +23,7 @@ let alertsSent = 0;
 let lastPollAt = null;
 let lastError = null;
 let liveCandidates = 0;
+let liveEvents = 0;
 let clobPricesRead = 0;
 let clobPriceErrors = 0;
 
@@ -108,7 +109,7 @@ function eventIsLive(event) {
 
 function isSupportedMarket(market) {
   const type = norm(market?.sportsMarketType || market?.marketType || "");
-  return /(^| )(moneyline|child moneyline|esports match result|tennis completed match|cricket completed match|match winner|winner|race winner|head to head)( |$)/.test(type);
+  return /(^| )(moneyline|child moneyline|esports match result|tennis completed match|cricket completed match|match winner|winner|race winner|head to head|f1 head to head|f1 race winner|nhl period result|map participant win one|map participant win total)( |$)/.test(type);
 }
 
 function parseTokenIds(market) {
@@ -364,6 +365,7 @@ async function poll() {
   try {
     const body = await getJson(SPORTS_EVENTS_URL);
     const events = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+    const live = events.filter(eventIsLive);
     const candidates = buildCandidates(events);
     const prices = await getPricesLimited(candidates);
 
@@ -381,15 +383,24 @@ async function poll() {
       }
     }
 
+    liveEvents = live.length;
     liveCandidates = candidates.length;
     lastPollAt = new Date().toISOString();
     lastError = null;
 
     log("POLL", {
       sportsEvents: events.length,
+      liveEvents: live.length,
       liveCandidates: candidates.length,
       clobPrices: prices.size,
-      trackedMarkets: markets.size
+      trackedMarkets: markets.size,
+      sample: candidates.slice(0, 5).map(c => ({
+        title: c.title,
+        outcome: c.outcome,
+        marketType: c.marketType,
+        price: prices.get(c.key) ?? null,
+        url: c.url
+      }))
     });
   } catch (e) {
     lastError = String(e.message || e);
@@ -411,6 +422,7 @@ function health() {
     maxCompressionRange: MAX_COMPRESSION_RANGE,
     breakoutConfirmPrice: BREAKOUT_CONFIRM_PRICE,
     alertsSent,
+    liveEvents,
     liveCandidates,
     clobPricesRead,
     clobPriceErrors,
