@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.10";
+const VERSION = "7.5.11";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1277,27 +1277,30 @@ async function processClosedPeriodAt(forcedStart = null) {
   saveState();
 
   const nextStart = start;
-  const top = state.leader;
-  const nextSlug = top.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
+  const cumulativeRanking = ranking();
+  const cumulativeTop = cumulativeRanking[0];
+  if (!cumulativeTop?.asset) {
+    log("PERIOD_ALERT_BLOCKED", {
+      periodKey,
+      reason:"no_cumulative_leader",
+      counts:state.counts
+    });
+    return;
+  }
+  const nextSlug = cumulativeTop.asset.toLowerCase() + "-updown-5m-" + Math.floor(nextStart / 1000);
 
   log("PERIOD_READY_TO_ALERT", {
-    periodKey, nextStart, leader:top, nextSlug,
+    periodKey, nextStart, leader:cumulativeTop, nextSlug,
     results:mergedResults, newResults, complete:newlyComplete, counts:state.counts
   });
 
-  // The score must choose the current 5m market direction, but a missing Gamma
-  // response must never block the Telegram alert.
-  // The next market URL is deterministic from the selected asset and period.
-  // Never replace it with Gamma's first/partial match: that can return a
-  // different asset and produce a link that contradicts NEXT.
-  const market = null;
+  // The market URL is deterministic from the same cumulative leader
+  // displayed in NEXT. Never use a stale state.leader or a partial Gamma match.
   const link = "https://polymarket.com/event/" + nextSlug;
 
   // Telegram shows the cumulative result from August 14, not only the
   // just-closed 5m period. The same cumulative leader determines NEXT
   // and the Polymarket link.
-  const cumulativeRanking = ranking();
-  const cumulativeTop = cumulativeRanking[0];
   const cumulativeDirection = cumulativeTop.score >= 0 ? "UP" : "DOWN";
   const lines = [
     "5M CHAINLINK TWAP 60s",
