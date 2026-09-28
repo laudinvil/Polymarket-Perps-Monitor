@@ -3,11 +3,10 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "5.0.0";
+const VERSION = "5.1.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
-const GAMMA = "https://gamma-api.polymarket.com";
 
 const ASSETS = [
   { key: "BTC", symbol: "btc/usd", slug: "btc-updown-5m" },
@@ -259,27 +258,6 @@ function ranking() {
     .sort((a,b) => Math.abs(b.score)-Math.abs(a.score) || a.asset.localeCompare(b.asset));
 }
 
-async function gammaMarket(slug) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const r = await fetch(GAMMA + "/markets?slug=" + encodeURIComponent(slug), {
-      signal: controller.signal, headers: { accept: "application/json" }
-    });
-    if (!r.ok) {
-      log("GAMMA_ERROR", { slug, status: r.status });
-      return null;
-    }
-    const data = await r.json();
-    const market = Array.isArray(data) ? data[0] || null : null;
-    log("GAMMA_RESULT", { slug, found: !!market, marketSlug: market?.slug || null });
-    return market;
-  } catch (e) {
-    log("GAMMA_ERROR", { slug, error: String(e.message || e) });
-    return null;
-  } finally { clearTimeout(timer); }
-}
-
 async function sendTelegram(text, kind = "PERIOD_ALERT") {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chat = process.env.TELEGRAM_CHAT_ID;
@@ -335,6 +313,8 @@ const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-chainlink-twap60-boundaries-v1";
 const HISTORY_PERIOD_MS = PERIOD_MS;
 const HISTORY_BATCH_SIZE = 10;
 const HISTORY_RETRY_MS = 5000;
+const CHAINLINK_MIN_REQUEST_INTERVAL_MS = 125; // <= 8 requests/sec at request start
+let chainlinkLastRequestAt = 0;
 const CHAINLINK_REST = process.env.CHAINLINK_REST_URL || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.CHAINLINK_API_KEY || process.env.API_KEY || "";
 const CHAINLINK_USER_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.CHAINLINK_USER_SECRET || process.env.USER_SECRET || "";
@@ -418,12 +398,19 @@ async function decodeChainlinkReport(report) {
   const exp=Number(decoded.expiresAt??report.expiresAt);
   return {exact:price,observationTimestamp:Number.isFinite(ots)?ots*1000:null,validFromTimestamp:Number.isFinite(vts)?vts*1000:null,expiresAt:Number.isFinite(exp)?exp*1000:null};
 }
+async function waitForChainlinkRateLimit() {
+  const now = Date.now();
+  const waitMs = Math.max(0, CHAINLINK_MIN_REQUEST_INTERVAL_MS - (now - chainlinkLastRequestAt));
+  if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+  chainlinkLastRequestAt = Date.now();
+}
 async function fetchHistoricalBoundary(timestampMs) {
   const client=await initChainlinkHistoricalClient();
   const feedIds=await discoverChainlinkTwap60Feeds();
   const targetSec=Math.floor(timestampMs/1000);
   for(let attempt=1;attempt<=5;attempt++) {
     try {
+      await waitForChainlinkRateLimit();
       const response=await client.getReportsBulk(ASSETS.map(a=>feedIds[a.key]),targetSec);
       const reports=Array.isArray(response)?response:(response?.reports||[]);
       const byFeed=new Map();
@@ -452,14 +439,27 @@ async function bootstrapHistoricalCounts() {
   if(historicalBootstrapRunning) return false;
   historicalBootstrapRunning=true;
   try {
-    state.historyBootstrap=state.historyBootstrap||{};
+    const previousHistory=state.historyBootstrap||{};
     const cutoffMs=currentPeriodStart(), targets=historyBoundaryTargets(cutoffMs), expectedPeriods=targets.length-1;
-    if(state.historyBootstrap.version===HISTORY_BOOTSTRAP_VERSION&&state.historyBootstrap.complete===true&&state.historyBootstrap.to===new Date(cutoffMs).toISOString()) {
+    const sameBaseline=previousHistory.version===HISTORY_BOOTSTRAP_VERSION && previousHistory.from===new Date(HISTORY_START_MS).toISOString();
+    if(sameBaseline && previousHistory.complete===true && previousHistory.to===new Date(cutoffMs).toISOString()) {
       log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE",{version:HISTORY_BOOTSTRAP_VERSION,periods:expectedPeriods,counts:state.counts}); return true;
     }
     state.counts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
     state.periods={}; state.periodAlerted={}; state.leader=null; state.lastProcessedPeriod=null;
-    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:false,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completedBoundaries:0,observations:0,source:"Chainlink Data Streams REST bulk TWAP60",startedAt:state.historyBootstrap.startedAt||nowIso()};
+    state.historyBootstrap={
+      ...previousHistory,
+      version:HISTORY_BOOTSTRAP_VERSION,
+      complete:false,
+      from:new Date(HISTORY_START_MS).toISOString(),
+      to:new Date(cutoffMs).toISOString(),
+      expectedPeriods,
+      completedBoundaries:previousHistory.completedBoundaries||0,
+      observations:previousHistory.observations||0,
+      boundaries:previousHistory.boundaries||{},
+      source:"Chainlink Data Streams REST bulk TWAP60",
+      startedAt:previousHistory.startedAt||nowIso()
+    };
     saveState(); snapshot("PRE_CHAINLINK_TWAP60_REBUILD");
     log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST bulk",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
     await discoverChainlinkTwap60Feeds();
