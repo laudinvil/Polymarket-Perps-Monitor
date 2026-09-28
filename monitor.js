@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.2";
+const VERSION = "4.1.3";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -299,13 +299,11 @@ async function processClosedPeriod() {
   const closedStart = start - PERIOD_MS;
   const periodKey = "period-" + Math.floor(closedStart / 1000);
 
-  const savedPeriod = state.periods[periodKey];
-  if (savedPeriod && Object.keys(savedPeriod).length >= ASSETS.length) return;
+  const savedPeriod = state.periods[periodKey] || {};
+  const savedCount = Object.keys(savedPeriod).length;
+  if (savedCount >= ASSETS.length) return;
 
-  // Partial periods remain retryable so late TWAP60 data can complete them.
-  if (savedPeriod && Object.keys(savedPeriod).length < ASSETS.length) {
-    delete state.periods[periodKey];
-    saveState();
+  if (savedCount > 0) {
     log("PERIOD_RETRY_PARTIAL", {
       periodKey,
       savedAssets: Object.keys(savedPeriod)
@@ -357,13 +355,28 @@ async function processClosedPeriod() {
     });
   }
 
+  const newResults = {};
   for (const asset of ASSETS) {
-    if (results[asset.key]) {
+    if (results[asset.key] && !savedPeriod[asset.key]) {
+      newResults[asset.key] = results[asset.key];
       state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
     }
   }
 
-  state.periods[periodKey] = results;
+  if (!Object.keys(newResults).length) {
+    log("PERIOD_WAIT", {
+      periodKey,
+      reason:"no_new_twap60_assets",
+      savedAssets:Object.keys(savedPeriod),
+      available:Object.keys(results),
+      retry:true
+    });
+    return;
+  }
+
+  const mergedResults = { ...savedPeriod, ...newResults };
+  const newlyComplete = Object.keys(mergedResults).length >= ASSETS.length;
+  state.periods[periodKey] = mergedResults;
   state.lastProcessedPeriod = periodKey;
   state.leader = ranking()[0];
   saveState();
@@ -374,7 +387,7 @@ async function processClosedPeriod() {
 
   log("PERIOD_READY_TO_ALERT", {
     periodKey, nextStart, leader:top, nextSlug,
-    results, counts:state.counts
+    results:mergedResults, newResults, complete:newlyComplete, counts:state.counts
   });
 
   const market = await gammaMarket(nextSlug);
@@ -384,11 +397,11 @@ async function processClosedPeriod() {
 
   const lines = [
     "5M CHAINLINK TWAP 60s", "",
-    ...ASSETS.filter(a => results[a.key]).map(a => {
-      const r = results[a.key];
+    ...ASSETS.filter(a => mergedResults[a.key]).map(a => {
+      const r = mergedResults[a.key];
       return a.key + " → " + r.winner + " (" + r.open.toFixed(6) + " → " + r.close.toFixed(6) + ")";
     }),
-    missing.length ? "MISSING: " + missing.map(x => x.asset).join(", ") : "",
+    newlyComplete ? "COMPLETE: 7/7" : "MISSING: " + ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key).join(", "),
     "",
     ...ranking().map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
@@ -398,7 +411,7 @@ async function processClosedPeriod() {
 
   const sent = await sendTelegram(lines.join("\n"), "PERIOD_ALERT");
   log("PERIOD_PROCESSED", {
-    periodKey, results, counts:state.counts, leader:top, telegram:sent,
+    periodKey, results:mergedResults, newResults, complete:newlyComplete, counts:state.counts, leader:top, telegram:sent,
     source:"crypto_prices_twap_sixty", marketSlug:market?.slug||null
   });
   snapshot("POST_PERIOD_" + periodKey);
