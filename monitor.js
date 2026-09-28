@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.5";
+const VERSION = "4.0.6";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -177,6 +177,7 @@ function connectRtds() {
       log("TWAP60_UPDATE", {
         asset: asset.key, symbol, observationTimestamp: ts, value, windowSeconds: 60
       });
+      sendOnlineAlert().catch(e => log("ONLINE_ALERT_ERROR", { error:String(e.message || e) }));
     }
   });
 
@@ -266,12 +267,13 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
 
 async function sendOnlineAlert() {
   if (onlineAlertSent) return;
-  if (!ASSETS.some(a => latest.get(a.key))) return;
+  const available = ASSETS.filter(a => latest.get(a.key));
+  if (!available.length) return;
 
   const lines = [
     "TWAP60 MONITOR ONLINE",
     "",
-    ...ASSETS.map(a => a.key + " " + latest.get(a.key).value.toFixed(6)),
+    ...available.map(a => a.key + " " + latest.get(a.key).value.toFixed(6)),
     "",
     "5M PERIOD ALERTS ACTIVE"
   ];
@@ -279,7 +281,7 @@ async function sendOnlineAlert() {
   const sent = await sendTelegram(lines.join("\n"), "MONITOR_ONLINE");
   if (sent) {
     onlineAlertSent = true;
-    log("MONITOR_ONLINE_ALERT_SENT");
+    log("MONITOR_ONLINE_ALERT_SENT", { available: available.map(a => a.key) });
   }
 }
 
@@ -385,7 +387,6 @@ async function processClosedPeriod() {
 async function poll() {
   if (!connected) connectRtds();
   try {
-    await sendOnlineAlert();
     await processClosedPeriod();
   } catch (e) {
     log("CYCLE_ERROR", { error:String(e.stack||e) });
