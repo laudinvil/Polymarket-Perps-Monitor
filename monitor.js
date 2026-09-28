@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.9";
+const VERSION = "7.5.10";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1388,7 +1388,11 @@ async function main() {
 
   startHealth();
 
-  historyReady = false;
+  // Reuse a previously completed persisted baseline immediately. This
+  // prevents a restart from creating an alert blackout while the validator
+  // checks the historical state in the background.
+  historyReady = !!state.historyBootstrap?.complete &&
+    state.historyBootstrap?.version === HISTORY_BOOTSTRAP_VERSION;
   state.strategy = "CHAINLINK_HISTORY_PLUS_RTDs_LIVE";
   connectRtds();
 
