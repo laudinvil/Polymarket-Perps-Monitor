@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.6.7";
+const VERSION = "4.6.8";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -330,7 +330,7 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-offset-v5";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-offset-v6";
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
 
 function parseJsonField(value, fallback = []) {
@@ -358,8 +358,10 @@ function resolvedWinner(market) {
 async function fetchHistoricalSeries(asset, cutoffMs) {
   const slug = SERIES_SLUGS[asset.key];
   const all = [];
-  const limit = 500;
+  const limit = 100;
   let offset = 0;
+  let pages = 0;
+  const maxPages = 100;
 
   while (true) {
     const params = new URLSearchParams();
@@ -377,6 +379,11 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
     const timer = setTimeout(() => controller.abort(), 10000);
 
     try {
+      if (pages >= maxPages) {
+        log("HISTORY_ERROR", { asset: asset.key, endpoint: "events", seriesSlug: slug, error: "max_pages_reached", pages });
+        break;
+      }
+      pages++;
       const r = await fetch(url, {
         signal: controller.signal,
         headers: { accept: "application/json" }
