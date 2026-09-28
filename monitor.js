@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.7.0";
+const MONITOR_VERSION = "2.7.2";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -479,10 +479,10 @@ async function verifyTwapSettlement(asset, market, periodStart) {
     },
     expected,
     marketWinner: actual,
-    match: actual === expected
+    match: actual ? actual === expected : null
   };
 
-  if (actual !== expected) {
+  if (actual && actual !== expected) {
     throw new Error("Chainlink mismatch: expected " + expected + ", market=" + actual);
   }
   return diagnostics;
