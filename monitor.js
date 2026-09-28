@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.3.0";
+const VERSION = "4.3.1";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -309,8 +309,8 @@ async function processClosedPeriod() {
   const missing = [];
 
   for (const asset of ASSETS) {
-    const open = pointNearBoundary(asset.key, closedStart, 120_000);
-    const close = pointNearBoundary(asset.key, closeBoundary, 120_000);
+    const open = pointNearBoundary(asset.key, closedStart, 180_000);
+    const close = pointNearBoundary(asset.key, closeBoundary, 180_000);
     if (!open || !close) {
       missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
@@ -337,7 +337,7 @@ async function processClosedPeriod() {
 
   if (!Object.keys(results).length) {
     log("PERIOD_WAIT", {
-      periodKey, reason:"no_twap60_boundaries_within_120s", missing, retry:true
+      periodKey, reason:"no_twap60_boundaries_within_180s", missing, retry:true
     });
     return;
   }
