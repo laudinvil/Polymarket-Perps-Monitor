@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "8.2.0";
+const VERSION = "8.2.1";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -132,8 +132,8 @@ function eventTime(e) {
 
 function sideLabel(side) {
   const s = String(side || "").toLowerCase();
-  if (s === "long_liquidated" || s === "long") return "LONG LIQUIDATED";
-  if (s === "short_liquidated" || s === "short") return "SHORT LIQUIDATED";
+  if (s === "long_liquidated" || s === "long") return "LONG";
+  if (s === "short_liquidated" || s === "short") return "SHORT";
   return String(side || "LIQUIDATED").toUpperCase();
 }
 
@@ -255,16 +255,11 @@ async function processFeed() {
     const price = formatPrice(event.price);
     const qty = formatQty(event.qty ?? event.size);
     const notional = formatUsd(event.notional);
-    const time = eventTime(event);
-
     const message = [
-      "MARGINPAD LIQUIDATION",
-      "",
       symbol + " " + side,
       "PRICE: " + price,
       "SIZE: " + qty,
-      "VALUE: " + notional,
-      time
+      "VALUE: " + notional
     ].join("\n");
 
     const sent = await sendTelegram(message);
