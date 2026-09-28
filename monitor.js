@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.2.3";
+const VERSION = "4.2.4";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -177,7 +177,6 @@ function connectRtds() {
       log("TWAP60_UPDATE", {
         asset: asset.key, symbol, observationTimestamp: ts, value, windowSeconds: 60
       });
-      sendOnlineAlert().catch(e => log("ONLINE_ALERT_ERROR", { error:String(e.message || e) }));
     }
   });
 
@@ -392,14 +391,22 @@ async function processClosedPeriod() {
   // contain all seven assets; partial results remain persisted and are merged
   // when the missing TWAP60 boundaries arrive.
   if (!newlyComplete) {
-    log("PERIOD_WAIT", {
-      periodKey,
-      reason:"period_partial_waiting_for_all_assets",
-      available:Object.keys(mergedResults),
-      missing:ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key),
-      counts:state.counts,
-      retry:true
-    });
+    // Avoid writing the same diagnostic every 10 seconds. Blitz has no
+    // request/credit meter, but unnecessary persistent log writes consume
+    // storage and I/O.
+    const waitSig = Object.keys(mergedResults).sort().join(",");
+    if (state.lastPartialWaitSignature !== periodKey + "|" + waitSig) {
+      state.lastPartialWaitSignature = periodKey + "|" + waitSig;
+      saveState();
+      log("PERIOD_WAIT", {
+        periodKey,
+        reason:"period_partial_waiting_for_all_assets",
+        available:Object.keys(mergedResults),
+        missing:ASSETS.filter(a => !mergedResults[a.key]).map(a => a.key),
+        counts:state.counts,
+        retry:true
+      });
+    }
     return;
   }
 
