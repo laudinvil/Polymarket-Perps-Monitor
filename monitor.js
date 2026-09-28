@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.8";
+const VERSION = "7.5.9";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -981,11 +981,14 @@ async function bootstrapHistoricalCounts() {
     const cutoffMs = currentPeriodStart();
     const targets = historyBoundaryTargets(cutoffMs);
     const expectedPeriods = targets.length - 1;
+    // A completed historical baseline remains valid after the clock moves
+    // forward. New 5m periods are handled by the live processor; do not rebuild
+    // the entire history every 5 minutes just because expectedPeriods increased.
     const sameBaseline =
       previousHistory.version === HISTORY_BOOTSTRAP_VERSION &&
       previousHistory.from === new Date(HISTORY_START_MS).toISOString() &&
-      Number(previousHistory.expectedPeriods || 0) === expectedPeriods &&
-      Number(previousHistory.completePeriods || 0) === expectedPeriods;
+      previousHistory.complete === true &&
+      Number(previousHistory.completePeriods || 0) === Number(previousHistory.expectedPeriods || 0);
 
     if (sameBaseline && previousHistory.complete === true) {
       log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE", {
