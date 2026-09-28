@@ -483,7 +483,7 @@ async function fetchHistoricalBoundaries(targets) {
 function historyBoundaryTargets(cutoffMs) {
   const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
 }
-async async function bootstrapHistoricalCounts() {
+async function bootstrapHistoricalCounts() {
   if(historicalBootstrapRunning) return false;
   historicalBootstrapRunning=true;
   try {
