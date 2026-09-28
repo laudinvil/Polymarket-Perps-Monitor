@@ -32,3 +32,4 @@ try {
   writeRuntime("BOOTSTRAP_REQUIRE_ERROR", { error: String(error && error.stack || error) });
   process.exit(1);
 }
+// Force fresh GHCR image after source verification.
