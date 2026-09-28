@@ -605,7 +605,7 @@ async function fetchGammaSeriesPage(seriesSlug, offset, cutoffMs) {
         closed: "true",
         order: "endDate",
         ascending: "true",
-        limit: "500",
+        limit: String(GAMMA_PAGE_SIZE),
         offset: String(offset),
         end_date_min: new Date(HISTORY_START_MS + PERIOD_MS).toISOString(),
         end_date_max: new Date(cutoffMs).toISOString()
@@ -703,8 +703,9 @@ async function fetchHistoricalMarketBaseline(cutoffMs) {
         expectedPeriods: expectedStarts.size
       });
 
-      if (events.length < 500) break;
-      offset += 500;
+      if (events.length === 0) break;
+      offset += events.length;
+      if (events.length < GAMMA_PAGE_SIZE) break;
     }
   }
 
