@@ -1,0 +1,2 @@
+Force Blitz Cloud redeploy of the current monitor after 7.5.13 alert fallback.
+Current runtime must be monitor.js VERSION 7.5.13 or newer.
