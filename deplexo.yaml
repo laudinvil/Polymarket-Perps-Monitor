@@ -1,4 +1,4 @@
 framework: node
-install: npm ci
+install: npm install
 start: node monitor.js
 port: 8080
