@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.1.9";
+const VERSION = "4.2.0";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -293,11 +293,10 @@ async function processClosedPeriod() {
 
   const savedPeriod = state.periods[periodKey] || {};
   const savedCount = Object.keys(savedPeriod).length;
-  const alreadyAlerted = !!state.periodAlerted?.[periodKey];
+  const alreadySent = !!state.periodAlerted?.[periodKey]?.sent;
 
-  // A complete period can still be unsent after a restart/version change.
-  // Do not return before giving the existing result one Telegram attempt.
-  if (savedCount >= ASSETS.length && alreadyAlerted) return;
+  // Once Telegram has confirmed delivery, this period is finished.
+  if (savedCount >= ASSETS.length && alreadySent) return;
 
   if (savedCount > 0) {
     log("PERIOD_RETRY_PARTIAL", {
@@ -365,9 +364,9 @@ async function processClosedPeriod() {
   const mergedResults = { ...savedPeriod, ...newResults };
   const newlyComplete = Object.keys(mergedResults).length >= ASSETS.length;
 
-  // A period may already contain results from an earlier version/run but have
-  // never produced a Telegram alert. Do not wait for another asset to arrive.
-  if (!Object.keys(newResults).length && alreadyAlerted) {
+  // If there is no new RTDS data but this period is already saved, still retry
+  // Telegram delivery. Only a confirmed send ends processing.
+  if (!Object.keys(newResults).length && !newlyComplete && savedCount === 0) {
     log("PERIOD_WAIT", {
       periodKey,
       reason:"no_new_twap60_assets",
