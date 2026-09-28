@@ -404,33 +404,72 @@ async function waitForChainlinkRateLimit() {
   if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
   chainlinkLastRequestAt = Date.now();
 }
-async function fetchHistoricalBoundary(timestampMs) {
+async function fetchHistoricalBoundaryPage(feedId, startSec, limit=1000) {
   const client=await initChainlinkHistoricalClient();
-  const feedIds=await discoverChainlinkTwap60Feeds();
-  const targetSec=Math.floor(timestampMs/1000);
   for(let attempt=1;attempt<=5;attempt++) {
     try {
       await waitForChainlinkRateLimit();
-      const response=await client.getReportsBulk(ASSETS.map(a=>feedIds[a.key]),targetSec);
-      const reports=Array.isArray(response)?response:(response?.reports||[]);
-      const byFeed=new Map();
-      for(const report of reports) byFeed.set(String(report.feedID||report.feedId||"").toLowerCase(),report);
-      const values={};
-      for(const asset of ASSETS) {
-        const report=byFeed.get(String(feedIds[asset.key]).toLowerCase());
-        if(!report) continue;
-        const decoded=await decodeChainlinkReport(report);
-        const covered=(decoded.validFromTimestamp==null||decoded.validFromTimestamp<=timestampMs)&&(decoded.expiresAt==null||timestampMs<=decoded.expiresAt);
-        if(covered) values[asset.key]=decoded;
-      }
-      return values;
+      const response=await client.getReportsPage(feedId,startSec,limit);
+      return Array.isArray(response)?response:(response?.reports||[]);
     } catch(e) {
-      log("CHAINLINK_HISTORY_FETCH_RETRY",{timestamp:new Date(timestampMs).toISOString(),targetSec,attempt,error:String(e.message||e)});
+      log("CHAINLINK_HISTORY_PAGE_RETRY",{feedId,startSec,limit,attempt,error:String(e.message||e)});
       if(attempt===5) throw e;
       await new Promise(resolve=>setTimeout(resolve,HISTORY_RETRY_MS*attempt));
     }
   }
-  return {};
+  return [];
+}
+async function fetchHistoricalBoundaries(targets) {
+  const client=await initChainlinkHistoricalClient();
+  const feedIds=await discoverChainlinkTwap60Feeds();
+  const boundaryMaps=Object.fromEntries(ASSETS.map(a=>[a.key,new Map()]));
+  const cutoffSec=Math.floor(targets[targets.length-1]/1000);
+  const startSec=Math.floor(HISTORY_START_MS/1000);
+  const targetSet=new Set(targets);
+  const LIMIT=1000;
+
+  for (const asset of ASSETS) {
+    let cursor=startSec;
+    let pages=0;
+    let lastObservationSec=0;
+    log("HISTORY_ASSET_START",{asset:asset.key,feedId:feedIds[asset.key],startSec,cutoffSec});
+    while(cursor<=cutoffSec) {
+      const reports=await fetchHistoricalBoundaryPage(feedIds[asset.key],cursor,LIMIT);
+      pages++;
+      if(!reports.length) break;
+      let maxObservationSec=lastObservationSec;
+      for(const report of reports) {
+        const decoded=await decodeChainlinkReport(report);
+        const ots=decoded.observationTimestamp;
+        if(!Number.isFinite(ots)) continue;
+        const sec=Math.floor(ots/1000);
+        if(sec>maxObservationSec) maxObservationSec=sec;
+        const covered=(decoded.validFromTimestamp==null||decoded.validFromTimestamp<=ots)&&(decoded.expiresAt==null||ots<=decoded.expiresAt);
+        if(!covered || sec<startSec || sec>cutoffSec) continue;
+        const ts=sec*1000;
+        if(targetSet.has(ts)) boundaryMaps[asset.key].set(ts,decoded);
+      }
+      if(maxObservationSec<=lastObservationSec) {
+        throw new Error("CHAINLINK_HISTORY_PAGINATION_STALLED:"+asset.key+":"+cursor);
+      }
+      lastObservationSec=maxObservationSec;
+      if(lastObservationSec>=cutoffSec) break;
+      cursor=lastObservationSec+1;
+      if(pages%10===0) log("HISTORY_ASSET_PROGRESS",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,lastObservationSec});
+    }
+    log("HISTORY_ASSET_COMPLETE",{asset:asset.key,pages,boundaries:boundaryMaps[asset.key].size,expectedBoundaries:targets.length});
+  }
+
+  const valuesByBoundary={};
+  for(const ts of targets) {
+    const values={};
+    for(const asset of ASSETS) {
+      const v=boundaryMaps[asset.key].get(ts);
+      if(v) values[asset.key]=v;
+    }
+    valuesByBoundary[String(ts)]=values;
+  }
+  return valuesByBoundary;
 }
 function historyBoundaryTargets(cutoffMs) {
   const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
@@ -466,27 +505,19 @@ async function bootstrapHistoricalCounts() {
     const boundaryCache=new Map();
     const persistedBoundaries=state.historyBootstrap.boundaries||{};
     for(const [ts,values] of Object.entries(persistedBoundaries)) boundaryCache.set(Number(ts),values);
-    let nextIndex=0;
-    while(nextIndex<targets.length && boundaryCache.has(targets[nextIndex])) nextIndex++;
-    while(nextIndex<targets.length) {
-      const batch=[];
-      for(let i=nextIndex;i<targets.length&&batch.length<HISTORY_BATCH_SIZE;i++) {
-        if(!boundaryCache.has(targets[i])) batch.push(targets[i]);
-      }
-      if(!batch.length) { nextIndex++; continue; }
-      const results=await Promise.all(batch.map(async ts=>({ts,values:await fetchHistoricalBoundary(ts)})));
-      for(const item of results) {
-        boundaryCache.set(item.ts,item.values);
+    const missingTargets=targets.filter(ts=>!boundaryCache.has(ts));
+    if(missingTargets.length) {
+      log("HISTORY_PAGE_BOOTSTRAP_START",{missingBoundaries:missingTargets.length,totalBoundaries:targets.length});
+      const fetched=await fetchHistoricalBoundaries(missingTargets);
+      for(const [ts,values] of Object.entries(fetched)) {
+        boundaryCache.set(Number(ts),values);
         state.historyBootstrap.boundaries=state.historyBootstrap.boundaries||{};
-        state.historyBootstrap.boundaries[String(item.ts)]=item.values;
+        state.historyBootstrap.boundaries[ts]=values;
       }
-      while(nextIndex<targets.length&&boundaryCache.has(targets[nextIndex])) nextIndex++;
-      state.historyBootstrap.completedBoundaries=nextIndex;
+      state.historyBootstrap.completedBoundaries=targets.filter(ts=>boundaryCache.has(ts)).length;
       state.historyBootstrap.observations=Array.from(boundaryCache.values()).reduce((n,x)=>n+Object.keys(x).length,0);
-      if(nextIndex%100===0||nextIndex===targets.length) {
-        saveState();
-        log("HISTORY_PROGRESS",{completedBoundaries:nextIndex,totalBoundaries:targets.length,percent:Number((nextIndex/targets.length*100).toFixed(2))});
-      }
+      saveState();
+      log("HISTORY_PROGRESS",{completedBoundaries:state.historyBootstrap.completedBoundaries,totalBoundaries:targets.length,percent:Number((state.historyBootstrap.completedBoundaries/targets.length*100).toFixed(2))});
     }
     const historicalCounts=Object.fromEntries(ASSETS.map(a=>[a.key,0]));
     const historicalPeriods={}, assetCoverage=Object.fromEntries(ASSETS.map(a=>[a.key,{periods:0,missing:0}])), invalidPeriods=[];
