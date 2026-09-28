@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.4.0";
+const MONITOR_VERSION = "2.5.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -537,20 +537,41 @@ async function fetchMarketBySlug(slug) {
   return market;
 }
 
-async function getBackfillPage(url, pages, offset, state, counts) {
-  try {
-    return await getJson(url);
-  } catch (e) {
-    const reason = String(e.message || e);
-    log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
-    state.counts = counts;
-    state.initialized = true;
-    state.lastBackfillAt = nowIso();
-    state.backfillIncomplete = true;
-    await saveState(state);
-    log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason });
-    return null;
+async function getBackfillPage(urls, pages, offset, state, counts) {
+  const errors = [];
+  for (const url of urls) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const rows = await getJson(url);
+        if (Array.isArray(rows)) {
+          log("BACKFILL_SOURCE_OK", { pages, offset, attempt, source: url.includes("q=") ? "filtered" : "fallback", rows: rows.length });
+          return rows;
+        }
+        errors.push("invalid_response");
+      } catch (e) {
+        const reason = String(e.message || e);
+        errors.push(reason);
+        log("BACKFILL_RETRY", {
+          pages,
+          offset,
+          attempt,
+          source: url.includes("q=") ? "filtered" : "fallback",
+          error: reason
+        });
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
   }
+
+  const reason = errors.join(" | ").slice(0, 1000) || "no rows";
+  log("BACKFILL_PAGE_ERROR", { pages, offset, error: reason });
+  state.counts = counts;
+  state.initialized = true;
+  state.lastBackfillAt = nowIso();
+  state.backfillIncomplete = true;
+  await saveState(state);
+  log("BACKFILL_PARTIAL_DONE", { pages, offset, counts, reason });
+  return null;
 }
 
 async function backfill(state) {
@@ -568,11 +589,15 @@ async function backfill(state) {
   const counts = Object.fromEntries(ASSETS.map(a => [a.key, 0]));
 
   while (true) {
-    const url = API + "/markets?closed=true&tag_slug=crypto&q=" + encodeURIComponent("Up or Down") +
+    const base = API + "/markets?closed=true&tag_slug=crypto" +
       "&start_date_min=" + encodeURIComponent(new Date(START_MS).toISOString()) +
       "&limit=100&offset=" + offset + "&order=endDate&ascending=true";
+    const urls = [
+      base + "&q=" + encodeURIComponent("Up or Down"),
+      base
+    ];
 
-    const rows = await getBackfillPage(url, pages, offset, state, counts);
+    const rows = await getBackfillPage(urls, pages, offset, state, counts);
     if (rows === null) return state;
     if (!Array.isArray(rows) || rows.length === 0) break;
     pages++;
