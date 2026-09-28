@@ -321,17 +321,17 @@ function startHealth() {
 }
 
 async function poll() {
-  if (pollRunning) {
-    log("POLL_SKIPPED", { reason: "previous_poll_still_running" });
-    return;
-  }
+  if (pollRunning) return;
   pollRunning = true;
+  const started = Date.now();
   try {
     await processFeed();
   } catch (e) {
     log("POLL_ERROR", { error: String(e.stack || e) });
   } finally {
     pollRunning = false;
+    const elapsedMs = Date.now() - started;
+    setTimeout(poll, Math.max(0, POLL_MS - elapsedMs));
   }
 }
 
@@ -366,7 +366,6 @@ async function main() {
 
   startHealth();
   await poll();
-  setInterval(poll, POLL_MS);
   setInterval(() => {
     log("HEARTBEAT", runtimeDiagnostics());
   }, 60_000);
