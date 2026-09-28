@@ -712,17 +712,38 @@ async function processClosedPeriod(state) {
           log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "market_not_found", slug });
           return;
         }
-        const w = winnerOf(m);
-        if (!w) {
-          log("PERIOD_WAIT", { periodKey, asset: asset.key, reason: "winner_not_final", slug });
-          return;
-        }
         if (!isTargetMarket(m, asset)) {
           log("PERIOD_REJECTED", { periodKey, asset: asset.key, reason: "not_verified_twap60", slug });
           return;
         }
-        const chainlink = await verifyTwapSettlement(asset, m, periodStart);
-        results[asset.key] = { winner: w, chainlink };
+        const marketWinner = winnerOf(m);
+        let chainlink;
+        try {
+          chainlink = await verifyTwapSettlement(asset, m, periodStart);
+        } catch (e) {
+          log("PERIOD_WAIT", {
+            periodKey,
+            asset: asset.key,
+            reason: "chainlink_settlement_unavailable",
+            slug,
+            marketWinner,
+            error: String(e.message || e)
+          });
+          return;
+        }
+        const w = chainlink.expected;
+        if (marketWinner && marketWinner !== w) {
+          log("PERIOD_ERROR", {
+            periodKey,
+            asset: asset.key,
+            reason: "chainlink_market_winner_mismatch",
+            slug,
+            chainlinkWinner: w,
+            marketWinner
+          });
+          return;
+        }
+        results[asset.key] = { winner: w, marketWinner: marketWinner || null, chainlink };
       } catch (e) {
         log("PERIOD_ERROR", { periodKey, asset: asset.key, error: String(e.message || e) });
         return;
