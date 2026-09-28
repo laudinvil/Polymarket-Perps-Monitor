@@ -9,7 +9,7 @@ async function getChainlinkDecoder() {
 }
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.2.0";
+const MONITOR_VERSION = "2.3.0";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -64,6 +64,7 @@ function startHealthServer() {
         lastProcessedPeriod: runtimeState?.lastProcessedPeriod || null,
         leader: runtimeState?.leader || null,
         counts: runtimeState?.counts || Object.fromEntries(ASSETS.map(a => [a.key, 0])),
+        uptimeSec: Math.floor(process.uptime()),
         updatedAt: runtimeState?.updatedAt || null
       };
       res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -573,12 +574,29 @@ async function sendTelegram(text) {
   const chat = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing");
 
-  const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: false })
-  });
-  if (!r.ok) throw new Error("Telegram HTTP " + r.status);
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: false }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (r.ok) return;
+      const body = await r.text().catch(() => "");
+      lastError = new Error("Telegram HTTP " + r.status + (body ? " " + body.slice(0, 200) : ""));
+      if (r.status !== 429 && r.status < 500) break;
+      await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    } catch (e) {
+      lastError = e;
+      await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+    }
+  }
+  throw lastError || new Error("Telegram send failed");
 }
 
 async function persistPeriod(periodKey, periodStart, results, state) {
