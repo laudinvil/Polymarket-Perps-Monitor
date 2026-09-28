@@ -331,8 +331,10 @@ async function sendOnlineAlert() {
 
 
 const HISTORY_START_MS = Date.UTC(2026, 7, 14);
-const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-keyset-v10-500-gated";
+const HISTORY_BOOTSTRAP_VERSION = "2026-08-14-gamma-events-daily-windows-v11";
 const GAMMA_MIN_INTERVAL_MS = 750;
+const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EXPECTED_MIN_PERIODS = 10_000;
 let gammaNextRequestAt = 0;
 const SERIES_SLUGS = Object.fromEntries(ASSETS.map(a => [a.key, a.key.toLowerCase() + "-up-or-down-5m"]));
 
@@ -369,39 +371,30 @@ async function gammaFetch(url, options = {}) {
 async function fetchHistoricalSeries(asset, cutoffMs) {
   const slug = SERIES_SLUGS[asset.key];
   const all = [];
-  const limit = 500;
-  let afterCursor = null;
-  let pages = 0;
-  const maxPages = 100;
+  let windowStart = HISTORY_START_MS;
+  let windows = 0;
 
-  // Gamma offset pagination is deliberately not used here. The public
-  // keyset endpoint is the supported way to traverse beyond the 2,000-row
-  // offset boundary and avoids silently truncating the historical series.
-  while (true) {
+  // Do NOT rely on Gamma keyset pagination for the historical backfill.
+  // Gamma has had documented keyset cursor issues. Instead split the history
+  // into one-day windows. A 5m series has ~288 events/day, safely below the
+  // public 500-row page limit, so each window is independently complete.
+  while (windowStart < cutoffMs) {
+    const windowEnd = Math.min(windowStart + HISTORY_WINDOW_MS, cutoffMs);
     const params = new URLSearchParams();
     params.set("series_slug", slug);
     params.set("closed", "true");
-    params.set("start_date_min", new Date(HISTORY_START_MS).toISOString());
-    params.set("start_date_max", new Date(cutoffMs).toISOString());
+    params.set("start_date_min", new Date(windowStart).toISOString());
+    params.set("start_date_max", new Date(windowEnd).toISOString());
     params.set("order", "startDate");
     params.set("ascending", "true");
-    params.set("limit", String(limit));
-    if (afterCursor) params.set("after_cursor", afterCursor);
+    params.set("limit", "500");
 
-    const url = GAMMA + "/events/keyset?" + params.toString();
+    const url = GAMMA + "/events?" + params.toString();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
 
     try {
-      if (pages >= maxPages) {
-        log("HISTORY_ERROR", {
-          asset: asset.key, endpoint: "events/keyset", seriesSlug: slug,
-          error: "max_pages_reached", pages
-        });
-        break;
-      }
-
-      pages++;
+      windows++;
       const r = await gammaFetch(url, {
         signal: controller.signal,
         headers: { accept: "application/json" }
@@ -412,12 +405,13 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         log("HISTORY_ERROR", {
           asset: asset.key,
           status: r.status,
-          endpoint: "events/keyset",
+          endpoint: "events",
           seriesSlug: slug,
-          page: pages,
+          windowStart: new Date(windowStart).toISOString(),
+          windowEnd: new Date(windowEnd).toISOString(),
           body: body.slice(0, 500)
         });
-        break;
+        return [];
       }
 
       const data = await r.json();
@@ -425,26 +419,39 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         ? data
         : (Array.isArray(data?.events) ? data.events : []);
 
-      const nextCursor = data?.next_cursor || data?.nextCursor || null;
-
-      log("HISTORY_PAGE", {
+      log("HISTORY_WINDOW", {
         asset: asset.key,
         seriesSlug: slug,
-        endpoint: "events/keyset",
-        page: pages,
+        endpoint: "events",
+        window: windows,
+        windowStart: new Date(windowStart).toISOString(),
+        windowEnd: new Date(windowEnd).toISOString(),
         rows: events.length,
+        hasMore: data?.has_more === true,
         firstSlug: events[0]?.slug || null,
-        lastSlug: events[events.length - 1]?.slug || null,
-        hasNextCursor: !!nextCursor
+        lastSlug: events[events.length - 1]?.slug || null
       });
 
-      if (!events.length) break;
+      // More than 500 rows means the daily window assumption was violated.
+      // Fail closed rather than silently dropping historical periods.
+      if (events.length >= 500 || data?.has_more === true) {
+        log("HISTORY_ERROR", {
+          asset: asset.key,
+          endpoint: "events",
+          error: "daily_window_not_complete",
+          windowStart: new Date(windowStart).toISOString(),
+          windowEnd: new Date(windowEnd).toISOString(),
+          rows: events.length,
+          hasMore: data?.has_more === true
+        });
+        return [];
+      }
 
       for (const event of events) {
         const startMs = Date.parse(event.startDate || event.eventStartTime || event.startTime || "");
         const endMs = Date.parse(event.endDate || event.endTime || "");
         if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
-        if (startMs < HISTORY_START_MS || startMs >= cutoffMs) continue;
+        if (startMs < windowStart || startMs >= windowEnd || startMs < HISTORY_START_MS || startMs >= cutoffMs) continue;
 
         const markets = Array.isArray(event.markets) ? event.markets : [];
         const market = markets.find(m => resolvedWinner(m)) || markets[0] || event;
@@ -459,34 +466,38 @@ async function fetchHistoricalSeries(asset, cutoffMs) {
         });
       }
 
-      if (!nextCursor || events.length < limit) break;
-      if (nextCursor === afterCursor) {
-        log("HISTORY_ERROR", {
-          asset: asset.key,
-          endpoint: "events/keyset",
-          seriesSlug: slug,
-          error: "cursor_did_not_advance",
-          page: pages
-        });
-        break;
-      }
-      afterCursor = nextCursor;
+      windowStart = windowEnd;
     } catch (e) {
       log("HISTORY_ERROR", {
         asset: asset.key,
         error: String(e.message || e),
-        endpoint: "events/keyset",
+        endpoint: "events",
         seriesSlug: slug,
-        page: pages
+        windowStart: new Date(windowStart).toISOString(),
+        windowEnd: new Date(windowEnd).toISOString()
       });
-      break;
+      return [];
     } finally {
       clearTimeout(timer);
     }
   }
 
+  // A full Aug-14 -> current backfill should contain thousands of 5m periods.
+  // Never apply a tiny/truncated history such as +11/-7 as the baseline.
+  if (all.length < EXPECTED_MIN_PERIODS) {
+    log("HISTORY_ERROR", {
+      asset: asset.key,
+      endpoint: "events",
+      error: "historical_series_too_short",
+      periods: all.length,
+      expectedMinimum: EXPECTED_MIN_PERIODS
+    });
+    return [];
+  }
+
   return all;
 }
+
 async function bootstrapHistoricalCounts() {
   state.historyBootstrap = state.historyBootstrap || {};
   if (state.historyBootstrap.version === HISTORY_BOOTSTRAP_VERSION && state.historyBootstrap.complete === true) {
