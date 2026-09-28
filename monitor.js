@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.5";
+const VERSION = "7.5.6";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1243,6 +1243,20 @@ async function processClosedPeriodAt(forcedStart = null) {
         retry:true
       });
     }
+    return;
+  }
+
+  // A cumulative alert is only valid after the authoritative historical
+  // baseline has completed. Keep the complete live period persisted so it can
+  // be alerted immediately after bootstrap finishes, but never send a zero or
+  // partial cumulative baseline.
+  if (!historicalReady) {
+    log("PERIOD_ALERT_DEFERRED_HISTORY", {
+      periodKey,
+      reason:"historical_baseline_not_ready",
+      complete:newlyComplete,
+      counts:state.counts
+    });
     return;
   }
 
