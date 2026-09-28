@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.8";
+const VERSION = "7.3.9";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -167,6 +167,10 @@ function connectAssetRtds(asset) {
       windowSeconds: 60
     });
 
+    if (ASSETS.every(a => latest.has(a.key))) {
+      sendTelegramDiagnosticOnce().catch(e => log("TELEGRAM_DIAGNOSTIC_ERROR", {error:String(e.message || e)}));
+    }
+
     clearInterval(heartbeatTimers.get(asset.key));
     heartbeatTimers.set(asset.key, setInterval(() => {
       const current = sockets.get(asset.key);
@@ -327,11 +331,27 @@ async function sendTelegram(text, kind = "PERIOD_ALERT") {
 }
 
 async function sendOnlineAlert() {
-  // Startup connectivity is logged only; Telegram is reserved for actual period alerts.
   log("ONLINE_READY", {
     assets:Object.fromEntries(ASSETS.map(a => [a.key, latest.get(a.key) || null]))
   });
   return false;
+}
+
+async function sendTelegramDiagnosticOnce() {
+  state.telegramDiagnosticSent = !!state.telegramDiagnosticSent;
+  if (state.telegramDiagnosticSent) return;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) {
+    log("TELEGRAM_DIAGNOSTIC_SKIPPED", { reason:"not_configured" });
+    return;
+  }
+  const text = "TWAP MONITOR TEST\\nVERSION: " + VERSION + "\\nRTDS: CONNECTED\\nTELEGRAM: OK";
+  const sent = await sendTelegram(text, "DIAGNOSTIC_TEST");
+  if (sent) {
+    state.telegramDiagnosticSent = true;
+    saveState();
+  }
 }
 
 
