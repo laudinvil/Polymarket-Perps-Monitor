@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.3.6";
+const VERSION = "7.3.7";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -856,14 +856,12 @@ async function bootstrapHistoricalCounts() {
       previousHistory.version === HISTORY_BOOTSTRAP_VERSION &&
       previousHistory.from === new Date(HISTORY_START_MS).toISOString();
 
-    if (
-      sameBaseline &&
-      previousHistory.complete === true &&
-      previousHistory.to === new Date(cutoffMs).toISOString()
-    ) {
+    if (sameBaseline && previousHistory.complete === true) {
       log("HISTORY_BOOTSTRAP_ALREADY_COMPLETE", {
         version: HISTORY_BOOTSTRAP_VERSION,
-        periods: expectedPeriods,
+        storedTo: previousHistory.to || null,
+        currentTo: new Date(cutoffMs).toISOString(),
+        periods: Object.keys(state.periods || {}).length,
         counts: state.counts
       });
       return true;
