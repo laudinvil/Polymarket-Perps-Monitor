@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "7.5.4";
+const VERSION = "7.5.5";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
@@ -1381,7 +1381,7 @@ async function main() {
 
   // Historical data is rebuilt/persisted separately from the live RTDS stream.
   // Health and RTDS stay online while the REST bootstrap runs.
-  bootstrapHistoricalCounts()
+  const runHistoryBootstrap = () => bootstrapHistoricalCounts()
     .then(ok => {
       historyReady = !!ok;
       log("HISTORY_BOOTSTRAP_RESULT", {
@@ -1395,6 +1395,13 @@ async function main() {
       historyReady = false;
       log("HISTORY_BOOTSTRAP_FATAL",{error:String(e.stack||e),retry:true});
     });
+
+  // A transient Gamma/API failure must not permanently disable the historical
+  // baseline. Retry automatically; the running guard prevents overlap.
+  runHistoryBootstrap();
+  setInterval(() => {
+    if (!historyReady && !historicalBootstrapRunning) runHistoryBootstrap();
+  }, 30_000);
 
   await poll();
   setInterval(poll, POLL_MS);
