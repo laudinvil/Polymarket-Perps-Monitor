@@ -3,13 +3,31 @@ const path = require("path");
 const { Client } = require("pg");
 const http = require("http");
 let chainlinkSdkPromise = null;
+let chainlinkClientPromise = null;
 async function getChainlinkDecoder() {
   if (!chainlinkSdkPromise) chainlinkSdkPromise = import("@chainlink/data-streams-sdk");
   return chainlinkSdkPromise;
 }
+async function getChainlinkClient() {
+  if (!chainlinkClientPromise) {
+    chainlinkClientPromise = getChainlinkDecoder().then(({ createClient }) => {
+      if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) throw new Error("Chainlink credentials missing");
+      return createClient({
+        apiKey: CHAINLINK_API_KEY,
+        userSecret: CHAINLINK_API_SECRET,
+        endpoint: CHAINLINK_ENDPOINT,
+        wsEndpoint: "wss://ws.dataengine.chain.link",
+        timeout: 8000,
+        retryAttempts: 2,
+        retryDelay: 500
+      });
+    });
+  }
+  return chainlinkClientPromise;
+}
 
 const API = "https://gamma-api.polymarket.com";
-const MONITOR_VERSION = "2.8.1";
+const MONITOR_VERSION = "2.8.2";
 const CHAINLINK_ENDPOINT = process.env.CHAINLINK_ENDPOINT || "https://api.dataengine.chain.link";
 const CHAINLINK_API_KEY = process.env.CHAINLINK_CLIENT_ID || process.env.STREAMS_API_KEY || process.env.CHAINLINK_API_KEY || "";
 const CHAINLINK_API_SECRET = process.env.CHAINLINK_CLIENT_SECRET || process.env.STREAMS_API_SECRET || process.env.CHAINLINK_API_SECRET || "";
@@ -394,16 +412,42 @@ async function discoverChainlinkFeeds() {
   if (!CHAINLINK_API_KEY || !CHAINLINK_API_SECRET) {
     throw new Error("Chainlink credentials missing");
   }
-  const data = await chainlinkJsonDirect("/api/v1/discovery?asset_class=Crypto&quote_asset=USD&status=live&hidden=true");
-  const feeds = Array.isArray(data?.feeds) ? data.feeds : [];
-  chainlinkDiscoveryCache = { at: now, feeds };
-  log("CHAINLINK_DISCOVERY", {
-    feeds: feeds.length,
-    twap60: feeds.filter(f => /twap.*60|60.*twap/i.test(String(f.name || ""))).map(f => ({ name: f.name, feedId: f.feedId, schemaVersion: f.schemaVersion }))
-  });
-  return feeds;
-}
 
+  let feeds = [];
+  let source = "sdk";
+  try {
+    const client = await getChainlinkClient();
+    const listed = await client.listFeeds();
+    feeds = Array.isArray(listed) ? listed : [];
+  } catch (error) {
+    source = "rest";
+    log("CHAINLINK_SDK_DISCOVERY_ERROR", { error: error.message });
+  }
+
+  if (!feeds.length) {
+    const data = await chainlinkJsonDirect("/api/v1/discovery?status=live&hidden=true");
+    feeds = Array.isArray(data?.feeds) ? data.feeds : [];
+  }
+
+  const normalized = feeds.map(f => ({
+    name: f.name,
+    feedId: f.feedId || f.feedID,
+    baseAsset: f.baseAsset || f.base_asset,
+    quoteAsset: f.quoteAsset || f.quote_asset,
+    attributeType: f.attributeType || f.attribute_type,
+    feedType: f.feedType || f.feed_type,
+    schemaVersion: f.schemaVersion
+  }));
+  chainlinkDiscoveryCache = { at: now, feeds: normalized };
+  log("CHAINLINK_DISCOVERY", {
+    source,
+    feeds: normalized.length,
+    cryptoUsd: normalized
+      .filter(f => String(f.quoteAsset || "").toUpperCase() === "USD" && String(f.baseAsset || "").length)
+      .map(f => ({ baseAsset: f.baseAsset, name: f.name, feedId: f.feedId, attributeType: f.attributeType, feedType: f.feedType, schemaVersion: f.schemaVersion }))
+  });
+  return normalized;
+}
 async function resolveTwap60Feed(asset) {
   const explicit = process.env["CHAINLINK_FEED_" + asset.key] || process.env["CHAINLINK_TWAP60_" + asset.key];
   if (explicit) return { feedId: explicit, source: "env" };
@@ -696,7 +740,7 @@ async function backfill(state) {
     for (let i = 1; i < boundaries.length; i++) {
       const closeTs = boundaries[i];
       const openTs = boundaries[i - 1];
-      const periodKey = "period-" + openTs;
+      const periodKey = "period-" + asset.key + "-" + openTs;
       if (processed.has(periodKey)) continue;
 
       const openReport = boundaryReports.get(openTs);
