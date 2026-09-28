@@ -1,6 +1,9 @@
 name: Sports Breakout Monitor
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
   schedule:
     - cron: "7 */6 * * *"
