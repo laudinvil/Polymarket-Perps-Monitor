@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "4.0.2";
+const VERSION = "4.0.3";
 const POLL_MS = 10_000;
 const PERIOD_MS = 300_000;
 const RTDS_URL = "wss://ws-live-data.polymarket.com";
@@ -284,8 +284,8 @@ async function processClosedPeriod() {
   const missing = [];
 
   for (const asset of ASSETS) {
-    const open = pointAtOrBefore(asset.key, closedStart, 20_000);
-    const close = pointAtOrBefore(asset.key, closeBoundary, 20_000);
+    const open = pointAtOrBefore(asset.key, closedStart, 60_000);
+    const close = pointAtOrBefore(asset.key, closeBoundary, 60_000);
     if (!open || !close) {
       missing.push({ asset:asset.key, open:!!open, close:!!close, latest:latest.get(asset.key)||null });
       continue;
@@ -297,14 +297,28 @@ async function processClosedPeriod() {
     };
   }
 
-  if (missing.length) {
+  if (!Object.keys(results).length) {
     log("PERIOD_WAIT", {
-      periodKey, reason:"missing_twap60_boundary", missing, retry:true
+      periodKey, reason:"no_twap60_boundaries", missing, retry:true
     });
     return;
   }
 
-  for (const asset of ASSETS) state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
+  if (missing.length) {
+    log("PERIOD_PARTIAL", {
+      periodKey,
+      reason:"some_assets_missing_boundary",
+      missing,
+      available:Object.keys(results),
+      alerting:true
+    });
+  }
+
+  for (const asset of ASSETS) {
+    if (results[asset.key]) {
+      state.counts[asset.key] += results[asset.key].winner === "Up" ? 1 : -1;
+    }
+  }
 
   state.periods[periodKey] = results;
   state.lastProcessedPeriod = periodKey;
@@ -327,10 +341,11 @@ async function processClosedPeriod() {
 
   const lines = [
     "5M CHAINLINK TWAP 60s", "",
-    ...ASSETS.map(a => {
+    ...ASSETS.filter(a => results[a.key]).map(a => {
       const r = results[a.key];
       return a.key + " → " + r.winner + " (" + r.open.toFixed(6) + " → " + r.close.toFixed(6) + ")";
     }),
+    missing.length ? "MISSING: " + missing.map(x => x.asset).join(", ") : "",
     "",
     ...ranking().map(x => x.asset + ": " + (x.score >= 0 ? "+" : "") + x.score),
     "",
