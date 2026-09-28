@@ -483,7 +483,7 @@ async function fetchHistoricalBoundaries(targets) {
 function historyBoundaryTargets(cutoffMs) {
   const out=[]; for(let ts=HISTORY_START_MS;ts<=cutoffMs;ts+=HISTORY_PERIOD_MS) out.push(ts); return out;
 }
-async function bootstrapHistoricalCounts() {
+async async function bootstrapHistoricalCounts() {
   if(historicalBootstrapRunning) return false;
   historicalBootstrapRunning=true;
   try {
@@ -505,11 +505,11 @@ async function bootstrapHistoricalCounts() {
       completedBoundaries:previousHistory.completedBoundaries||0,
       observations:previousHistory.observations||0,
       boundaries:previousHistory.boundaries||{},
-      source:"Chainlink Data Streams REST bulk TWAP60",
+      source:"Chainlink Data Streams REST paginated TWAP60",
       startedAt:previousHistory.startedAt||nowIso()
     };
     saveState(); snapshot("PRE_CHAINLINK_TWAP60_REBUILD");
-    log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST bulk",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
+    log("HISTORY_BOOTSTRAP_START",{version:HISTORY_BOOTSTRAP_VERSION,source:"Chainlink Data Streams REST paginated",from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),boundaries:targets.length,periods:expectedPeriods,concurrency:HISTORY_BATCH_SIZE});
     await discoverChainlinkTwap60Feeds();
     const boundaryCache=new Map();
     const persistedBoundaries=state.historyBootstrap.boundaries||{};
@@ -551,9 +551,9 @@ async function bootstrapHistoricalCounts() {
       log("HISTORY_BOOTSTRAP_INCOMPLETE",{reason:"every_asset_every_period_required",expectedPeriods,completePeriods:totalComplete,missingAssets,retry:true}); return false;
     }
     state.periods=historicalPeriods; state.counts=historicalCounts; state.leader=ranking()[0];
-    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:true,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completePeriods:totalComplete,observations:expectedPeriods*ASSETS.length,assetCoverage,source:"Chainlink Data Streams REST bulk TWAP60",completedAt:nowIso()};
+    state.historyBootstrap={version:HISTORY_BOOTSTRAP_VERSION,complete:true,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),expectedPeriods,completePeriods:totalComplete,observations:expectedPeriods*ASSETS.length,assetCoverage,source:"Chainlink Data Streams REST paginated TWAP60",completedAt:nowIso()};
     saveState(); snapshot("HISTORY_BOOTSTRAP_COMPLETE");
-    log("HISTORY_BOOTSTRAP_COMPLETE",{periods:totalComplete,expectedPeriods,counts:state.counts,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),source:"Chainlink Data Streams REST bulk TWAP60"});
+    log("HISTORY_BOOTSTRAP_COMPLETE",{periods:totalComplete,expectedPeriods,counts:state.counts,from:new Date(HISTORY_START_MS).toISOString(),to:new Date(cutoffMs).toISOString(),source:"Chainlink Data Streams REST paginated TWAP60"});
     return true;
   } finally { historicalBootstrapRunning=false; }
 }
