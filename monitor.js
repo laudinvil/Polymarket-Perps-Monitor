@@ -88,7 +88,8 @@ function snapshot(reason) {
 function startHealth() {
   const port = Number(process.env.PORT || 8080);
   const server = http.createServer((req, res) => {
-    if (req.url === "/status" || req.url === "/health" || req.url === "/") {
+    const requestPath = String(req.url || "/").split("?")[0];
+    if (requestPath === "/status" || requestPath === "/health" || requestPath === "/") {
       const payload = {
         status: "ok", version: VERSION, buildSha: BUILD_SHA,
         source: "Polymarket RTDS Chainlink TWAP60",
@@ -108,7 +109,8 @@ function startHealth() {
     }
     res.writeHead(404); res.end();
   });
-  server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port }));
+  server.on("error", error => log("HEALTH_SERVER_ERROR", { port, error: String(error && error.stack || error) }));
+  server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port, healthPath: "/health", rootPath: "/" }));
 }
 
 function connectRtds() {
