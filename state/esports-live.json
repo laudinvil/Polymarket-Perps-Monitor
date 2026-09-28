@@ -260,10 +260,20 @@
         "eventSlug": "cs2-ksm-noirve-2026-09-27"
       }
     },
+    "1700472": {
+      "matchId": "1700472",
+      "teamA": "WRAITH PCIFIC",
+      "teamB": "Esport BERG"
+    },
     "1700473": {
       "matchId": "1700473",
       "teamA": "Black Phoenix",
       "teamB": "ex-Zero Tenacity"
+    },
+    "1700474": {
+      "matchId": "1700474",
+      "teamA": "Leo Team",
+      "teamB": "Noir Verse"
     },
     "1700475": {
       "matchId": "1700475",
@@ -327,6 +337,11 @@
       },
       "alerted": true,
       "alertedAt": "2026-09-27T22:21:42.460Z"
+    },
+    "1700639": {
+      "matchId": "1700639",
+      "teamA": "Turma do Pagode",
+      "teamB": "Galorys"
     },
     "1700705": {
       "matchId": "1700705",
@@ -458,6 +473,16 @@
       "matchId": "1710864",
       "teamA": "G2 Ares",
       "teamB": "FC Famalicão Esports"
+    },
+    "1711027": {
+      "matchId": "1711027",
+      "teamA": "Myanmar",
+      "teamB": "Uzbekistan"
+    },
+    "1711030": {
+      "matchId": "1711030",
+      "teamA": "Indonesia",
+      "teamB": "Malaysia"
     },
     "1711996": {
       "matchId": "1711996",
@@ -755,995 +780,107 @@
       }
     }
   },
-  "updatedAt": "2026-09-27T22:47:00.541Z",
+  "updatedAt": "2026-09-28T01:11:12.819Z",
   "stage": "POLL_RESULT",
-  "runId": "36356002307",
-  "sha": "0d36d0de6b61c358e4ccd710bca15c6f3b4c3e90",
+  "runId": "36364936962",
+  "sha": "f89921a32f721c5bbda3257640b0f8df2a64906d",
   "telemetry": {
-    "startedAt": "2026-09-27T22:39:10.690Z",
-    "events": 1022,
-    "polls": 12,
+    "startedAt": "2026-09-28T01:10:14.568Z",
+    "events": 428,
+    "polls": 0,
     "alerts": 0,
     "errors": 0,
     "byEvent": {
       "MONITOR_STARTING": 1,
-      "HTTP_REQUEST": 231,
-      "HTTP_RESPONSE": 231,
-      "HTTP_JSON": 189,
-      "GAME1_EVIDENCE": 238,
-      "HTTP_NONRETRYABLE": 42,
-      "HTTP_ERROR": 42,
-      "GAME_DETAILS_ERROR": 21,
-      "GAME_SCORE_ENRICH_ERROR": 21,
-      "POLL_RESULT": 6
+      "HTTP_REQUEST": 130,
+      "HTTP_RESPONSE": 130,
+      "HTTP_JSON": 129,
+      "GAME1_EVIDENCE": 35,
+      "HTTP_NONRETRYABLE": 1,
+      "HTTP_ERROR": 1,
+      "GAME_DETAILS_ERROR": 1
     },
     "recent": [
       {
-        "ts": "2026-09-27T22:46:47.772Z",
+        "ts": "2026-09-28T01:11:02.134Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:02.447Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 325
+          "elapsedMs": 313
         }
       },
       {
-        "ts": "2026-09-27T22:46:47.843Z",
+        "ts": "2026-09-28T01:11:02.449Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy%20Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:02.449Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:02.852Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 398
+          "elapsedMs": 403
         }
       },
       {
-        "ts": "2026-09-27T22:46:47.862Z",
+        "ts": "2026-09-28T01:11:02.871Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://api.pandascore.co/matches/running?page=1&per_page=100",
-          "kind": "array",
-          "count": 4
+          "url": "https://gamma-api.polymarket.com/public-search?q=BIG%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T22:46:48.292Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=1&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:48.292Z",
+        "ts": "2026-09-28T01:11:02.871Z",
         "event": "HTTP_REQUEST",
         "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
+          "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
           "attempt": 1
         }
       },
       {
-        "ts": "2026-09-27T22:46:48.463Z",
+        "ts": "2026-09-28T01:11:03.171Z",
         "event": "HTTP_RESPONSE",
         "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
+          "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
           "status": 200,
           "ok": true,
-          "elapsedMs": 171
+          "elapsedMs": 300
         }
       },
       {
-        "ts": "2026-09-27T22:46:48.823Z",
+        "ts": "2026-09-28T01:11:03.172Z",
         "event": "HTTP_JSON",
         "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=2&per_page=100",
-          "kind": "array",
-          "count": 100
+          "url": "https://gamma-api.polymarket.com/public-search?q=Team%20LEISURE&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
         }
       },
       {
-        "ts": "2026-09-27T22:46:48.823Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:48.989Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 166
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.170Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=3&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.170Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.331Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 161
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.423Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=4&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.423Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.603Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "status": 200,
-          "ok": true,
-          "elapsedMs": 180
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:49.695Z",
-        "event": "HTTP_JSON",
-        "data": {
-          "url": "https://api.pandascore.co/matches/upcoming?page=5&per_page=100",
-          "kind": "array",
-          "count": 100
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.084Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1662461",
-          "gameId": "283920",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": 390,
-            "type": "Team"
-          },
-          "finished": true
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.084Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/games/283920",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.192Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/games/283920",
-          "status": 404,
-          "ok": false,
-          "elapsedMs": 108
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.192Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/games/283920",
-          "status": 404
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.193Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/games/283920",
-          "attempt": 1,
-          "error": "Error: HTTP 404 https://api.pandascore.co/games/283920"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.193Z",
-        "event": "GAME_DETAILS_ERROR",
-        "data": {
-          "matchId": "1662461",
-          "gameId": "283920",
-          "error": "Error: HTTP 404 https://api.pandascore.co/games/283920"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.193Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/lol/games/283920/frames",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.289Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/lol/games/283920/frames",
-          "status": 403,
-          "ok": false,
-          "elapsedMs": 96
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.290Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/lol/games/283920/frames",
-          "status": 403
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.290Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/lol/games/283920/frames",
-          "attempt": 1,
-          "error": "Error: HTTP 403 https://api.pandascore.co/lol/games/283920/frames"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.290Z",
-        "event": "GAME_SCORE_ENRICH_ERROR",
-        "data": {
-          "matchId": "1662461",
-          "gameId": "283920",
-          "path": "/lol/games/283920/frames",
-          "error": "Error: HTTP 403 https://api.pandascore.co/lol/games/283920/frames"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.292Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700623",
-          "gameId": "232450",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": 128378,
-            "type": "Team"
-          },
-          "finished": true
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.292Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.388Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450",
-          "status": 403,
-          "ok": false,
-          "elapsedMs": 96
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.388Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450",
-          "status": 403
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.389Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450",
-          "attempt": 1,
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232450"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.389Z",
-        "event": "GAME_DETAILS_ERROR",
-        "data": {
-          "matchId": "1700623",
-          "gameId": "232450",
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232450"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.389Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450/rounds",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.483Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450/rounds",
-          "status": 403,
-          "ok": false,
-          "elapsedMs": 94
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.484Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450/rounds",
-          "status": 403
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.484Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232450/rounds",
-          "attempt": 1,
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232450/rounds"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:50.484Z",
-        "event": "GAME_SCORE_ENRICH_ERROR",
-        "data": {
-          "matchId": "1700623",
-          "gameId": "232450",
-          "path": "/csgo/games/232450/rounds",
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232450/rounds"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.127Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700638",
-          "gameId": "232489",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": 138620,
-            "type": "Team"
-          },
-          "finished": true
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.127Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.224Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489",
-          "status": 403,
-          "ok": false,
-          "elapsedMs": 97
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.224Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489",
-          "status": 403
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.224Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489",
-          "attempt": 1,
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232489"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.224Z",
-        "event": "GAME_DETAILS_ERROR",
-        "data": {
-          "matchId": "1700638",
-          "gameId": "232489",
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232489"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.224Z",
-        "event": "HTTP_REQUEST",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489/rounds",
-          "attempt": 1
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.320Z",
-        "event": "HTTP_RESPONSE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489/rounds",
-          "status": 403,
-          "ok": false,
-          "elapsedMs": 96
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.320Z",
-        "event": "HTTP_NONRETRYABLE",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489/rounds",
-          "status": 403
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.320Z",
-        "event": "HTTP_ERROR",
-        "data": {
-          "url": "https://api.pandascore.co/csgo/games/232489/rounds",
-          "attempt": 1,
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232489/rounds"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.320Z",
-        "event": "GAME_SCORE_ENRICH_ERROR",
-        "data": {
-          "matchId": "1700638",
-          "gameId": "232489",
-          "path": "/csgo/games/232489/rounds",
-          "error": "Error: HTTP 403 https://api.pandascore.co/csgo/games/232489/rounds"
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:51.922Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1696341",
-          "gameId": "232006",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:52.350Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712062",
-          "gameId": "19237",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:52.352Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700598",
-          "gameId": "232399",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:52.852Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700585",
-          "gameId": "232360",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:53.287Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637686",
-          "gameId": "18334",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:53.292Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1711996",
-          "gameId": "739854",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:53.294Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1697653",
-          "gameId": "284306",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:53.297Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712147",
-          "gameId": "233241",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:53.733Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1684183",
-          "gameId": "231249",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:54.169Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1683303",
-          "gameId": "231001",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:54.602Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637687",
-          "gameId": "18339",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:54.604Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713028",
-          "gameId": "30807",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:54.609Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1704623",
-          "gameId": "232830",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:55.057Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1697654",
-          "gameId": "284311",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:55.060Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713029",
-          "gameId": "30814",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:55.063Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1712148",
-          "gameId": "233244",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:55.554Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1683304",
-          "gameId": "231004",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:56.072Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700473",
-          "gameId": "232093",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:56.504Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1689003",
-          "gameId": "231611",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:56.930Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1684184",
-          "gameId": "231252",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:57.363Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1637688",
-          "gameId": "18344",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:57.368Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1714226",
-          "gameId": "233406",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:57.824Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1713030",
-          "gameId": "30821",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:57.832Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1714923",
-          "gameId": "52316",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:57.835Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1661630",
-          "gameId": "228972",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:58.266Z",
-        "event": "GAME1_EVIDENCE",
-        "data": {
-          "matchId": "1700475",
-          "gameId": "232099",
-          "position": 1,
-          "map": null,
-          "score": null,
-          "roundScore": null,
-          "kills": null,
-          "objectives": null,
-          "winner": {
-            "id": null,
-            "type": "Team"
-          },
-          "finished": false
-        }
-      },
-      {
-        "ts": "2026-09-27T22:46:58.694Z",
+        "ts": "2026-09-28T01:11:03.172Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1661632",
@@ -1762,7 +899,85 @@
         }
       },
       {
-        "ts": "2026-09-27T22:46:59.492Z",
+        "ts": "2026-09-28T01:11:03.833Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.149Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 316
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.149Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks%20Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.150Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.938Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 789
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.940Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Playing%20Ducks&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:04.940Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:05.254Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 314
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:05.256Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Pandaric%20eSports&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:05.256Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1661631",
@@ -1781,7 +996,85 @@
         }
       },
       {
-        "ts": "2026-09-27T22:46:59.951Z",
+        "ts": "2026-09-28T01:11:05.884Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT%20Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.152Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT%20Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 268
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.153Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT%20Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.153Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.433Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 279
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.433Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=NKVT&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.433Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.716Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 283
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.717Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Trigon%20Titans&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.717Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1714933",
@@ -1800,7 +1093,85 @@
         }
       },
       {
-        "ts": "2026-09-27T22:46:59.955Z",
+        "ts": "2026-09-28T01:11:06.720Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:06.998Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 278
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.000Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy%20QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.000Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.344Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 344
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.359Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=BESTIA%20Academy&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.359Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.652Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 293
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.664Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=QUINTESS%C3%8ANCIA&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:07.664Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1712192",
@@ -1819,7 +1190,182 @@
         }
       },
       {
-        "ts": "2026-09-27T22:47:00.541Z",
+        "ts": "2026-09-28T01:11:08.254Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode%20Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.519Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode%20Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 265
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.520Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode%20Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.520Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.870Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 350
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.906Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Turma%20do%20Pagode&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:08.906Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:09.293Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 387
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:09.313Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Galorys&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:09.313Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1700639",
+          "gameId": "232492",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:09.892Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.181Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 289
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.185Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas%20Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.185Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.649Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 464
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.667Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=KaBuM!%20Ilha%20das%20Lendas&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:10.667Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.057Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 390
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.080Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Golden%20Lions&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.081Z",
         "event": "GAME1_EVIDENCE",
         "data": {
           "matchId": "1691676",
@@ -1836,19 +1382,213 @@
           },
           "finished": false
         }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.082Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia%20Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.446Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia%20Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 364
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.449Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia%20Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.449Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.739Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 290
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.754Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Indonesia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.754Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.787Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 33
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.798Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Malaysia&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.798Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711030",
+          "gameId": "8095",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:11.800Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar%20Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.124Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar%20Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 324
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.124Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar%20Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.124Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.443Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 319
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.445Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Myanmar&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.445Z",
+        "event": "HTTP_REQUEST",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "attempt": 1
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.806Z",
+        "event": "HTTP_RESPONSE",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "status": 200,
+          "ok": true,
+          "elapsedMs": 361
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.818Z",
+        "event": "HTTP_JSON",
+        "data": {
+          "url": "https://gamma-api.polymarket.com/public-search?q=Uzbekistan&limit_per_type=20&page=1&keep_closed_markets=0",
+          "kind": "object"
+        }
+      },
+      {
+        "ts": "2026-09-28T01:11:12.818Z",
+        "event": "GAME1_EVIDENCE",
+        "data": {
+          "matchId": "1711027",
+          "gameId": "8086",
+          "position": 1,
+          "map": null,
+          "score": null,
+          "roundScore": null,
+          "kills": null,
+          "objectives": null,
+          "winner": {
+            "id": null,
+            "type": "Team"
+          },
+          "finished": false
+        }
       }
     ],
     "lastPoll": null,
     "lastError": null,
-    "updatedAt": "2026-09-27T22:47:00.541Z"
+    "updatedAt": "2026-09-28T01:11:12.818Z"
   },
   "diagnostics": {
-    "events": 504,
-    "candidates": 401,
-    "livesFetched": 1,
-    "liveScoresObserved": 1,
+    "events": 503,
+    "candidates": 400,
+    "livesFetched": 0,
+    "liveScoresObserved": 0,
     "map1ScoreFound": 0,
-    "map1ScoreUnavailable": 6,
+    "map1ScoreUnavailable": 1,
     "map1ScoreSource": null,
     "hltvFallbackMatches": 0,
     "hltvFallbackMisses": 0,
@@ -1859,16 +1599,16 @@
     "bo3FallbackMatches": 0,
     "bo3FallbackMisses": 20,
     "bo3FallbackErrors": 0,
-    "polyHydrateAttempts": 50,
+    "polyHydrateAttempts": 45,
     "polyFastMatched": 0,
-    "polySearchCalls": 42,
-    "matchedPoly": 34,
-    "finishedGamesFound": 3,
-    "map1Finished": 3,
-    "gameDetailsRequested": 3,
-    "gameDetailsWinnerOnlyRequested": 3,
+    "polySearchCalls": 40,
+    "matchedPoly": 35,
+    "finishedGamesFound": 1,
+    "map1Finished": 1,
+    "gameDetailsRequested": 1,
+    "gameDetailsWinnerOnlyRequested": 1,
     "gameScoreFound": 0,
-    "gameWinnerFound": 3,
+    "gameWinnerFound": 1,
     "winnerOnlyRejected": 0,
     "marginUnavailable": 0,
     "signalChecks": 0,
@@ -1882,9 +1622,6 @@
     "alreadyAlerted": 0,
     "noMarketUrl": 0,
     "rejects": [],
-    "liveWsConnections": 1,
-    "liveWsOpen": 1,
-    "liveWsLastError": "ws_close_4003",
     "sourceErrors": 0,
     "bo3ApiV2Misses": 20,
     "bo3PageMisses": 20,
