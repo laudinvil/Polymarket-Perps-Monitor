@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "8.2.1";
+const VERSION = "9.0.0";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
@@ -14,7 +14,6 @@ const MAX_SEEN = 10000;
 let state = null;
 let pollRunning = false;
 let collectionStartedAt = null;
-let monitorStartedAtMs = Date.now();
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
@@ -137,32 +136,6 @@ function sideLabel(side) {
   return String(side || "LIQUIDATED").toUpperCase();
 }
 
-async function claimSharedEvent(key) {
-  const url = process.env.DEDUPE_CLAIM_URL;
-  const secret = process.env.DEDUPE_CLAIM_SECRET;
-  if (!url) return true;
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(secret ? { authorization: "Bearer " + secret } : {})
-      },
-      body: JSON.stringify({ key, ttlSeconds: 120 }),
-      signal: AbortSignal.timeout(2000)
-    });
-    if (!response.ok) {
-      log("DEDUPE_CLAIM_ERROR", { status: response.status, key });
-      return false;
-    }
-    const body = await response.json().catch(() => ({}));
-    return body.claimed === true || body.ok === true;
-  } catch (e) {
-    log("DEDUPE_CLAIM_ERROR", { error: String(e.message || e), key });
-    return false;
-  }
-}
-
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -234,17 +207,9 @@ async function processFeed() {
   for (const event of hyperliquid) {
     const rawTs = num(event.ts ?? event.timestamp ?? event.time);
     const eventMs = rawTs === null ? null : (rawTs < 1e12 ? rawTs * 1000 : rawTs);
-    // Each GitHub Actions run is intentionally stateless. Only alert events
-    // observed after this run started, so the next scheduled run cannot
-    // resend the previous run's feed history.
-    if (eventMs === null || eventMs < monitorStartedAtMs) continue;
+    if (eventMs === null) continue;
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
-
-    // The local seen-set is only a fast-path. Overlapping GitHub runners
-    // require a shared lease to prevent duplicate Telegram alerts.
-    const lease = await claimSharedEvent(key);
-    if (!lease) continue;
 
     remember(key);
     seen.add(key);
@@ -384,7 +349,6 @@ async function main() {
   }
 
   collectionStartedAt = nowIso();
-  monitorStartedAtMs = Date.now();
 
   log("MONITOR_STARTING", {
     version: VERSION,
@@ -395,7 +359,8 @@ async function main() {
     pollingMs: POLL_MS,
     allSymbols: true,
     links: false,
-    persistentState: true
+    persistentState: true,
+    sharedDedupe: false
   });
 
   startHealth();
