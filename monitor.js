@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.4.0-HYPERLIQUID-ALL";
+const VERSION = "20.4.1-HYPERLIQUID-MATCH";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -266,9 +266,12 @@ async function processFeed() {
 
   // Every fresh Hyperliquid liquidation is eligible.
   // No threshold, no symbol grouping, no XYZ exception.
-  const hyperliquidEvents = freshEvents.filter(event =>
-    String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() === "hyperliquid"
-  );
+  const hyperliquidEvents = freshEvents.filter(event => {
+    const sources = [event.exchange, event.source, event.venue]
+      .filter(v => v !== undefined && v !== null)
+      .map(v => String(v).trim().toLowerCase());
+    return sources.some(v => v.includes("hyperliquid"));
+  });
 
   for (const event of hyperliquidEvents) {
     const sent = await sendTelegram(eventBatchMessage([event]));
@@ -306,6 +309,7 @@ async function processFeed() {
     fresh_liquidations: fresh,
     fresh_by_exchange: freshByExchange,
     fresh_by_symbol: freshBySymbol,
+    hyperliquid_fresh: hyperliquidEvents.length,
     alert_sent: alertSent,
     ...eventTimeSummary,
     strategy: "all fresh Hyperliquid liquidations; no threshold; no accumulation across polls"
