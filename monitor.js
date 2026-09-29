@@ -282,8 +282,11 @@ function eventBatchMessage(events) {
       " - " + Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
     : "—";
 
+  const kyivTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date());
+
   return [
     symbol,
+    kyivTime,
     "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
