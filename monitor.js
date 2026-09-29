@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_VALUE_THRESHOLD = 500000;
+const LIQUIDATION_COUNT_THRESHOLD = 50;
 
 let state;
 let bucket = [];
@@ -72,6 +72,7 @@ function defaultState() {
     alertedPeriodKey: null,
     alertsSent: 0,
     valueBySymbol: {},
+    countBySymbol: {},
     lastEventTs: null,
     lastEventKey: null
   };
@@ -215,9 +216,10 @@ async function recordLiquidations(events) {
     seen.add(key);
     state.seen.push(key);
     state.valueBySymbol[event.symbol] = Number(state.valueBySymbol[event.symbol] || 0) + event.notional;
+    state.countBySymbol[event.symbol] = Number(state.countBySymbol[event.symbol] || 0) + 1;
     acceptedSinceSummary++;
 
-    if (state.valueBySymbol[event.symbol] < LIQUIDATION_VALUE_THRESHOLD) continue;
+    if (state.countBySymbol[event.symbol] < LIQUIDATION_COUNT_THRESHOLD) continue;
 
     await flushValueAlert(event.symbol, event);
   }
@@ -226,8 +228,9 @@ async function recordLiquidations(events) {
 }
 
 async function flushValueAlert(symbol, triggerEvent) {
+  const count = Number(state.countBySymbol[symbol] || 0);
+  if (count < LIQUIDATION_COUNT_THRESHOLD) return;
   const value = Number(state.valueBySymbol[symbol] || 0);
-  if (value < LIQUIDATION_VALUE_THRESHOLD) return;
 
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
@@ -268,6 +271,7 @@ async function flushValueAlert(symbol, triggerEvent) {
     });
 
     if (sent) {
+      state.countBySymbol[symbol] = 0;
       state.alertsSent = Number(state.alertsSent || 0) + 1;
       state.alertedLinks.push(link);
       if (state.alertedLinks.length > MAX_ALERTED_LINKS) {
@@ -378,8 +382,9 @@ function diagnostics() {
     lastEventKey: state.lastEventKey,
     seenEvents: state.seen.length,
     valueBySymbol: state.valueBySymbol || {},
+    countBySymbol: state.countBySymbol || {},
     alertedLinks: state.alertedLinks || [],
-    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD
+    liquidationCountThreshold: LIQUIDATION_COUNT_THRESHOLD
   };
 }
 
@@ -432,6 +437,7 @@ function main() {
     state.alertedLinks = [];
     state.alertedPeriodKey = null;
     state.valueBySymbol = {};
+    state.countBySymbol = {};
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
@@ -443,6 +449,7 @@ function main() {
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
   state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
   state.valueBySymbol = state.valueBySymbol && typeof state.valueBySymbol === "object" ? state.valueBySymbol : {};
+  state.countBySymbol = state.countBySymbol && typeof state.countBySymbol === "object" ? state.countBySymbol : {};
 
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
@@ -450,7 +457,7 @@ function main() {
     source: "AGGR",
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
-    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD,
+    liquidationCountThreshold: LIQUIDATION_COUNT_THRESHOLD,
     resetAfterAlert: true,
     multipleCoinsPer5m: true
   });
