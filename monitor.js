@@ -288,7 +288,7 @@ async function flushLiquidationBucket() {
   }).format(new Date(Math.max(...symbolEvents.map(e => e.ts))));
 
   const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
-  if (clob && (clob.up < 0.08 || clob.up > 0.93 || clob.down < 0.08 || clob.down > 0.93)) {
+  if (clob && (clob.up < 0.20 || clob.up > 0.80 || clob.down < 0.20 || clob.down > 0.80)) {
     skippedEvents += symbolEvents.length;
     return;
   }
