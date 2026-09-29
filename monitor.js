@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "12.2.0-CASCADE5-2POLLS";
+const VERSION = "12.3.0-CASCADE5-2POLLS-DIAGNOSTICS";
 const POLL_MS = 3000;
 const CASCADE_MIN_EVENTS = 5;
 const CASCADE_MAX_POLLS = 2;
@@ -200,11 +200,12 @@ function cascadeMessage(symbol, events) {
 
 async function flushCascade(symbol, cascade, reason) {
   const events = cascade.events.splice(0);
+  const polls = cascade.polls;
   cascade.polls = 0;
   cascade.lastPollAt = 0;
 
   if (events.length < CASCADE_MIN_EVENTS) {
-    log("CASCADE_DISCARDED", { symbol, events: events.length, polls: cascade.polls, reason });
+    log("CASCADE_DISCARDED", { symbol, events: events.length, polls, reason });
     return;
   }
 
@@ -217,7 +218,7 @@ async function flushCascade(symbol, cascade, reason) {
     exchange: EXCHANGE,
     symbol,
     events: events.length,
-    polls: CASCADE_MAX_POLLS,
+    polls,
     longs: events.filter(e => e.side === "LONG").length,
     shorts: events.filter(e => e.side === "SHORT").length,
     totalNotional: events.reduce((sum, e) => sum + (num(e.notional) || 0), 0),
@@ -230,6 +231,24 @@ async function flushCascade(symbol, cascade, reason) {
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
+
+  const feedSources = {};
+  const hyperCandidates = {};
+  const eventTimes = [];
+
+  for (const event of events) {
+    const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
+    const source = rawSource.toLowerCase();
+    feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
+
+    if (source.includes("hyper")) {
+      hyperCandidates[rawSource] = (hyperCandidates[rawSource] || 0) + 1;
+    }
+
+    const eventMs = getEventMs(event);
+    if (eventMs !== null) eventTimes.push(eventMs);
+  }
+
   const hyperliquid = events.filter(
     e => String(e?.exchange ?? e?.source ?? e?.venue ?? "").toLowerCase() === EXCHANGE
   );
@@ -311,8 +330,21 @@ async function processFeed() {
     }
   }
 
+  const eventTimeSummary = eventTimes.length
+    ? {
+        feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
+        feed_newest_event: new Date(Math.max(...eventTimes)).toISOString()
+      }
+    : {
+        feed_oldest_event: null,
+        feed_newest_event: null
+      };
+
   log("FEED_PROCESSED", {
     feed_events: events.length,
+    feed_sources: feedSources,
+    hyper_candidates: hyperCandidates,
+    ...eventTimeSummary,
     hyperliquid_events: hyperliquid.length,
     fresh_hyperliquid: fresh,
     fresh_hyperliquid_by_symbol: freshBySymbol,
