@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "11.0.0-HYPERLIQUID-ALL";
+const VERSION = "12.0.0-CASCADE5-2POLLS";
 const POLL_MS = 3000;
-const CASCADE_MIN_EVENTS = 1;
-const CASCADE_GAP_MS = 0;
+const CASCADE_MIN_EVENTS = 5;
+const CASCADE_MAX_POLLS = 2;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const EXCHANGE = "hyperliquid";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -31,7 +31,16 @@ function log(event, data = {}) {
 }
 
 function defaultState() {
-  return { version: VERSION, strategy: "MARGINPAD_HYPERLIQUID_ALL", updatedAt: nowIso(), seen: [], alertsSent: 0, lastEventTs: null, lastEventKey: null, cascades: {} };
+  return {
+    version: VERSION,
+    strategy: "MARGINPAD_HYPERLIQUID_CASCADE_5_2POLLS",
+    updatedAt: nowIso(),
+    seen: [],
+    alertsSent: 0,
+    lastEventTs: null,
+    lastEventKey: null,
+    cascades: {}
+  };
 }
 
 function loadState() {
@@ -55,7 +64,15 @@ function saveState() {
 function eventKey(e) {
   const id = e.id ?? e.eventId ?? e.liquidationId;
   if (id !== undefined && id !== null && String(id) !== "") return "id:" + String(id);
-  return [e.ts ?? e.timestamp ?? e.time ?? "", e.exchange ?? "", e.symbol ?? e.coin ?? "", e.side ?? "", e.price ?? "", e.qty ?? e.size ?? "", e.notional ?? ""].join("|");
+  return [
+    e.ts ?? e.timestamp ?? e.time ?? "",
+    e.exchange ?? "",
+    e.symbol ?? e.coin ?? "",
+    e.side ?? "",
+    e.price ?? "",
+    e.qty ?? e.size ?? "",
+    e.notional ?? ""
+  ].join("|");
 }
 
 function sideLabel(side) {
@@ -87,9 +104,15 @@ async function sendTelegram(text) {
       signal: AbortSignal.timeout(8000)
     });
     const body = await response.text();
-    if (!response.ok) { log("TELEGRAM_ERROR", { status: response.status, body: body.slice(0, 1000) }); return false; }
+    if (!response.ok) {
+      log("TELEGRAM_ERROR", { status: response.status, body: body.slice(0, 1000) });
+      return false;
+    }
     return true;
-  } catch (e) { log("TELEGRAM_ERROR", { error: String(e.message || e) }); return false; }
+  } catch (e) {
+    log("TELEGRAM_ERROR", { error: String(e.message || e) });
+    return false;
+  }
 }
 
 function normalizeFeed(body) {
@@ -102,7 +125,10 @@ function normalizeFeed(body) {
 }
 
 async function fetchFeed() {
-  const response = await fetch(FEED_URL, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  const response = await fetch(FEED_URL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8000)
+  });
   if (!response.ok) {
     const body = await response.text();
     throw new Error("HTTP " + response.status + " " + body.slice(0, 300));
@@ -118,50 +144,86 @@ function getEventMs(event) {
 
 function ensureCascade(symbol) {
   state.cascades = state.cascades || {};
-  if (!state.cascades[symbol]) state.cascades[symbol] = { events: [], lastFreshAt: 0, lastAlertEventMs: 0 };
+  if (!state.cascades[symbol]) {
+    state.cascades[symbol] = {
+      events: [],
+      polls: 0,
+      lastPollAt: 0
+    };
+  }
   return state.cascades[symbol];
 }
 
-async function flushFinishedCascades() {
-  for (const [symbol, cascade] of Object.entries(state.cascades || {})) {
-    if (!Array.isArray(cascade.events) || cascade.events.length === 0) continue;
+function cascadeMessage(symbol, events) {
+  const longs = events.filter(e => e.side === "LONG").length;
+  const shorts = events.filter(e => e.side === "SHORT").length;
+  const totalValue = events.reduce((sum, e) => sum + (num(e.notional) || 0), 0);
 
-    const events = cascade.events.splice(0);
-    cascade.lastFreshAt = 0;
+  const first = events[0];
+  const last = events[events.length - 1];
 
-    for (const event of events) {
-      const message = [
-        symbol,
-        "SIDE: " + event.side,
-        "PRICE: " + formatNumber(event.price),
-        "SIZE: " + formatNumber(event.qty),
-        "VALUE: " + formatUsd(event.notional)
-      ].join("\n");
+  return [
+    "PUMP CASCADE",
+    "",
+    symbol,
+    "EVENTS: " + events.length,
+    "LONG: " + longs + " | SHORT: " + shorts,
+    "VALUE: " + formatUsd(totalValue),
+    "PRICE RANGE: " + formatNumber(first.price) + " - " + formatNumber(last.price)
+  ].join("\n");
+}
 
-      const sent = await sendTelegram(message);
-      if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+async function flushCascade(symbol, cascade, reason) {
+  const events = cascade.events.splice(0);
+  cascade.polls = 0;
+  cascade.lastPollAt = 0;
 
-      log(sent ? "HYPERLIQUID_LIQUIDATION_ALERT_SENT" : "HYPERLIQUID_LIQUIDATION_ALERT_FAILED", {
-        exchange: EXCHANGE, symbol, side: event.side,
-        price: event.price, qty: event.qty, notional: event.notional,
-        eventTs: event.eventTs
-      });
-    }
+  if (events.length < CASCADE_MIN_EVENTS) {
+    log("CASCADE_DISCARDED", {
+      symbol,
+      events: events.length,
+      polls: cascade.polls,
+      reason
+    });
+    return;
   }
+
+  const message = cascadeMessage(symbol, events);
+  const sent = await sendTelegram(message);
+
+  if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+
+  log(sent ? "HYPERLIQUID_CASCADE_ALERT_SENT" : "HYPERLIQUID_CASCADE_ALERT_FAILED", {
+    exchange: EXCHANGE,
+    symbol,
+    events: events.length,
+    polls: CASCADE_MAX_POLLS,
+    longs: events.filter(e => e.side === "LONG").length,
+    shorts: events.filter(e => e.side === "SHORT").length,
+    totalNotional: events.reduce((sum, e) => sum + (num(e.notional) || 0), 0),
+    firstEventTs: events[0]?.eventTs ?? null,
+    lastEventTs: events[events.length - 1]?.eventTs ?? null,
+    reason
+  });
 }
 
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
-  const hyperliquid = events.filter(e => String(e?.exchange ?? e?.source ?? e?.venue ?? "").toLowerCase() === EXCHANGE);
+  const hyperliquid = events.filter(
+    e => String(e?.exchange ?? e?.source ?? e?.venue ?? "").toLowerCase() === EXCHANGE
+  );
+
   hyperliquid.sort((a, b) => (getEventMs(a) || 0) - (getEventMs(b) || 0));
 
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
+  const freshBySymbol = {};
   let fresh = 0;
 
   for (const event of hyperliquid) {
     const eventMs = getEventMs(event);
     if (eventMs === null) continue;
+
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
 
@@ -172,6 +234,7 @@ async function processFeed() {
 
     const symbol = String(event.symbol || event.coin || "UNKNOWN").toUpperCase();
     const cascade = ensureCascade(symbol);
+
     cascade.events.push({
       eventMs,
       eventTs: num(event.ts ?? event.timestamp ?? event.time),
@@ -180,7 +243,8 @@ async function processFeed() {
       qty: num(event.qty ?? event.size),
       notional: num(event.notional)
     });
-    cascade.lastFreshAt = Date.now();
+
+    freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
 
     log("HYPERLIQUID_LIQUIDATION_FOUND", {
       exchange: EXCHANGE,
@@ -193,23 +257,80 @@ async function processFeed() {
     });
   }
 
-  await flushFinishedCascades();
-  log("FEED_PROCESSED", { received: events.length, hyperliquid: hyperliquid.length, fresh });
+  const activeSymbols = new Set([
+    ...Object.keys(freshBySymbol),
+    ...Object.keys(state.cascades || {}).filter(symbol => {
+      const cascade = state.cascades[symbol];
+      return Array.isArray(cascade.events) && cascade.events.length > 0;
+    })
+  ]);
+
+  for (const symbol of activeSymbols) {
+    const cascade = ensureCascade(symbol);
+    const freshForSymbol = freshBySymbol[symbol] || 0;
+
+    if (freshForSymbol > 0) {
+      cascade.polls = Number(cascade.polls || 0) + 1;
+      cascade.lastPollAt = Date.now();
+    } else if (cascade.events.length > 0) {
+      cascade.polls = Number(cascade.polls || 0) + 1;
+    }
+
+    if (cascade.events.length >= CASCADE_MIN_EVENTS) {
+      await flushCascade(symbol, cascade, "THRESHOLD_REACHED");
+    } else if (cascade.polls >= CASCADE_MAX_POLLS) {
+      log("CASCADE_WINDOW_EXPIRED", {
+        symbol,
+        events: cascade.events.length,
+        polls: cascade.polls,
+        requiredEvents: CASCADE_MIN_EVENTS,
+        maxPolls: CASCADE_MAX_POLLS
+      });
+      cascade.events = [];
+      cascade.polls = 0;
+      cascade.lastPollAt = 0;
+    }
+  }
+
+  log("FEED_PROCESSED", {
+    received: events.length,
+    hyperliquid: hyperliquid.length,
+    fresh,
+    freshBySymbol,
+    cascadeRule: "5 fresh events within 2 polling cycles"
+  });
+
   saveState();
 }
 
 function diagnostics() {
   const pending = {};
   for (const [symbol, cascade] of Object.entries(state.cascades || {})) {
-    if (Array.isArray(cascade.events) && cascade.events.length) pending[symbol] = cascade.events.length;
+    if (Array.isArray(cascade.events) && cascade.events.length) {
+      pending[symbol] = {
+        events: cascade.events.length,
+        polls: Number(cascade.polls || 0)
+      };
+    }
   }
+
   return {
-    status: "ok", version: VERSION, buildSha: BUILD_SHA, strategy: state.strategy,
-    exchange: EXCHANGE, pollingMs: POLL_MS, cascadeMinEvents: CASCADE_MIN_EVENTS,
-    cascadeGapMs: CASCADE_GAP_MS, feed: FEED_URL, collectionStartedAt,
-    updatedAt: state.updatedAt, alertsSent: state.alertsSent,
-    lastEventTs: state.lastEventTs, lastEventKey: state.lastEventKey,
-    seenEvents: state.seen.length, pendingCascades: pending
+    status: "ok",
+    version: VERSION,
+    buildSha: BUILD_SHA,
+    strategy: state.strategy,
+    exchange: EXCHANGE,
+    pollingMs: POLL_MS,
+    cascadeMinEvents: CASCADE_MIN_EVENTS,
+    cascadeMaxPolls: CASCADE_MAX_POLLS,
+    feed: FEED_URL,
+    collectionStartedAt,
+    updatedAt: state.updatedAt,
+    alertsSent: state.alertsSent,
+    lastEventTs: state.lastEventTs,
+    lastEventKey: state.lastEventKey,
+    seenEvents: state.seen.length,
+    pendingCascades: pending
   };
 }
 
@@ -217,20 +338,37 @@ function startHealth() {
   const port = Number(process.env.PORT || 8080);
   const server = http.createServer((req, res) => {
     const requestPath = String(req.url || "/").split("?")[0];
+
     if (requestPath === "/" || requestPath === "/health" || requestPath === "/status") {
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      });
       return res.end(JSON.stringify(diagnostics()));
     }
+
     if (requestPath === "/logs") {
       let rows = [];
-      try { rows = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-300).map(x => JSON.parse(x)); }
-      catch (e) { rows = [{ event: "LOG_READ_ERROR", error: String(e.message || e) }]; }
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+      try {
+        rows = fs.readFileSync(LOG_FILE, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .slice(-300)
+          .map(x => JSON.parse(x));
+      } catch (e) {
+        rows = [{ event: "LOG_READ_ERROR", error: String(e.message || e) }];
+      }
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store"
+      });
       return res.end(JSON.stringify({ status: "ok", events: rows }));
     }
+
     res.writeHead(404);
     res.end();
   });
+
   server.on("error", e => log("HEALTH_SERVER_ERROR", { error: String(e.message || e) }));
   server.listen(port, "0.0.0.0", () => log("HEALTH_LISTENING", { port, healthPath: "/health" }));
 }
@@ -238,29 +376,45 @@ function startHealth() {
 async function poll() {
   if (pollRunning) return;
   pollRunning = true;
-  try { await processFeed(); }
-  catch (e) { log("POLL_ERROR", { error: String(e.stack || e) }); }
-  finally { pollRunning = false; setTimeout(poll, POLL_MS); }
+
+  try {
+    await processFeed();
+  } catch (e) {
+    log("POLL_ERROR", { error: String(e.stack || e) });
+  } finally {
+    pollRunning = false;
+    setTimeout(poll, POLL_MS);
+  }
 }
 
 function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
+
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_HYPERLIQUID_ALL";
+  state.strategy = "MARGINPAD_HYPERLIQUID_CASCADE_5_2POLLS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   state.cascades = state.cascades && typeof state.cascades === "object" ? state.cascades : {};
+
   collectionStartedAt = nowIso();
+
   log("LIQUIDATION_MONITOR_STARTING", {
-    buildSha: BUILD_SHA, strategy: state.strategy, source: FEED_URL,
-    exchange: EXCHANGE, pollingMs: POLL_MS, cascadeMinEvents: CASCADE_MIN_EVENTS,
-    cascadeGapMs: CASCADE_GAP_MS, monitor: "MARGINPAD_HYPERLIQUID_ALL"
+    buildSha: BUILD_SHA,
+    strategy: state.strategy,
+    source: FEED_URL,
+    exchange: EXCHANGE,
+    pollingMs: POLL_MS,
+    cascadeMinEvents: CASCADE_MIN_EVENTS,
+    cascadeMaxPolls: CASCADE_MAX_POLLS,
+    monitor: "MARGINPAD_HYPERLIQUID_CASCADE_5_2POLLS"
   });
+
   startHealth();
   poll();
 }
 
 process.on("SIGTERM", () => log("MONITOR_STOPPING"));
 process.on("SIGINT", () => log("MONITOR_STOPPING"));
+
 main();
