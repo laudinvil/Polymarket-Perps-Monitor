@@ -1,4 +1,4 @@
-# Deplexo deployment: run MarginPad all-exchange liquidation monitor v13.0.0
+# Deplexo deployment: run MarginPad liquidation monitor v16.2.0-13PLUS-NO-COIN
 framework: node
 install: npm install
 start: node monitor.js
