@@ -324,8 +324,8 @@ async function main() {
   server.listen(PORT, "127.0.0.1", () => log("BRIDGE_LISTENING", {
     port: PORT,
     endpoint: "/liquidations",
-    exchanges: exchanges.map(x=>x.id),
-    exchangeCount: exchanges.length,
+    exchanges: exchanges.map(x=>x.id).concat("HYPERLIQUID"),
+    exchangeCount: exchanges.length + 1,
     pairCount: config.pairs.length
   }));
 }
