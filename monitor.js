@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "23.3.0-OPENMARKET-LIQUIDATIONS-SIMULTANEOUS-NO-THRESHOLD";
+const VERSION = "24.0.0-OPENMARKET-SIMPLE";
 const POLL_MS = 0;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
@@ -69,7 +69,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD",
+    strategy: "OPENMARKET_SIMPLE",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -152,23 +152,32 @@ function openMarketChannels() {
 }
 
 function normalizeOpenMarketPoint(point) {
+  const p = point?.liquidation || point || {};
   const series = point?.series || {};
-  const liquidation = point?.liquidation || {};
-  const symbolRaw = String(series.symbol || "").toUpperCase();
-  const coin = String(series.coin || symbolRaw.replace(/USDT$|USD$|PERP$/,"")).toUpperCase();
-  const tsSeconds = num(liquidation.timestamp?.seconds ?? liquidation.timestamp);
-  const timestamp = tsSeconds === null ? Date.now() : (tsSeconds < 1e12 ? tsSeconds * 1000 : tsSeconds);
-  const exchange = String(series.exchange || "").trim();
-  const side = String(liquidation.side || series.side || point?.side || point?.direction || "").trim().toUpperCase();
-  const price = num(liquidation.price);
-  const qty = num(liquidation.amount);
-  const id = liquidation.id ?? point?.id;
+  const symbolRaw = String(
+    series.coin || series.symbol || p.coin || p.symbol || point?.coin || point?.symbol || ""
+  ).toUpperCase();
+  const coin = symbolRaw.replace(/USDT|USDC|USD|PERP|[-_]/g, "").replace("SWAP","");
+  const exchange = String(
+    series.exchange || p.exchange || point?.exchange || point?.venue || ""
+  ).trim();
+
+  const side = String(
+    p.side || p.direction || point?.side || point?.direction || ""
+  ).trim().toUpperCase();
+
+  const price = num(p.price ?? p.liquidationPrice ?? point?.price);
+  const qty = num(p.amount ?? p.qty ?? p.quantity ?? p.size ?? point?.amount ?? point?.qty ?? point?.size);
+  const id = p.id ?? point?.id;
+  const ts = num(p.timestamp ?? p.time ?? point?.timestamp ?? point?.time) ?? Date.now();
+
   if (!exchange || !coin || !side || price === null || qty === null) return null;
-  if (EXCLUDED_EXCHANGES.has(exchange.toLowerCase())) return null;
   if (!["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"].includes(coin)) return null;
+  if (EXCLUDED_EXCHANGES.has(exchange.toLowerCase())) return null;
+
   return {
     id: id == null ? "" : String(id),
-    ts: timestamp,
+    ts: ts < 1e12 ? ts * 1000 : ts,
     exchange,
     symbol: coin,
     side,
@@ -179,18 +188,35 @@ function normalizeOpenMarketPoint(point) {
 }
 
 function collectOpenMarketPoints(message) {
-  const points = Array.isArray(message?.points)
-    ? message.points
-    : Array.isArray(message?.data?.points)
-      ? message.data.points
-      : Array.isArray(message?.data)
-        ? message.data
-        : Array.isArray(message?.result?.points)
-          ? message.result.points
-          : Array.isArray(message?.result?.data)
-            ? message.result.data
-            : [];
-  return points.map(normalizeOpenMarketPoint).filter(Boolean);
+  const out = [];
+  const seen = new Set();
+
+  function walk(value, depth = 0) {
+    if (!value || depth > 6) return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (typeof value !== "object") return;
+
+    const event = normalizeOpenMarketPoint(value);
+    if (event) {
+      const key = eventKey(event);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(event);
+      }
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "series" || key === "liquidation" || key === "data" || key === "result" || key === "points" || key === "items") {
+        walk(child, depth + 1);
+      }
+    }
+  }
+
+  walk(message);
+  return out;
 }
 
 function getEventMs(event) {
@@ -417,66 +443,36 @@ async function flushOpenMarketBucket() {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     state.seen.push(key);
-    if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
     fresh.push(event);
   }
 
-  if (!fresh.length) {
-    log("OPENMARKET_BUCKET", {
-      received_events: events.length,
-      fresh_events: 0,
-      duplicate_events: events.length,
-      threshold: 2
-    });
-    saveState();
-    return;
-  }
+  if (!fresh.length) return;
 
   const bySymbol = {};
   for (const e of fresh) {
     if (!bySymbol[e.symbol]) bySymbol[e.symbol] = [];
     bySymbol[e.symbol].push(e);
   }
+
   const ranked = Object.entries(bySymbol)
     .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 
   const [symbol, symbolEvents] = ranked[0];
-  const count = symbolEvents.length;
-
   const alert = buildAlertForEvents(symbolEvents);
   if (!alert) return;
 
-  const clob = await fetchPolymarketClobPrices(symbol);
-  const message = alert.text + "\nUP: " + (clob ? clob.up.toFixed(3) : "—") +
-    " | DOWN: " + (clob ? clob.down.toFixed(3) : "—");
-
-  const sent = await sendTelegram(message);
+  const sent = await sendTelegram(alert.text);
   if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
 
   log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
     source: "OPENMARKET",
     symbol,
-    events: count,
-    sent,
-    threshold: 0,
-    bucket_ms: 0
+    events: symbolEvents.length
   });
   saveState();
 }
 
-function scheduleBucketFlush() {
-  // No fixed polling interval. Events are flushed as soon as the current
-  // WebSocket message batch / same event-loop turn is collected.
-}
-
-function scheduleImmediateBucketFlush() {
-  if (bucketFlushScheduled) return;
-  bucketFlushScheduled = true;
-  setImmediate(() => {
-    bucketFlushScheduled = false;
-    flushOpenMarketBucket().catch(e => log("OPENMARKET_FLUSH_ERROR", { error: String(e.stack || e) }));
-  });
-}
+function scheduleBucketFlush() {}
 
 function connectOpenMarket() {
   if (!OPENMARKET_API_KEY) {
@@ -545,7 +541,7 @@ function connectOpenMarket() {
     }
 
     for (const event of points) bucket.push(event);
-    scheduleImmediateBucketFlush();
+    flushOpenMarketBucket().catch(e => log("OPENMARKET_FLUSH_ERROR", { error: String(e.stack || e) }));
 
     log("OPENMARKET_LIQUIDATIONS", {
       received_events: points.length,
@@ -642,7 +638,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD";
+  const strategy = "OPENMARKET_SIMPLE";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
@@ -664,7 +660,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD"
+    monitor: "OPENMARKET_SIMPLE"
   });
 
   startHealth();
