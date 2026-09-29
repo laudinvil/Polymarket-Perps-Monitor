@@ -256,7 +256,8 @@ async function flushLiquidationBucket() {
 
   const [symbol, symbolEvents] = candidates[0];
   const alertedLinks = alertedLinksSet();
-  const link = polymarket5mUrl(symbol);
+  const marketNowMs = Date.now();
+  const link = polymarket5mUrl(symbol, marketNowMs);
 
   if (alertedLinks.has(link)) {
     const alertedKeys = new Set(symbolEvents.map(eventKey));
@@ -286,7 +287,7 @@ async function flushLiquidationBucket() {
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
   }).format(new Date(Math.max(...symbolEvents.map(e => e.ts))));
 
-  const clob = await fetchPolymarketClobPrices(symbol, Math.max(...symbolEvents.map(e => e.ts)));
+  const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
   if (clob && (clob.up < 0.08 || clob.up > 0.93 || clob.down < 0.08 || clob.down > 0.93)) {
     skippedEvents += symbolEvents.length;
     return;
