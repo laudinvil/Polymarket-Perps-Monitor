@@ -117,6 +117,13 @@ async function buildExchanges(config) {
 }
 
 async function main() {
+  // Deplexo mounts /data as writable while the application image is read-only.
+  // aggr-server's persistence module initializes during require() and writes
+  // persistence.json relative to process.cwd(), regardless of persistence
+  // settings. Keep that file in the writable runtime volume.
+  fs.mkdirSync("/data", { recursive: true });
+  process.chdir("/data");
+
   process.argv.push("config=../../aggr-config.json");
   const config = require("aggr-server/src/config");
   const Server = require("aggr-server/src/server");
