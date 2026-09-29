@@ -397,8 +397,20 @@ function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
   state = loadState();
+
+  // A strategy change must never inherit the previous strategy's dedupe cache.
+  // Otherwise a rolling feed can contain only events already marked as seen,
+  // producing zero fresh events and therefore zero alerts after deployment.
+  const strategy = "TOP_COIN_3S_ALL_EXCHANGES";
+  if (state.strategy !== strategy || state.version !== VERSION) {
+    state.seen = [];
+    state.alertsSent = 0;
+    state.lastEventTs = null;
+    state.lastEventKey = null;
+  }
+
   state.version = VERSION;
-  state.strategy = "HYPERLIQUID_ALL_LIQUIDATIONS";
+  state.strategy = strategy;
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
