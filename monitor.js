@@ -297,7 +297,7 @@ async function flushLiquidationBucket() {
     ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
     : "UP: — | DOWN: —";
 
-  const directionArrow = clob ? (clob.up <= clob.down ? "↑" : "↓") : "";
+  const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
 
   const text = [
     symbol + (directionArrow ? " " + directionArrow : ""),
