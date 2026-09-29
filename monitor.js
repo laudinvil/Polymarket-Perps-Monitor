@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "19.1.0-2-SAME-SYMBOL";
+const VERSION = "19.2.0-3-SAME-SYMBOL";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -158,10 +158,38 @@ function getEventMs(event) {
 
 function eventBatchMessage(symbol, events) {
   const lines = [
-    "2+ LIQUIDATION EVENTS",
+    "3+ LIQUIDATIONS",
     "SYMBOL: " + symbol,
-    "FRESH: " + events.length
+    "COUNT: " + events.length,
+    ""
   ];
+
+  const details = events
+    .slice()
+    .sort((a, b) => (getEventMs(a) ?? 0) - (getEventMs(b) ?? 0))
+    .map(event => {
+      const eventMs = getEventMs(event);
+      const time = eventMs !== null
+        ? new Date(eventMs).toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+            timeZone: "Europe/Kyiv"
+          })
+        : "—";
+      const side = String(event.side ?? event.direction ?? "UNKNOWN").toUpperCase();
+      const price = num(event.price);
+      const qty = num(event.qty ?? event.size ?? event.quantity);
+      return [
+        "DIRECTION: " + side,
+        "PRICE: " + (price !== null ? price : "—"),
+        "QUANTITY: " + (qty !== null ? qty : "—"),
+        "TIME: " + time
+      ].join("\n");
+    });
+
+  lines.push(...details);
 
   const newest = events
     .map(getEventMs)
@@ -221,7 +249,7 @@ async function processFeed() {
   let alertSent = false;
 
   for (const [symbol, symbolCount] of Object.entries(freshBySymbol)) {
-    if (symbolCount < 2) continue;
+    if (symbolCount < 3) continue;
 
     const symbolEvents = freshEvents.filter(event =>
       String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() === symbol
@@ -234,11 +262,11 @@ async function processFeed() {
       alertSent = true;
     }
 
-    log(sent ? "2_PLUS_SYMBOL_ALERT_SENT" : "2_PLUS_SYMBOL_ALERT_FAILED", {
+    log(sent ? "3_PLUS_SYMBOL_ALERT_SENT" : "3_PLUS_SYMBOL_ALERT_FAILED", {
       symbol,
       fresh_liquidations: symbolEvents.length,
       sent,
-      rule: "2+ fresh liquidation events for the same symbol in 1 MarginPad polling cycle"
+      rule: "3+ fresh liquidations for the same symbol in 1 MarginPad polling cycle"
     });
   }
 
@@ -257,7 +285,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "2+ fresh liquidation events for the same symbol / 1 polling cycle"
+    strategy: "3+ fresh liquidations for the same symbol / 1 polling cycle"
   });
 
   saveState();
@@ -341,7 +369,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_2_PLUS_ALL_PAIRS";
+  state.strategy = "MARGINPAD_3_PLUS_SAME_SYMBOL";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -352,7 +380,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_2_PLUS_SAME_SYMBOL"
+    monitor: "MARGINPAD_3_PLUS_SAME_SYMBOL"
   });
 
   startHealth();
