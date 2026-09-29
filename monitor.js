@@ -166,6 +166,11 @@ function formatCompactNumber(value) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function polymarket5mUrl(symbol, nowMs = Date.now()) {
+  const startEpoch = Math.floor(nowMs / 300000) * 300;
+  return "https://polymarket.com/event/" + String(symbol).toLowerCase() + "-updown-5m-" + startEpoch;
+}
+
 function eventBatchMessage(events) {
   const bySymbol = {};
   for (const event of events) {
@@ -237,7 +242,8 @@ function eventBatchMessage(events) {
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
     "SIZE: " + formatCompactNumber(size),
-    ...exchangeLines
+    ...exchangeLines,
+    polymarket5mUrl(symbol)
   ].join("\n");
 }
 
