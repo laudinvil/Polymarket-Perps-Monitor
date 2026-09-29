@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_COUNT_THRESHOLD = 20;
+const LIQUIDATION_COUNT_THRESHOLD = 50;
 const LIQUIDATION_VALUE_THRESHOLD = 30000;
 
 let state;
@@ -245,7 +245,7 @@ async function flushValueAlert(symbol, triggerEvent) {
   alertInFlight.add(link);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
-    if (clob && (clob.up < 0.27 || clob.up > 0.80 || clob.down < 0.27 || clob.down > 0.80)) {
+    if (clob && (clob.up < 0.29 || clob.up > 0.80 || clob.down < 0.29 || clob.down > 0.80)) {
       skippedEvents++;
       return;
     }
