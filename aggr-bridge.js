@@ -43,9 +43,23 @@ function scheduleFeedSummary() {
 }
 
 function symbolFromPair(pair) {
-  const raw = String(pair || "").toUpperCase();
+  const raw = String(pair || "").toUpperCase().replace(/[^A-Z0-9_-]/g, "");
   for (const symbol of SYMBOLS) {
-    if (raw.replace(/[^A-Z]/g, "").startsWith(symbol)) return symbol;
+    const rest = raw.slice(symbol.length);
+    if (
+      rest === "USDT" ||
+      rest === "USDC" ||
+      rest === "USD" ||
+      rest === "-USDT" ||
+      rest === "-USDC" ||
+      rest === "-USD" ||
+      rest === "-PERP" ||
+      rest === "-SWAP" ||
+      rest === "_PERP" ||
+      rest === "_SWAP"
+    ) {
+      return symbol;
+    }
   }
   return null;
 }
@@ -89,10 +103,26 @@ function adapterNames() {
 
 function isUsefulDerivativePair(pair) {
   const raw = String(pair || "").toUpperCase();
-  if (!symbolFromPair(raw)) return false;
-  // Never subscribe to spot products: they cannot produce liquidation events.
-  if (/-SPOT$/i.test(raw)) return false;
-  return /PERP|SWAP|FUT|USDT|USDC|USD/.test(raw);
+  const symbol = symbolFromPair(raw);
+  if (!symbol) return false;
+
+  // Only perpetual/swap products. Expiring futures such as BTCUSD_270326
+  // are intentionally excluded because they add connections but are not
+  // needed for the current liquidation monitor.
+  if (/(?:^|[-_])\\d{6,8}$/.test(raw)) return false;
+
+  return (
+    raw === symbol + "USDT" ||
+    raw === symbol + "USDC" ||
+    raw === symbol + "USD" ||
+    raw === symbol + "-USDT" ||
+    raw === symbol + "-USDC" ||
+    raw === symbol + "-USD" ||
+    raw === symbol + "-PERP" ||
+    raw === symbol + "-SWAP" ||
+    raw === symbol + "_PERP" ||
+    raw === symbol + "_SWAP"
+  );
 }
 
 async function buildExchanges(config) {
