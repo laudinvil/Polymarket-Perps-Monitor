@@ -1,1 +1,2 @@
-start-2026-09-29-aggr-liquidation-only-exchanges-v26-12
+aggr-exchange-check-2026-09-29
+commit=1ea6606b0519f71b1289d6826c977c5749e8509c
