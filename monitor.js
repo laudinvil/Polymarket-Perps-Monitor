@@ -368,9 +368,9 @@ async function processFeed() {
     if (message) {
       const clob = await fetchPolymarketClobPrices(symbol);
       if (clob) {
-        message += "\nUP CLOB: " + clob.up.toFixed(3) + " | DOWN CLOB: " + clob.down.toFixed(3);
+        message += "\nUP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
       } else {
-        message += "\nUP CLOB: — | DOWN CLOB: —";
+        message += "\nUP: — | DOWN: —";
       }
 
       const sent = await sendTelegram(message);
