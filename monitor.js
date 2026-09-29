@@ -281,7 +281,7 @@ async function flushLiquidationBucket() {
     source: "AGGR",
     symbol,
     events: symbolEvents.length,
-    requiredMinimum: 2,
+    requiredMinimum: 1,
     exchanges: byExchange
   });
 
