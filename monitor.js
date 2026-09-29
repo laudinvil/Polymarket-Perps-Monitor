@@ -170,7 +170,19 @@ async function flushFinishedCascades(now) {
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
-  const hyperliquid = events.filter(e => String(e?.exchange || "").toLowerCase() === EXCHANGE);
+  const exchangeCounts = {};
+  for (const e of events) {
+    const exchange = String(e?.exchange ?? e?.source ?? e?.venue ?? e?.market ?? "UNKNOWN").trim().toLowerCase() || "UNKNOWN";
+    exchangeCounts[exchange] = (exchangeCounts[exchange] || 0) + 1;
+  }
+  const hyperliquid = events.filter(e => String(e?.exchange ?? e?.source ?? e?.venue ?? "").toLowerCase() === EXCHANGE);
+  if (hyperliquid.length === 0) {
+    log("FEED_NO_HYPERLIQUID", {
+      received: events.length,
+      exchangeCounts,
+      sample: events.slice(0, 5)
+    });
+  }
   hyperliquid.sort((a, b) => (getEventMs(a) || 0) - (getEventMs(b) || 0));
 
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
