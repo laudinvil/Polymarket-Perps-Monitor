@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_4_PLUS_PER_SYMBOL",
+    strategy: "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -174,66 +174,23 @@ function formatCompactNumber(value) {
   });
 }
 
-function eventBatchMessage(events) {
-  const bySymbol = {};
-
-  for (const event of events) {
-    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    if (!bySymbol[symbol]) bySymbol[symbol] = [];
-    bySymbol[symbol].push(event);
-  }
-
-  const symbolBlocks = Object.entries(bySymbol)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-    .map(([symbol, symbolEvents]) => {
-      let longCount = 0;
-      let shortCount = 0;
-      let value = 0;
-      let size = 0;
-      const prices = [];
-      const byExchange = {};
-
-      for (const event of symbolEvents) {
-        const side = String(event.side ?? event.direction ?? "").toUpperCase();
-        if (side === "LONG" || side === "BUY") longCount++;
-        if (side === "SHORT" || side === "SELL") shortCount++;
-
-        const notional = num(event.notional ?? event.value ?? event.amount);
-        const qty = num(event.qty ?? event.size ?? event.quantity);
-        const price = num(event.price);
-
-        if (notional !== null) value += notional;
-        if (qty !== null) size += qty;
-        if (price !== null) prices.push(price);
-
-        const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
-        byExchange[exchange] = (byExchange[exchange] || 0) + 1;
-      }
-
-      const exchangeLines = Object.entries(byExchange)
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
-
-      const priceRange = prices.length
-        ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
-          " - " +
-          Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
-        : "—";
-
-      return [
-        symbol,
-        "EVENTS: " + symbolEvents.length,
-        "LONG: " + longCount + " | SHORT: " + shortCount,
-        "VALUE: $" + formatNumber(value, 2),
-        "SIZE: " + formatCompactNumber(size),
-        "PRICE RANGE: " + priceRange,
-        ...exchangeLines
-      ].join("\n");
-    });
-
-  return symbolBlocks.join("\n\n");
+function eventMessage(event) {
+  const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+  const side = String(event.side ?? event.direction ?? "").toUpperCase();
+  const notional = num(event.notional ?? event.value ?? event.amount);
+  const qty = num(event.qty ?? event.size ?? event.quantity);
+  const price = num(event.price);
+  const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+  return [
+    symbol,
+    "EVENTS: 1",
+    "LONG: " + ((side === "LONG" || side === "BUY") ? 1 : 0) + " | SHORT: " + ((side === "SHORT" || side === "SELL") ? 1 : 0),
+    "VALUE: $" + formatNumber(notional, 2),
+    "SIZE: " + formatCompactNumber(qty),
+    "PRICE RANGE: " + (price === null ? "—" : price.toLocaleString("en-US", { maximumFractionDigits: 8 })),
+    exchange + ": 1"
+  ].join("\n");
 }
-
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
@@ -277,45 +234,31 @@ async function processFeed() {
   let alertSent = false;
   let alertsSentThisCycle = 0;
 
-  // IMPORTANT: one Telegram alert = one symbol only.
-  // The threshold is evaluated per symbol, never across different coins.
-  for (const [symbol, symbolEvents] of Object.entries(freshEventsBySymbol)) {
-    if (symbolEvents.length < 4) continue;
-
-    const sent = await sendTelegram(eventBatchMessage(symbolEvents));
-
-    if (sent) {
-      state.alertsSent = Number(state.alertsSent || 0) + 1;
-      alertsSentThisCycle++;
-      alertSent = true;
+  // STRICT RULE: one Telegram alert = exactly ONE raw liquidation event.
+  // Never aggregate different symbols, exchanges, or multiple events into one alert.
+  if (freshEvents.length >= 4) {
+    for (const event of freshEvents) {
+      const sent = await sendTelegram(eventMessage(event));
+      if (sent) {
+        state.alertsSent = Number(state.alertsSent || 0) + 1;
+        alertsSentThisCycle++;
+        alertSent = true;
+      }
+      log(sent ? "SINGLE_EVENT_ALERT_SENT" : "SINGLE_EVENT_ALERT_FAILED", {
+        symbol: String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
+        event_key: eventKey(event),
+        sent,
+        rule: "4+ fresh liquidation events trigger individual alerts; one alert contains exactly one event"
+      });
     }
-
-    log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
-      symbol,
-      fresh_liquidations: symbolEvents.length,
-      fresh_by_exchange: Object.fromEntries(
-        Object.entries(
-          symbolEvents.reduce((acc, event) => {
-            const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
-            acc[exchange] = (acc[exchange] || 0) + 1;
-            return acc;
-          }, {})
-        )
-      ),
-      sent,
-      rule: "4+ fresh liquidation events for ONE symbol in 1 MarginPad polling cycle"
-    });
   }
 
   log("ALERT_GROUPING", {
+    fresh_events: freshEvents.length,
     fresh_by_symbol: freshBySymbol,
-    qualifying_symbols: Object.entries(freshEventsBySymbol)
-      .filter(([, symbolEvents]) => symbolEvents.length >= 4)
-      .map(([symbol]) => symbol),
     alerts_sent_this_cycle: alertsSentThisCycle,
-    rule: "one Telegram alert = one symbol; no cross-symbol aggregation"
+    rule: "ONE RAW EVENT PER TELEGRAM ALERT; NO AGGREGATION"
   });
-
   const eventTimeSummary = eventTimes.length
     ? {
         feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
@@ -415,7 +358,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_4_PLUS_ALL_EXCHANGES";
+  state.strategy = "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -426,7 +369,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_4_PLUS_PER_SYMBOL"
+    monitor: "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS"
   });
 
   startHealth();
