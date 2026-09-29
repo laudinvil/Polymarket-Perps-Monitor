@@ -288,9 +288,18 @@ async function processFeed() {
   let alertSent = false;
   let selectedSymbol = null;
   let selectedCount = 0;
+  const MIN_EVENTS = 2;
 
   if (ranked.length) {
     const [symbol, symbolEvents] = ranked[0];
+    if (symbolEvents.length < MIN_EVENTS) {
+      log("NO_ALERT_BELOW_THRESHOLD", {
+        selected_symbol: symbol,
+        selected_events: symbolEvents.length,
+        min_events: MIN_EVENTS,
+        rule: "top coin per 3-second poll; alert only when selected coin has 2+ fresh events"
+      });
+    } else {
     selectedSymbol = symbol;
     selectedCount = symbolEvents.length;
     const message = eventBatchMessage(symbolEvents);
@@ -304,8 +313,9 @@ async function processFeed() {
         symbol,
         events: symbolEvents.length,
         sent,
-        rule: "all exchanges; allowed coins only; top liquidation count per 3-second poll"
+        rule: "all exchanges; allowed coins only; top liquidation count per 3-second poll; minimum 2 events"
       });
+    }
     }
   }
 
@@ -327,7 +337,7 @@ async function processFeed() {
           }
         : {}
     ),
-    strategy: "all exchanges; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll"
+    strategy: "all exchanges; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll; alert threshold 2 events"
   });
 
   saveState();
