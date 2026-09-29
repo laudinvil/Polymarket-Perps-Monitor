@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "16.5.0-THRESHOLD10";
+const VERSION = "17.0.0-INDIVIDUAL-EXCHANGE";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -12,8 +12,6 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 20 * 1024 * 1024;
 const LOG_KEEP_BYTES = 10 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-
-const LIQUIDATION_THRESHOLD = 10;
 
 let state;
 let pollRunning = false;
@@ -27,7 +25,6 @@ function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function normalizeCoin(value) {
   let symbol = String(value ?? "UNKNOWN").trim().toUpperCase();
   if (!symbol) return "UNKNOWN";
-
   symbol = symbol.replace(/[\s_/:.-]+/g, "");
 
   const suffixes = [
@@ -78,7 +75,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_10_PLUS_SAME_COIN",
+    strategy: "MARGINPAD_INDIVIDUAL_LIQUIDATIONS",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -110,6 +107,7 @@ function saveState() {
 function eventKey(e) {
   const id = e.id ?? e.eventId ?? e.liquidationId;
   if (id !== undefined && id !== null && String(id) !== "") return "id:" + String(id);
+
   return [
     e.ts ?? e.timestamp ?? e.time ?? "",
     e.exchange ?? e.source ?? e.venue ?? "",
@@ -130,7 +128,9 @@ function sideLabel(side) {
 
 function formatNumber(v, max = 8) {
   const n = num(v);
-  return n === null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: max });
+  return n === null ? "—" : n.toLocaleString("en-US", {
+    maximumFractionDigits: max
+  });
 }
 
 function formatUsd(v) {
@@ -144,24 +144,29 @@ function formatUsd(v) {
 async function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
+
   if (!token || !chatId) {
     log("TELEGRAM_NOT_CONFIGURED");
     return false;
   }
 
   try {
-    const response = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        disable_web_page_preview: true
-      }),
-      signal: AbortSignal.timeout(8000)
-    });
+    const response = await fetch(
+      "https://api.telegram.org/bot" + token + "/sendMessage",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          disable_web_page_preview: true
+        }),
+        signal: AbortSignal.timeout(8000)
+      }
+    );
 
     const body = await response.text();
+
     if (!response.ok) {
       log("TELEGRAM_ERROR", {
         status: response.status,
@@ -207,31 +212,28 @@ function getEventMs(event) {
 }
 
 function liquidationMessage(event) {
-  const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN").toUpperCase();
+  const exchange = String(
+    event.exchange ?? event.source ?? event.venue ?? "UNKNOWN"
+  ).toUpperCase();
+
   const symbol = normalizeCoin(event.symbol ?? event.coin);
   const side = sideLabel(event.side);
   const price = formatNumber(event.price);
   const qty = formatNumber(event.qty ?? event.size);
-  const notional = formatUsd(event.notional);
-  const eventMs = getEventMs(event);
-  const time = eventMs === null
-    ? "—"
-    : new Date(eventMs).toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-        timeZone: "Europe/Kyiv"
-      });
+  const notionalValue = num(event.notional);
+  const fallbackValue =
+    num(event.price) !== null && num(event.qty ?? event.size) !== null
+      ? num(event.price) * num(event.qty ?? event.size)
+      : null;
+  const value = formatUsd(notionalValue ?? fallbackValue);
 
   return [
-    "LIQUIDATION",
-    exchange + " | " + symbol,
-    side,
+    symbol,
+    "EXCHANGE: " + exchange,
+    "SIDE: " + side,
     "PRICE: " + price,
     "SIZE: " + qty,
-    "VALUE: " + notional,
-    time
+    "VALUE: " + value
   ].join("\n");
 }
 
@@ -242,7 +244,10 @@ async function sendLiquidationAlert(event) {
     state.alertsSent = Number(state.alertsSent || 0) + 1;
   }
 
-  const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN").toLowerCase();
+  const exchange = String(
+    event.exchange ?? event.source ?? event.venue ?? "UNKNOWN"
+  ).toLowerCase();
+
   const symbol = normalizeCoin(event.symbol ?? event.coin);
 
   log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
@@ -257,34 +262,6 @@ async function sendLiquidationAlert(event) {
   });
 }
 
-function eventBatchMessage(events, freshByExchange, thresholdLabel, symbol) {
-  const lines = [
-    String(symbol || "ALERT").toUpperCase(),
-    "FRESH: " + events.length,
-  ];
-
-  for (const [exchange, count] of Object.entries(freshByExchange)) {
-    lines.push(exchange.toUpperCase() + " — " + count);
-  }
-
-  const newest = events
-    .map(getEventMs)
-    .filter(v => v !== null)
-    .sort((a, b) => b - a)[0];
-
-  if (newest !== undefined) {
-    lines.push(new Date(newest).toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: "Europe/Kyiv"
-    }));
-  }
-
-  return lines.join("\n");
-}
-
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
@@ -292,12 +269,15 @@ async function processFeed() {
   const feedSources = {};
   const eventTimes = [];
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
-  let fresh = 0;
-  const freshByExchange = {};
   const freshEvents = [];
+  const freshByExchange = {};
+  let fresh = 0;
 
   for (const event of events) {
-    const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
+    const rawSource = String(
+      event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN"
+    );
+
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
 
     const eventMs = getEventMs(event);
@@ -308,6 +288,7 @@ async function processFeed() {
 
     seen.add(key);
     state.seen.push(key);
+
     if (state.seen.length > MAX_SEEN) {
       state.seen = state.seen.slice(-MAX_SEEN);
     }
@@ -320,6 +301,13 @@ async function processFeed() {
     state.lastEventKey = key;
   }
 
+  let alertSent = false;
+
+  for (const event of freshEvents) {
+    const sent = await sendLiquidationAlert(event);
+    if (sent) alertSent = true;
+  }
+
   const eventTimeSummary = eventTimes.length
     ? {
         feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
@@ -330,87 +318,14 @@ async function processFeed() {
         feed_newest_event: null
       };
 
-  let alertSent = false;
-  const freshBySymbol = {};
-
-  for (const event of freshEvents) {
-    const symbol = normalizeCoin(event.symbol ?? event.coin);
-    if (!freshBySymbol[symbol]) freshBySymbol[symbol] = [];
-    freshBySymbol[symbol].push(event);
-  }
-
-  const alertedSymbols = [];
-
-  for (const [symbol, symbolEvents] of Object.entries(freshBySymbol)) {
-    const xyzEvents = symbolEvents.filter(event =>
-      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() === "xyz"
-    );
-    const regularEvents = symbolEvents.filter(event =>
-      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() !== "xyz"
-    );
-
-    if (xyzEvents.length >= 2) {
-      const xyzByExchange = { xyz: xyzEvents.length };
-      const sent = await sendTelegram(
-        eventBatchMessage(xyzEvents, xyzByExchange, "2+ XYZ", symbol)
-      );
-
-      if (sent) {
-        state.alertsSent = Number(state.alertsSent || 0) + 1;
-        alertSent = true;
-      }
-
-      alertedSymbols.push(symbol);
-
-      log(sent ? "2_PLUS_XYZ_ALERT_SENT" : "2_PLUS_XYZ_ALERT_FAILED", {
-        symbol,
-        fresh_liquidations: xyzEvents.length,
-        fresh_by_exchange: xyzByExchange,
-        sent,
-        rule: "2+ fresh XYZ liquidation events for one coin in 1 MarginPad polling cycle"
-      });
-    }
-
-    if (regularEvents.length >= LIQUIDATION_THRESHOLD) {
-      const symbolByExchange = {};
-      for (const event of regularEvents) {
-        const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN");
-        symbolByExchange[exchange] = (symbolByExchange[exchange] || 0) + 1;
-      }
-
-      const sent = await sendTelegram(
-        eventBatchMessage(regularEvents, symbolByExchange, LIQUIDATION_THRESHOLD + "+", symbol)
-      );
-
-      if (sent) {
-        state.alertsSent = Number(state.alertsSent || 0) + 1;
-        alertSent = true;
-      }
-
-      if (!alertedSymbols.includes(symbol)) alertedSymbols.push(symbol);
-
-      log(sent ? "10_PLUS_SAME_COIN_ALERT_SENT" : "10_PLUS_SAME_COIN_ALERT_FAILED", {
-        symbol,
-        fresh_liquidations: regularEvents.length,
-        fresh_by_exchange: symbolByExchange,
-        sent,
-        rule: "10+ fresh liquidation events for one coin in 1 MarginPad polling cycle, excluding XYZ"
-      });
-    }
-  }
-
   log("FEED_PROCESSED", {
     feed_events: events.length,
     feed_sources: feedSources,
     fresh_liquidations: fresh,
     fresh_by_exchange: freshByExchange,
-    fresh_by_symbol: Object.fromEntries(
-      Object.entries(freshBySymbol).map(([symbol, symbolEvents]) => [symbol, symbolEvents.length])
-    ),
     alert_sent: alertSent,
-    alerted_symbols: alertedSymbols,
     ...eventTimeSummary,
-    strategy: "10+ fresh liquidation events for one coin / 1 polling cycle; XYZ exception at 2+"
+    strategy: "individual fresh liquidation alerts grouped by exchange"
   });
 
   saveState();
@@ -449,6 +364,7 @@ function startHealth() {
 
     if (requestPath === "/logs") {
       let rows = [];
+
       try {
         rows = fs.readFileSync(LOG_FILE, "utf8")
           .split("\n")
@@ -463,6 +379,7 @@ function startHealth() {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store"
       });
+
       return res.end(JSON.stringify({ status: "ok", events: rows }));
     }
 
@@ -500,7 +417,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_10_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE";
+  state.strategy = "MARGINPAD_INDIVIDUAL_LIQUIDATIONS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
 
   collectionStartedAt = nowIso();
@@ -510,10 +427,9 @@ function main() {
     strategy: state.strategy,
     source: FEED_URL,
     pollingMs: POLL_MS,
-    threshold: LIQUIDATION_THRESHOLD,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_10_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE"
+    monitor: "MARGINPAD_INDIVIDUAL_LIQUIDATIONS"
   });
 
   startHealth();
