@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.4.1-HYPERLIQUID-MATCH";
+const VERSION = "21.0.0-TOP-COIN-3S";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "HYPERLIQUID_ALL_LIQUIDATIONS",
+    strategy: "TOP_COIN_3S_ALL_EXCHANGES",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -174,69 +174,72 @@ function eventBatchMessage(events) {
     bySymbol[symbol].push(event);
   }
 
-  return Object.entries(bySymbol)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-    .map(([symbol, symbolEvents]) => {
-      let longCount = 0;
-      let shortCount = 0;
-      let value = 0;
-      let size = 0;
-      const prices = [];
-      const byExchange = {};
+  const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
+  const candidates = Object.entries(bySymbol)
+    .filter(([symbol]) => allowed.has(symbol))
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 
-      for (const event of symbolEvents) {
-        const side = String(event.side ?? event.direction ?? "").toUpperCase();
-        if (side === "LONG" || side === "BUY") longCount++;
-        else if (side === "SHORT" || side === "SELL") shortCount++;
-        else log("UNKNOWN_LIQUIDATION_SIDE", {
-          symbol,
-          side: String(event.side ?? event.direction ?? ""),
-          event_key: eventKey(event)
-        });
+  if (!candidates.length) return "";
 
-        const notional = num(event.notional ?? event.value ?? event.amount);
-        const qty = num(event.qty ?? event.size ?? event.quantity);
-        const price = num(event.price);
-        if (notional !== null) value += notional;
-        if (qty !== null) size += qty;
-        if (price !== null) prices.push(price);
+  const [symbol, symbolEvents] = candidates[0];
+  let longCount = 0;
+  let shortCount = 0;
+  let value = 0;
+  let size = 0;
+  const prices = [];
+  const byExchange = {};
 
-        const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
-        byExchange[exchange] = (byExchange[exchange] || 0) + 1;
-      }
+  for (const event of symbolEvents) {
+    const side = String(event.side ?? event.direction ?? "").toUpperCase();
+    if (side === "LONG" || side === "BUY") longCount++;
+    else if (side === "SHORT" || side === "SELL") shortCount++;
+    else log("UNKNOWN_LIQUIDATION_SIDE", {
+      symbol,
+      side: String(event.side ?? event.direction ?? ""),
+      event_key: eventKey(event)
+    });
 
-      const exchangeLines = Object.entries(byExchange)
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+    const notional = num(event.notional ?? event.value ?? event.amount);
+    const qty = num(event.qty ?? event.size ?? event.quantity);
+    const price = num(event.price);
+    if (notional !== null) value += notional;
+    if (qty !== null) size += qty;
+    if (price !== null) prices.push(price);
 
-      const priceRange = prices.length
-        ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
-          " - " + Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
-        : "—";
+    const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
+    byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+  }
 
-      return [
-        symbol,
-        "EVENTS: " + symbolEvents.length,
-        "LONG: " + longCount + " | SHORT: " + shortCount,
-        "VALUE: $" + formatNumber(value, 2),
-        "SIZE: " + formatCompactNumber(size),
-        "PRICE RANGE: " + priceRange,
-        ...exchangeLines
-      ].join("\n");
-    }).join("\n\n");
+  const exchangeLines = Object.entries(byExchange)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+
+  const priceRange = prices.length
+    ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
+      " - " + Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
+    : "—";
+
+  return [
+    symbol,
+    "EVENTS: " + symbolEvents.length,
+    "LONG: " + longCount + " | SHORT: " + shortCount,
+    "VALUE: $" + formatNumber(value, 2),
+    "SIZE: " + formatCompactNumber(size),
+    "PRICE RANGE: " + priceRange,
+    ...exchangeLines
+  ].join("\n");
 }
 
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
-  const feedSources = {};
-  const eventTimes = [];
+  const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   const freshEvents = [];
   const freshByExchange = {};
   const freshBySymbol = {};
-  const freshEventsBySymbol = {};
-  let fresh = 0;
+  const feedSources = {};
+  const eventTimes = [];
 
   for (const event of events) {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
@@ -244,75 +247,75 @@ async function processFeed() {
     const eventMs = getEventMs(event);
     if (eventMs !== null) eventTimes.push(eventMs);
 
+    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+    if (!allowed.has(symbol)) continue;
+
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     state.seen.push(key);
     if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
 
-    fresh++;
     freshEvents.push(event);
     freshByExchange[rawSource] = (freshByExchange[rawSource] || 0) + 1;
-    const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
-    if (!freshEventsBySymbol[symbol]) freshEventsBySymbol[symbol] = [];
-    freshEventsBySymbol[symbol].push(event);
     state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
     state.lastEventKey = key;
   }
 
+  const bySymbol = {};
+  for (const event of freshEvents) {
+    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase();
+    if (!bySymbol[symbol]) bySymbol[symbol] = [];
+    bySymbol[symbol].push(event);
+  }
+
+  const ranked = Object.entries(bySymbol)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
   let alertSent = false;
-  let alertsSentThisCycle = 0;
+  let selectedSymbol = null;
+  let selectedCount = 0;
 
-  // Every fresh Hyperliquid liquidation is eligible.
-  // No threshold, no symbol grouping, no XYZ exception.
-  const hyperliquidEvents = freshEvents.filter(event => {
-    const sources = [event.exchange, event.source, event.venue]
-      .filter(v => v !== undefined && v !== null)
-      .map(v => String(v).trim().toLowerCase());
-    return sources.some(v => v.includes("hyperliquid"));
-  });
+  if (ranked.length) {
+    const [symbol, symbolEvents] = ranked[0];
+    selectedSymbol = symbol;
+    selectedCount = symbolEvents.length;
+    const message = eventBatchMessage(symbolEvents);
 
-  for (const event of hyperliquidEvents) {
-    const sent = await sendTelegram(eventBatchMessage([event]));
-    if (sent) {
-      state.alertsSent = Number(state.alertsSent || 0) + 1;
-      alertsSentThisCycle++;
-      alertSent = true;
+    if (message) {
+      const sent = await sendTelegram(message);
+      alertSent = sent;
+      if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+
+      log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
+        symbol,
+        events: symbolEvents.length,
+        sent,
+        rule: "all exchanges; allowed coins only; top liquidation count per 3-second poll"
+      });
     }
-    log(sent ? "HYPERLIQUID_LIQUIDATION_ALERT_SENT" : "HYPERLIQUID_LIQUIDATION_ALERT_FAILED", {
-      symbol: String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
-      event_key: eventKey(event),
-      sent,
-      rule: "every fresh Hyperliquid liquidation"
-    });
   }
 
-  if (hyperliquidEvents.length > 0) {
-    log("HYPERLIQUID_EVENTS", {
-      fresh_hyperliquid_liquidations: hyperliquidEvents.length,
-      alerts_sent_this_cycle: alertsSentThisCycle,
-      rule: "all fresh Hyperliquid liquidations; no threshold"
-    });
-  }
-
-  const eventTimeSummary = eventTimes.length
-    ? {
-        feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
-        feed_newest_event: new Date(Math.max(...eventTimes)).toISOString()
-      }
-    : { feed_oldest_event: null, feed_newest_event: null };
-
-  log("FEED_PROCESSED", {
+  log("POLL_RESULT", {
     feed_events: events.length,
-    feed_sources: feedSources,
-    fresh_liquidations: fresh,
+    eligible_fresh_liquidations: freshEvents.length,
     fresh_by_exchange: freshByExchange,
     fresh_by_symbol: freshBySymbol,
-    hyperliquid_fresh: hyperliquidEvents.length,
+    selected_symbol: selectedSymbol,
+    selected_events: selectedCount,
     alert_sent: alertSent,
-    ...eventTimeSummary,
-    strategy: "all fresh Hyperliquid liquidations; no threshold; no accumulation across polls"
+    window_ms: POLL_MS,
+    allowed_coins: Array.from(allowed),
+    ...(
+      eventTimes.length
+        ? {
+            feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
+            feed_newest_event: new Date(Math.max(...eventTimes)).toISOString()
+          }
+        : {}
+    ),
+    strategy: "all exchanges; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll"
   });
 
   saveState();
@@ -407,7 +410,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "HYPERLIQUID_ALL_LIQUIDATIONS"
+    monitor: "TOP_COIN_3S_ALL_EXCHANGES"
   });
 
   startHealth();
