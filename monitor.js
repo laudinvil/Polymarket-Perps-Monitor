@@ -11,7 +11,7 @@ const SYMBOLS = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
 const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
-const FEED_SUMMARY_LOG_MS = 30000;
+const FEED_SUMMARY_LOG_MS = 60000;
 const LIQUIDATION_GROUP_WINDOW_MS = 2000;
 
 let state;
@@ -20,7 +20,7 @@ let groupTimer = null;
 let aggrConnected = false;
 let aggrEvents = 0;
 let aggrLastEventAt = null;
-let aggrReconnectTimer = null;
+let aggrReconnectTimer = null;\nlet skippedEvents = 0;
 let aggrRequest = null;
 
 function nowIso() { return new Date().toISOString(); }
