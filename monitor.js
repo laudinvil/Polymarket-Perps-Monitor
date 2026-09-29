@@ -490,11 +490,16 @@ function connectOpenMarket() {
 
   openMarketWs.on("open", () => {
     wsConnectedAt = nowIso();
+    log("OPENMARKET_CONNECTED_NO_AUTH");
     openMarketWs.send(JSON.stringify({
       jsonrpc: "2.0",
-      id: 1,
-      method: "public/authenticate",
-      params: { token: OPENMARKET_API_KEY }
+      id: 2,
+      method: "public/subscribe",
+      params: {
+        channels: openMarketChannels(),
+        compression: "brotli",
+        version: "v2"
+      }
     }));
   });
 
@@ -510,18 +515,8 @@ function connectOpenMarket() {
       return;
     }
 
-    if (message.id === 1) {
-      log("OPENMARKET_AUTH_RESULT", { result: message.result ?? message });
-      openMarketWs.send(JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "public/subscribe",
-        params: {
-          channels: openMarketChannels(),
-          compression: "brotli",
-          version: "v2"
-        }
-      }));
+    if (message.id === 2) {
+      log("OPENMARKET_SUBSCRIBE_RESULT", { result: message.result ?? message });
       return;
     }
 
