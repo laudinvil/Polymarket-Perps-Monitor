@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.3.1-LOG-REDUCED";
+const VERSION = "20.4.0-HYPERLIQUID-ALL";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL",
+    strategy: "HYPERLIQUID_ALL_LIQUIDATIONS",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -263,96 +263,33 @@ async function processFeed() {
 
   let alertSent = false;
   let alertsSentThisCycle = 0;
-  const eligibleBySymbol = {};
-  const skippedBySymbol = {};
 
-  // HARD RULE: threshold is per symbol, per single MarginPad poll.
-  // Never accumulate events across polls. Never trigger on total feed count.
-  for (const [symbol, symbolEvents] of Object.entries(freshEventsBySymbol)) {
-    const xyzEvents = symbolEvents.filter(event =>
-      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() === "xyz"
-    );
-    const regularEvents = symbolEvents.filter(event =>
-      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() !== "xyz"
-    );
+  // Every fresh Hyperliquid liquidation is eligible.
+  // No threshold, no symbol grouping, no XYZ exception.
+  const hyperliquidEvents = freshEvents.filter(event =>
+    String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() === "hyperliquid"
+  );
 
-    if (xyzEvents.length >= 2) {
-      const classified = xyzEvents.filter(event => {
-        const side = String(event.side ?? event.direction ?? "").toUpperCase();
-        return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
-      });
-
-      if (classified.length > 0) {
-        eligibleBySymbol[symbol] = { exchange: "XYZ", events: xyzEvents.length };
-        const sent = await sendTelegram(eventBatchMessage(xyzEvents));
-        if (sent) {
-          state.alertsSent = Number(state.alertsSent || 0) + 1;
-          alertsSentThisCycle++;
-          alertSent = true;
-        }
-        log(sent ? "XYZ_2_PLUS_ALERT_SENT" : "XYZ_2_PLUS_ALERT_FAILED", {
-          symbol,
-          events: xyzEvents.length,
-          sent,
-          rule: "2+ fresh XYZ liquidation events for this symbol in ONE MarginPad poll"
-        });
-      }
+  for (const event of hyperliquidEvents) {
+    const sent = await sendTelegram(eventBatchMessage([event]));
+    if (sent) {
+      state.alertsSent = Number(state.alertsSent || 0) + 1;
+      alertsSentThisCycle++;
+      alertSent = true;
     }
-
-    if (regularEvents.length >= 5) {
-      const classified = regularEvents.filter(event => {
-        const side = String(event.side ?? event.direction ?? "").toUpperCase();
-        return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
-      });
-
-      if (classified.length === 0) {
-        skippedBySymbol[symbol] = {
-          events: regularEvents.length,
-          required: 5,
-          reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
-        };
-        log("ALERT_SKIPPED", {
-          symbol,
-          events: regularEvents.length,
-          reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
-        });
-        continue;
-      }
-
-      eligibleBySymbol[symbol] = { exchange: "NON_XYZ", events: regularEvents.length };
-      const sent = await sendTelegram(eventBatchMessage(regularEvents));
-      if (sent) {
-        state.alertsSent = Number(state.alertsSent || 0) + 1;
-        alertsSentThisCycle++;
-        alertSent = true;
-      }
-
-      log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
-        symbol,
-        events: regularEvents.length,
-        sent,
-        rule: "5+ fresh non-XYZ liquidation events for this symbol in ONE MarginPad poll"
-      });
-    } else if (xyzEvents.length < 2) {
-      skippedBySymbol[symbol] = {
-        events: symbolEvents.length,
-        xyz_events: xyzEvents.length,
-        non_xyz_events: regularEvents.length,
-        required_xyz: 2,
-        required_non_xyz: 5,
-        reason: "BELOW_THRESHOLD"
-      };
-    }
+    log(sent ? "HYPERLIQUID_LIQUIDATION_ALERT_SENT" : "HYPERLIQUID_LIQUIDATION_ALERT_FAILED", {
+      symbol: String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
+      event_key: eventKey(event),
+      sent,
+      rule: "every fresh Hyperliquid liquidation"
+    });
   }
 
-  if (freshEvents.length > 0 || alertsSentThisCycle > 0) {
-    log("ALERT_GROUPING", {
-      fresh_events: freshEvents.length,
-      eligible_by_symbol: Object.fromEntries(Object.entries(eligibleBySymbol).map(([k,v]) => [k, v.events])),
-      skipped_by_symbol: skippedBySymbol,
-      fresh_by_symbol: freshBySymbol,
+  if (hyperliquidEvents.length > 0) {
+    log("HYPERLIQUID_EVENTS", {
+      fresh_hyperliquid_liquidations: hyperliquidEvents.length,
       alerts_sent_this_cycle: alertsSentThisCycle,
-      rule: "XYZ: 2+; non-XYZ: 5+; thresholds are per symbol and per ONE MarginPad poll; no accumulation"
+      rule: "all fresh Hyperliquid liquidations; no threshold"
     });
   }
 
@@ -371,7 +308,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "5+ fresh liquidations for one symbol / 1 polling cycle; no accumulation across polls"
+    strategy: "all fresh Hyperliquid liquidations; no threshold; no accumulation across polls"
   });
 
   saveState();
@@ -454,7 +391,7 @@ function main() {
   ensureDir(LOG_FILE);
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL";
+  state.strategy = "HYPERLIQUID_ALL_LIQUIDATIONS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -466,7 +403,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL"
+    monitor: "HYPERLIQUID_ALL_LIQUIDATIONS"
   });
 
   startHealth();
