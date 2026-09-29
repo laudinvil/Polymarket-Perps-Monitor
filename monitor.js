@@ -274,9 +274,9 @@ async function flushLiquidationBucket() {
   const candidates = Object.entries(bySymbol)
     .map(([symbol, events]) => {
       const sorted = [...events].sort((a, b) => a.ts - b.ts);
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].ts - sorted[i - 1].ts <= LIQUIDATION_GROUP_WINDOW_MS) {
-          return [symbol, [sorted[i - 1], sorted[i]]];
+      for (let i = 2; i < sorted.length; i++) {
+        if (sorted[i].ts - sorted[i - 2].ts <= LIQUIDATION_GROUP_WINDOW_MS) {
+          return [symbol, sorted.slice(i - 2, i + 1)];
         }
       }
       return null;
