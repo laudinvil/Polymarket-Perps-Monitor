@@ -261,6 +261,14 @@ async function flushLiquidationBucket() {
   }).format(new Date());
 
   const clob = await fetchPolymarketClobPrices(symbol);
+  // Ignore near-certain CLOB prices: UP 0.005 / DOWN 0.995 (and the inverse).
+  // Only send an alert when both sides are above the configured floor.
+  if (clob && (clob.up <= 0.005 || clob.down <= 0.005)) {
+    skippedEvents += symbolEvents.length;
+    saveState();
+    return;
+  }
+
   const clobLine = clob
     ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
     : "UP: — | DOWN: —";
