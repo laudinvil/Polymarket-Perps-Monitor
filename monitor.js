@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "23.1.0-OPENMARKET-LIQUIDATIONS-2S-PARSE";
+const VERSION = "23.2.0-OPENMARKET-LIQUIDATIONS-2S-NO-THRESHOLD";
 const POLL_MS = 2000;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
@@ -69,7 +69,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_MIN2",
+    strategy: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -442,18 +442,6 @@ async function flushOpenMarketBucket() {
   const [symbol, symbolEvents] = ranked[0];
   const count = symbolEvents.length;
 
-  if (count < 2) {
-    log("NO_ALERT_BELOW_THRESHOLD", {
-      selected_symbol: symbol,
-      selected_events: count,
-      min_events: 2,
-      received_events: events.length,
-      fresh_events: fresh.length
-    });
-    saveState();
-    return;
-  }
-
   const alert = buildAlertForEvents(symbolEvents);
   if (!alert) return;
 
@@ -469,7 +457,7 @@ async function flushOpenMarketBucket() {
     symbol,
     events: count,
     sent,
-    threshold: 2,
+    threshold: 0,
     bucket_ms: POLL_MS
   });
   saveState();
@@ -645,7 +633,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_MIN2";
+  const strategy = "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
@@ -667,7 +655,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_MIN2"
+    monitor: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD"
   });
 
   startHealth();
