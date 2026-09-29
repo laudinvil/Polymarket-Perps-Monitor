@@ -217,11 +217,30 @@ function recordLiquidations(events) {
     added++;
   }
   if (state.seen.length > MAX_SEEN) state.seen.splice(0, state.seen.length - MAX_SEEN);
-  if (added > 0 && !groupTimer) {
-    groupTimer = setTimeout(() => {
-      groupTimer = null;
+  if (added > 0) {
+    const hasTwoSecondPair = [...new Set(events.map(e => e.symbol))].some(symbol => {
+      const times = bucket
+        .filter(event => event.symbol === symbol)
+        .map(event => event.ts)
+        .sort((a, b) => a - b);
+      for (let i = 1; i < times.length; i++) {
+        if (times[i] - times[i - 1] <= LIQUIDATION_GROUP_WINDOW_MS) return true;
+      }
+      return false;
+    });
+
+    if (hasTwoSecondPair) {
+      if (groupTimer) {
+        clearTimeout(groupTimer);
+        groupTimer = null;
+      }
       flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
-    }, LIQUIDATION_GROUP_WINDOW_MS);
+    } else if (!groupTimer) {
+      groupTimer = setTimeout(() => {
+        groupTimer = null;
+        flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
+      }, LIQUIDATION_GROUP_WINDOW_MS);
+    }
   }
 }
 
@@ -253,8 +272,17 @@ async function flushLiquidationBucket() {
   // Alert when a coin reaches 2+ events inside the 2-second window.
   // Different coins are independent.
   const candidates = Object.entries(bySymbol)
-    .filter(([, events]) => events.length >= 2)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    .map(([symbol, events]) => {
+      const sorted = [...events].sort((a, b) => a.ts - b.ts);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].ts - sorted[i - 1].ts <= LIQUIDATION_GROUP_WINDOW_MS) {
+          return [symbol, [sorted[i - 1], sorted[i]]];
+        }
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b[1][1].ts - b[1][0].ts - (a[1][1].ts - a[1][0].ts) || a[0].localeCompare(b[0]));
 
   if (!candidates.length) return;
 
