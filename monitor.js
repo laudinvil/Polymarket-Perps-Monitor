@@ -449,7 +449,9 @@ function main() {
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
   state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
   state.valueBySymbol = state.valueBySymbol && typeof state.valueBySymbol === "object" ? state.valueBySymbol : {};
-  state.countBySymbol = state.countBySymbol && typeof state.countBySymbol === "object" ? state.countBySymbol : {};
+  const hadCountState = state.countBySymbol && typeof state.countBySymbol === "object";
+  state.countBySymbol = hadCountState ? state.countBySymbol : {};
+  if (!hadCountState) state.valueBySymbol = {};
 
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
