@@ -223,8 +223,8 @@ function recordLiquidations(events) {
         .filter(event => event.symbol === symbol)
         .map(event => event.ts)
         .sort((a, b) => a - b);
-      for (let i = 1; i < times.length; i++) {
-        if (times[i] - times[i - 1] <= LIQUIDATION_GROUP_WINDOW_MS) return true;
+      for (let i = 2; i < times.length; i++) {
+        if (times[i] - times[i - 2] <= LIQUIDATION_GROUP_WINDOW_MS) return true;
       }
       return false;
     });
