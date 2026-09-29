@@ -233,7 +233,7 @@ function eventBatchMessage(events) {
 
   return [
     symbol,
-    "EVENTS: " + symbolEvents.length,
+    "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
     "SIZE: " + formatCompactNumber(size),
