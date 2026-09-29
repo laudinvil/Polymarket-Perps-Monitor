@@ -261,12 +261,12 @@ async function flushLiquidationBucket() {
   }).format(new Date());
 
   const clob = await fetchPolymarketClobPrices(symbol);
-  // Send alerts only when both CLOB sides are within 0.064..0.934.
+  // Send alerts only when both CLOB sides are within 0.1..0.9.
   if (
     clob &&
     (
-      clob.up < 0.064 || clob.up > 0.934 ||
-      clob.down < 0.064 || clob.down > 0.934
+      clob.up < 0.1 || clob.up > 0.9 ||
+      clob.down < 0.1 || clob.down > 0.9
     )
   ) {
     skippedEvents += symbolEvents.length;
