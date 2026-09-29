@@ -4,8 +4,8 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "23.2.0-OPENMARKET-LIQUIDATIONS-2S-NO-THRESHOLD";
-const POLL_MS = 2000;
+const VERSION = "23.3.0-OPENMARKET-LIQUIDATIONS-SIMULTANEOUS-NO-THRESHOLD";
+const POLL_MS = 0;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -69,7 +69,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD",
+    strategy: "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -401,6 +401,7 @@ let openMarketWs = null;
 let reconnectTimer = null;
 let bucket = [];
 let bucketTimer = null;
+let bucketFlushScheduled = false;
 let wsConnectedAt = null;
 
 async function flushOpenMarketBucket() {
@@ -458,16 +459,23 @@ async function flushOpenMarketBucket() {
     events: count,
     sent,
     threshold: 0,
-    bucket_ms: POLL_MS
+    bucket_ms: 0
   });
   saveState();
 }
 
 function scheduleBucketFlush() {
-  if (bucketTimer) return;
-  bucketTimer = setInterval(() => {
+  // No fixed polling interval. Events are flushed as soon as the current
+  // WebSocket message batch / same event-loop turn is collected.
+}
+
+function scheduleImmediateBucketFlush() {
+  if (bucketFlushScheduled) return;
+  bucketFlushScheduled = true;
+  setImmediate(() => {
+    bucketFlushScheduled = false;
     flushOpenMarketBucket().catch(e => log("OPENMARKET_FLUSH_ERROR", { error: String(e.stack || e) }));
-  }, POLL_MS);
+  });
 }
 
 function connectOpenMarket() {
@@ -537,6 +545,7 @@ function connectOpenMarket() {
     }
 
     for (const event of points) bucket.push(event);
+    scheduleImmediateBucketFlush();
 
     log("OPENMARKET_LIQUIDATIONS", {
       received_events: points.length,
@@ -567,7 +576,7 @@ function diagnostics() {
     version: VERSION,
     buildSha: BUILD_SHA,
     strategy: state.strategy,
-    pollingMs: POLL_MS,
+    pollingMs: 0,
     feed: OPENMARKET_WS_URL,
     collectionStartedAt,
     updatedAt: state.updatedAt,
@@ -633,7 +642,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD";
+  const strategy = "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
@@ -655,7 +664,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "OPENMARKET_TOP_COIN_2S_EXCEPT_HYPERLIQUID_NO_THRESHOLD"
+    monitor: "OPENMARKET_TOP_COIN_SIMULTANEOUS_EXCEPT_HYPERLIQUID_NO_THRESHOLD"
   });
 
   startHealth();
