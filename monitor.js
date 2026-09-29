@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.0.0-BINANCE-BYBIT";
+const VERSION = "25.1.0-BINANCE-BYBIT";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -537,11 +537,6 @@ function connectBybit() {
   });
   bybitWs.on("close",(code,reason)=>{ log("BYBIT_CLOSED",{code,reason:String(reason||"")}); bybitWs=null; reconnectTimers.bybit=setTimeout(connectBybit,3000); });
   bybitWs.on("error",e=>log("BYBIT_WS_ERROR",{error:String(e.message||e)}));
-}
-
-function startLiquidationStream() {
-  connectBinance();
-  connectBybit();
 }
 
 function diagnostics() {
