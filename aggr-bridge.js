@@ -105,13 +105,13 @@ function adapterNames() {
     .filter(name => name !== "index");
 }
 
-function isUsefulDerivativePair(exchange, pair) {
+function isPerpetualLiquidationPair(exchange, pair) {
   const raw = String(pair || "").toUpperCase();
   const symbol = symbolFromPair(raw);
   const id = String(exchange.id || "").toUpperCase();
   if (!symbol) return false;
 
-  // Liquidations exist only on derivatives. Do not subscribe to spot pairs.
+  // Subscribe only to perpetual/swap liquidation markets. Exclude spot and dated futures.
   // Several exchanges expose spot and perpetual products with the same
   // symbol (for example BYBIT:BNBUSDT), so the exchange must be told which
   // product family is allowed instead of matching the symbol alone.
@@ -162,8 +162,8 @@ async function buildExchanges(config) {
     }
   }
 
-  // Let AGGR manage all available adapters. We only subscribe to the seven
-  // requested symbols, and only to products exposed by each adapter.
+  // Subscribe only to the seven requested symbols and their perpetual/swap
+  // liquidation markets.
   config.exchanges = exchanges.map(exchange => exchange.id);
   config.pairs = [];
 
@@ -171,7 +171,7 @@ async function buildExchanges(config) {
     try {
       await exchange.getProducts(false);
       const products = Array.isArray(exchange.products) ? exchange.products : [];
-      const selected = products.filter(pair => isUsefulDerivativePair(exchange, pair));
+      const selected = products.filter(pair => isPerpetualLiquidationPair(exchange, pair));
 
       for (const pair of selected) {
         config.pairs.push(exchange.id + ":" + pair);
