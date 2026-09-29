@@ -68,6 +68,7 @@ function defaultState() {
     updatedAt: nowIso(),
     seen: [],
     alertedLinks: [],
+    alertedPeriodKey: null,
     alertsSent: 0,
     lastEventTs: null,
     lastEventKey: null
@@ -259,7 +260,9 @@ async function flushLiquidationBucket() {
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
 
-  if (alertedLinks.has(link)) {
+  const periodKey = link.match(/-5m-(\\d+)$/)?.[1] || link;
+  const alertedPeriodKey = state.alertedPeriodKey || null;
+  if (alertedLinks.has(link) || alertedPeriodKey === periodKey) {
     const alertedKeys = new Set(symbolEvents.map(eventKey));
     bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
     ignoredEvents += symbolEvents.length;
@@ -322,6 +325,7 @@ async function flushLiquidationBucket() {
   if (sent) {
     state.alertsSent = Number(state.alertsSent || 0) + 1;
     rememberAlertedLink(link);
+    state.alertedPeriodKey = periodKey;
     state.lastEventTs = Math.max(...symbolEvents.map(e => e.ts));
     state.lastEventKey = eventKey(symbolEvents[symbolEvents.length - 1]);
     saveState();
@@ -475,6 +479,7 @@ function main() {
   if (state.strategy !== "AGGR_LIQUIDATIONS" || state.version !== VERSION) {
     state.seen = [];
     state.alertedLinks = [];
+    state.alertedPeriodKey = null;
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
@@ -484,6 +489,7 @@ function main() {
   state.strategy = "AGGR_LIQUIDATIONS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
+  state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
 
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
