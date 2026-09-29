@@ -283,48 +283,80 @@ async function processFeed() {
   // HARD RULE: threshold is per symbol, per single MarginPad poll.
   // Never accumulate events across polls. Never trigger on total feed count.
   for (const [symbol, symbolEvents] of Object.entries(freshEventsBySymbol)) {
-    if (symbolEvents.length < 5) {
-      skippedBySymbol[symbol] = {
-        events: symbolEvents.length,
-        required: 5,
-        reason: "LESS_THAN_5_FRESH_EVENTS_IN_SINGLE_POLL"
-      };
-      continue;
-    }
+    const xyzEvents = symbolEvents.filter(event =>
+      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() === "xyz"
+    );
+    const regularEvents = symbolEvents.filter(event =>
+      String(event.exchange ?? event.source ?? event.venue ?? "").toLowerCase() !== "xyz"
+    );
 
-    const classified = symbolEvents.filter(event => {
-      const side = String(event.side ?? event.direction ?? "").toUpperCase();
-      return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
-    });
-
-    if (classified.length === 0) {
-      skippedBySymbol[symbol] = {
-        events: symbolEvents.length,
-        required: 5,
-        reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
-      };
-      log("ALERT_SKIPPED", {
-        symbol,
-        events: symbolEvents.length,
-        reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
+    if (xyzEvents.length >= 2) {
+      const classified = xyzEvents.filter(event => {
+        const side = String(event.side ?? event.direction ?? "").toUpperCase();
+        return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
       });
-      continue;
+
+      if (classified.length > 0) {
+        eligibleBySymbol[symbol] = { exchange: "XYZ", events: xyzEvents.length };
+        const sent = await sendTelegram(eventBatchMessage(xyzEvents));
+        if (sent) {
+          state.alertsSent = Number(state.alertsSent || 0) + 1;
+          alertsSentThisCycle++;
+          alertSent = true;
+        }
+        log(sent ? "XYZ_2_PLUS_ALERT_SENT" : "XYZ_2_PLUS_ALERT_FAILED", {
+          symbol,
+          events: xyzEvents.length,
+          sent,
+          rule: "2+ fresh XYZ liquidation events for this symbol in ONE MarginPad poll"
+        });
+      }
     }
 
-    eligibleBySymbol[symbol] = symbolEvents;
-    const sent = await sendTelegram(eventBatchMessage(symbolEvents));
-    if (sent) {
-      state.alertsSent = Number(state.alertsSent || 0) + 1;
-      alertsSentThisCycle++;
-      alertSent = true;
-    }
+    if (regularEvents.length >= 5) {
+      const classified = regularEvents.filter(event => {
+        const side = String(event.side ?? event.direction ?? "").toUpperCase();
+        return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
+      });
 
-    log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
-      symbol,
-      events: symbolEvents.length,
-      sent,
-      rule: "5+ fresh liquidation events for this symbol in ONE MarginPad poll"
-    });
+      if (classified.length === 0) {
+        skippedBySymbol[symbol] = {
+          events: regularEvents.length,
+          required: 5,
+          reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
+        };
+        log("ALERT_SKIPPED", {
+          symbol,
+          events: regularEvents.length,
+          reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
+        });
+        continue;
+      }
+
+      eligibleBySymbol[symbol] = { exchange: "NON_XYZ", events: regularEvents.length };
+      const sent = await sendTelegram(eventBatchMessage(regularEvents));
+      if (sent) {
+        state.alertsSent = Number(state.alertsSent || 0) + 1;
+        alertsSentThisCycle++;
+        alertSent = true;
+      }
+
+      log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
+        symbol,
+        events: regularEvents.length,
+        sent,
+        rule: "5+ fresh non-XYZ liquidation events for this symbol in ONE MarginPad poll"
+      });
+    } else if (xyzEvents.length < 2) {
+      skippedBySymbol[symbol] = {
+        events: symbolEvents.length,
+        xyz_events: xyzEvents.length,
+        non_xyz_events: regularEvents.length,
+        required_xyz: 2,
+        required_non_xyz: 5,
+        reason: "BELOW_THRESHOLD"
+      };
+    }
   }
 
   log("ALERT_GROUPING", {
@@ -333,7 +365,7 @@ async function processFeed() {
     skipped_by_symbol: skippedBySymbol,
     fresh_by_symbol: freshBySymbol,
     alerts_sent_this_cycle: alertsSentThisCycle,
-    rule: "ONE RAW EVENT PER TELEGRAM ALERT; NO AGGREGATION"
+    rule: "XYZ: 2+; non-XYZ: 5+; thresholds are per symbol and per ONE MarginPad poll; no accumulation"
   });
   const eventTimeSummary = eventTimes.length
     ? {
