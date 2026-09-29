@@ -6,7 +6,6 @@ const zlib = require("zlib");
 
 const VERSION = "25.0.0-BINANCE-BYBIT";
 const POLL_MS = 0;
-const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/openmarket-liquidation.jsonl";
@@ -14,17 +13,6 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 300000;
-const EXCLUDED_EXCHANGES = new Set(["hyperliquid", "hyper_liquid", "hyperliquid_perps"]);
-const OPENMARKET_EXCHANGES = [
-  "BINANCE_FUTURES",
-  "BYBIT",
-  "OKX",
-  "DERIBIT",
-  "BITMEX",
-  "BITGET",
-  "GATE_IO_FUTURES"
-];
-const OPENMARKET_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "BNBUSDT", "HYPEUSDT"];
 
 let state;
 let pollRunning = false;
@@ -563,7 +551,7 @@ function diagnostics() {
     buildSha: BUILD_SHA,
     strategy: state.strategy,
     pollingMs: 0,
-    feed: OPENMARKET_WS_URL,
+    feeds: ["BINANCE_FUTURES", "BYBIT"],
     collectionStartedAt,
     updatedAt: state.updatedAt,
     alertsSent: state.alertsSent,
@@ -613,11 +601,6 @@ function startHealth() {
     port,
     healthPath: "/health"
   }));
-}
-
-function startLiquidationStream() {
-  scheduleBucketFlush();
-  connectOpenMarket();
 }
 
 function main() {
