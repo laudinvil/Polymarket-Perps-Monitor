@@ -1,6 +1,7 @@
 const { spawn } = require("child_process");
 const children = [];
 let stopping = false;
+let monitorStarted = false;
 
 function start(name, args) {
   const child = spawn(process.execPath, args, {stdio:["ignore","pipe","pipe"], env:process.env});
@@ -25,4 +26,25 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 start("AGGR", ["aggr-bridge.js"]);
-setTimeout(() => start("MONITOR", ["monitor.js"]), 1500);
+function waitForAggr() {
+  if (stopping || monitorStarted) return;
+  const req = require("http").get("http://127.0.0.1:9090/health", res => {
+    res.resume();
+    if (res.statusCode === 200) {
+      monitorStarted = true;
+      console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        component: "SUPERVISOR",
+        event: "AGGR_READY",
+        endpoint: "http://127.0.0.1:9090/health"
+      }));
+      start("MONITOR", ["monitor.js"]);
+      return;
+    }
+    setTimeout(waitForAggr, 1000).unref();
+  });
+  req.on("error", () => setTimeout(waitForAggr, 1000).unref());
+  req.setTimeout(1000, () => req.destroy());
+}
+
+waitForAggr();
