@@ -296,8 +296,10 @@ async function flushLiquidationBucket() {
     ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
     : "UP: — | DOWN: —";
 
+  const directionArrow = clob ? (clob.up <= clob.down ? "↑" : "↓") : "";
+
   const text = [
-    symbol,
+    symbol + (directionArrow ? " " + directionArrow : ""),
     "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
