@@ -188,8 +188,6 @@ function cascadeMessage(symbol, events) {
   const last = events[events.length - 1];
 
   return [
-    "PUMP CASCADE",
-    "",
     symbol,
     "EVENTS: " + events.length,
     "LONG: " + longs + " | SHORT: " + shorts,
