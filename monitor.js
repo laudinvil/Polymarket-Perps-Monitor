@@ -240,41 +240,55 @@ function rememberAlertedLink(link) {
 async function flushLiquidationBucket() {
   if (!bucket.length) return;
 
-  // One alert is allowed for each unique Polymarket 5m market URL.
-  // Different coins have different URLs and can alert independently.
-  const event = bucket.shift();
-  if (!event) return;
+  const bySymbol = {};
+  for (const event of bucket) {
+    if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
+    bySymbol[event.symbol].push(event);
+  }
 
-  const link = polymarket5mUrl(event.symbol, event.ts);
+  // No time window. Keep accumulating unique events per coin.
+  // Alert when a coin reaches 2+ events. Different coins are independent.
+  const candidates = Object.entries(bySymbol)
+    .filter(([, events]) => events.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+  if (!candidates.length) return;
+
+  const [symbol, symbolEvents] = candidates[0];
   const alertedLinks = alertedLinksSet();
+  const link = polymarket5mUrl(symbol);
+
   if (alertedLinks.has(link)) {
-    ignoredEvents++;
+    const alertedKeys = new Set(symbolEvents.map(eventKey));
+    bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
+    ignoredEvents += symbolEvents.length;
     return;
   }
 
-  const symbolEvents = [event];
-  const longCount = event.side === "sell" ? 1 : 0;
-  const shortCount = event.side === "buy" ? 1 : 0;
-  const value = event.notional;
+  const alertedKeys = new Set(symbolEvents.map(eventKey));
+  bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
 
-  const byExchange = { [event.exchange]: 1 };
-  const displayExchange = event.exchange === "BINANCE_FUTURES" ? "BINANCE" : event.exchange;
-  const exchangeLines = [displayExchange + ": 1"];
+  const longCount = symbolEvents.filter(e => e.side === "sell").length;
+  const shortCount = symbolEvents.filter(e => e.side === "buy").length;
+  const value = symbolEvents.reduce((sum, e) => sum + e.notional, 0);
+
+  const byExchange = {};
+  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
+  const exchangeLines = Object.entries(byExchange)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([exchange, count]) => {
+      const displayExchange = exchange === "BINANCE_FUTURES" ? "BINANCE" : exchange;
+      return displayExchange + ": " + count;
+    });
 
   const eventTime = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Kyiv",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-  }).format(new Date(event.ts));
+  }).format(new Date(Math.max(...symbolEvents.map(e => e.ts))));
 
-  const clob = await fetchPolymarketClobPrices(event.symbol, event.ts);
-  if (
-    clob &&
-    (
-      clob.up < 0.1 || clob.up > 0.9 ||
-      clob.down < 0.1 || clob.down > 0.9
-    )
-  ) {
-    skippedEvents++;
+  const clob = await fetchPolymarketClobPrices(symbol, Math.max(...symbolEvents.map(e => e.ts)));
+  if (clob && (clob.up < 0.1 || clob.up > 0.9 || clob.down < 0.1 || clob.down > 0.9)) {
+    skippedEvents += symbolEvents.length;
     return;
   }
 
@@ -283,8 +297,8 @@ async function flushLiquidationBucket() {
     : "UP: — | DOWN: —";
 
   const text = [
-    event.symbol,
-    "LIQS: 1",
+    symbol,
+    "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     ...exchangeLines,
@@ -296,8 +310,8 @@ async function flushLiquidationBucket() {
   const sent = await sendTelegram(text);
   log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
     source: "AGGR",
-    symbol: event.symbol,
-    events: 1,
+    symbol,
+    events: symbolEvents.length,
     dedupeKey: link,
     exchanges: byExchange
   });
@@ -305,8 +319,8 @@ async function flushLiquidationBucket() {
   if (sent) {
     state.alertsSent = Number(state.alertsSent || 0) + 1;
     rememberAlertedLink(link);
-    state.lastEventTs = event.ts;
-    state.lastEventKey = eventKey(event);
+    state.lastEventTs = Math.max(...symbolEvents.map(e => e.ts));
+    state.lastEventKey = eventKey(symbolEvents[symbolEvents.length - 1]);
     saveState();
   }
 }
@@ -475,6 +489,7 @@ function main() {
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
+    minimumLiquidations: 2,
     dedupe: "POLYMARKET_5M_URL"
   });
 
