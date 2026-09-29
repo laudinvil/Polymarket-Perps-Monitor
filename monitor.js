@@ -24,6 +24,26 @@ function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
+function normalizeCoin(value) {
+  let symbol = String(value ?? "UNKNOWN").trim().toUpperCase();
+  if (!symbol) return "UNKNOWN";
+
+  symbol = symbol.replace(/[\\s_/:.-]+/g, "");
+
+  const suffixes = [
+    "USDT", "USDC", "BUSD", "FDUSD", "USDE", "USD", "PERP", "SWAP"
+  ];
+
+  for (const suffix of suffixes) {
+    if (symbol.endsWith(suffix) && symbol.length > suffix.length) {
+      symbol = symbol.slice(0, -suffix.length);
+      break;
+    }
+  }
+
+  return symbol || "UNKNOWN";
+}
+
 function appendLogRow(row) {
   try {
     ensureDir(LOG_FILE);
@@ -188,7 +208,7 @@ function getEventMs(event) {
 
 function liquidationMessage(event) {
   const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN").toUpperCase();
-  const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").toUpperCase();
+  const symbol = normalizeCoin(event.symbol ?? event.coin);
   const side = sideLabel(event.side);
   const price = formatNumber(event.price);
   const qty = formatNumber(event.qty ?? event.size);
@@ -223,7 +243,7 @@ async function sendLiquidationAlert(event) {
   }
 
   const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN").toLowerCase();
-  const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").toUpperCase();
+  const symbol = normalizeCoin(event.symbol ?? event.coin);
 
   log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
     exchange,
@@ -314,7 +334,7 @@ async function processFeed() {
   const freshBySymbol = {};
 
   for (const event of freshEvents) {
-    const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").toUpperCase();
+    const symbol = normalizeCoin(event.symbol ?? event.coin);
     if (!freshBySymbol[symbol]) freshBySymbol[symbol] = [];
     freshBySymbol[symbol].push(event);
   }
