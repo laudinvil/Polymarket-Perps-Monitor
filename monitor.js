@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "10.0.0-CASCADE16";
+const VERSION = "10.1.0-CASCADE3";
 const POLL_MS = 3000;
-const CASCADE_MIN_EVENTS = 16;
-const CASCADE_GAP_MS = 3000;
+const CASCADE_MIN_EVENTS = 3;
+const CASCADE_GAP_MS = 15000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const EXCHANGE = "hyperliquid";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -31,7 +31,7 @@ function log(event, data = {}) {
 }
 
 function defaultState() {
-  return { version: VERSION, strategy: "MARGINPAD_HYPERLIQUID_CASCADES_16", updatedAt: nowIso(), seen: [], alertsSent: 0, lastEventTs: null, lastEventKey: null, cascades: {} };
+  return { version: VERSION, strategy: "MARGINPAD_HYPERLIQUID_CASCADES_3", updatedAt: nowIso(), seen: [], alertsSent: 0, lastEventTs: null, lastEventKey: null, cascades: {} };
 }
 
 function loadState() {
@@ -291,7 +291,7 @@ function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA, strategy: state.strategy, source: FEED_URL,
     exchange: EXCHANGE, pollingMs: POLL_MS, cascadeMinEvents: CASCADE_MIN_EVENTS,
-    cascadeGapMs: CASCADE_GAP_MS, monitor: "MARGINPAD_HYPERLIQUID_CASCADE_16"
+    cascadeGapMs: CASCADE_GAP_MS, monitor: "MARGINPAD_HYPERLIQUID_CASCADE_3"
   });
   startHealth();
   poll();
