@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "13.0.0-ALL-EXCHANGES";
+const VERSION = "14.0.0-16-EVENTS-1-POLL";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -235,6 +235,32 @@ async function sendLiquidationAlert(event) {
   });
 }
 
+function eventBatchMessage(events, freshByExchange) {
+  const lines = [
+    "16+ LIQUIDATION EVENTS",
+    "FRESH: " + events.length,
+    "EXCHANGES: " + Object.entries(freshByExchange)
+      .map(([exchange, count]) => exchange.toUpperCase() + " " + count)
+      .join(" | ")
+  ];
+
+  const newest = events
+    .map(getEventMs)
+    .filter(v => v !== null)
+    .sort((a, b) => b - a)[0];
+
+  if (newest !== undefined) {
+    lines.push(new Date(newest).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: "Europe/Kyiv"
+    }));
+  }
+
+  return lines.join("\n");
+}
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
@@ -244,6 +270,7 @@ async function processFeed() {
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   let fresh = 0;
   const freshByExchange = {};
+  const freshEvents = [];
 
   for (const event of events) {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
@@ -262,12 +289,11 @@ async function processFeed() {
     }
 
     fresh++;
+    freshEvents.push(event);
     freshByExchange[rawSource] = (freshByExchange[rawSource] || 0) + 1;
 
     state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
     state.lastEventKey = key;
-
-    await sendLiquidationAlert(event);
   }
 
   const eventTimeSummary = eventTimes.length
@@ -280,13 +306,29 @@ async function processFeed() {
         feed_newest_event: null
       };
 
+  let alertSent = false;
+  if (fresh >= 16) {
+    alertSent = await sendTelegram(eventBatchMessage(freshEvents, freshByExchange));
+    if (alertSent) {
+      state.alertsSent = Number(state.alertsSent || 0) + 1;
+    }
+
+    log(alertSent ? "16_PLUS_EVENTS_ALERT_SENT" : "16_PLUS_EVENTS_ALERT_FAILED", {
+      fresh_liquidations: fresh,
+      fresh_by_exchange: freshByExchange,
+      sent: alertSent,
+      rule: "16+ fresh liquidation events in 1 MarginPad polling cycle"
+    });
+  }
+
   log("FEED_PROCESSED", {
     feed_events: events.length,
     feed_sources: feedSources,
     fresh_liquidations: fresh,
     fresh_by_exchange: freshByExchange,
+    alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "all exchanges / all liquidation events"
+    strategy: "16+ fresh liquidation events / 1 polling cycle"
   });
 
   saveState();
