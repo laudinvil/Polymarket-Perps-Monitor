@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "15.0.0-16-SAME-COIN";
+const VERSION = "15.1.0-16-SAME-COIN-NO-CASCADE";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -235,10 +235,9 @@ async function sendLiquidationAlert(event) {
   });
 }
 
-function eventBatchMessage(symbol, events, freshByExchange) {
+function eventBatchMessage(events, freshByExchange) {
   const lines = [
     "16+ LIQUIDATION EVENTS",
-    "COIN: " + symbol,
     "FRESH: " + events.length,
     "EXCHANGES:"
   ];
@@ -264,6 +263,7 @@ function eventBatchMessage(symbol, events, freshByExchange) {
 
   return lines.join("\n");
 }
+
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
@@ -330,7 +330,7 @@ async function processFeed() {
     }
 
     const sent = await sendTelegram(
-      eventBatchMessage(symbol, symbolEvents, symbolByExchange)
+      eventBatchMessage(symbolEvents, symbolByExchange)
     );
 
     if (sent) {
@@ -462,7 +462,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_16_PLUS_SAME_COIN"
+    monitor: "MARGINPAD_16_PLUS_SAME_COIN_NO_CASCADE"
   });
 
   startHealth();
