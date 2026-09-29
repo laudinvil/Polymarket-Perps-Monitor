@@ -4,10 +4,9 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "24.0.0-OPENMARKET-SIMPLE";
+const VERSION = "24.1.0-OPENMARKET-NO-AUTH";
 const POLL_MS = 0;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
-const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/openmarket-liquidation.jsonl";
@@ -475,11 +474,6 @@ async function flushOpenMarketBucket() {
 function scheduleBucketFlush() {}
 
 function connectOpenMarket() {
-  if (!OPENMARKET_API_KEY) {
-    log("OPENMARKET_API_KEY_MISSING");
-    return;
-  }
-
   openMarketWs = new WebSocket(OPENMARKET_WS_URL);
   log("OPENMARKET_CONNECTING", {
     url: OPENMARKET_WS_URL,
