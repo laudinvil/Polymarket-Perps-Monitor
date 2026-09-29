@@ -1,4 +1,4 @@
-# Deplexo deployment: run MarginPad Hyperliquid CASCADE5 2-poll monitor v12.1.0
+# Deplexo deployment: run MarginPad Hyperliquid CASCADE5 2-poll monitor v12.3.0
 framework: node
 install: npm install
 start: node monitor.js
