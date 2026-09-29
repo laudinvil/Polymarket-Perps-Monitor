@@ -1,0 +1,31 @@
+{
+  "debug": false,
+  "port": 3001,
+  "collect": true,
+  "api": false,
+  "storage": false,
+  "persistConnections": false,
+  "pairs": [
+    "BINANCE_FUTURES:btcusdt",
+    "BINANCE_FUTURES:ethusdt",
+    "BINANCE_FUTURES:solusdt",
+    "BINANCE_FUTURES:xrpusdt",
+    "BINANCE_FUTURES:dogeusdt",
+    "BINANCE_FUTURES:bnbusdt",
+    "BINANCE_FUTURES:hypeusdt",
+    "BYBIT:BTCUSDT",
+    "BYBIT:ETHUSDT",
+    "BYBIT:SOLUSDT",
+    "BYBIT:XRPUSDT",
+    "BYBIT:DOGEUSDT",
+    "BYBIT:BNBUSDT",
+    "BYBIT:HYPEUSDT",
+    "OKEX:BTC-USDT-SWAP",
+    "OKEX:ETH-USDT-SWAP",
+    "OKEX:SOL-USDT-SWAP",
+    "OKEX:XRP-USDT-SWAP",
+    "OKEX:DOGE-USDT-SWAP",
+    "OKEX:BNB-USDT-SWAP",
+    "OKEX:HYPE-USDT-SWAP"
+  ]
+}
