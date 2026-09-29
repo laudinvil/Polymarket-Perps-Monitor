@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.3.0-BINANCE-BYBIT-FEED-STATUS";
+const VERSION = "25.4.0-BINANCE-BYBIT-AGG-DIAG";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -499,6 +499,8 @@ async function flushLiquidationBucket() {
 function connectBinance() {
   clearTimeout(reconnectTimers.binance);
   const streams = ["btcusdt","ethusdt","solusdt","xrpusdt","dogeusdt","bnbusdt","hypeusdt"].map(s=>s+"@forceOrder");
+  // Diagnostic aggregate stream: do not turn it into alerts, because Binance aggregates to the largest liquidation per second.
+  streams.push("!forceOrder@arr");
   const url = "wss://fstream.binance.com/stream?streams="+streams.join("/");
   binanceWs = new WebSocket(url);
   log("BINANCE_CONNECTING",{url});
@@ -506,6 +508,11 @@ function connectBinance() {
   binanceWs.on("message",data=>{
     wsMessageDiagnostics.binance++;
     const m=decodeOpenMarketMessage(data);
+    if (m?.stream === "!forceOrder@arr") {
+      const o = m?.data?.o;
+      if (o) log("BINANCE_AGG_FORCEORDER_RECEIVED",{symbol:o.s,side:o.S,price:o.ap ?? o.p,qty:o.z ?? o.q});
+      return;
+    }
     if (!m) {
       if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_DECODE_FAILED",{bytes:Buffer.byteLength(data)});
       return;
