@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.0.0-2-ALL-EXCHANGES";
+const VERSION = "20.1.0-EXCHANGE-BREAKDOWN";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -156,52 +156,82 @@ function getEventMs(event) {
   return raw < 1e12 ? raw * 1000 : raw;
 }
 
+function formatNumber(value, decimals = 2) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  });
+}
+
+function formatCompactNumber(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  const n = Number(value);
+  if (Number.isInteger(n)) return n.toLocaleString("en-US");
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  });
+}
+
 function eventBatchMessage(events) {
-  const byExchange = {};
+  const bySymbol = {};
+
   for (const event of events) {
-    const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
-    byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+    if (!bySymbol[symbol]) bySymbol[symbol] = [];
+    bySymbol[symbol].push(event);
   }
 
-  const exchangeLines = Object.entries(byExchange)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+  const symbolBlocks = Object.entries(bySymbol)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([symbol, symbolEvents]) => {
+      let longCount = 0;
+      let shortCount = 0;
+      let value = 0;
+      let size = 0;
+      const prices = [];
+      const byExchange = {};
 
-  const lines = [
-    "LIQUIDATIONS: " + events.length,
-    "",
-    "BY EXCHANGE",
-    ...exchangeLines,
-    ""
-  ];
+      for (const event of symbolEvents) {
+        const side = String(event.side ?? event.direction ?? "").toUpperCase();
+        if (side === "LONG" || side === "BUY") longCount++;
+        if (side === "SHORT" || side === "SELL") shortCount++;
 
-  const details = events
-    .slice()
-    .sort((a, b) => (getEventMs(a) ?? 0) - (getEventMs(b) ?? 0))
-    .map(event => {
-      const eventMs = getEventMs(event);
-      const time = eventMs !== null
-        ? new Date(eventMs).toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false,
-            timeZone: "Europe/Kyiv"
-          })
+        const notional = num(event.notional ?? event.value ?? event.amount);
+        const qty = num(event.qty ?? event.size ?? event.quantity);
+        const price = num(event.price);
+
+        if (notional !== null) value += notional;
+        if (qty !== null) size += qty;
+        if (price !== null) prices.push(price);
+
+        const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
+        byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+      }
+
+      const exchangeLines = Object.entries(byExchange)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+
+      const priceRange = prices.length
+        ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
+          " - " +
+          Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
         : "—";
-      const side = String(event.side ?? event.direction ?? "UNKNOWN").toUpperCase();
-      const price = num(event.price);
-      const qty = num(event.qty ?? event.size ?? event.quantity);
+
       return [
-        "DIRECTION: " + side,
-        "PRICE: " + (price !== null ? price : "—"),
-        "QUANTITY: " + (qty !== null ? qty : "—"),
-        "TIME: " + time
+        symbol,
+        "EVENTS: " + symbolEvents.length,
+        "LONG: " + longCount + " | SHORT: " + shortCount,
+        "VALUE: $" + formatNumber(value, 2),
+        "SIZE: " + formatCompactNumber(size),
+        "PRICE RANGE: " + priceRange,
+        ...exchangeLines
       ].join("\n");
     });
 
-  lines.push(...details);
-  return lines.join("\n");
+  return symbolBlocks.join("\n\n");
 }
 
 async function processFeed() {
