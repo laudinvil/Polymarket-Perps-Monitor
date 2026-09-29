@@ -306,13 +306,22 @@ async function processFeed() {
   const freshByExchange = {};
   const freshBySymbol = {};
   const feedSources = {};
+  const eligibleByExchange = {};
+  const eligibleBySymbol = {};
   const eventTimes = [];
+  let eligibleEvents = 0;
+  let duplicateEvents = 0;
+  let excludedEvents = 0;
+  let disallowedCoinEvents = 0;
 
   for (const event of events) {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim();
     const sourceKey = rawSource.toLowerCase();
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
-    if (EXCLUDED_EXCHANGES.has(sourceKey)) continue;
+    if (EXCLUDED_EXCHANGES.has(sourceKey)) {
+      excludedEvents++;
+      continue;
+    }
 
     const eventMs = getEventMs(event);
     if (eventMs !== null) eventTimes.push(eventMs);
@@ -321,10 +330,20 @@ async function processFeed() {
     // Do not require the event timestamp to fall inside our local 3-second clock window: that drops delayed events.
     // Accept newly observed events and use the persistent event-key cache for dedupe.
     const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    if (!allowed.has(symbol)) continue;
+    if (!allowed.has(symbol)) {
+      disallowedCoinEvents++;
+      continue;
+    }
+
+    eligibleEvents++;
+    eligibleByExchange[rawSource] = (eligibleByExchange[rawSource] || 0) + 1;
+    eligibleBySymbol[symbol] = (eligibleBySymbol[symbol] || 0) + 1;
 
     const key = eventKey(event);
-    if (!key || seen.has(key)) continue;
+    if (!key || seen.has(key)) {
+      duplicateEvents++;
+      continue;
+    }
     seen.add(key);
     state.seen.push(key);
     if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
