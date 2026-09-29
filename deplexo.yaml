@@ -1,4 +1,4 @@
-# Deplexo deployment: run MarginPad liquidation monitor v20.2.0-single-event-alerts
+# Deplexo deployment: run top-coin liquidation monitor v21.0.0
 framework: node
 install: npm install
 start: node monitor.js
