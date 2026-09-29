@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_GROUP_WINDOW_MS = 3000;
+const LIQUIDATION_GROUP_WINDOW_MS = 2000;
 
 let state;
 let bucket = [];
@@ -218,7 +218,7 @@ function recordLiquidations(events) {
   }
   if (state.seen.length > MAX_SEEN) state.seen.splice(0, state.seen.length - MAX_SEEN);
   if (added > 0) {
-    const hasTwoSecondPair = [...new Set(events.map(e => e.symbol))].some(symbol => {
+    const hasThreeSecondGroup = [...new Set(events.map(e => e.symbol))].some(symbol => {
       const times = bucket
         .filter(event => event.symbol === symbol)
         .map(event => event.ts)
@@ -229,7 +229,7 @@ function recordLiquidations(events) {
       return false;
     });
 
-    if (hasTwoSecondPair) {
+    if (hasThreeSecondGroup) {
       if (groupTimer) {
         clearTimeout(groupTimer);
         groupTimer = null;
@@ -269,7 +269,7 @@ async function flushLiquidationBucket() {
     bySymbol[event.symbol].push(event);
   }
 
-  // Alert when a coin reaches 2+ events inside the 2-second window.
+  // Alert when a coin reaches 3+ events inside the 2-second window.
   // Different coins are independent.
   const candidates = Object.entries(bySymbol)
     .map(([symbol, events]) => {
@@ -529,7 +529,7 @@ function main() {
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
-    minimumLiquidations: 2,
+    minimumLiquidations: 3,
     dedupe: "POLYMARKET_5M_URL"
   });
 
