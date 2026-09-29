@@ -370,7 +370,7 @@ async function processFeed() {
         selected_symbol: symbol,
         selected_events: symbolEvents.length,
         min_events: MIN_EVENTS,
-        rule: "top coin per 3-second poll; alert only when selected coin has 2+ fresh events"
+        rule: "top coin per 3-second poll; alert only when selected coin has 3+ fresh events"
       });
     } else {
     selectedSymbol = symbol;
@@ -393,7 +393,7 @@ async function processFeed() {
         symbol,
         events: symbolEvents.length,
         sent,
-        rule: "all exchanges; allowed coins only; top liquidation count per 3-second poll; minimum 2 events"
+        rule: "all MarginPad exchanges except Hyperliquid; allowed coins only; top liquidation count per 3-second poll; minimum 3 events"
       });
     }
     }
@@ -505,7 +505,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "TOP_COIN_3S_ALL_EXCHANGES";
+  const strategy = "TOP_COIN_3S_ALL_EXCHANGES_EXCEPT_HYPERLIQUID";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
