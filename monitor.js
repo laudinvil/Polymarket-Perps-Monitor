@@ -157,9 +157,21 @@ function getEventMs(event) {
 }
 
 function eventBatchMessage(events) {
+  const byExchange = {};
+  for (const event of events) {
+    const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
+    byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+  }
+
+  const exchangeLines = Object.entries(byExchange)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+
   const lines = [
-    "2+ LIQUIDATIONS",
-    "FRESH: " + events.length,
+    "LIQUIDATIONS: " + events.length,
+    "",
+    "BY EXCHANGE",
+    ...exchangeLines,
     ""
   ];
 
