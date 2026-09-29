@@ -1,4 +1,4 @@
-# Deplexo deployment: run top-coin liquidation monitor v21.0.0
+# Deplexo deployment: OpenMarket liquidation monitor v22.0.0
 framework: node
 install: npm install
 start: node monitor.js
