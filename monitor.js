@@ -248,7 +248,7 @@ function main() {
   ensureDir(LOG_FILE);
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_HYPERLIQUID_CASCADES_16";
+  state.strategy = "MARGINPAD_HYPERLIQUID_ALL";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   state.cascades = state.cascades && typeof state.cascades === "object" ? state.cascades : {};
   collectionStartedAt = nowIso();
