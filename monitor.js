@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "16.2.0-13PLUS-NO-COIN";
+const VERSION = "16.3.0-NO-COUNT-PHRASE";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -237,10 +237,9 @@ async function sendLiquidationAlert(event) {
   });
 }
 
-function eventBatchMessage(events, freshByExchange, thresholdLabel) {
+function eventBatchMessage(events, freshByExchange, thresholdLabel, symbol) {
   const lines = [
-    thresholdLabel + " LIQUIDATION EVENTS",
-    "FRESH: " + events.length,
+    String(symbol || "ALERT").toUpperCase(),
     "EXCHANGES:"
   ];
 
@@ -333,7 +332,7 @@ async function processFeed() {
     if (xyzEvents.length >= 2) {
       const xyzByExchange = { xyz: xyzEvents.length };
       const sent = await sendTelegram(
-        eventBatchMessage(xyzEvents, xyzByExchange, "2+ XYZ")
+        eventBatchMessage(xyzEvents, xyzByExchange, "2+ XYZ", symbol)
       );
 
       if (sent) {
@@ -360,7 +359,7 @@ async function processFeed() {
       }
 
       const sent = await sendTelegram(
-        eventBatchMessage(regularEvents, symbolByExchange, LIQUIDATION_THRESHOLD + "+")
+        eventBatchMessage(regularEvents, symbolByExchange, LIQUIDATION_THRESHOLD + "+", symbol)
       );
 
       if (sent) {
@@ -481,7 +480,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS";
+  state.strategy = "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
 
   collectionStartedAt = nowIso();
@@ -494,7 +493,7 @@ function main() {
     threshold: LIQUIDATION_THRESHOLD,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS_NO_PUMP_CASCADE"
+    monitor: "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE"
   });
 
   startHealth();
