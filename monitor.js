@@ -381,6 +381,10 @@ function buildAlertForEvents(events) {
   if (!ranked.length) return null;
 
   const [symbol, symbolEvents] = ranked[0];
+  if (symbolEvents.length < 2) {
+    log("LIQUIDATION_ALERT_SKIPPED", { symbol, events: symbolEvents.length, reason: "LESS_THAN_2_LIQUIDATIONS" });
+    return;
+  }
   const longCount = symbolEvents.filter(e => e.side === "SELL").length;
   const shortCount = symbolEvents.filter(e => e.side === "BUY").length;
   const value = symbolEvents.reduce((sum,e) => sum + (e.notional || 0), 0);
