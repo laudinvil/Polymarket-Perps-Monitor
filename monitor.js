@@ -99,20 +99,6 @@ function saveState() {
   }
 }
 
-function eventKey(e) {
-  const id = e.id ?? e.eventId ?? e.liquidationId;
-  if (id !== undefined && id !== null && String(id) !== "") return "id:" + String(id);
-  return [
-    e.ts ?? e.timestamp ?? e.time ?? "",
-    e.exchange ?? e.source ?? e.venue ?? "",
-    e.symbol ?? e.coin ?? "",
-    e.side ?? "",
-    e.price ?? "",
-    e.qty ?? e.size ?? "",
-    e.notional ?? ""
-  ].join("|");
-}
-
 function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -352,7 +338,7 @@ function eventBatchMessage(events) {
 }
 
 function eventKey(e) {
-  if (e.id) return "openmarket:" + e.id;
+  if (e.id) return "openmarket:" + e.exchange + ":" + e.id;
   return [
     e.ts ?? "",
     e.exchange ?? "",
