@@ -26,6 +26,7 @@ let skippedEvents = 0;
 let ignoredEvents = 0;
 let acceptedSinceSummary = 0;
 let aggrRequest = null;
+let alertInFlight = new Set();
 
 function nowIso() { return new Date().toISOString(); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
@@ -230,41 +231,55 @@ async function flushValueAlert(symbol, triggerEvent) {
 
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
-  const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
-  if (clob && (clob.up < 0.15 || clob.up > 0.85 || clob.down < 0.15 || clob.down > 0.85)) {
-    skippedEvents++;
+
+  if (state.alertedLinks.includes(link) || alertInFlight.has(link)) {
     return;
   }
 
-  const clobLine = clob
-    ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
-    : "UP: — | DOWN: —";
-  const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
+  alertInFlight.add(link);
+  try {
+    const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
+    if (clob && (clob.up < 0.15 || clob.up > 0.85 || clob.down < 0.15 || clob.down > 0.85)) {
+      skippedEvents++;
+      return;
+    }
 
-  const text = [
-    symbol + (directionArrow ? " " + directionArrow : ""),
-    "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    clobLine,
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-    }).format(new Date(triggerEvent.ts)),
-    link
-  ].join("\n");
+    const clobLine = clob
+      ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
+      : "UP: — | DOWN: —";
+    const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
 
-  const sent = await sendTelegram(text);
-  log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
-    source: "AGGR",
-    symbol,
-    value,
-    dedupeKey: link
-  });
+    const text = [
+      symbol + (directionArrow ? " " + directionArrow : ""),
+      "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      clobLine,
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+      }).format(new Date(triggerEvent.ts)),
+      link
+    ].join("\n");
 
-  if (sent) {
-    state.alertsSent = Number(state.alertsSent || 0) + 1;
-    state.valueBySymbol[symbol] = 0;
-    state.lastEventTs = triggerEvent.ts;
-    state.lastEventKey = eventKey(triggerEvent);
-    saveState();
+    const sent = await sendTelegram(text);
+    log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
+      source: "AGGR",
+      symbol,
+      value,
+      dedupeKey: link
+    });
+
+    if (sent) {
+      state.alertsSent = Number(state.alertsSent || 0) + 1;
+      state.alertedLinks.push(link);
+      if (state.alertedLinks.length > MAX_ALERTED_LINKS) {
+        state.alertedLinks.splice(0, state.alertedLinks.length - MAX_ALERTED_LINKS);
+      }
+      state.valueBySymbol[symbol] = 0;
+      state.lastEventTs = triggerEvent.ts;
+      state.lastEventKey = eventKey(triggerEvent);
+      saveState();
+    }
+  } finally {
+    alertInFlight.delete(link);
   }
 }
 
@@ -363,6 +378,7 @@ function diagnostics() {
     lastEventKey: state.lastEventKey,
     seenEvents: state.seen.length,
     valueBySymbol: state.valueBySymbol || {},
+    alertedLinks: state.alertedLinks || [],
     liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD
   };
 }
