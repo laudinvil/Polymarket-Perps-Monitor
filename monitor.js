@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.0.0-AGGR";
+const VERSION = "26.1.0-AGGR-CLEAN";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -235,10 +235,10 @@ async function flushLiquidationBucket() {
   const [symbol, symbolEvents] = ranked[0];
 
   if (symbolEvents.length < 2) {
-    log("LIQUIDATION_ALERT_SKIPPED", {
+    log("LIQUIDATION_GROUP_SKIPPED", {
       symbol,
       events: symbolEvents.length,
-      reason: "LESS_THAN_2_LIQUIDATIONS"
+      reason: "LESS_THAN_2_LIQUIDATIONS", requiredMinimum: 2
     });
     saveState();
     return;
@@ -269,7 +269,7 @@ async function flushLiquidationBucket() {
   const text = [
     symbol,
     kyivTime,
-    "LIQS: 2+",
+    "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     ...exchangeLines,
@@ -278,10 +278,11 @@ async function flushLiquidationBucket() {
   ].join("\n");
 
   const sent = await sendTelegram(text);
-  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
+  log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
     source: "AGGR",
     symbol,
     events: symbolEvents.length,
+    requiredMinimum: 2,
     exchanges: byExchange
   });
 
