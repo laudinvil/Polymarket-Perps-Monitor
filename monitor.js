@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "14.0.0-16-EVENTS-1-POLL";
+const VERSION = "15.0.0-16-SAME-COIN";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -56,7 +56,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_ALL_EXCHANGES_ALL_LIQUIDATIONS",
+    strategy: "MARGINPAD_16_PLUS_SAME_COIN",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -235,14 +235,17 @@ async function sendLiquidationAlert(event) {
   });
 }
 
-function eventBatchMessage(events, freshByExchange) {
+function eventBatchMessage(symbol, events, freshByExchange) {
   const lines = [
     "16+ LIQUIDATION EVENTS",
+    "COIN: " + symbol,
     "FRESH: " + events.length,
-    "EXCHANGES: " + Object.entries(freshByExchange)
-      .map(([exchange, count]) => exchange.toUpperCase() + " " + count)
-      .join(" | ")
+    "EXCHANGES:"
   ];
+
+  for (const [exchange, count] of Object.entries(freshByExchange)) {
+    lines.push(exchange.toUpperCase() + " — " + count);
+  }
 
   const newest = events
     .map(getEventMs)
@@ -307,17 +310,42 @@ async function processFeed() {
       };
 
   let alertSent = false;
-  if (fresh >= 16) {
-    alertSent = await sendTelegram(eventBatchMessage(freshEvents, freshByExchange));
-    if (alertSent) {
-      state.alertsSent = Number(state.alertsSent || 0) + 1;
+  const freshBySymbol = {};
+
+  for (const event of freshEvents) {
+    const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").toUpperCase();
+    if (!freshBySymbol[symbol]) freshBySymbol[symbol] = [];
+    freshBySymbol[symbol].push(event);
+  }
+
+  const alertedSymbols = [];
+
+  for (const [symbol, symbolEvents] of Object.entries(freshBySymbol)) {
+    if (symbolEvents.length < 16) continue;
+
+    const symbolByExchange = {};
+    for (const event of symbolEvents) {
+      const exchange = String(event.exchange ?? event.source ?? event.venue ?? "UNKNOWN");
+      symbolByExchange[exchange] = (symbolByExchange[exchange] || 0) + 1;
     }
 
-    log(alertSent ? "16_PLUS_EVENTS_ALERT_SENT" : "16_PLUS_EVENTS_ALERT_FAILED", {
-      fresh_liquidations: fresh,
-      fresh_by_exchange: freshByExchange,
-      sent: alertSent,
-      rule: "16+ fresh liquidation events in 1 MarginPad polling cycle"
+    const sent = await sendTelegram(
+      eventBatchMessage(symbol, symbolEvents, symbolByExchange)
+    );
+
+    if (sent) {
+      state.alertsSent = Number(state.alertsSent || 0) + 1;
+      alertSent = true;
+    }
+
+    alertedSymbols.push(symbol);
+
+    log(sent ? "16_PLUS_SAME_COIN_ALERT_SENT" : "16_PLUS_SAME_COIN_ALERT_FAILED", {
+      symbol,
+      fresh_liquidations: symbolEvents.length,
+      fresh_by_exchange: symbolByExchange,
+      sent,
+      rule: "16+ fresh liquidation events for one coin in 1 MarginPad polling cycle"
     });
   }
 
@@ -326,9 +354,13 @@ async function processFeed() {
     feed_sources: feedSources,
     fresh_liquidations: fresh,
     fresh_by_exchange: freshByExchange,
+    fresh_by_symbol: Object.fromEntries(
+      Object.entries(freshBySymbol).map(([symbol, symbolEvents]) => [symbol, symbolEvents.length])
+    ),
     alert_sent: alertSent,
+    alerted_symbols: alertedSymbols,
     ...eventTimeSummary,
-    strategy: "16+ fresh liquidation events / 1 polling cycle"
+    strategy: "16+ fresh liquidation events for one coin / 1 polling cycle"
   });
 
   saveState();
@@ -430,7 +462,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_ALL_EXCHANGES_ALL_LIQUIDATIONS"
+    monitor: "MARGINPAD_16_PLUS_SAME_COIN"
   });
 
   startHealth();
