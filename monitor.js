@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.2.0-BINANCE-BYBIT-DIAG";
+const VERSION = "25.3.0-BINANCE-BYBIT-FEED-STATUS";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -12,7 +12,7 @@ const LOG_FILE = process.env.LOG_FILE || "/data/openmarket-liquidation.jsonl";
 const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
-const FEED_SUMMARY_LOG_MS = 300000;
+const FEED_SUMMARY_LOG_MS = 30000;
 
 let state;
 let pollRunning = false;
@@ -416,6 +416,7 @@ let reconnectTimers = { binance: null, bybit: null };
 let bucket = [];
 let wsConnectedAt = { binance: null, bybit: null };
 let wsMessageDiagnostics = { binance: 0, bybit: 0 };
+let feedSummaryTimer = null;
 
 function normalizeLiquidation(source, raw) {
   if (source === "BINANCE") {
@@ -635,6 +636,16 @@ function startHealth() {
 function startLiquidationStream() {
   connectBinance();
   connectBybit();
+  if (feedSummaryTimer) clearInterval(feedSummaryTimer);
+  feedSummaryTimer = setInterval(() => {
+    log("FEED_STATUS", {
+      binanceConnected: !!binanceWs && binanceWs.readyState === WebSocket.OPEN,
+      bybitConnected: !!bybitWs && bybitWs.readyState === WebSocket.OPEN,
+      binanceMessages: wsMessageDiagnostics.binance,
+      bybitMessages: wsMessageDiagnostics.bybit,
+      bucketEvents: bucket.length
+    });
+  }, FEED_SUMMARY_LOG_MS);
 }
 
 function main() {
