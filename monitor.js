@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "21.0.0-TOP-COIN-3S";
+const VERSION = "21.1.0-TOP-COIN-3S-NO-HYPERLIQUID";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -60,7 +60,8 @@ function defaultState() {
     seen: [],
     alertsSent: 0,
     lastEventTs: null,
-    lastEventKey: null
+    lastEventKey: null,
+    warmedUp: false
   };
 }
 
@@ -226,6 +227,7 @@ function eventBatchMessage(events) {
   }
 
   const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
+  const excludedExchanges = new Set(["hyperliquid", "hyper_liquid", "hyperliquid_perps"]);
   const candidates = Object.entries(bySymbol)
     .filter(([symbol]) => allowed.has(symbol))
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
@@ -307,21 +309,17 @@ async function processFeed() {
   const eventTimes = [];
 
   for (const event of events) {
-    const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
+    const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim();
+    const sourceKey = rawSource.toLowerCase();
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
-    const eventMs = getEventMs(event);
-    if (eventMs !== null) {
-      eventTimes.push(eventMs);
-      // Only events that actually occurred during this 3-second poll window
-      // can participate in the alert. The feed itself may return a rolling
-      // batch containing older events.
-      if (eventMs < Date.now() - POLL_MS || eventMs > Date.now() + 1000) continue;
-    } else {
-      // Without a timestamp we cannot prove that the event belongs to this
-      // 3-second window, so do not use it for alerts.
-      continue;
-    }
+    if (excludedExchanges.has(sourceKey)) continue;
 
+    const eventMs = getEventMs(event);
+    if (eventMs !== null) eventTimes.push(eventMs);
+
+    // MarginPad documents /feed as a 3-second edge-cached feed and says events arrive seconds after the exchange event.
+    // Do not require the event timestamp to fall inside our local 3-second clock window: that drops delayed events.
+    // Accept newly observed events and use the persistent event-key cache for dedupe.
     const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     if (!allowed.has(symbol)) continue;
 
@@ -331,11 +329,23 @@ async function processFeed() {
     state.seen.push(key);
     if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
 
+    if (!state.warmedUp) continue;
+
     freshEvents.push(event);
     freshByExchange[rawSource] = (freshByExchange[rawSource] || 0) + 1;
     freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
     state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
     state.lastEventKey = key;
+  }
+
+  if (!state.warmedUp) {
+    state.warmedUp = true;
+    log("FEED_WARMUP_COMPLETE", {
+      api_events_returned: events.length,
+      feed_sources: feedSources,
+      excluded_exchanges: Array.from(excludedExchanges),
+      note: "Current feed snapshot seeded into dedupe cache; new events are processed from the next poll."
+    });
   }
 
   const bySymbol = {};
@@ -394,6 +404,8 @@ async function processFeed() {
     window_events: freshEvents.length,
     fresh_by_exchange: freshByExchange,
     fresh_by_symbol: freshBySymbol,
+    feed_sources: feedSources,
+    excluded_exchanges: Array.from(excludedExchanges),
     selected_symbol: selectedSymbol,
     selected_events: selectedCount,
     alert_sent: alertSent,
@@ -407,7 +419,7 @@ async function processFeed() {
           }
         : {}
     ),
-    strategy: "all exchanges; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll; alert threshold 2 events"
+    strategy: "all MarginPad exchanges except Hyperliquid; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll; alert threshold 3 events"
   });
 
   saveState();
@@ -499,6 +511,7 @@ function main() {
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
+    state.warmedUp = false;
   }
 
   state.version = VERSION;
@@ -514,7 +527,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "TOP_COIN_3S_ALL_EXCHANGES"
+    monitor: "TOP_COIN_3S_ALL_EXCHANGES_EXCEPT_HYPERLIQUID"
   });
 
   startHealth();
