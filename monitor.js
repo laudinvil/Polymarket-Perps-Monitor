@@ -12,6 +12,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 300000;
+const EXCLUDED_EXCHANGES = new Set(["hyperliquid", "hyper_liquid", "hyperliquid_perps"]);
 
 let state;
 let pollRunning = false;
@@ -227,7 +228,6 @@ function eventBatchMessage(events) {
   }
 
   const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
-  const excludedExchanges = new Set(["hyperliquid", "hyper_liquid", "hyperliquid_perps"]);
   const candidates = Object.entries(bySymbol)
     .filter(([symbol]) => allowed.has(symbol))
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
@@ -312,7 +312,7 @@ async function processFeed() {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim();
     const sourceKey = rawSource.toLowerCase();
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
-    if (excludedExchanges.has(sourceKey)) continue;
+    if (EXCLUDED_EXCHANGES.has(sourceKey)) continue;
 
     const eventMs = getEventMs(event);
     if (eventMs !== null) eventTimes.push(eventMs);
@@ -343,7 +343,7 @@ async function processFeed() {
     log("FEED_WARMUP_COMPLETE", {
       api_events_returned: events.length,
       feed_sources: feedSources,
-      excluded_exchanges: Array.from(excludedExchanges),
+      excluded_exchanges: Array.from(EXCLUDED_EXCHANGES),
       note: "Current feed snapshot seeded into dedupe cache; new events are processed from the next poll."
     });
   }
@@ -405,7 +405,7 @@ async function processFeed() {
     fresh_by_exchange: freshByExchange,
     fresh_by_symbol: freshBySymbol,
     feed_sources: feedSources,
-    excluded_exchanges: Array.from(excludedExchanges),
+    excluded_exchanges: Array.from(EXCLUDED_EXCHANGES),
     selected_symbol: selectedSymbol,
     selected_events: selectedCount,
     alert_sent: alertSent,
