@@ -19,7 +19,8 @@ const LIQUIDATION_EXCHANGES = new Set([
 ]);
 const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
-const feedStats = { events: 0, byExchange: {}, bySymbol: {} };\nconst exchangeStatus = {};
+const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
+const exchangeStatus = {};
 let feedLogTimer = null;
 
 function log(event, data = {}) {
