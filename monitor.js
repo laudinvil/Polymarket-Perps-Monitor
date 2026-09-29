@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "23.0.0-OPENMARKET-LIQUIDATIONS-2S";
+const VERSION = "23.1.0-OPENMARKET-LIQUIDATIONS-2S-PARSE";
 const POLL_MS = 2000;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
@@ -159,7 +159,7 @@ function normalizeOpenMarketPoint(point) {
   const tsSeconds = num(liquidation.timestamp?.seconds ?? liquidation.timestamp);
   const timestamp = tsSeconds === null ? Date.now() : (tsSeconds < 1e12 ? tsSeconds * 1000 : tsSeconds);
   const exchange = String(series.exchange || "").trim();
-  const side = String(series.side || "").trim().toUpperCase();
+  const side = String(liquidation.side || series.side || point?.side || point?.direction || "").trim().toUpperCase();
   const price = num(liquidation.price);
   const qty = num(liquidation.amount);
   const id = liquidation.id ?? point?.id;
@@ -183,7 +183,13 @@ function collectOpenMarketPoints(message) {
     ? message.points
     : Array.isArray(message?.data?.points)
       ? message.data.points
-      : [];
+      : Array.isArray(message?.data)
+        ? message.data
+        : Array.isArray(message?.result?.points)
+          ? message.result.points
+          : Array.isArray(message?.result?.data)
+            ? message.result.data
+            : [];
   return points.map(normalizeOpenMarketPoint).filter(Boolean);
 }
 
@@ -528,7 +534,19 @@ function connectOpenMarket() {
     }
 
     const points = collectOpenMarketPoints(message);
-    if (!points.length) return;
+    if (!points.length) {
+      if (message?.method || message?.channel || message?.type || message?.data) {
+        log("OPENMARKET_MESSAGE_NO_POINTS", {
+          method: message.method ?? null,
+          channel: message.channel ?? null,
+          type: message.type ?? null,
+          has_data: message.data != null,
+          data_type: Array.isArray(message.data) ? "array" : typeof message.data,
+          keys: Object.keys(message).slice(0, 20)
+        });
+      }
+      return;
+    }
 
     for (const event of points) bucket.push(event);
 
