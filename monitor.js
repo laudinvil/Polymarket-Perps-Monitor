@@ -2,16 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.3.0-5PLUS-PER-SYMBOL";
+const VERSION = "20.3.1-LOG-REDUCED";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/marginpad-liquidation.jsonl";
 const MAX_SEEN = 10000;
-const LOG_MAX_BYTES = 20 * 1024 * 1024;
-const LOG_KEEP_BYTES = 10 * 1024 * 1024;
-const FEED_SUMMARY_LOG_MS = 60000;
+const LOG_MAX_BYTES = 2 * 1024 * 1024;
+const LOG_KEEP_BYTES = 1 * 1024 * 1024;
+const FEED_SUMMARY_LOG_MS = 300000;
 
 let state;
 let pollRunning = false;
@@ -101,7 +101,6 @@ function eventKey(e) {
 function sendTelegram(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-
   if (!token || !chatId) {
     log("TELEGRAM_NOT_CONFIGURED");
     return Promise.resolve(false);
@@ -110,11 +109,7 @@ function sendTelegram(text) {
   return fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true
-    }),
+    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
     signal: AbortSignal.timeout(8000)
   }).then(async response => {
     const body = await response.text();
@@ -168,10 +163,7 @@ function formatCompactNumber(value) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
   const n = Number(value);
   if (Number.isInteger(n)) return n.toLocaleString("en-US");
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  });
+  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function eventBatchMessage(events) {
@@ -182,7 +174,7 @@ function eventBatchMessage(events) {
     bySymbol[symbol].push(event);
   }
 
-  const symbolBlocks = Object.entries(bySymbol)
+  return Object.entries(bySymbol)
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
     .map(([symbol, symbolEvents]) => {
       let longCount = 0;
@@ -231,14 +223,12 @@ function eventBatchMessage(events) {
         "PRICE RANGE: " + priceRange,
         ...exchangeLines
       ].join("\n");
-    });
-
-  return symbolBlocks.join("\n\n");
+    }).join("\n\n");
 }
+
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
-
   const feedSources = {};
   const eventTimes = [];
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
@@ -251,13 +241,11 @@ async function processFeed() {
   for (const event of events) {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
-
     const eventMs = getEventMs(event);
     if (eventMs !== null) eventTimes.push(eventMs);
 
     const key = eventKey(event);
     if (!key || seen.has(key)) continue;
-
     seen.add(key);
     state.seen.push(key);
     if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
@@ -265,12 +253,10 @@ async function processFeed() {
     fresh++;
     freshEvents.push(event);
     freshByExchange[rawSource] = (freshByExchange[rawSource] || 0) + 1;
-
     const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
     if (!freshEventsBySymbol[symbol]) freshEventsBySymbol[symbol] = [];
     freshEventsBySymbol[symbol].push(event);
-
     state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
     state.lastEventKey = key;
   }
@@ -359,14 +345,17 @@ async function processFeed() {
     }
   }
 
-  log("ALERT_GROUPING", {
-    fresh_events: freshEvents.length,
-    eligible_by_symbol: Object.fromEntries(Object.entries(eligibleBySymbol).map(([k,v]) => [k, v.length])),
-    skipped_by_symbol: skippedBySymbol,
-    fresh_by_symbol: freshBySymbol,
-    alerts_sent_this_cycle: alertsSentThisCycle,
-    rule: "XYZ: 2+; non-XYZ: 5+; thresholds are per symbol and per ONE MarginPad poll; no accumulation"
-  });
+  if (freshEvents.length > 0 || alertsSentThisCycle > 0) {
+    log("ALERT_GROUPING", {
+      fresh_events: freshEvents.length,
+      eligible_by_symbol: Object.fromEntries(Object.entries(eligibleBySymbol).map(([k,v]) => [k, v.events])),
+      skipped_by_symbol: skippedBySymbol,
+      fresh_by_symbol: freshBySymbol,
+      alerts_sent_this_cycle: alertsSentThisCycle,
+      rule: "XYZ: 2+; non-XYZ: 5+; thresholds are per symbol and per ONE MarginPad poll; no accumulation"
+    });
+  }
+
   const eventTimeSummary = eventTimes.length
     ? {
         feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
@@ -463,7 +452,6 @@ async function poll() {
 function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
-
   state = loadState();
   state.version = VERSION;
   state.strategy = "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL";
@@ -476,6 +464,7 @@ function main() {
     source: FEED_URL,
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
+    logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
     monitor: "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL"
   });
