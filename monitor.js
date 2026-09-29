@@ -9,6 +9,7 @@ const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json"
 const LOG_FILE = process.env.LOG_FILE || "/data/aggr-liquidation.jsonl";
 const SYMBOLS = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
 const MAX_SEEN = 10000;
+const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
@@ -66,6 +67,7 @@ function defaultState() {
     strategy: "AGGR_LIQUIDATIONS",
     updatedAt: nowIso(),
     seen: [],
+    alertedLinks: [],
     alertsSent: 0,
     lastEventTs: null,
     lastEventKey: null
@@ -222,46 +224,49 @@ function recordLiquidations(events) {
   }
 }
 
+function alertedLinksSet() {
+  return new Set(Array.isArray(state.alertedLinks) ? state.alertedLinks : []);
+}
+
+function rememberAlertedLink(link) {
+  const links = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
+  links.push(link);
+  if (links.length > MAX_ALERTED_LINKS) {
+    links.splice(0, links.length - MAX_ALERTED_LINKS);
+  }
+  state.alertedLinks = links;
+}
+
 async function flushLiquidationBucket() {
   if (!bucket.length) return;
 
-  // Liquidations accumulate independently per coin. There is no time window:
-  // once a coin reaches 2+ unique liquidation events, alert and clear only that coin.
-  const bySymbol = {};
-  for (const event of bucket) {
-    if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
-    bySymbol[event.symbol].push(event);
+  // One alert is allowed for each unique Polymarket 5m market URL.
+  // Different coins have different URLs and can alert independently.
+  const event = bucket.shift();
+  if (!event) return;
+
+  const link = polymarket5mUrl(event.symbol, event.ts);
+  const alertedLinks = alertedLinksSet();
+  if (alertedLinks.has(link)) {
+    ignoredEvents++;
+    return;
   }
 
-  const candidate = Object.entries(bySymbol)
-    .filter(([, events]) => events.length >= 2)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))[0];
+  const symbolEvents = [event];
+  const longCount = event.side === "sell" ? 1 : 0;
+  const shortCount = event.side === "buy" ? 1 : 0;
+  const value = event.notional;
 
-  if (!candidate) return;
+  const byExchange = { [event.exchange]: 1 };
+  const displayExchange = event.exchange === "BINANCE_FUTURES" ? "BINANCE" : event.exchange;
+  const exchangeLines = [displayExchange + ": 1"];
 
-  const [symbol, symbolEvents] = candidate;
-  const alertedKeys = new Set(symbolEvents.map(eventKey));
-  bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
-
-  const longCount = symbolEvents.filter(e => e.side === "sell").length;
-  const shortCount = symbolEvents.filter(e => e.side === "buy").length;
-  const value = symbolEvents.reduce((sum, e) => sum + e.notional, 0);
-
-  const byExchange = {};
-  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
-  const exchangeLines = Object.entries(byExchange)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange, count]) => {
-      const displayExchange = exchange === "BINANCE_FUTURES" ? "BINANCE" : exchange;
-      return displayExchange + ": " + count;
-    });
-
-  const kyivTime = new Intl.DateTimeFormat("en-GB", {
+  const eventTime = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Kyiv",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-  }).format(new Date());
+  }).format(new Date(event.ts));
 
-  const clob = await fetchPolymarketClobPrices(symbol);
+  const clob = await fetchPolymarketClobPrices(event.symbol, event.ts);
   if (
     clob &&
     (
@@ -269,8 +274,7 @@ async function flushLiquidationBucket() {
       clob.down < 0.1 || clob.down > 0.9
     )
   ) {
-    skippedEvents += symbolEvents.length;
-    saveState();
+    skippedEvents++;
     return;
   }
 
@@ -279,30 +283,34 @@ async function flushLiquidationBucket() {
     : "UP: — | DOWN: —";
 
   const text = [
-    symbol,
-    "LIQS: " + symbolEvents.length,
+    event.symbol,
+    "LIQS: 1",
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     ...exchangeLines,
     clobLine,
-    kyivTime,
-    polymarket5mUrl(symbol)
+    eventTime,
+    link
   ].join("\n");
 
   const sent = await sendTelegram(text);
   log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
     source: "AGGR",
-    symbol,
-    events: symbolEvents.length,
-    requiredMinimum: 2,
+    symbol: event.symbol,
+    events: 1,
+    dedupeKey: link,
     exchanges: byExchange
   });
 
-  if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
-  state.lastEventTs = Math.max(...symbolEvents.map(e => e.ts));
-  state.lastEventKey = eventKey(symbolEvents[symbolEvents.length - 1]);
-  saveState();
+  if (sent) {
+    state.alertsSent = Number(state.alertsSent || 0) + 1;
+    rememberAlertedLink(link);
+    state.lastEventTs = event.ts;
+    state.lastEventKey = eventKey(event);
+    saveState();
+  }
 }
+
 function connectAggr() {
   if (aggrRequest) {
     try { aggrRequest.destroy(); } catch {}
@@ -397,6 +405,7 @@ function diagnostics() {
     lastEventTs: state.lastEventTs,
     lastEventKey: state.lastEventKey,
     seenEvents: state.seen.length,
+    alertedLinks: Array.isArray(state.alertedLinks) ? state.alertedLinks.length : 0,
     bucketEvents: bucket.length,
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS
   };
@@ -448,6 +457,7 @@ function main() {
 
   if (state.strategy !== "AGGR_LIQUIDATIONS" || state.version !== VERSION) {
     state.seen = [];
+    state.alertedLinks = [];
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
@@ -456,6 +466,7 @@ function main() {
   state.version = VERSION;
   state.strategy = "AGGR_LIQUIDATIONS";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
+  state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
 
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
@@ -464,7 +475,7 @@ function main() {
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
-    minimumLiquidations: 2
+    dedupe: "POLYMARKET_5M_URL"
   });
 
   startHealth();
@@ -479,7 +490,8 @@ function main() {
       ignoredEvents,
       skippedEvents,
       aggrLastEventAt,
-      bucketEvents: bucket.length
+      bucketEvents: bucket.length,
+      alertedLinks: Array.isArray(state.alertedLinks) ? state.alertedLinks.length : 0
     });
     acceptedSinceSummary = 0;
     ignoredEvents = 0;
