@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.5.0-BINANCE-BYBIT-GROUPED";
+const VERSION = "25.6.0-BINANCE-DIAGNOSTIC";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -536,15 +536,30 @@ function connectBinance() {
         if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_DECODE_FAILED",{symbol:label,bytes:Buffer.byteLength(data)});
         return;
       }
-      if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_RECEIVED",{
+      if (wsMessageDiagnostics.binance <= 50) log("BINANCE_MESSAGE_RECEIVED",{
         count:wsMessageDiagnostics.binance,
         symbol:label,
         event:m?.e || null,
         payloadSymbol:m?.o?.s || null
       });
+      if (m?.e === "forceOrder" || m?.o) {
+        log("BINANCE_FORCEORDER_DIAGNOSTIC", {
+          socketSymbol: label,
+          event: m?.e || null,
+          payloadSymbol: m?.o?.s || null,
+          side: m?.o?.S || null,
+          orderSide: m?.o?.o || null,
+          price: m?.o?.p || null,
+          avgPrice: m?.o?.ap || null,
+          qty: m?.o?.q || null,
+          filledQty: m?.o?.z || null,
+          orderId: m?.o?.i || null,
+          eventTime: m?.E || null
+        });
+      }
       const e=normalizeLiquidation("BINANCE",m);
       if (!e) {
-        if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_IGNORED",{
+        if (wsMessageDiagnostics.binance <= 50) log("BINANCE_MESSAGE_IGNORED",{
           symbol:label,
           event:m?.e || null,
           reason:"NOT_A_SUPPORTED_FORCE_ORDER"
