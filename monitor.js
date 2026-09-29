@@ -102,7 +102,7 @@ function sendTelegram(text) {
   return fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, text }),
     signal: AbortSignal.timeout(8000)
   }).then(async response => {
     const body = await response.text();
@@ -243,8 +243,6 @@ async function flushLiquidationBucket() {
   const alertedKeys = new Set(symbolEvents.map(eventKey));
   bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
 
-  // AGGR normalizes liquidation sides: sell = long position liquidated,
-  // buy = short position liquidated. This is normalized by AGGR's exchange adapters.
   const longCount = symbolEvents.filter(e => e.side === "sell").length;
   const shortCount = symbolEvents.filter(e => e.side === "buy").length;
   const value = symbolEvents.reduce((sum, e) => sum + e.notional, 0);
@@ -264,7 +262,6 @@ async function flushLiquidationBucket() {
   }).format(new Date());
 
   const clob = await fetchPolymarketClobPrices(symbol);
-  // Send alerts only when both CLOB sides are within 0.1..0.9.
   if (
     clob &&
     (
@@ -283,12 +280,12 @@ async function flushLiquidationBucket() {
 
   const text = [
     symbol,
-    kyivTime,
     "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     ...exchangeLines,
     clobLine,
+    kyivTime,
     polymarket5mUrl(symbol)
   ].join("\n");
 
