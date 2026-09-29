@@ -190,9 +190,21 @@ function eventBatchMessage(events) {
   const byExchange = {};
 
   for (const event of symbolEvents) {
-    const side = String(event.side ?? event.direction ?? "").toUpperCase();
-    if (side === "LONG" || side === "BUY") longCount++;
-    else if (side === "SHORT" || side === "SELL") shortCount++;
+    const side = String(event.side ?? event.direction ?? "").trim().toLowerCase();
+    if (
+      side === "long" ||
+      side === "buy" ||
+      side === "long_liquidated" ||
+      side === "long-liquidated" ||
+      side === "long liquidation"
+    ) longCount++;
+    else if (
+      side === "short" ||
+      side === "sell" ||
+      side === "short_liquidated" ||
+      side === "short-liquidated" ||
+      side === "short liquidation"
+    ) shortCount++;
     else log("UNKNOWN_LIQUIDATION_SIDE", {
       symbol,
       side: String(event.side ?? event.direction ?? ""),
