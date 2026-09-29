@@ -257,6 +257,7 @@ async function flushValueAlert(symbol, triggerEvent) {
 
     const text = [
       symbol + (directionArrow ? " " + directionArrow : ""),
+      "LIQS: " + count,
       "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       clobLine,
       new Intl.DateTimeFormat("en-GB", {
