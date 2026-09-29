@@ -487,7 +487,9 @@ async function flushLiquidationBucket() {
   for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
   const exchangeLines = Object.entries(byExchange).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([x,n])=>x+": "+n);
   const kyivTime = new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date());
-  const text = [symbol, kyivTime, "LIQS: "+symbolEvents.length, "LONG: "+longCount+" | SHORT: "+shortCount, "VALUE: $"+formatNumber(value,2), ...exchangeLines, polymarket5mUrl(symbol)].join("\n");
+  const clob = await fetchPolymarketClobPrices(symbol);
+  const clobLine = clob ? "UP CLOB: " + clob.up.toFixed(3) + " | DOWN CLOB: " + clob.down.toFixed(3) : "UP CLOB: — | DOWN CLOB: —";
+  const text = [symbol, kyivTime, "LIQS: "+(symbolEvents.length >= 2 ? "2+" : "1"), "LONG: "+longCount+" | SHORT: "+shortCount, "VALUE: $"+formatNumber(value,2), ...exchangeLines, clobLine, polymarket5mUrl(symbol)].join("\n");
   const sent = await sendTelegram(text);
   log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {source:"BINANCE_BYBIT",symbol,events:symbolEvents.length});
   if (sent) state.alertsSent = Number(state.alertsSent||0)+1;
