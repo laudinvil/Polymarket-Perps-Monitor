@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.4.0-BINANCE-BYBIT-AGG-DIAG";
+const VERSION = "25.5.0-BINANCE-BYBIT-GROUPED";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -13,6 +13,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 30000;
+const LIQUIDATION_GROUP_WINDOW_MS = 1000;
 
 let state;
 let pollRunning = false;
@@ -127,85 +128,6 @@ function decodeOpenMarketMessage(data) {
   }
 }
 
-function openMarketChannels() {
-  return OPENMARKET_EXCHANGES.flatMap(exchange =>
-    OPENMARKET_SYMBOLS.map(symbol => ({
-      type: "LIQUIDATION",
-      category: "*",
-      exchange,
-      symbol
-    }))
-  );
-}
-
-function normalizeOpenMarketPoint(point) {
-  const p = point?.liquidation || point || {};
-  const series = point?.series || {};
-  const symbolRaw = String(
-    series.coin || series.symbol || p.coin || p.symbol || point?.coin || point?.symbol || ""
-  ).toUpperCase();
-  const coin = symbolRaw.replace(/USDT|USDC|USD|PERP|[-_]/g, "").replace("SWAP","");
-  const exchange = String(
-    series.exchange || p.exchange || point?.exchange || point?.venue || ""
-  ).trim();
-
-  const side = String(
-    p.side || p.direction || point?.side || point?.direction || ""
-  ).trim().toUpperCase();
-
-  const price = num(p.price ?? p.liquidationPrice ?? point?.price);
-  const qty = num(p.amount ?? p.qty ?? p.quantity ?? p.size ?? point?.amount ?? point?.qty ?? point?.size);
-  const id = p.id ?? point?.id;
-  const ts = num(p.timestamp ?? p.time ?? point?.timestamp ?? point?.time) ?? Date.now();
-
-  if (!exchange || !coin || !side || price === null || qty === null) return null;
-  if (!["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"].includes(coin)) return null;
-  if (EXCLUDED_EXCHANGES.has(exchange.toLowerCase())) return null;
-
-  return {
-    id: id == null ? "" : String(id),
-    ts: ts < 1e12 ? ts * 1000 : ts,
-    exchange,
-    symbol: coin,
-    side,
-    price,
-    qty,
-    notional: price * qty
-  };
-}
-
-function collectOpenMarketPoints(message) {
-  const out = [];
-  const seen = new Set();
-
-  function walk(value, depth = 0) {
-    if (!value || depth > 6) return;
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, depth + 1);
-      return;
-    }
-    if (typeof value !== "object") return;
-
-    const event = normalizeOpenMarketPoint(value);
-    if (event) {
-      const key = eventKey(event);
-      if (!seen.has(key)) {
-        seen.add(key);
-        out.push(event);
-      }
-    }
-
-    for (const [key, child] of Object.entries(value)) {
-      if (key === "series" || key === "liquidation" || key === "data" || key === "result" || key === "points" || key === "items") {
-        walk(child, depth + 1);
-      }
-    }
-  }
-
-  walk(message);
-  return out;
-}
-
 function getEventMs(event) {
   const raw = num(event.ts ?? event.timestamp ?? event.time);
   if (raw === null) return null;
@@ -218,13 +140,6 @@ function formatNumber(value, decimals = 2) {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   });
-}
-
-function formatCompactNumber(value) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
-  const n = Number(value);
-  if (Number.isInteger(n)) return n.toLocaleString("en-US");
-  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 function polymarket5mUrl(symbol, nowMs = Date.now()) {
@@ -278,86 +193,8 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
   }
 }
 
-function eventBatchMessage(events) {
-  const bySymbol = {};
-  for (const event of events) {
-    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    if (!bySymbol[symbol]) bySymbol[symbol] = [];
-    bySymbol[symbol].push(event);
-  }
-
-  const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
-  const candidates = Object.entries(bySymbol)
-    .filter(([symbol]) => allowed.has(symbol))
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-
-  if (!candidates.length) return "";
-
-  const [symbol, symbolEvents] = candidates[0];
-  let longCount = 0;
-  let shortCount = 0;
-  let value = 0;
-  let size = 0;
-  const prices = [];
-  const byExchange = {};
-
-  for (const event of symbolEvents) {
-    const side = String(event.side ?? event.direction ?? "").trim().toLowerCase();
-    if (
-      side === "long" ||
-      side === "buy" ||
-      side === "long_liquidated" ||
-      side === "long-liquidated" ||
-      side === "long liquidation"
-    ) longCount++;
-    else if (
-      side === "short" ||
-      side === "sell" ||
-      side === "short_liquidated" ||
-      side === "short-liquidated" ||
-      side === "short liquidation"
-    ) shortCount++;
-    else log("UNKNOWN_LIQUIDATION_SIDE", {
-      symbol,
-      side: String(event.side ?? event.direction ?? ""),
-      event_key: eventKey(event)
-    });
-
-    const notional = num(event.notional ?? event.value ?? event.amount);
-    const qty = num(event.qty ?? event.size ?? event.quantity);
-    const price = num(event.price);
-    if (notional !== null) value += notional;
-    if (qty !== null) size += qty;
-    if (price !== null) prices.push(price);
-
-    const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
-    byExchange[exchange] = (byExchange[exchange] || 0) + 1;
-  }
-
-  const exchangeLines = Object.entries(byExchange)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
-
-  const priceRange = prices.length
-    ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
-      " - " + Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
-    : "—";
-
-  const kyivTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date());
-
-  return [
-    symbol,
-    kyivTime,
-    "LIQS: " + (symbolEvents.length >= 2 ? "2+" : "1"),
-    "LONG: " + longCount + " | SHORT: " + shortCount,
-    "VALUE: $" + formatNumber(value, 2),
-    ...exchangeLines,
-    polymarket5mUrl(symbol)
-  ].join("\n");
-}
-
 function eventKey(e) {
-  if (e.id) return "openmarket:" + e.exchange + ":" + e.id;
+  if (e.id) return e.id;
   return [
     e.ts ?? "",
     e.exchange ?? "",
@@ -368,46 +205,82 @@ function eventKey(e) {
   ].join("|");
 }
 
-function buildAlertForEvents(events) {
-  const bySymbol = {};
+function recordLiquidations(events) {
+  let added = 0;
   for (const event of events) {
-    if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
-    bySymbol[event.symbol].push(event);
+    const key = eventKey(event);
+    const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
+    if (seen.has(key)) continue;
+    state.seen.push(key);
+    if (state.seen.length > MAX_SEEN) state.seen.splice(0, state.seen.length - MAX_SEEN);
+    bucket.push(event);
+    added++;
   }
 
-  const ranked = Object.entries(bySymbol)
+  if (added > 0 && !liquidationGroupTimer) {
+    liquidationGroupTimer = setTimeout(() => {
+      liquidationGroupTimer = null;
+      flushLiquidationBucket().catch(e =>
+        log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) })
+      );
+    }, LIQUIDATION_GROUP_WINDOW_MS);
+  }
+}
+
+async function flushLiquidationBucket() {
+  if (!bucket.length) return;
+  const events = bucket.splice(0);
+  const freshBySymbol = {};
+  for (const e of events) {
+    if (!freshBySymbol[e.symbol]) freshBySymbol[e.symbol] = [];
+    freshBySymbol[e.symbol].push(e);
+  }
+
+  const ranked = Object.entries(freshBySymbol)
     .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  if (!ranked.length) return null;
+  if (!ranked.length) return;
 
   const [symbol, symbolEvents] = ranked[0];
-  const longCount = symbolEvents.filter(e => e.side === "SELL").length;
-  const shortCount = symbolEvents.filter(e => e.side === "BUY").length;
-  const value = symbolEvents.reduce((sum,e) => sum + (e.notional || 0), 0);
+  const longCount = symbolEvents.filter(e =>
+    e.exchange === "BYBIT" ? e.side === "BUY" : e.side === "SELL"
+  ).length;
+  const shortCount = symbolEvents.filter(e =>
+    e.exchange === "BYBIT" ? e.side === "SELL" : e.side === "BUY"
+  ).length;
+  const value = symbolEvents.reduce((s,e) => s + e.notional, 0);
   const byExchange = {};
   for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
-
   const exchangeLines = Object.entries(byExchange)
-    .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange,count]) => exchange.toUpperCase() + ": " + count);
-
-  const kyivTime = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Kyiv",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+    .sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))
+    .map(([x,n])=>x+ ": " + n);
+  const kyivTime = new Intl.DateTimeFormat("en-GB",{
+    timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false
   }).format(new Date());
-
-  return {
+  const clob = await fetchPolymarketClobPrices(symbol);
+  const clobLine = clob
+    ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
+    : "UP: — | DOWN: —";
+  const text = [
     symbol,
-    count: symbolEvents.length,
-    text: [
-      symbol,
-      kyivTime,
-      "LIQS: " + (symbolEvents.length >= 2 ? "2+" : "1"),
-      "LONG: " + longCount + " | SHORT: " + shortCount,
-      "VALUE: $" + formatNumber(value, 2),
-      ...exchangeLines,
-      polymarket5mUrl(symbol)
-    ].join("\n")
-  };
+    kyivTime,
+    "LIQS: " + (symbolEvents.length >= 2 ? "2+" : "1"),
+    "LONG: " + longCount + " | SHORT: " + shortCount,
+    "VALUE: $" + formatNumber(value,2),
+    ...exchangeLines,
+    clobLine,
+    polymarket5mUrl(symbol)
+  ].join("\n");
+
+  const sent = await sendTelegram(text);
+  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
+    source:"BINANCE_BYBIT",
+    symbol,
+    events:symbolEvents.length
+  });
+  if (sent) state.alertsSent = Number(state.alertsSent||0)+1;
+  state.lastEventTs = Math.max(...symbolEvents.map(e=>e.ts));
+  state.lastEventKey = eventKey(symbolEvents[symbolEvents.length-1]);
+  saveState();
 }
 
 let binanceWs = null;
@@ -415,9 +288,11 @@ let binanceSockets = [];
 let bybitWs = null;
 let reconnectTimers = { binance: null, bybit: null };
 let bucket = [];
+let liquidationGroupTimer = null;
 let wsConnectedAt = { binance: null, bybit: null };
 let wsMessageDiagnostics = { binance: 0, bybit: 0 };
 let feedSummaryTimer = null;
+
 function normalizeLiquidation(source, raw) {
   if (source === "BINANCE") {
     const o = raw?.o || raw?.data?.o || raw;
@@ -457,47 +332,6 @@ function normalizeLiquidation(source, raw) {
   };
 }
 
-function recordLiquidations(events) {
-  for (const event of events) {
-    const key = eventKey(event);
-    const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
-    if (seen.has(key)) continue;
-    state.seen.push(key);
-    bucket.push(event);
-  }
-  if (bucket.length) flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
-}
-
-async function flushLiquidationBucket() {
-  if (!bucket.length) return;
-  const events = bucket.splice(0);
-  const freshBySymbol = {};
-  for (const e of events) {
-    if (!freshBySymbol[e.symbol]) freshBySymbol[e.symbol] = [];
-    freshBySymbol[e.symbol].push(e);
-  }
-  const ranked = Object.entries(freshBySymbol).sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  if (!ranked.length) return;
-  const [symbol, symbolEvents] = ranked[0];
-
-  const longCount = symbolEvents.filter(e => (e.exchange === "BYBIT" ? e.side === "BUY" : e.side === "SELL")).length;
-  const shortCount = symbolEvents.filter(e => (e.exchange === "BYBIT" ? e.side === "SELL" : e.side === "BUY")).length;
-  const value = symbolEvents.reduce((s,e) => s + e.notional, 0);
-  const byExchange = {};
-  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
-  const exchangeLines = Object.entries(byExchange).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([x,n])=>x+": "+n);
-  const kyivTime = new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date());
-  const clob = await fetchPolymarketClobPrices(symbol);
-  const clobLine = clob ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3) : "UP: — | DOWN: —";
-  const text = [symbol, kyivTime, "LIQS: "+(symbolEvents.length >= 2 ? "2+" : "1"), "LONG: "+longCount+" | SHORT: "+shortCount, "VALUE: $"+formatNumber(value,2), ...exchangeLines, clobLine, polymarket5mUrl(symbol)].join("\n");
-  const sent = await sendTelegram(text);
-  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {source:"BINANCE_BYBIT",symbol,events:symbolEvents.length});
-  if (sent) state.alertsSent = Number(state.alertsSent||0)+1;
-  state.lastEventTs = Math.max(...symbolEvents.map(e=>e.ts));
-  state.lastEventKey = eventKey(symbolEvents[symbolEvents.length-1]);
-  saveState();
-}
-
 function connectBinance() {
   clearTimeout(reconnectTimers.binance);
   for (const ws of binanceSockets) {
@@ -532,6 +366,15 @@ function connectBinance() {
         event:m?.e || null,
         payloadSymbol:m?.o?.s || null
       });
+      if (label === "AGGREGATE") {
+        if (m?.e === "forceOrder" || m?.o?.s) {
+          log("BINANCE_AGG_FORCEORDER_RECEIVED", {
+            event:m?.e || null,
+            payloadSymbol:m?.o?.s || null
+          });
+        }
+        return;
+      }
       const e=normalizeLiquidation("BINANCE",m);
       if (!e) {
         if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_IGNORED",{
@@ -565,7 +408,10 @@ function connectBybit() {
   log("BYBIT_CONNECTING",{url});
   bybitWs.on("open",()=>{
     wsConnectedAt.bybit=nowIso();
-    bybitWs.send(JSON.stringify({op:"subscribe",args:["allLiquidation.BTCUSDT","allLiquidation.ETHUSDT","allLiquidation.SOLUSDT","allLiquidation.XRPUSDT","allLiquidation.DOGEUSDT","allLiquidation.BNBUSDT","allLiquidation.HYPEUSDT"]}));
+    bybitWs.send(JSON.stringify({op:"subscribe",args:[
+      "allLiquidation.BTCUSDT","allLiquidation.ETHUSDT","allLiquidation.SOLUSDT",
+      "allLiquidation.XRPUSDT","allLiquidation.DOGEUSDT","allLiquidation.BNBUSDT","allLiquidation.HYPEUSDT"
+    ]}));
     log("BYBIT_CONNECTED");
   });
   bybitWs.on("message",data=>{
@@ -598,7 +444,11 @@ function connectBybit() {
       for (const e of events) log("LIQUIDATION_RECEIVED",{source:"BYBIT",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty});
     }
   });
-  bybitWs.on("close",(code,reason)=>{ log("BYBIT_CLOSED",{code,reason:String(reason||"")}); bybitWs=null; reconnectTimers.bybit=setTimeout(connectBybit,3000); });
+  bybitWs.on("close",(code,reason)=>{
+    log("BYBIT_CLOSED",{code,reason:String(reason||"")});
+    bybitWs=null;
+    reconnectTimers.bybit=setTimeout(connectBybit,3000);
+  });
   bybitWs.on("error",e=>log("BYBIT_WS_ERROR",{error:String(e.message||e)}));
 }
 
@@ -681,9 +531,6 @@ function main() {
   ensureDir(LOG_FILE);
   state = loadState();
 
-  // A strategy change must never inherit the previous strategy's dedupe cache.
-  // Otherwise a rolling feed can contain only events already marked as seen,
-  // producing zero fresh events and therefore zero alerts after deployment.
   const strategy = "BINANCE_BYBIT_LIQUIDATIONS";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
@@ -706,6 +553,7 @@ function main() {
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
+    liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
     monitor: "BINANCE_BYBIT"
   });
 
