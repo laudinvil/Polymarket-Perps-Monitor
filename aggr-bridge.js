@@ -44,20 +44,24 @@ function scheduleFeedSummary() {
 
 function symbolFromPair(pair) {
   const raw = String(pair || "").toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  const compact = raw.replace(/[-_]/g, "");
+
   for (const symbol of SYMBOLS) {
-    const rest = raw.slice(symbol.length);
-    if (
-      rest === "USDT" ||
-      rest === "USDC" ||
-      rest === "USD" ||
-      rest === "-USDT" ||
-      rest === "-USDC" ||
-      rest === "-USD" ||
-      rest === "-PERP" ||
-      rest === "-SWAP" ||
-      rest === "_PERP" ||
-      rest === "_SWAP"
-    ) {
+    const bases = symbol === "BTC" ? ["BTC", "XBT"] : [symbol];
+    for (const base of bases) {
+      if (
+        compact === base + "USDT" ||
+        compact === base + "USDC" ||
+        compact === base + "USD" ||
+        compact === base + "USDT" + "PERP" ||
+        compact === base + "USDC" + "PERP" ||
+        compact === base + "USD" + "PERP" ||
+        compact === base + "USDT" + "SWAP" ||
+        compact === base + "USDC" + "SWAP" ||
+        compact === base + "USD" + "SWAP"
+      ) return symbol;
+    }
+    if (symbol === "BTC" && (compact === "PIXBTUSD" || compact === "PFXBTUSD")) {
       return symbol;
     }
   }
