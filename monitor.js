@@ -20,7 +20,10 @@ let groupTimer = null;
 let aggrConnected = false;
 let aggrEvents = 0;
 let aggrLastEventAt = null;
-let aggrReconnectTimer = null;\nlet skippedEvents = 0;
+let aggrReconnectTimer = null;
+let skippedEvents = 0;
+let ignoredEvents = 0;
+let acceptedSinceSummary = 0;
 let aggrRequest = null;
 
 function nowIso() { return new Date().toISOString(); }
@@ -235,11 +238,7 @@ async function flushLiquidationBucket() {
   const [symbol, symbolEvents] = ranked[0];
 
   if (symbolEvents.length < 2) {
-    log("LIQUIDATION_GROUP_SKIPPED", {
-      symbol,
-      events: symbolEvents.length,
-      reason: "LESS_THAN_2_LIQUIDATIONS", requiredMinimum: 2
-    });
+    skippedEvents += symbolEvents.length;
     saveState();
     return;
   }
@@ -327,25 +326,13 @@ function connectAggr() {
           const raw = JSON.parse(line.slice(5).trim());
           const event = normalizeAggrEvent(raw);
           if (!event) {
-            log("AGGR_EVENT_IGNORED", {
-              exchange: raw?.exchange || null,
-              pair: raw?.pair || raw?.symbol || null,
-              side: raw?.side || null,
-              reason: "UNSUPPORTED_OR_INVALID_LIQUIDATION"
-            });
+            ignoredEvents++;
             continue;
           }
           aggrEvents++;
+          acceptedSinceSummary++;
           aggrLastEventAt = nowIso();
           recordLiquidations([event]);
-          log("LIQUIDATION_RECEIVED", {
-            source: "AGGR",
-            exchange: event.exchange,
-            symbol: event.symbol,
-            side: event.side,
-            price: event.price,
-            qty: event.qty
-          });
         } catch (e) {
           log("AGGR_EVENT_PARSE_ERROR", { error: String(e.message || e), frame: frame.slice(0, 1000) });
         }
@@ -476,9 +463,15 @@ function main() {
       source: "AGGR",
       aggrConnected,
       aggrEvents,
+      acceptedSinceSummary,
+      ignoredEvents,
+      skippedEvents,
       aggrLastEventAt,
       bucketEvents: bucket.length
     });
+    acceptedSinceSummary = 0;
+    ignoredEvents = 0;
+    skippedEvents = 0;
   }, FEED_SUMMARY_LOG_MS);
 }
 
