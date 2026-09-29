@@ -101,9 +101,10 @@ function adapterNames() {
     .filter(name => name !== "index");
 }
 
-function isUsefulDerivativePair(pair) {
+function isUsefulDerivativePair(exchange, pair) {
   const raw = String(pair || "").toUpperCase();
   const symbol = symbolFromPair(raw);
+  const id = String(exchange.id || "").toUpperCase();
   if (!symbol) return false;
 
   // Only perpetual/swap products. Expiring futures such as BTCUSD_270326
@@ -151,7 +152,7 @@ async function buildExchanges(config) {
     try {
       await exchange.getProducts(false);
       const products = Array.isArray(exchange.products) ? exchange.products : [];
-      const selected = products.filter(isUsefulDerivativePair);
+      const selected = products.filter(pair => isUsefulDerivativePair(exchange, pair));
 
       for (const pair of selected) {
         config.pairs.push(exchange.id + ":" + pair);
