@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "16.4.0-FRESH-COIN";
+const VERSION = "16.5.0-THRESHOLD10";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -13,7 +13,7 @@ const LOG_MAX_BYTES = 20 * 1024 * 1024;
 const LOG_KEEP_BYTES = 10 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
 
-const LIQUIDATION_THRESHOLD = 13;
+const LIQUIDATION_THRESHOLD = 10;
 
 let state;
 let pollRunning = false;
@@ -28,7 +28,7 @@ function normalizeCoin(value) {
   let symbol = String(value ?? "UNKNOWN").trim().toUpperCase();
   if (!symbol) return "UNKNOWN";
 
-  symbol = symbol.replace(/[\\s_/:.-]+/g, "");
+  symbol = symbol.replace(/[\s_/:.-]+/g, "");
 
   const suffixes = [
     "USDT", "USDC", "BUSD", "FDUSD", "USDE", "USD", "PERP", "SWAP"
@@ -78,7 +78,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_13_PLUS_SAME_COIN",
+    strategy: "MARGINPAD_10_PLUS_SAME_COIN",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -389,12 +389,12 @@ async function processFeed() {
 
       if (!alertedSymbols.includes(symbol)) alertedSymbols.push(symbol);
 
-      log(sent ? "13_PLUS_SAME_COIN_ALERT_SENT" : "13_PLUS_SAME_COIN_ALERT_FAILED", {
+      log(sent ? "10_PLUS_SAME_COIN_ALERT_SENT" : "10_PLUS_SAME_COIN_ALERT_FAILED", {
         symbol,
         fresh_liquidations: regularEvents.length,
         fresh_by_exchange: symbolByExchange,
         sent,
-        rule: "13+ fresh liquidation events for one coin in 1 MarginPad polling cycle, excluding XYZ"
+        rule: "10+ fresh liquidation events for one coin in 1 MarginPad polling cycle, excluding XYZ"
       });
     }
   }
@@ -410,7 +410,7 @@ async function processFeed() {
     alert_sent: alertSent,
     alerted_symbols: alertedSymbols,
     ...eventTimeSummary,
-    strategy: "13+ fresh liquidation events for one coin / 1 polling cycle; XYZ exception at 2+"
+    strategy: "10+ fresh liquidation events for one coin / 1 polling cycle; XYZ exception at 2+"
   });
 
   saveState();
@@ -500,7 +500,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE";
+  state.strategy = "MARGINPAD_10_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
 
   collectionStartedAt = nowIso();
@@ -513,7 +513,7 @@ function main() {
     threshold: LIQUIDATION_THRESHOLD,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_13_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE"
+    monitor: "MARGINPAD_10_PLUS_SAME_COIN_XYZ_2PLUS_NO_COUNT_PHRASE"
   });
 
   startHealth();
