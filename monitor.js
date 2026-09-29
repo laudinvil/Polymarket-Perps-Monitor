@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "12.0.0-CASCADE5-2POLLS";
+const VERSION = "12.1.0-CASCADE5-2POLLS";
 const POLL_MS = 3000;
 const CASCADE_MIN_EVENTS = 5;
 const CASCADE_MAX_POLLS = 2;
@@ -293,11 +293,11 @@ async function processFeed() {
   }
 
   log("FEED_PROCESSED", {
-    received: events.length,
-    hyperliquid: hyperliquid.length,
-    fresh,
-    freshBySymbol,
-    cascadeRule: "5 fresh events within 2 polling cycles"
+    feed_events: events.length,
+    hyperliquid_events: hyperliquid.length,
+    fresh_hyperliquid: fresh,
+    fresh_hyperliquid_by_symbol: freshBySymbol,
+    cascadeRule: "5 fresh Hyperliquid events within 2 polling cycles"
   });
 
   saveState();
