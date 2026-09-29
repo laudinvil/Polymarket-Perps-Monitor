@@ -171,6 +171,52 @@ function polymarket5mUrl(symbol, nowMs = Date.now()) {
   return "https://polymarket.com/event/" + String(symbol).toLowerCase() + "-updown-5m-" + startEpoch;
 }
 
+async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
+  const slug = String(symbol).toLowerCase() + "-updown-5m-" + (Math.floor(nowMs / 300000) * 300);
+  try {
+    const gammaResponse = await fetch(
+      "https://gamma-api.polymarket.com/events?slug=" + encodeURIComponent(slug),
+      { headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!gammaResponse.ok) throw new Error("Gamma HTTP " + gammaResponse.status);
+    const gammaBody = await gammaResponse.json();
+    const event = Array.isArray(gammaBody) ? gammaBody[0] : gammaBody;
+    const markets = Array.isArray(event?.markets) ? event.markets : [];
+    const market = markets.find(m => !m.closed && m.active !== false) || markets[0];
+    if (!market) throw new Error("market not found");
+
+    let tokenIds = market.clobTokenIds;
+    if (typeof tokenIds === "string") tokenIds = JSON.parse(tokenIds);
+    if (!Array.isArray(tokenIds) || tokenIds.length < 2) throw new Error("CLOB token IDs not found");
+
+    const [upResponse, downResponse] = await Promise.all([
+      fetch("https://clob.polymarket.com/midpoint?token_id=" + encodeURIComponent(tokenIds[0]), {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000)
+      }),
+      fetch("https://clob.polymarket.com/midpoint?token_id=" + encodeURIComponent(tokenIds[1]), {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000)
+      })
+    ]);
+    if (!upResponse.ok || !downResponse.ok) {
+      throw new Error("CLOB HTTP " + upResponse.status + "/" + downResponse.status);
+    }
+
+    const [upBody, downBody] = await Promise.all([upResponse.json(), downResponse.json()]);
+    const up = num(upBody?.mid);
+    const down = num(downBody?.mid);
+    if (up === null || down === null) throw new Error("CLOB midpoint missing");
+
+    return { up, down, slug };
+  } catch (e) {
+    log("POLYMARKET_CLOB_PRICE_ERROR", {
+      symbol,
+      slug,
+      error: String(e.message || e)
+    });
+    return null;
+  }
+}
+
 function eventBatchMessage(events) {
   const bySymbol = {};
   for (const event of events) {
@@ -317,9 +363,16 @@ async function processFeed() {
     } else {
     selectedSymbol = symbol;
     selectedCount = symbolEvents.length;
-    const message = eventBatchMessage(symbolEvents);
+    let message = eventBatchMessage(symbolEvents);
 
     if (message) {
+      const clob = await fetchPolymarketClobPrices(symbol);
+      if (clob) {
+        message += "\nUP CLOB: " + clob.up.toFixed(3) + " | DOWN CLOB: " + clob.down.toFixed(3);
+      } else {
+        message += "\nUP CLOB: — | DOWN CLOB: —";
+      }
+
       const sent = await sendTelegram(message);
       alertSent = sent;
       if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
