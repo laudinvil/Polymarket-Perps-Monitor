@@ -253,7 +253,10 @@ async function flushLiquidationBucket() {
   for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
   const exchangeLines = Object.entries(byExchange)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange, count]) => exchange + ": " + count);
+    .map(([exchange, count]) => {
+      const displayExchange = exchange === "BINANCE_FUTURES" ? "BINANCE" : exchange;
+      return displayExchange + ": " + count;
+    });
 
   const kyivTime = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Kyiv",
