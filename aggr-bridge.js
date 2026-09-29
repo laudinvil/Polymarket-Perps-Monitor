@@ -6,9 +6,28 @@ const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
 const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"]);
 const EXCLUDED_EXCHANGES = new Set(["DERIBIT"]);
 const CLIENTS = new Set();
+const FEED_LOG_MS = 60000;
+const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
+let feedLogTimer = null;
 
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), component: "AGGR_BRIDGE", event, ...data }));
+}
+
+function scheduleFeedSummary() {
+  if (feedLogTimer) return;
+  feedLogTimer = setTimeout(() => {
+    feedLogTimer = null;
+    if (!feedStats.events) return;
+    log("FEED_SUMMARY", {
+      events: feedStats.events,
+      byExchange: feedStats.byExchange,
+      bySymbol: feedStats.bySymbol
+    });
+    feedStats.events = 0;
+    feedStats.byExchange = {};
+    feedStats.bySymbol = {};
+  }, FEED_LOG_MS);
 }
 
 function symbolFromPair(pair) {
@@ -71,7 +90,7 @@ async function buildExchanges(config) {
 
   for (const name of names) {
     if (EXCLUDED_EXCHANGES.has(name.toUpperCase())) {
-      log("ADAPTER_EXCLUDED", { adapter: name, reason: "USER_EXCLUDED_EXCHANGE" });
+      // Exclusions are intentionally silent in normal runtime logs.
       continue;
     }
     try {
