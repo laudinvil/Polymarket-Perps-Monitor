@@ -1,2 +1,2 @@
 aggr-exchange-check-2026-09-29
-commit=1ea6606b0519f71b1289d6826c977c5749e8509c
+commit=6f769946c508decfdaceac0f4a3d620407b531c2
