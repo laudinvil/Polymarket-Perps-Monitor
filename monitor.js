@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.1.0-EXCHANGE-BREAKDOWN";
+const VERSION = "20.2.0-4PLUS-ALL-EXCHANGES";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_2_PLUS_ALL_EXCHANGES",
+    strategy: "MARGINPAD_4_PLUS_ALL_EXCHANGES",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -273,7 +273,7 @@ async function processFeed() {
 
   let alertSent = false;
 
-  if (freshEvents.length >= 2) {
+  if (freshEvents.length >= 4) {
     const sent = await sendTelegram(eventBatchMessage(freshEvents));
 
     if (sent) {
@@ -281,12 +281,12 @@ async function processFeed() {
       alertSent = true;
     }
 
-    log(sent ? "2_PLUS_ALL_EXCHANGES_ALERT_SENT" : "2_PLUS_ALL_EXCHANGES_ALERT_FAILED", {
+    log(sent ? "4_PLUS_ALL_EXCHANGES_ALERT_SENT" : "4_PLUS_ALL_EXCHANGES_ALERT_FAILED", {
       fresh_liquidations: freshEvents.length,
       fresh_by_exchange: freshByExchange,
       fresh_by_symbol: freshBySymbol,
       sent,
-      rule: "2+ fresh liquidation events across all exchanges and symbols in 1 MarginPad polling cycle"
+      rule: "4+ fresh liquidation events across all exchanges and symbols in 1 MarginPad polling cycle"
     });
   }
 
@@ -305,7 +305,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "2+ fresh liquidations across all exchanges and symbols / 1 polling cycle"
+    strategy: "4+ fresh liquidations across all exchanges and symbols / 1 polling cycle"
   });
 
   saveState();
@@ -389,7 +389,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_2_PLUS_ALL_EXCHANGES";
+  state.strategy = "MARGINPAD_4_PLUS_ALL_EXCHANGES";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -400,7 +400,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_2_PLUS_ALL_EXCHANGES"
+    monitor: "MARGINPAD_4_PLUS_ALL_EXCHANGES"
   });
 
   startHealth();
