@@ -224,24 +224,24 @@ function recordLiquidations(events) {
 
 async function flushLiquidationBucket() {
   if (!bucket.length) return;
-  const events = bucket.splice(0);
+
+  // Liquidations accumulate independently per coin. There is no time window:
+  // once a coin reaches 2+ unique liquidation events, alert and clear only that coin.
   const bySymbol = {};
-  for (const event of events) {
+  for (const event of bucket) {
     if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
     bySymbol[event.symbol].push(event);
   }
 
-  const ranked = Object.entries(bySymbol)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  if (!ranked.length) return;
+  const candidate = Object.entries(bySymbol)
+    .filter(([, events]) => events.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))[0];
 
-  const [symbol, symbolEvents] = ranked[0];
+  if (!candidate) return;
 
-  if (symbolEvents.length < 2) {
-    skippedEvents += symbolEvents.length;
-    saveState();
-    return;
-  }
+  const [symbol, symbolEvents] = candidate;
+  const alertedKeys = new Set(symbolEvents.map(eventKey));
+  bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
 
   // AGGR normalizes liquidation sides: sell = long position liquidated,
   // buy = short position liquidated. This is normalized by AGGR's exchange adapters.
@@ -290,7 +290,6 @@ async function flushLiquidationBucket() {
   state.lastEventKey = eventKey(symbolEvents[symbolEvents.length - 1]);
   saveState();
 }
-
 function connectAggr() {
   if (aggrRequest) {
     try { aggrRequest.destroy(); } catch {}
