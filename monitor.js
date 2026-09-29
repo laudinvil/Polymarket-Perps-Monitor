@@ -411,13 +411,13 @@ function buildAlertForEvents(events) {
 }
 
 let binanceWs = null;
+let binanceSockets = [];
 let bybitWs = null;
 let reconnectTimers = { binance: null, bybit: null };
 let bucket = [];
 let wsConnectedAt = { binance: null, bybit: null };
 let wsMessageDiagnostics = { binance: 0, bybit: 0 };
 let feedSummaryTimer = null;
-
 function normalizeLiquidation(source, raw) {
   if (source === "BINANCE") {
     const o = raw?.o || raw?.data?.o || raw;
@@ -498,43 +498,62 @@ async function flushLiquidationBucket() {
 
 function connectBinance() {
   clearTimeout(reconnectTimers.binance);
-  const streams = ["btcusdt","ethusdt","solusdt","xrpusdt","dogeusdt","bnbusdt","hypeusdt"].map(s=>s+"@forceOrder");
-  // Diagnostic aggregate stream: do not turn it into alerts, because Binance aggregates to the largest liquidation per second.
-  streams.push("!forceOrder@arr");
-  const url = "wss://fstream.binance.com/stream?streams="+streams.join("/");
-  binanceWs = new WebSocket(url);
-  log("BINANCE_CONNECTING",{url});
-  binanceWs.on("open",()=>{ wsConnectedAt.binance=nowIso(); log("BINANCE_CONNECTED"); });
-  binanceWs.on("message",data=>{
-    wsMessageDiagnostics.binance++;
-    const m=decodeOpenMarketMessage(data);
-    if (m?.stream === "!forceOrder@arr") {
-      const o = m?.data?.o;
-      if (o) log("BINANCE_AGG_FORCEORDER_RECEIVED",{symbol:o.s,side:o.S,price:o.ap ?? o.p,qty:o.z ?? o.q});
-      return;
-    }
-    if (!m) {
-      if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_DECODE_FAILED",{bytes:Buffer.byteLength(data)});
-      return;
-    }
-    if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_RECEIVED",{
-      count:wsMessageDiagnostics.binance,
-      event:m?.e || m?.data?.e || null,
-      symbol:m?.o?.s || m?.data?.o?.s || null
+  for (const ws of binanceSockets) {
+    try { ws.close(); } catch {}
+  }
+  binanceSockets = [];
+  binanceWs = null;
+
+  const symbols = ["btcusdt","ethusdt","solusdt","xrpusdt","dogeusdt","bnbusdt","hypeusdt"];
+  const connectOne = (streamName, label) => {
+    const url = "wss://fstream.binance.com/ws/" + streamName;
+    const ws = new WebSocket(url);
+    binanceSockets.push(ws);
+    log("BINANCE_CONNECTING",{symbol:label,url});
+
+    ws.on("open",()=>{
+      wsConnectedAt.binance = nowIso();
+      if (!binanceWs || binanceWs.readyState !== WebSocket.OPEN) binanceWs = ws;
+      log("BINANCE_CONNECTED",{symbol:label});
     });
-    const e=normalizeLiquidation("BINANCE",m);
-    if (!e) {
-      if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_IGNORED",{
-        event:m?.e || m?.data?.e || null,
-        reason:"NOT_A_SUPPORTED_FORCE_ORDER"
+
+    ws.on("message",data=>{
+      wsMessageDiagnostics.binance++;
+      const m=decodeOpenMarketMessage(data);
+      if (!m) {
+        if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_DECODE_FAILED",{symbol:label,bytes:Buffer.byteLength(data)});
+        return;
+      }
+      if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_RECEIVED",{
+        count:wsMessageDiagnostics.binance,
+        symbol:label,
+        event:m?.e || null,
+        payloadSymbol:m?.o?.s || null
       });
-      return;
-    }
-    recordLiquidations([e]);
-    log("LIQUIDATION_RECEIVED",{source:"BINANCE",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty});
-  });
-  binanceWs.on("close",(code,reason)=>{ log("BINANCE_CLOSED",{code,reason:String(reason||"")}); binanceWs=null; reconnectTimers.binance=setTimeout(connectBinance,3000); });
-  binanceWs.on("error",e=>log("BINANCE_WS_ERROR",{error:String(e.message||e)}));
+      const e=normalizeLiquidation("BINANCE",m);
+      if (!e) {
+        if (wsMessageDiagnostics.binance <= 10) log("BINANCE_MESSAGE_IGNORED",{
+          symbol:label,
+          event:m?.e || null,
+          reason:"NOT_A_SUPPORTED_FORCE_ORDER"
+        });
+        return;
+      }
+      recordLiquidations([e]);
+      log("LIQUIDATION_RECEIVED",{source:"BINANCE",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty});
+    });
+
+    ws.on("close",(code,reason)=>{
+      log("BINANCE_CLOSED",{symbol:label,code,reason:String(reason||"")});
+      binanceSockets = binanceSockets.filter(x=>x!==ws);
+      if (binanceWs === ws) binanceWs = binanceSockets.find(x=>x.readyState===WebSocket.OPEN) || null;
+      if (!binanceSockets.length) reconnectTimers.binance=setTimeout(connectBinance,3000);
+    });
+    ws.on("error",e=>log("BINANCE_WS_ERROR",{symbol:label,error:String(e.message||e)}));
+  };
+
+  for (const symbol of symbols) connectOne(symbol+"@forceOrder",symbol.toUpperCase());
+  connectOne("!forceOrder@arr","AGGREGATE");
 }
 
 function connectBybit() {
@@ -646,7 +665,7 @@ function startLiquidationStream() {
   if (feedSummaryTimer) clearInterval(feedSummaryTimer);
   feedSummaryTimer = setInterval(() => {
     log("FEED_STATUS", {
-      binanceConnected: !!binanceWs && binanceWs.readyState === WebSocket.OPEN,
+      binanceConnected: binanceSockets.some(ws => ws.readyState === WebSocket.OPEN),
       bybitConnected: !!bybitWs && bybitWs.readyState === WebSocket.OPEN,
       binanceMessages: wsMessageDiagnostics.binance,
       bybitMessages: wsMessageDiagnostics.bybit,
