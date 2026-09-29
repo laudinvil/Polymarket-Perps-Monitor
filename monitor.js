@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.1.0-BINANCE-BYBIT";
+const VERSION = "25.2.0-BINANCE-BYBIT-DIAG";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -415,6 +415,7 @@ let bybitWs = null;
 let reconnectTimers = { binance: null, bybit: null };
 let bucket = [];
 let wsConnectedAt = { binance: null, bybit: null };
+let wsMessageDiagnostics = { binance: 0, bybit: 0 };
 
 function normalizeLiquidation(source, raw) {
   if (source === "BINANCE") {
@@ -502,10 +503,27 @@ function connectBinance() {
   log("BINANCE_CONNECTING",{url});
   binanceWs.on("open",()=>{ wsConnectedAt.binance=nowIso(); log("BINANCE_CONNECTED"); });
   binanceWs.on("message",data=>{
+    wsMessageDiagnostics.binance++;
     const m=decodeOpenMarketMessage(data);
-    if (!m) return;
+    if (!m) {
+      if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_DECODE_FAILED",{bytes:Buffer.byteLength(data)});
+      return;
+    }
+    if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_RECEIVED",{
+      count:wsMessageDiagnostics.binance,
+      event:m?.e || m?.data?.e || null,
+      symbol:m?.o?.s || m?.data?.o?.s || null
+    });
     const e=normalizeLiquidation("BINANCE",m);
-    if (e) { recordLiquidations([e]); log("LIQUIDATION_RECEIVED",{source:"BINANCE",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty}); }
+    if (!e) {
+      if (wsMessageDiagnostics.binance <= 5) log("BINANCE_MESSAGE_IGNORED",{
+        event:m?.e || m?.data?.e || null,
+        reason:"NOT_A_SUPPORTED_FORCE_ORDER"
+      });
+      return;
+    }
+    recordLiquidations([e]);
+    log("LIQUIDATION_RECEIVED",{source:"BINANCE",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty});
   });
   binanceWs.on("close",(code,reason)=>{ log("BINANCE_CLOSED",{code,reason:String(reason||"")}); binanceWs=null; reconnectTimers.binance=setTimeout(connectBinance,3000); });
   binanceWs.on("error",e=>log("BINANCE_WS_ERROR",{error:String(e.message||e)}));
@@ -522,13 +540,29 @@ function connectBybit() {
     log("BYBIT_CONNECTED");
   });
   bybitWs.on("message",data=>{
+    wsMessageDiagnostics.bybit++;
     const m=decodeOpenMarketMessage(data);
-    if (!m) return;
+    if (!m) {
+      if (wsMessageDiagnostics.bybit <= 5) log("BYBIT_MESSAGE_DECODE_FAILED",{bytes:Buffer.byteLength(data)});
+      return;
+    }
+    if (wsMessageDiagnostics.bybit <= 5) log("BYBIT_MESSAGE_RECEIVED",{
+      count:wsMessageDiagnostics.bybit,
+      op:m?.op || null,
+      success:m?.success ?? null,
+      topic:m?.topic || null,
+      ret_msg:m?.ret_msg || null,
+      dataCount:Array.isArray(m?.data)?m.data.length:(m?.data?1:0)
+    });
+    if (m?.op === "subscribe" || m?.success === true) return;
     const events=[];
-    const arr=Array.isArray(m?.data)?m.data:[];
+    const arr=Array.isArray(m?.data)?m.data:(m?.data?[m.data]:[]);
     for (const item of arr) {
       const e=normalizeLiquidation("BYBIT",{...m,data:[item]});
       if (e) events.push(e);
+    }
+    if (!events.length && wsMessageDiagnostics.bybit <= 5) {
+      log("BYBIT_MESSAGE_IGNORED",{topic:m?.topic || null,reason:"NO_SUPPORTED_LIQUIDATION"});
     }
     if (events.length) {
       recordLiquidations(events);
