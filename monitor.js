@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "19.2.0-3-SAME-SYMBOL";
+const VERSION = "20.0.0-2-ALL-EXCHANGES";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_2_PLUS_SAME_SYMBOL",
+    strategy: "MARGINPAD_2_PLUS_ALL_EXCHANGES",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -156,11 +156,10 @@ function getEventMs(event) {
   return raw < 1e12 ? raw * 1000 : raw;
 }
 
-function eventBatchMessage(symbol, events) {
+function eventBatchMessage(events) {
   const lines = [
-    "3+ LIQUIDATIONS",
-    "SYMBOL: " + symbol,
-    "COUNT: " + events.length,
+    "2+ LIQUIDATIONS",
+    "FRESH: " + events.length,
     ""
   ];
 
@@ -190,7 +189,6 @@ function eventBatchMessage(symbol, events) {
     });
 
   lines.push(...details);
-
   return lines.join("\n");
 }
 
@@ -233,25 +231,20 @@ async function processFeed() {
 
   let alertSent = false;
 
-  for (const [symbol, symbolCount] of Object.entries(freshBySymbol)) {
-    if (symbolCount < 3) continue;
-
-    const symbolEvents = freshEvents.filter(event =>
-      String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() === symbol
-    );
-
-    const sent = await sendTelegram(eventBatchMessage(symbol, symbolEvents));
+  if (freshEvents.length >= 2) {
+    const sent = await sendTelegram(eventBatchMessage(freshEvents));
 
     if (sent) {
       state.alertsSent = Number(state.alertsSent || 0) + 1;
       alertSent = true;
     }
 
-    log(sent ? "3_PLUS_SYMBOL_ALERT_SENT" : "3_PLUS_SYMBOL_ALERT_FAILED", {
-      symbol,
-      fresh_liquidations: symbolEvents.length,
+    log(sent ? "2_PLUS_ALL_EXCHANGES_ALERT_SENT" : "2_PLUS_ALL_EXCHANGES_ALERT_FAILED", {
+      fresh_liquidations: freshEvents.length,
+      fresh_by_exchange: freshByExchange,
+      fresh_by_symbol: freshBySymbol,
       sent,
-      rule: "3+ fresh liquidations for the same symbol in 1 MarginPad polling cycle"
+      rule: "2+ fresh liquidation events across all exchanges and symbols in 1 MarginPad polling cycle"
     });
   }
 
@@ -270,7 +263,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "3+ fresh liquidations for the same symbol / 1 polling cycle"
+    strategy: "2+ fresh liquidations across all exchanges and symbols / 1 polling cycle"
   });
 
   saveState();
@@ -354,7 +347,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_3_PLUS_SAME_SYMBOL";
+  state.strategy = "MARGINPAD_2_PLUS_ALL_EXCHANGES";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -365,7 +358,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_3_PLUS_SAME_SYMBOL"
+    monitor: "MARGINPAD_2_PLUS_ALL_EXCHANGES"
   });
 
   startHealth();
