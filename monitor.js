@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "24.1.0-OPENMARKET-NO-AUTH";
+const VERSION = "25.0.0-BINANCE-BYBIT";
 const POLL_MS = 0;
 const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -422,137 +422,138 @@ function buildAlertForEvents(events) {
   };
 }
 
-let openMarketWs = null;
-let reconnectTimer = null;
+let binanceWs = null;
+let bybitWs = null;
+let reconnectTimers = { binance: null, bybit: null };
 let bucket = [];
-let bucketTimer = null;
-let bucketFlushScheduled = false;
-let wsConnectedAt = null;
+let wsConnectedAt = { binance: null, bybit: null };
 
-async function flushOpenMarketBucket() {
-  if (!bucket.length) return;
-  const events = bucket;
-  bucket = [];
+function normalizeLiquidation(source, raw) {
+  if (source === "BINANCE") {
+    const o = raw?.o || raw?.data?.o || raw;
+    if (raw?.e !== "forceOrder" && raw?.data?.e !== "forceOrder" && o?.s == null) return null;
+    const symbolRaw = String(o?.s || "").toUpperCase();
+    const symbol = symbolRaw.replace(/USDT|USDC|USD/g, "");
+    if (!["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"].includes(symbol)) return null;
+    const price = num(o?.ap ?? o?.p);
+    const qty = num(o?.z ?? o?.q);
+    if (price === null || qty === null || qty <= 0) return null;
+    const side = String(o?.S || "").toUpperCase();
+    return {
+      id: "binance:" + String(o?.i ?? raw?.E ?? Date.now()),
+      ts: num(raw?.E ?? o?.T) ?? Date.now(),
+      exchange: "BINANCE_FUTURES",
+      symbol, side, price, qty, notional: price * qty
+    };
+  }
 
-  const fresh = [];
-  const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
+  const topic = String(raw?.topic || "");
+  const data = Array.isArray(raw?.data) ? raw.data : (raw?.data ? [raw.data] : []);
+  if (!topic.startsWith("allLiquidation.")) return null;
+  const d = data[0];
+  if (!d) return null;
+  const symbolRaw = String(d.s || topic.split(".")[1] || "").toUpperCase();
+  const symbol = symbolRaw.replace(/USDT|USDC|USD/g, "");
+  if (!["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"].includes(symbol)) return null;
+  const price = num(d.p);
+  const qty = num(d.v);
+  if (price === null || qty === null || qty <= 0) return null;
+  const side = String(d.S || "").toUpperCase();
+  return {
+    id: "bybit:" + String(d.T || raw.ts || Date.now()) + ":" + symbol + ":" + side + ":" + price + ":" + qty,
+    ts: num(d.T || raw.ts) ?? Date.now(),
+    exchange: "BYBIT",
+    symbol, side, price, qty, notional: price * qty
+  };
+}
 
+function recordLiquidations(events) {
   for (const event of events) {
     const key = eventKey(event);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+    const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
+    if (seen.has(key)) continue;
     state.seen.push(key);
-    fresh.push(event);
+    bucket.push(event);
   }
+  if (bucket.length) flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
+}
 
-  if (!fresh.length) return;
-
-  const bySymbol = {};
-  for (const e of fresh) {
-    if (!bySymbol[e.symbol]) bySymbol[e.symbol] = [];
-    bySymbol[e.symbol].push(e);
+async function flushLiquidationBucket() {
+  if (!bucket.length) return;
+  const events = bucket.splice(0);
+  const freshBySymbol = {};
+  for (const e of events) {
+    if (!freshBySymbol[e.symbol]) freshBySymbol[e.symbol] = [];
+    freshBySymbol[e.symbol].push(e);
   }
-
-  const ranked = Object.entries(bySymbol)
-    .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-
+  const ranked = Object.entries(freshBySymbol).sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  if (!ranked.length) return;
   const [symbol, symbolEvents] = ranked[0];
-  const alert = buildAlertForEvents(symbolEvents);
-  if (!alert) return;
 
-  const sent = await sendTelegram(alert.text);
-  if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
-
-  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
-    source: "OPENMARKET",
-    symbol,
-    events: symbolEvents.length
-  });
+  const longCount = symbolEvents.filter(e => (e.exchange === "BYBIT" ? e.side === "BUY" : e.side === "SELL")).length;
+  const shortCount = symbolEvents.filter(e => (e.exchange === "BYBIT" ? e.side === "SELL" : e.side === "BUY")).length;
+  const value = symbolEvents.reduce((s,e) => s + e.notional, 0);
+  const byExchange = {};
+  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
+  const exchangeLines = Object.entries(byExchange).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([x,n])=>x+": "+n);
+  const kyivTime = new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date());
+  const text = [symbol, kyivTime, "LIQS: "+symbolEvents.length, "LONG: "+longCount+" | SHORT: "+shortCount, "VALUE: $"+formatNumber(value,2), ...exchangeLines, polymarket5mUrl(symbol)].join("\n");
+  const sent = await sendTelegram(text);
+  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {source:"BINANCE_BYBIT",symbol,events:symbolEvents.length});
+  if (sent) state.alertsSent = Number(state.alertsSent||0)+1;
+  state.lastEventTs = Math.max(...symbolEvents.map(e=>e.ts));
+  state.lastEventKey = eventKey(symbolEvents[symbolEvents.length-1]);
   saveState();
 }
 
-function scheduleBucketFlush() {}
-
-function connectOpenMarket() {
-  openMarketWs = new WebSocket(OPENMARKET_WS_URL);
-  log("OPENMARKET_CONNECTING", {
-    url: OPENMARKET_WS_URL,
-    exchanges: OPENMARKET_EXCHANGES,
-    symbols: OPENMARKET_SYMBOLS,
-    excluded_exchanges: Array.from(EXCLUDED_EXCHANGES)
+function connectBinance() {
+  clearTimeout(reconnectTimers.binance);
+  const streams = ["btcusdt","ethusdt","solusdt","xrpusdt","dogeusdt","bnbusdt","hypeusdt"].map(s=>s+"@forceOrder");
+  const url = "wss://fstream.binance.com/stream?streams="+streams.join("/");
+  binanceWs = new WebSocket(url);
+  log("BINANCE_CONNECTING",{url});
+  binanceWs.on("open",()=>{ wsConnectedAt.binance=nowIso(); log("BINANCE_CONNECTED"); });
+  binanceWs.on("message",data=>{
+    const m=decodeOpenMarketMessage(data);
+    if (!m) return;
+    const e=normalizeLiquidation("BINANCE",m);
+    if (e) { recordLiquidations([e]); log("LIQUIDATION_RECEIVED",{source:"BINANCE",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty}); }
   });
+  binanceWs.on("close",(code,reason)=>{ log("BINANCE_CLOSED",{code,reason:String(reason||"")}); binanceWs=null; reconnectTimers.binance=setTimeout(connectBinance,3000); });
+  binanceWs.on("error",e=>log("BINANCE_WS_ERROR",{error:String(e.message||e)}));
+}
 
-  openMarketWs.on("open", () => {
-    wsConnectedAt = nowIso();
-    log("OPENMARKET_CONNECTED_NO_AUTH");
-    openMarketWs.send(JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "public/subscribe",
-      params: {
-        channels: openMarketChannels(),
-        compression: "brotli",
-        version: "v2"
-      }
-    }));
+function connectBybit() {
+  clearTimeout(reconnectTimers.bybit);
+  const url = "wss://stream.bybit.com/v5/public/linear";
+  bybitWs = new WebSocket(url);
+  log("BYBIT_CONNECTING",{url});
+  bybitWs.on("open",()=>{
+    wsConnectedAt.bybit=nowIso();
+    bybitWs.send(JSON.stringify({op:"subscribe",args:["allLiquidation.BTCUSDT","allLiquidation.ETHUSDT","allLiquidation.SOLUSDT","allLiquidation.XRPUSDT","allLiquidation.DOGEUSDT","allLiquidation.BNBUSDT","allLiquidation.HYPEUSDT"]}));
+    log("BYBIT_CONNECTED");
   });
-
-  openMarketWs.on("message", data => {
-    const message = decodeOpenMarketMessage(data);
-    if (!message) {
-      log("OPENMARKET_DECODE_ERROR");
-      return;
+  bybitWs.on("message",data=>{
+    const m=decodeOpenMarketMessage(data);
+    if (!m) return;
+    const events=[];
+    const arr=Array.isArray(m?.data)?m.data:[];
+    for (const item of arr) {
+      const e=normalizeLiquidation("BYBIT",{...m,data:[item]});
+      if (e) events.push(e);
     }
-
-    if (message.error) {
-      log("OPENMARKET_ERROR", { error: message.error });
-      return;
+    if (events.length) {
+      recordLiquidations(events);
+      for (const e of events) log("LIQUIDATION_RECEIVED",{source:"BYBIT",symbol:e.symbol,side:e.side,price:e.price,qty:e.qty});
     }
-
-    if (message.id === 2) {
-      log("OPENMARKET_SUBSCRIBE_RESULT", { result: message.result ?? message });
-      return;
-    }
-
-    const points = collectOpenMarketPoints(message);
-    if (!points.length) {
-      if (message?.method || message?.channel || message?.type || message?.data) {
-        log("OPENMARKET_MESSAGE_NO_POINTS", {
-          method: message.method ?? null,
-          channel: message.channel ?? null,
-          type: message.type ?? null,
-          has_data: message.data != null,
-          data_type: Array.isArray(message.data) ? "array" : typeof message.data,
-          keys: Object.keys(message).slice(0, 20)
-        });
-      }
-      return;
-    }
-
-    for (const event of points) bucket.push(event);
-    flushOpenMarketBucket().catch(e => log("OPENMARKET_FLUSH_ERROR", { error: String(e.stack || e) }));
-
-    log("OPENMARKET_LIQUIDATIONS", {
-      received_events: points.length,
-      symbols: [...new Set(points.map(e => e.symbol))],
-      exchanges: [...new Set(points.map(e => e.exchange))]
-    });
   });
+  bybitWs.on("close",(code,reason)=>{ log("BYBIT_CLOSED",{code,reason:String(reason||"")}); bybitWs=null; reconnectTimers.bybit=setTimeout(connectBybit,3000); });
+  bybitWs.on("error",e=>log("BYBIT_WS_ERROR",{error:String(e.message||e)}));
+}
 
-  openMarketWs.on("close", (code, reason) => {
-    log("OPENMARKET_CLOSED", {
-      code,
-      reason: Buffer.isBuffer(reason) ? reason.toString() : String(reason || ""),
-      connected_at: wsConnectedAt
-    });
-    openMarketWs = null;
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connectOpenMarket, 3000);
-  });
-
-  openMarketWs.on("error", e => {
-    log("OPENMARKET_WS_ERROR", { error: String(e.message || e) });
-  });
+function startLiquidationStream() {
+  connectBinance();
+  connectBybit();
 }
 
 function diagnostics() {
