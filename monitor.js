@@ -191,21 +191,6 @@ function eventBatchMessage(symbol, events) {
 
   lines.push(...details);
 
-  const newest = events
-    .map(getEventMs)
-    .filter(v => v !== null)
-    .sort((a, b) => b - a)[0];
-
-  if (newest !== undefined) {
-    lines.push(new Date(newest).toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: "Europe/Kyiv"
-    }));
-  }
-
   return lines.join("\n");
 }
 
