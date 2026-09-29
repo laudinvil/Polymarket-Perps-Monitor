@@ -231,7 +231,7 @@ async function flushValueAlert(symbol, triggerEvent) {
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
   const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
-  if (clob && (clob.up < 0.20 || clob.up > 0.80 || clob.down < 0.20 || clob.down > 0.80)) {
+  if (clob && (clob.up < 0.15 || clob.up > 0.85 || clob.down < 0.15 || clob.down > 0.85)) {
     skippedEvents++;
     return;
   }
