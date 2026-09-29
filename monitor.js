@@ -287,7 +287,6 @@ function eventBatchMessage(events) {
     "LIQS: " + symbolEvents.length,
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
-    "SIZE: " + formatCompactNumber(size),
     ...exchangeLines,
     polymarket5mUrl(symbol)
   ].join("\n");
