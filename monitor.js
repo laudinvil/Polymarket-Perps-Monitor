@@ -329,8 +329,8 @@ async function processFeed() {
   }
 
   log("POLL_RESULT", {
-    feed_events: events.length,
-    eligible_fresh_liquidations: freshEvents.length,
+    api_events_returned: events.length,
+    window_events: freshEvents.length,
     fresh_by_exchange: freshByExchange,
     fresh_by_symbol: freshBySymbol,
     selected_symbol: selectedSymbol,
