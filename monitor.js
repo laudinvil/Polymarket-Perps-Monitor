@@ -247,9 +247,9 @@ async function flushLiquidationBucket() {
   }
 
   // No time window. Keep accumulating unique events per coin.
-  // Alert when a coin reaches 3+ events. Different coins are independent.
+  // Alert when a coin reaches 4+ events. Different coins are independent.
   const candidates = Object.entries(bySymbol)
-    .filter(([, events]) => events.length >= 3)
+    .filter(([, events]) => events.length >= 4)
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 
   if (!candidates.length) return;
@@ -491,7 +491,7 @@ function main() {
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
-    minimumLiquidations: 3,
+    minimumLiquidations: 4,
     dedupe: "POLYMARKET_5M_URL"
   });
 
