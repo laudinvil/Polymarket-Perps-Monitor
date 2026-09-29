@@ -214,12 +214,15 @@ async function main() {
   const exchanges = await buildExchanges(config);
 
   for (const exchange of exchanges) {
+    // One listener per exchange, not one listener per pair. AGGR can have
+    // many connected pairs and its EventEmitter otherwise exceeds the
+    // default listener limit (10), producing MaxListenersExceededWarning.
     exchangeStatus[exchange.id] = { connectedPairs: 0, lastEventAt: null, errors: 0 };
 
-    exchange.on("connected", (pair) => {
+    exchange.on("connected", () => {
       exchangeStatus[exchange.id].connectedPairs++;
     });
-    exchange.on("disconnected", (pair) => {
+    exchange.on("disconnected", () => {
       exchangeStatus[exchange.id].connectedPairs = Math.max(0, exchangeStatus[exchange.id].connectedPairs - 1);
     });
     exchange.on("close", () => {
