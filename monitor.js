@@ -256,7 +256,17 @@ async function processFeed() {
     const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
     feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
     const eventMs = getEventMs(event);
-    if (eventMs !== null) eventTimes.push(eventMs);
+    if (eventMs !== null) {
+      eventTimes.push(eventMs);
+      // Only events that actually occurred during this 3-second poll window
+      // can participate in the alert. The feed itself may return a rolling
+      // batch containing older events.
+      if (eventMs < Date.now() - POLL_MS || eventMs > Date.now() + 1000) continue;
+    } else {
+      // Without a timestamp we cannot prove that the event belongs to this
+      // 3-second window, so do not use it for alerts.
+      continue;
+    }
 
     const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     if (!allowed.has(symbol)) continue;
