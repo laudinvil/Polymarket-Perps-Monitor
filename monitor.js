@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "10.1.0-CASCADE3";
+const VERSION = "11.0.0-HYPERLIQUID-ALL";
 const POLL_MS = 3000;
-const CASCADE_MIN_EVENTS = 3;
-const CASCADE_GAP_MS = 15000;
+const CASCADE_MIN_EVENTS = 1;
+const CASCADE_GAP_MS = 0;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const EXCHANGE = "hyperliquid";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -31,7 +31,7 @@ function log(event, data = {}) {
 }
 
 function defaultState() {
-  return { version: VERSION, strategy: "MARGINPAD_HYPERLIQUID_CASCADES_3", updatedAt: nowIso(), seen: [], alertsSent: 0, lastEventTs: null, lastEventKey: null, cascades: {} };
+  return { version: VERSION, strategy: "MARGINPAD_HYPERLIQUID_ALL", updatedAt: nowIso(), seen: [], alertsSent: 0, lastEventTs: null, lastEventKey: null, cascades: {} };
 }
 
 function loadState() {
@@ -122,72 +122,42 @@ function ensureCascade(symbol) {
   return state.cascades[symbol];
 }
 
-async function flushFinishedCascades(now) {
+async function flushFinishedCascades() {
   for (const [symbol, cascade] of Object.entries(state.cascades || {})) {
-    if (!Array.isArray(cascade.events) || cascade.events.length < CASCADE_MIN_EVENTS) continue;
-    if (!cascade.lastFreshAt || now - cascade.lastFreshAt < CASCADE_GAP_MS) continue;
+    if (!Array.isArray(cascade.events) || cascade.events.length === 0) continue;
 
-    const events = cascade.events.slice();
-    const latestEventMs = Math.max(...events.map(e => Number(e.eventMs) || 0));
-    if (latestEventMs <= Number(cascade.lastAlertEventMs || 0)) {
-      cascade.events = [];
-      cascade.lastFreshAt = 0;
-      continue;
-    }
-
-    const longCount = events.filter(e => e.side === "LONG").length;
-    const shortCount = events.filter(e => e.side === "SHORT").length;
-    const totalValue = events.reduce((sum, e) => sum + (Number(e.notional) || 0), 0);
-    const totalQty = events.reduce((sum, e) => sum + (Number(e.qty) || 0), 0);
-    const prices = events.map(e => e.price).filter(Number.isFinite);
-    const minPrice = prices.length ? Math.min(...prices) : null;
-    const maxPrice = prices.length ? Math.max(...prices) : null;
-
-    const message = [
-      symbol + " CASCADE",
-      "EVENTS: " + events.length,
-      "LONG: " + longCount + " | SHORT: " + shortCount,
-      "VALUE: " + formatUsd(totalValue),
-      "SIZE: " + formatNumber(totalQty),
-      "PRICE RANGE: " + formatNumber(minPrice) + " - " + formatNumber(maxPrice)
-    ].join("\n");
-
-    const sent = await sendTelegram(message);
-    if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
-
-    log(sent ? "LIQUIDATION_CASCADE_ALERT_SENT" : "LIQUIDATION_CASCADE_ALERT_FAILED", {
-      exchange: EXCHANGE, symbol, events: events.length, longCount, shortCount,
-      totalValue, totalQty, minPrice, maxPrice, gapMs: CASCADE_GAP_MS,
-      lastEventTs: events[events.length - 1].eventTs
-    });
-
-    cascade.lastAlertEventMs = latestEventMs;
-    cascade.events = [];
+    const events = cascade.events.splice(0);
     cascade.lastFreshAt = 0;
+
+    for (const event of events) {
+      const message = [
+        symbol,
+        "SIDE: " + event.side,
+        "PRICE: " + formatNumber(event.price),
+        "SIZE: " + formatNumber(event.qty),
+        "VALUE: " + formatUsd(event.notional)
+      ].join("\n");
+
+      const sent = await sendTelegram(message);
+      if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+
+      log(sent ? "HYPERLIQUID_LIQUIDATION_ALERT_SENT" : "HYPERLIQUID_LIQUIDATION_ALERT_FAILED", {
+        exchange: EXCHANGE, symbol, side: event.side,
+        price: event.price, qty: event.qty, notional: event.notional,
+        eventTs: event.eventTs
+      });
+    }
   }
 }
 
 async function processFeed() {
   const body = await fetchFeed();
   const events = normalizeFeed(body);
-  const exchangeCounts = {};
-  for (const e of events) {
-    const exchange = String(e?.exchange ?? e?.source ?? e?.venue ?? e?.market ?? "UNKNOWN").trim().toLowerCase() || "UNKNOWN";
-    exchangeCounts[exchange] = (exchangeCounts[exchange] || 0) + 1;
-  }
   const hyperliquid = events.filter(e => String(e?.exchange ?? e?.source ?? e?.venue ?? "").toLowerCase() === EXCHANGE);
-  if (hyperliquid.length === 0) {
-    log("FEED_NO_HYPERLIQUID", {
-      received: events.length,
-      exchangeCounts,
-      sample: events.slice(0, 5)
-    });
-  }
   hyperliquid.sort((a, b) => (getEventMs(a) || 0) - (getEventMs(b) || 0));
 
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   let fresh = 0;
-  const now = Date.now();
 
   for (const event of hyperliquid) {
     const eventMs = getEventMs(event);
@@ -202,14 +172,6 @@ async function processFeed() {
 
     const symbol = String(event.symbol || event.coin || "UNKNOWN").toUpperCase();
     const cascade = ensureCascade(symbol);
-    const lastEvent = cascade.events[cascade.events.length - 1];
-
-    if (lastEvent && eventMs - Number(lastEvent.eventMs) > CASCADE_GAP_MS) {
-      if (cascade.events.length < CASCADE_MIN_EVENTS) log("CASCADE_IGNORED", { exchange: EXCHANGE, symbol, events: cascade.events.length, required: CASCADE_MIN_EVENTS });
-      cascade.events = [];
-      cascade.lastFreshAt = 0;
-    }
-
     cascade.events.push({
       eventMs,
       eventTs: num(event.ts ?? event.timestamp ?? event.time),
@@ -218,18 +180,20 @@ async function processFeed() {
       qty: num(event.qty ?? event.size),
       notional: num(event.notional)
     });
-    cascade.lastFreshAt = now;
+    cascade.lastFreshAt = Date.now();
 
-    log("LIQUIDATION_RAW_EVENT", { exchange: EXCHANGE, symbol, rawEvent: event, cascadeEvents: cascade.events.length, required: CASCADE_MIN_EVENTS });
-
-    if (cascade.events.length < CASCADE_MIN_EVENTS) {
-      log("LIQUIDATION_BELOW_CASCADE_THRESHOLD", { exchange: EXCHANGE, symbol, events: cascade.events.length, required: CASCADE_MIN_EVENTS });
-    } else {
-      log("CASCADE_PENDING", { exchange: EXCHANGE, symbol, events: cascade.events.length, waitAfterLastPollMs: CASCADE_GAP_MS });
-    }
+    log("HYPERLIQUID_LIQUIDATION_FOUND", {
+      exchange: EXCHANGE,
+      symbol,
+      side: sideLabel(event.side),
+      price: num(event.price),
+      qty: num(event.qty ?? event.size),
+      notional: num(event.notional),
+      rawEvent: event
+    });
   }
 
-  await flushFinishedCascades(Date.now());
+  await flushFinishedCascades();
   log("FEED_PROCESSED", { received: events.length, hyperliquid: hyperliquid.length, fresh });
   saveState();
 }
@@ -291,7 +255,7 @@ function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA, strategy: state.strategy, source: FEED_URL,
     exchange: EXCHANGE, pollingMs: POLL_MS, cascadeMinEvents: CASCADE_MIN_EVENTS,
-    cascadeGapMs: CASCADE_GAP_MS, monitor: "MARGINPAD_HYPERLIQUID_CASCADE_3"
+    cascadeGapMs: CASCADE_GAP_MS, monitor: "MARGINPAD_HYPERLIQUID_ALL"
   });
   startHealth();
   poll();
