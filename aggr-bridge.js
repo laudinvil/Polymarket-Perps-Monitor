@@ -15,7 +15,8 @@ const LIQUIDATION_EXCHANGES = new Set([
   "KRAKEN",
   "BITFINEX",
   "GATEIO",
-  "HUOBI"
+  "HUOBI",
+  "DERIBIT"
 ]);
 const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
