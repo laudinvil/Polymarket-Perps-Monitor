@@ -241,7 +241,6 @@ function eventBatchMessage(events, freshByExchange, thresholdLabel, symbol) {
   const lines = [
     String(symbol || "ALERT").toUpperCase(),
     "FRESH: " + events.length,
-    "EXCHANGES:"
   ];
 
   for (const [exchange, count] of Object.entries(freshByExchange)) {
