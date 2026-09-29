@@ -19,7 +19,7 @@ const LIQUIDATION_EXCHANGES = new Set([
 ]);
 const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
-const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
+const feedStats = { events: 0, byExchange: {}, bySymbol: {} };\nconst exchangeStatus = {};
 let feedLogTimer = null;
 
 function log(event, data = {}) {
@@ -214,12 +214,29 @@ async function main() {
   const exchanges = await buildExchanges(config);
 
   for (const exchange of exchanges) {
+    exchangeStatus[exchange.id] = { connectedPairs: 0, lastEventAt: null, errors: 0 };
+
+    exchange.on("connected", (pair) => {
+      exchangeStatus[exchange.id].connectedPairs++;
+    });
+    exchange.on("disconnected", (pair) => {
+      exchangeStatus[exchange.id].connectedPairs = Math.max(0, exchangeStatus[exchange.id].connectedPairs - 1);
+    });
+    exchange.on("close", () => {
+      exchangeStatus[exchange.id].connectedPairs = 0;
+    });
+    exchange.on("error", () => {
+      exchangeStatus[exchange.id].errors++;
+    });
+
     exchange.on("liquidations", events => {
       for (const event of Array.isArray(events) ? events : [events]) {
         const normalized = normalize(event);
         if (!normalized) continue;
 
         publish(normalized);
+        exchangeStatus[normalized.exchange] = exchangeStatus[normalized.exchange] || { connectedPairs: 0, lastEventAt: null, errors: 0 };
+        exchangeStatus[normalized.exchange].lastEventAt = new Date(normalized.timestamp).toISOString();
         feedStats.events++;
         feedStats.byExchange[normalized.exchange] = (feedStats.byExchange[normalized.exchange] || 0) + 1;
         feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
@@ -244,7 +261,13 @@ async function main() {
         exchanges:exchanges.map(x=>x.id),
         exchangeCount:exchanges.length,
         pairCount:config.pairs.length,
-        clients:CLIENTS.size
+        clients:CLIENTS.size,
+        status: Object.fromEntries(Object.entries(exchangeStatus).map(([id, value]) => [id, {
+          selectedPairs: config.pairs.filter(pair => pair.startsWith(id + ":")).length,
+          connectedPairs: value.connectedPairs,
+          lastEventAt: value.lastEventAt,
+          errors: value.errors
+        }]))
       }));
     }
 
