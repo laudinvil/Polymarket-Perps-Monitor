@@ -4,7 +4,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "25.6.0-BINANCE-DIAGNOSTIC";
+const VERSION = "25.7.0-BINANCE-PUBLIC-WS";
 const POLL_MS = 0;
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
@@ -522,7 +522,7 @@ function connectBinance() {
 
   const symbols = ["btcusdt","ethusdt","solusdt","xrpusdt","dogeusdt","bnbusdt","hypeusdt"];
   const connectOne = (streamName, label) => {
-    const url = "wss://fstream.binance.com/ws/" + streamName;
+    const url = "wss://fstream.binance.com/public/ws/" + streamName;
     const ws = new WebSocket(url);
     binanceSockets.push(ws);
     log("BINANCE_CONNECTING",{symbol:label,url});
@@ -731,7 +731,7 @@ function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
     strategy: state.strategy,
-    sources: ["wss://fstream.binance.com/stream", "wss://stream.bybit.com/v5/public/linear"],
+    sources: ["wss://fstream.binance.com/public/ws", "wss://stream.bybit.com/v5/public/linear"],
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
