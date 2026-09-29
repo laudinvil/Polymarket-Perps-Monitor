@@ -237,7 +237,6 @@ function eventBatchMessage(events) {
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
     "SIZE: " + formatCompactNumber(size),
-    "PRICE RANGE: " + priceRange,
     ...exchangeLines
   ].join("\n");
 }
