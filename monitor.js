@@ -348,7 +348,7 @@ function eventBatchMessage(events) {
   return [
     symbol,
     kyivTime,
-    "LIQS: " + symbolEvents.length,
+    "LIQS: " + (symbolEvents.length >= 2 ? "2+" : "1"),
     "LONG: " + longCount + " | SHORT: " + shortCount,
     "VALUE: $" + formatNumber(value, 2),
     ...exchangeLines,
@@ -401,7 +401,7 @@ function buildAlertForEvents(events) {
     text: [
       symbol,
       kyivTime,
-      "LIQS: " + symbolEvents.length,
+      "LIQS: " + (symbolEvents.length >= 2 ? "2+" : "1"),
       "LONG: " + longCount + " | SHORT: " + shortCount,
       "VALUE: $" + formatNumber(value, 2),
       ...exchangeLines,
