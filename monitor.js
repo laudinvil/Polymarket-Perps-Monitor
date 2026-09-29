@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "20.2.0-4PLUS-ALL-EXCHANGES";
+const VERSION = "20.3.0-5PLUS-PER-SYMBOL";
 const POLL_MS = 3000;
 const FEED_URL = "https://marginpad.io/api/v1/feed";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS",
+    strategy: "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -174,22 +174,66 @@ function formatCompactNumber(value) {
   });
 }
 
-function eventMessage(event) {
-  const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-  const side = String(event.side ?? event.direction ?? "").toUpperCase();
-  const notional = num(event.notional ?? event.value ?? event.amount);
-  const qty = num(event.qty ?? event.size ?? event.quantity);
-  const price = num(event.price);
-  const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-  return [
-    symbol,
-    "EVENTS: 1",
-    "LONG: " + ((side === "LONG" || side === "BUY") ? 1 : 0) + " | SHORT: " + ((side === "SHORT" || side === "SELL") ? 1 : 0),
-    "VALUE: $" + formatNumber(notional, 2),
-    "SIZE: " + formatCompactNumber(qty),
-    "PRICE RANGE: " + (price === null ? "—" : price.toLocaleString("en-US", { maximumFractionDigits: 8 })),
-    exchange + ": 1"
-  ].join("\n");
+function eventBatchMessage(events) {
+  const bySymbol = {};
+  for (const event of events) {
+    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+    if (!bySymbol[symbol]) bySymbol[symbol] = [];
+    bySymbol[symbol].push(event);
+  }
+
+  const symbolBlocks = Object.entries(bySymbol)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([symbol, symbolEvents]) => {
+      let longCount = 0;
+      let shortCount = 0;
+      let value = 0;
+      let size = 0;
+      const prices = [];
+      const byExchange = {};
+
+      for (const event of symbolEvents) {
+        const side = String(event.side ?? event.direction ?? "").toUpperCase();
+        if (side === "LONG" || side === "BUY") longCount++;
+        else if (side === "SHORT" || side === "SELL") shortCount++;
+        else log("UNKNOWN_LIQUIDATION_SIDE", {
+          symbol,
+          side: String(event.side ?? event.direction ?? ""),
+          event_key: eventKey(event)
+        });
+
+        const notional = num(event.notional ?? event.value ?? event.amount);
+        const qty = num(event.qty ?? event.size ?? event.quantity);
+        const price = num(event.price);
+        if (notional !== null) value += notional;
+        if (qty !== null) size += qty;
+        if (price !== null) prices.push(price);
+
+        const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim() || "UNKNOWN";
+        byExchange[exchange] = (byExchange[exchange] || 0) + 1;
+      }
+
+      const exchangeLines = Object.entries(byExchange)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([exchange, count]) => exchange.toUpperCase() + ": " + count);
+
+      const priceRange = prices.length
+        ? Math.min(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 }) +
+          " - " + Math.max(...prices).toLocaleString("en-US", { maximumFractionDigits: 8 })
+        : "—";
+
+      return [
+        symbol,
+        "EVENTS: " + symbolEvents.length,
+        "LONG: " + longCount + " | SHORT: " + shortCount,
+        "VALUE: $" + formatNumber(value, 2),
+        "SIZE: " + formatCompactNumber(size),
+        "PRICE RANGE: " + priceRange,
+        ...exchangeLines
+      ].join("\n");
+    });
+
+  return symbolBlocks.join("\n\n");
 }
 async function processFeed() {
   const body = await fetchFeed();
@@ -233,28 +277,60 @@ async function processFeed() {
 
   let alertSent = false;
   let alertsSentThisCycle = 0;
+  const eligibleBySymbol = {};
+  const skippedBySymbol = {};
 
-  // STRICT RULE: one Telegram alert = exactly ONE raw liquidation event.
-  // Never aggregate different symbols, exchanges, or multiple events into one alert.
-  if (freshEvents.length >= 4) {
-    for (const event of freshEvents) {
-      const sent = await sendTelegram(eventMessage(event));
-      if (sent) {
-        state.alertsSent = Number(state.alertsSent || 0) + 1;
-        alertsSentThisCycle++;
-        alertSent = true;
-      }
-      log(sent ? "SINGLE_EVENT_ALERT_SENT" : "SINGLE_EVENT_ALERT_FAILED", {
-        symbol: String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
-        event_key: eventKey(event),
-        sent,
-        rule: "4+ fresh liquidation events trigger individual alerts; one alert contains exactly one event"
-      });
+  // HARD RULE: threshold is per symbol, per single MarginPad poll.
+  // Never accumulate events across polls. Never trigger on total feed count.
+  for (const [symbol, symbolEvents] of Object.entries(freshEventsBySymbol)) {
+    if (symbolEvents.length < 5) {
+      skippedBySymbol[symbol] = {
+        events: symbolEvents.length,
+        required: 5,
+        reason: "LESS_THAN_5_FRESH_EVENTS_IN_SINGLE_POLL"
+      };
+      continue;
     }
+
+    const classified = symbolEvents.filter(event => {
+      const side = String(event.side ?? event.direction ?? "").toUpperCase();
+      return side === "LONG" || side === "SHORT" || side === "BUY" || side === "SELL";
+    });
+
+    if (classified.length === 0) {
+      skippedBySymbol[symbol] = {
+        events: symbolEvents.length,
+        required: 5,
+        reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
+      };
+      log("ALERT_SKIPPED", {
+        symbol,
+        events: symbolEvents.length,
+        reason: "NO_CLASSIFIED_LONG_SHORT_EVENTS"
+      });
+      continue;
+    }
+
+    eligibleBySymbol[symbol] = symbolEvents;
+    const sent = await sendTelegram(eventBatchMessage(symbolEvents));
+    if (sent) {
+      state.alertsSent = Number(state.alertsSent || 0) + 1;
+      alertsSentThisCycle++;
+      alertSent = true;
+    }
+
+    log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
+      symbol,
+      events: symbolEvents.length,
+      sent,
+      rule: "5+ fresh liquidation events for this symbol in ONE MarginPad poll"
+    });
   }
 
   log("ALERT_GROUPING", {
     fresh_events: freshEvents.length,
+    eligible_by_symbol: Object.fromEntries(Object.entries(eligibleBySymbol).map(([k,v]) => [k, v.length])),
+    skipped_by_symbol: skippedBySymbol,
     fresh_by_symbol: freshBySymbol,
     alerts_sent_this_cycle: alertsSentThisCycle,
     rule: "ONE RAW EVENT PER TELEGRAM ALERT; NO AGGREGATION"
@@ -274,7 +350,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "4+ fresh liquidations for one symbol / 1 polling cycle"
+    strategy: "5+ fresh liquidations for one symbol / 1 polling cycle; no accumulation across polls"
   });
 
   saveState();
@@ -358,7 +434,7 @@ function main() {
 
   state = loadState();
   state.version = VERSION;
-  state.strategy = "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS";
+  state.strategy = "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL";
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   collectionStartedAt = nowIso();
 
@@ -369,7 +445,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_4_PLUS_SINGLE_EVENT_ALERTS"
+    monitor: "MARGINPAD_5_PLUS_PER_SYMBOL_PER_POLL"
   });
 
   startHealth();
