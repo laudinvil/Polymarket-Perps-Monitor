@@ -4,7 +4,19 @@ const path = require("path");
 
 const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
 const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"]);
-const EXCLUDED_EXCHANGES = new Set(["DERIBIT"]);
+const LIQUIDATION_EXCHANGES = new Set([
+  "BINANCE_FUTURES",
+  "BYBIT",
+  "OKEX",
+  "DYDX",
+  "BITMEX",
+  "BITGET",
+  "BITMART",
+  "KRAKEN",
+  "BITFINEX",
+  "GATEIO",
+  "HUOBI"
+]);
 const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
 const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
@@ -89,8 +101,7 @@ async function buildExchanges(config) {
   const exchanges = [];
 
   for (const name of names) {
-    if (EXCLUDED_EXCHANGES.has(name.toUpperCase())) {
-      // Exclusions are intentionally silent in normal runtime logs.
+    if (!LIQUIDATION_EXCHANGES.has(name.toUpperCase())) {
       continue;
     }
     try {
