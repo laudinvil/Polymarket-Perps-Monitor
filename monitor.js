@@ -12,7 +12,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_GROUP_WINDOW_MS = 0;
+const LIQUIDATION_GROUP_WINDOW_MS = 2000;
 
 let state;
 let bucket = [];
@@ -237,7 +237,7 @@ async function flushLiquidationBucket() {
 
   const [symbol, symbolEvents] = ranked[0];
 
-  if (symbolEvents.length < 1) {
+  if (symbolEvents.length < 2) {
     skippedEvents += symbolEvents.length;
     saveState();
     return;
@@ -281,7 +281,7 @@ async function flushLiquidationBucket() {
     source: "AGGR",
     symbol,
     events: symbolEvents.length,
-    requiredMinimum: 1,
+    requiredMinimum: 2,
     exchanges: byExchange
   });
 
