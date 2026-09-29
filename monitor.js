@@ -55,7 +55,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "MARGINPAD_4_PLUS_ALL_EXCHANGES",
+    strategy: "MARGINPAD_4_PLUS_PER_SYMBOL",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -244,6 +244,7 @@ async function processFeed() {
   const freshEvents = [];
   const freshByExchange = {};
   const freshBySymbol = {};
+  const freshEventsBySymbol = {};
   let fresh = 0;
 
   for (const event of events) {
@@ -266,29 +267,54 @@ async function processFeed() {
 
     const symbol = String(event.symbol ?? event.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
     freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
+    if (!freshEventsBySymbol[symbol]) freshEventsBySymbol[symbol] = [];
+    freshEventsBySymbol[symbol].push(event);
 
     state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
     state.lastEventKey = key;
   }
 
   let alertSent = false;
+  let alertsSentThisCycle = 0;
 
-  if (freshEvents.length >= 4) {
-    const sent = await sendTelegram(eventBatchMessage(freshEvents));
+  // IMPORTANT: one Telegram alert = one symbol only.
+  // The threshold is evaluated per symbol, never across different coins.
+  for (const [symbol, symbolEvents] of Object.entries(freshEventsBySymbol)) {
+    if (symbolEvents.length < 4) continue;
+
+    const sent = await sendTelegram(eventBatchMessage(symbolEvents));
 
     if (sent) {
       state.alertsSent = Number(state.alertsSent || 0) + 1;
+      alertsSentThisCycle++;
       alertSent = true;
     }
 
-    log(sent ? "4_PLUS_ALL_EXCHANGES_ALERT_SENT" : "4_PLUS_ALL_EXCHANGES_ALERT_FAILED", {
-      fresh_liquidations: freshEvents.length,
-      fresh_by_exchange: freshByExchange,
-      fresh_by_symbol: freshBySymbol,
+    log(sent ? "SYMBOL_ALERT_SENT" : "SYMBOL_ALERT_FAILED", {
+      symbol,
+      fresh_liquidations: symbolEvents.length,
+      fresh_by_exchange: Object.fromEntries(
+        Object.entries(
+          symbolEvents.reduce((acc, event) => {
+            const exchange = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN");
+            acc[exchange] = (acc[exchange] || 0) + 1;
+            return acc;
+          }, {})
+        )
+      ),
       sent,
-      rule: "4+ fresh liquidation events across all exchanges and symbols in 1 MarginPad polling cycle"
+      rule: "4+ fresh liquidation events for ONE symbol in 1 MarginPad polling cycle"
     });
   }
+
+  log("ALERT_GROUPING", {
+    fresh_by_symbol: freshBySymbol,
+    qualifying_symbols: Object.entries(freshEventsBySymbol)
+      .filter(([, symbolEvents]) => symbolEvents.length >= 4)
+      .map(([symbol]) => symbol),
+    alerts_sent_this_cycle: alertsSentThisCycle,
+    rule: "one Telegram alert = one symbol; no cross-symbol aggregation"
+  });
 
   const eventTimeSummary = eventTimes.length
     ? {
@@ -305,7 +331,7 @@ async function processFeed() {
     fresh_by_symbol: freshBySymbol,
     alert_sent: alertSent,
     ...eventTimeSummary,
-    strategy: "4+ fresh liquidations across all exchanges and symbols / 1 polling cycle"
+    strategy: "4+ fresh liquidations for one symbol / 1 polling cycle"
   });
 
   saveState();
@@ -400,7 +426,7 @@ function main() {
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "MARGINPAD_4_PLUS_ALL_EXCHANGES"
+    monitor: "MARGINPAD_4_PLUS_PER_SYMBOL"
   });
 
   startHealth();
