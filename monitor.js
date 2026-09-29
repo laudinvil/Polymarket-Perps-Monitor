@@ -603,6 +603,11 @@ function startHealth() {
   }));
 }
 
+function startLiquidationStream() {
+  connectBinance();
+  connectBybit();
+}
+
 function main() {
   ensureDir(STATE_FILE);
   ensureDir(LOG_FILE);
@@ -611,7 +616,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "OPENMARKET_SIMPLE";
+  const strategy = "BINANCE_BYBIT_LIQUIDATIONS";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
@@ -628,12 +633,12 @@ function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
     strategy: state.strategy,
-    source: OPENMARKET_WS_URL,
+    sources: ["wss://fstream.binance.com/stream", "wss://stream.bybit.com/v5/public/linear"],
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "OPENMARKET_SIMPLE"
+    monitor: "BINANCE_BYBIT"
   });
 
   startHealth();
