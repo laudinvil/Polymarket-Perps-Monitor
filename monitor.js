@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_GROUP_WINDOW_MS = 0;
+const LIQUIDATION_GROUP_WINDOW_MS = 2000;
 
 let state;
 let bucket = [];
@@ -241,16 +241,19 @@ function rememberAlertedLink(link) {
 async function flushLiquidationBucket() {
   if (!bucket.length) return;
 
+  const cutoff = Date.now() - LIQUIDATION_GROUP_WINDOW_MS;
+  bucket = bucket.filter(event => event.ts >= cutoff);
+
   const bySymbol = {};
   for (const event of bucket) {
     if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
     bySymbol[event.symbol].push(event);
   }
 
-  // No time window. Keep accumulating unique events per coin.
-  // Alert when a coin reaches 4+ events. Different coins are independent.
+  // Alert when a coin reaches 2+ events inside the 2-second window.
+  // Different coins are independent.
   const candidates = Object.entries(bySymbol)
-    .filter(([, events]) => events.length >= 6)
+    .filter(([, events]) => events.length >= 2)
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
 
   if (!candidates.length) return;
@@ -498,7 +501,7 @@ function main() {
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
     liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
-    minimumLiquidations: 6,
+    minimumLiquidations: 2,
     dedupe: "POLYMARKET_5M_URL"
   });
 
