@@ -12,7 +12,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 30000;
-const LIQUIDATION_GROUP_WINDOW_MS = 30000;
+const LIQUIDATION_GROUP_WINDOW_MS = 2000;
 
 let state;
 let bucket = [];
