@@ -111,23 +111,38 @@ function isUsefulDerivativePair(exchange, pair) {
   const id = String(exchange.id || "").toUpperCase();
   if (!symbol) return false;
 
-  // Only perpetual/swap products. Expiring futures such as BTCUSD_270326
-  // are intentionally excluded because they add connections but are not
-  // needed for the current liquidation monitor.
+  // Liquidations exist only on derivatives. Do not subscribe to spot pairs.
+  // Several exchanges expose spot and perpetual products with the same
+  // symbol (for example BYBIT:BNBUSDT), so the exchange must be told which
+  // product family is allowed instead of matching the symbol alone.
   if (/(?:^|[-_])\\d{6,8}$/.test(raw)) return false;
 
-  return (
-    raw === symbol + "USDT" ||
-    raw === symbol + "USDC" ||
-    raw === symbol + "USD" ||
-    raw === symbol + "-USDT" ||
-    raw === symbol + "-USDC" ||
-    raw === symbol + "-USD" ||
-    raw === symbol + "-PERP" ||
-    raw === symbol + "-SWAP" ||
-    raw === symbol + "_PERP" ||
-    raw === symbol + "_SWAP"
-  );
+  switch (id) {
+    case "BINANCE_FUTURES":
+      return /(?:USDT|USDC|USD)(?:[-_]PERP)?$/.test(raw);
+    case "BYBIT":
+      return /(?:USDT|USDC|USD)(?:-PERP|-SWAP)?$/.test(raw) && !raw.endsWith("-SPOT");
+    case "OKEX":
+      return /-SWAP$/.test(raw);
+    case "DYDX":
+      return /-USD$/.test(raw);
+    case "KRAKEN":
+      return /^(?:PI|PF)_/.test(raw);
+    case "GATEIO":
+      return /_(?:USDT|USDC|USD)$/.test(raw);
+    case "HUOBI":
+      return /-(?:USDT|USD)$/.test(raw) && !raw.includes("_");
+    case "BITMEX":
+      return /^(?:XBT|BTC|ETH|SOL|XRP|DOGE|BNB|HYPE)(?:USD|USDT|USDC)$/.test(raw);
+    case "BITFINEX":
+      return /^(?:BTC|ETH|SOL|XRP|DOGE|BNB|HYPE)(?:USD|USDT|USDC)$/.test(raw);
+    case "BITGET":
+      return /(?:USDT|USDC|USD)(?:-PERP|-SWAP)?$/.test(raw) && !raw.endsWith("-SPOT");
+    case "BITMART":
+      return /(?:USDT|USDC|USD)(?:-PERP|-SWAP)?$/.test(raw) && !raw.endsWith("-SPOT");
+    default:
+      return false;
+  }
 }
 
 async function buildExchanges(config) {
