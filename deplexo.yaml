@@ -1,5 +1,3 @@
-# Deplexo deployment: OpenMarket liquidation monitor v22.0.0
-framework: node
-install: npm install
-start: node monitor.js
+framework: dockerfile
+dockerfile: Dockerfile
 port: 8080
