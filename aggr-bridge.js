@@ -50,6 +50,7 @@ function buildExchanges(config) {
 }
 
 async function main() {
+  process.argv.push("config=" + path.join(__dirname, "aggr-config.json"));
   const config = require("aggr-server/src/config");
   const Server = require("aggr-server/src/server");
   const exchanges = buildExchanges(config);
