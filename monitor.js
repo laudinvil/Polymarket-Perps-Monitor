@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "12.1.0-CASCADE5-2POLLS";
+const VERSION = "12.2.0-CASCADE5-2POLLS";
 const POLL_MS = 3000;
 const CASCADE_MIN_EVENTS = 5;
 const CASCADE_MAX_POLLS = 2;
@@ -12,22 +12,48 @@ const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/marginpad-liquidation.jsonl";
 const MAX_SEEN = 10000;
+const LOG_MAX_BYTES = 20 * 1024 * 1024;
+const LOG_KEEP_BYTES = 10 * 1024 * 1024;
+const FEED_SUMMARY_LOG_MS = 60000;
 
 let state;
 let pollRunning = false;
 let collectionStartedAt = null;
+let lastFeedSummaryLogAt = 0;
 
 function nowIso() { return new Date().toISOString(); }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
-function log(event, data = {}) {
-  const row = { ts: nowIso(), version: VERSION, event, ...data };
-  console.log(JSON.stringify(row));
+function appendLogRow(row) {
   try {
     ensureDir(LOG_FILE);
     fs.appendFileSync(LOG_FILE, JSON.stringify(row) + "\n");
+    try {
+      const size = fs.statSync(LOG_FILE).size;
+      if (size > LOG_MAX_BYTES) {
+        const fd = fs.openSync(LOG_FILE, "r");
+        const buffer = Buffer.alloc(LOG_KEEP_BYTES);
+        fs.readSync(fd, buffer, 0, LOG_KEEP_BYTES, Math.max(0, size - LOG_KEEP_BYTES));
+        fs.closeSync(fd);
+        const start = buffer.indexOf(0x0a);
+        const kept = start >= 0 ? buffer.subarray(start + 1) : buffer;
+        fs.writeFileSync(LOG_FILE, kept);
+      }
+    } catch {}
   } catch {}
+}
+
+function log(event, data = {}) {
+  if (event === "FEED_PROCESSED") {
+    const now = Date.now();
+    if (now - lastFeedSummaryLogAt < FEED_SUMMARY_LOG_MS) return;
+    lastFeedSummaryLogAt = now;
+  }
+
+  const row = { ts: nowIso(), version: VERSION, event, ...data };
+  console.log(JSON.stringify(row));
+  appendLogRow(row);
 }
 
 function defaultState() {
@@ -158,7 +184,6 @@ function cascadeMessage(symbol, events) {
   const longs = events.filter(e => e.side === "LONG").length;
   const shorts = events.filter(e => e.side === "SHORT").length;
   const totalValue = events.reduce((sum, e) => sum + (num(e.notional) || 0), 0);
-
   const first = events[0];
   const last = events[events.length - 1];
 
@@ -179,12 +204,7 @@ async function flushCascade(symbol, cascade, reason) {
   cascade.lastPollAt = 0;
 
   if (events.length < CASCADE_MIN_EVENTS) {
-    log("CASCADE_DISCARDED", {
-      symbol,
-      events: events.length,
-      polls: cascade.polls,
-      reason
-    });
+    log("CASCADE_DISCARDED", { symbol, events: events.length, polls: cascade.polls, reason });
     return;
   }
 
@@ -252,8 +272,7 @@ async function processFeed() {
       side: sideLabel(event.side),
       price: num(event.price),
       qty: num(event.qty ?? event.size),
-      notional: num(event.notional),
-      rawEvent: event
+      notional: num(event.notional)
     });
   }
 
@@ -407,6 +426,8 @@ function main() {
     pollingMs: POLL_MS,
     cascadeMinEvents: CASCADE_MIN_EVENTS,
     cascadeMaxPolls: CASCADE_MAX_POLLS,
+    logMaxBytes: LOG_MAX_BYTES,
+    feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
     monitor: "MARGINPAD_HYPERLIQUID_CASCADE_5_2POLLS"
   });
 
