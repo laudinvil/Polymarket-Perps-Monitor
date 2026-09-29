@@ -38,14 +38,9 @@ function publish(event) {
 }
 
 function buildExchanges(config) {
-  if (!config.exchanges || !config.exchanges.length) {
-    config.exchanges = [];
-    const dir = path.join(__dirname, "node_modules/aggr-server/src/exchanges");
-    fs.readdirSync(dir).forEach(file => {
-      if (/\.js$/.test(file)) config.exchanges.push(file.replace(/\.js$/, ""));
-      else if (fs.statSync(path.join(dir, file)).isDirectory()) config.exchanges.push(file);
-    });
-  }
+  // AGGR is the only liquidation source used by the monitor.
+  // These are AGGR exchange adapters, not direct monitor connections.
+  config.exchanges = ["binance_futures", "bybit", "okex"];
   return config.exchanges.map(name => new (require("aggr-server/src/exchanges/" + name))());
 }
 
