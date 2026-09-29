@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_GROUP_WINDOW_MS = 2000;
+const LIQUIDATION_VALUE_THRESHOLD = 100000;
 
 let state;
 let bucket = [];
@@ -70,6 +70,7 @@ function defaultState() {
     alertedLinks: [],
     alertedPeriodKey: null,
     alertsSent: 0,
+    valueBySymbol: {},
     lastEventTs: null,
     lastEventKey: null
   };
@@ -205,142 +206,48 @@ function normalizeAggrEvent(raw) {
   };
 }
 
-function recordLiquidations(events) {
-  let added = 0;
+async function recordLiquidations(events) {
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   for (const event of events) {
     const key = eventKey(event);
     if (seen.has(key)) continue;
     seen.add(key);
     state.seen.push(key);
-    bucket.push(event);
-    added++;
+    state.valueBySymbol[event.symbol] = Number(state.valueBySymbol[event.symbol] || 0) + event.notional;
+    acceptedSinceSummary++;
+
+    if (state.valueBySymbol[event.symbol] < LIQUIDATION_VALUE_THRESHOLD) continue;
+
+    await flushValueAlert(event.symbol, event);
   }
   if (state.seen.length > MAX_SEEN) state.seen.splice(0, state.seen.length - MAX_SEEN);
-  if (added > 0) {
-    const hasThreeSecondGroup = [...new Set(events.map(e => e.symbol))].some(symbol => {
-      const times = bucket
-        .filter(event => event.symbol === symbol)
-        .map(event => event.ts)
-        .sort((a, b) => a - b);
-      for (let i = 2; i < times.length; i++) {
-        if (times[i] - times[i - 2] <= LIQUIDATION_GROUP_WINDOW_MS) return true;
-      }
-      return false;
-    });
-
-    if (hasThreeSecondGroup) {
-      if (groupTimer) {
-        clearTimeout(groupTimer);
-        groupTimer = null;
-      }
-      flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
-    } else if (!groupTimer) {
-      groupTimer = setTimeout(() => {
-        groupTimer = null;
-        flushLiquidationBucket().catch(e => log("LIQUIDATION_FLUSH_ERROR", { error: String(e.stack || e) }));
-      }, LIQUIDATION_GROUP_WINDOW_MS);
-    }
-  }
+  saveState();
 }
 
-function alertedLinksSet() {
-  return new Set(Array.isArray(state.alertedLinks) ? state.alertedLinks : []);
-}
+async function flushValueAlert(symbol, triggerEvent) {
+  const value = Number(state.valueBySymbol[symbol] || 0);
+  if (value < LIQUIDATION_VALUE_THRESHOLD) return;
 
-function rememberAlertedLink(link) {
-  const links = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
-  links.push(link);
-  if (links.length > MAX_ALERTED_LINKS) {
-    links.splice(0, links.length - MAX_ALERTED_LINKS);
-  }
-  state.alertedLinks = links;
-}
-
-async function flushLiquidationBucket() {
-  if (!bucket.length) return;
-
-  const cutoff = Date.now() - LIQUIDATION_GROUP_WINDOW_MS;
-  bucket = bucket.filter(event => event.ts >= cutoff);
-
-  const bySymbol = {};
-  for (const event of bucket) {
-    if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
-    bySymbol[event.symbol].push(event);
-  }
-
-  // Alert when a coin reaches 3+ events inside the 2-second window.
-  // Different coins are independent.
-  const candidates = Object.entries(bySymbol)
-    .map(([symbol, events]) => {
-      const sorted = [...events].sort((a, b) => a.ts - b.ts);
-      for (let i = 2; i < sorted.length; i++) {
-        if (sorted[i].ts - sorted[i - 2].ts <= LIQUIDATION_GROUP_WINDOW_MS) {
-          return [symbol, sorted.slice(i - 2, i + 1)];
-        }
-      }
-      return null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b[1][1].ts - b[1][0].ts - (a[1][1].ts - a[1][0].ts) || a[0].localeCompare(b[0]));
-
-  if (!candidates.length) return;
-
-  const [symbol, symbolEvents] = candidates[0];
-  const alertedLinks = alertedLinksSet();
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
-
-  const periodKey = link.match(/-5m-(\\d+)$/)?.[1] || link;
-  const alertedPeriodKey = state.alertedPeriodKey || null;
-  if (alertedLinks.has(link) || alertedPeriodKey === periodKey) {
-    const alertedKeys = new Set(symbolEvents.map(eventKey));
-    bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
-    ignoredEvents += symbolEvents.length;
-    return;
-  }
-
-  const alertedKeys = new Set(symbolEvents.map(eventKey));
-  bucket = bucket.filter(event => !alertedKeys.has(eventKey(event)));
-
-  const longCount = symbolEvents.filter(e => e.side === "sell").length;
-  const shortCount = symbolEvents.filter(e => e.side === "buy").length;
-  const value = symbolEvents.reduce((sum, e) => sum + e.notional, 0);
-
-  const byExchange = {};
-  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
-  const exchangeLines = Object.entries(byExchange)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([exchange, count]) => {
-      const displayExchange = exchange === "BINANCE_FUTURES" ? "BINANCE" : exchange;
-      return displayExchange + ": " + count;
-    });
-
-  const eventTime = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Kyiv",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-  }).format(new Date(Math.max(...symbolEvents.map(e => e.ts))));
-
   const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
   if (clob && (clob.up < 0.20 || clob.up > 0.80 || clob.down < 0.20 || clob.down > 0.80)) {
-    skippedEvents += symbolEvents.length;
+    skippedEvents++;
     return;
   }
 
   const clobLine = clob
     ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
     : "UP: — | DOWN: —";
-
   const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
 
   const text = [
     symbol + (directionArrow ? " " + directionArrow : ""),
-    "LIQS: " + symbolEvents.length,
-    "LONG: " + longCount + " | SHORT: " + shortCount,
-    "VALUE: $" + Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    ...exchangeLines,
+    "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     clobLine,
-    eventTime,
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+    }).format(new Date(triggerEvent.ts)),
     link
   ].join("\n");
 
@@ -348,17 +255,15 @@ async function flushLiquidationBucket() {
   log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
     source: "AGGR",
     symbol,
-    events: symbolEvents.length,
-    dedupeKey: link,
-    exchanges: byExchange
+    value,
+    dedupeKey: link
   });
 
   if (sent) {
     state.alertsSent = Number(state.alertsSent || 0) + 1;
-    rememberAlertedLink(link);
-    state.alertedPeriodKey = periodKey;
-    state.lastEventTs = Math.max(...symbolEvents.map(e => e.ts));
-    state.lastEventKey = eventKey(symbolEvents[symbolEvents.length - 1]);
+    state.valueBySymbol[symbol] = 0;
+    state.lastEventTs = triggerEvent.ts;
+    state.lastEventKey = eventKey(triggerEvent);
     saveState();
   }
 }
@@ -404,7 +309,7 @@ function connectAggr() {
           aggrEvents++;
           acceptedSinceSummary++;
           aggrLastEventAt = nowIso();
-          recordLiquidations([event]);
+          recordLiquidations([event]).catch(e => log("LIQUIDATION_VALUE_ERROR", { error: String(e.stack || e) }));
         } catch (e) {
           log("AGGR_EVENT_PARSE_ERROR", { error: String(e.message || e), frame: frame.slice(0, 1000) });
         }
@@ -457,9 +362,8 @@ function diagnostics() {
     lastEventTs: state.lastEventTs,
     lastEventKey: state.lastEventKey,
     seenEvents: state.seen.length,
-    alertedLinks: Array.isArray(state.alertedLinks) ? state.alertedLinks.length : 0,
-    bucketEvents: bucket.length,
-    liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS
+    valueBySymbol: state.valueBySymbol || {},
+    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD
   };
 }
 
@@ -511,6 +415,7 @@ function main() {
     state.seen = [];
     state.alertedLinks = [];
     state.alertedPeriodKey = null;
+    state.valueBySymbol = {};
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
@@ -521,6 +426,7 @@ function main() {
   state.seen = Array.isArray(state.seen) ? state.seen : [];
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
   state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
+  state.valueBySymbol = state.valueBySymbol && typeof state.valueBySymbol === "object" ? state.valueBySymbol : {};
 
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
@@ -528,9 +434,9 @@ function main() {
     source: "AGGR",
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
-    liquidationGroupWindowMs: LIQUIDATION_GROUP_WINDOW_MS,
-    minimumLiquidations: 3,
-    dedupe: "POLYMARKET_5M_URL"
+    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD,
+    resetAfterAlert: true,
+    multipleCoinsPer5m: true
   });
 
   startHealth();
@@ -545,8 +451,7 @@ function main() {
       ignoredEvents,
       skippedEvents,
       aggrLastEventAt,
-      bucketEvents: bucket.length,
-      alertedLinks: Array.isArray(state.alertedLinks) ? state.alertedLinks.length : 0
+      valueBySymbol: state.valueBySymbol || {}
     });
     acceptedSinceSummary = 0;
     ignoredEvents = 0;
