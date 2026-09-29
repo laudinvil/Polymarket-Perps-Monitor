@@ -1,1 +1,1 @@
-start-2026-09-29-aggr-config-path-fix-v26-6
+start-2026-09-29-aggr-readonly-persistence-fix-v26-7
