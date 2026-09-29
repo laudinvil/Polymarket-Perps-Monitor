@@ -351,7 +351,7 @@ async function processFeed() {
   let alertSent = false;
   let selectedSymbol = null;
   let selectedCount = 0;
-  const MIN_EVENTS = 2;
+  const MIN_EVENTS = 3;
 
   if (ranked.length) {
     const [symbol, symbolEvents] = ranked[0];
