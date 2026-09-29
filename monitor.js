@@ -1,18 +1,31 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
+const WebSocket = require("ws");
+const zlib = require("zlib");
 
-const VERSION = "21.1.0-TOP-COIN-3S-NO-HYPERLIQUID";
+const VERSION = "22.0.0-OPENMARKET-LIQUIDATIONS-3S";
 const POLL_MS = 3000;
-const FEED_URL = "https://marginpad.io/api/v1/feed";
+const OPENMARKET_WS_URL = "wss://eu-de3.ws.api.openmarket.xyz/nonbook/ws?encoding=json";
+const OPENMARKET_API_KEY = process.env.OPENMARKET_API_KEY || "";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
-const STATE_FILE = process.env.STATE_FILE || "/data/marginpad-liquidation-state.json";
-const LOG_FILE = process.env.LOG_FILE || "/data/marginpad-liquidation.jsonl";
+const STATE_FILE = process.env.STATE_FILE || "/data/openmarket-liquidation-state.json";
+const LOG_FILE = process.env.LOG_FILE || "/data/openmarket-liquidation.jsonl";
 const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 300000;
 const EXCLUDED_EXCHANGES = new Set(["hyperliquid", "hyper_liquid", "hyperliquid_perps"]);
+const OPENMARKET_EXCHANGES = [
+  "BINANCE_FUTURES",
+  "BYBIT",
+  "OKX",
+  "DERIBIT",
+  "BITMEX",
+  "BITGET",
+  "GATE_IO_FUTURES"
+];
+const OPENMARKET_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "BNBUSDT", "HYPEUSDT"];
 
 let state;
 let pollRunning = false;
@@ -56,7 +69,7 @@ function log(event, data = {}) {
 function defaultState() {
   return {
     version: VERSION,
-    strategy: "TOP_COIN_3S_ALL_EXCHANGES",
+    strategy: "OPENMARKET_TOP_COIN_3S_EXCEPT_HYPERLIQUID_MIN2",
     updatedAt: nowIso(),
     seen: [],
     alertsSent: 0,
@@ -126,25 +139,66 @@ function sendTelegram(text) {
   });
 }
 
-function normalizeFeed(body) {
-  if (!body || typeof body !== "object") return [];
-  if (Array.isArray(body.events)) return body.events;
-  if (Array.isArray(body.data)) return body.data;
-  if (body.data && Array.isArray(body.data.events)) return body.data.events;
-  if (Array.isArray(body.result)) return body.result;
-  return [];
+function decodeOpenMarketMessage(data) {
+  try {
+    if (Buffer.isBuffer(data)) {
+      try { return JSON.parse(data.toString("utf8")); } catch {}
+      try { return JSON.parse(zlib.brotliDecompressSync(data).toString("utf8")); } catch {}
+      try { return JSON.parse(zlib.gunzipSync(data).toString("utf8")); } catch {}
+      return null;
+    }
+    if (typeof data === "string") return JSON.parse(data);
+    return null;
+  } catch {
+    return null;
+  }
 }
 
-async function fetchFeed() {
-  const response = await fetch(FEED_URL, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(8000)
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error("HTTP " + response.status + " " + body.slice(0, 300));
-  }
-  return response.json();
+function openMarketChannels() {
+  return OPENMARKET_EXCHANGES.flatMap(exchange =>
+    OPENMARKET_SYMBOLS.map(symbol => ({
+      type: "LIQUIDATION",
+      category: "*",
+      exchange,
+      symbol
+    }))
+  );
+}
+
+function normalizeOpenMarketPoint(point) {
+  const series = point?.series || {};
+  const liquidation = point?.liquidation || {};
+  const symbolRaw = String(series.symbol || "").toUpperCase();
+  const coin = String(series.coin || symbolRaw.replace(/USDT$|USD$|PERP$/,"")).toUpperCase();
+  const tsSeconds = num(liquidation.timestamp?.seconds ?? liquidation.timestamp);
+  const timestamp = tsSeconds === null ? Date.now() : (tsSeconds < 1e12 ? tsSeconds * 1000 : tsSeconds);
+  const exchange = String(series.exchange || "").trim();
+  const side = String(series.side || "").trim().toUpperCase();
+  const price = num(liquidation.price);
+  const qty = num(liquidation.amount);
+  const id = liquidation.id ?? point?.id;
+  if (!exchange || !coin || !side || price === null || qty === null) return null;
+  if (EXCLUDED_EXCHANGES.has(exchange.toLowerCase())) return null;
+  if (!["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"].includes(coin)) return null;
+  return {
+    id: id == null ? "" : String(id),
+    ts: timestamp,
+    exchange,
+    symbol: coin,
+    side,
+    price,
+    qty,
+    notional: price * qty
+  };
+}
+
+function collectOpenMarketPoints(message) {
+  const points = Array.isArray(message?.points)
+    ? message.points
+    : Array.isArray(message?.data?.points)
+      ? message.data.points
+      : [];
+  return points.map(normalizeOpenMarketPoint).filter(Boolean);
 }
 
 function getEventMs(event) {
@@ -297,151 +351,222 @@ function eventBatchMessage(events) {
   ].join("\n");
 }
 
-async function processFeed() {
-  const body = await fetchFeed();
-  const events = normalizeFeed(body);
-  const allowed = new Set(["BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE"]);
-  const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
-  const freshEvents = [];
-  const freshByExchange = {};
-  const freshBySymbol = {};
-  const feedSources = {};
-  const eligibleByExchange = {};
-  const eligibleBySymbol = {};
-  const eventTimes = [];
-  let eligibleEvents = 0;
-  let duplicateEvents = 0;
-  let excludedEvents = 0;
-  let disallowedCoinEvents = 0;
+function eventKey(e) {
+  if (e.id) return "openmarket:" + e.id;
+  return [
+    e.ts ?? "",
+    e.exchange ?? "",
+    e.symbol ?? "",
+    e.side ?? "",
+    e.price ?? "",
+    e.qty ?? ""
+  ].join("|");
+}
 
-  for (const event of events) {
-    const rawSource = String(event?.exchange ?? event?.source ?? event?.venue ?? "UNKNOWN").trim();
-    const sourceKey = rawSource.toLowerCase();
-    feedSources[rawSource] = (feedSources[rawSource] || 0) + 1;
-    if (EXCLUDED_EXCHANGES.has(sourceKey)) {
-      excludedEvents++;
-      continue;
-    }
-
-    const eventMs = getEventMs(event);
-    if (eventMs !== null) eventTimes.push(eventMs);
-
-    // MarginPad documents /feed as a 3-second edge-cached feed and says events arrive seconds after the exchange event.
-    // Do not require the event timestamp to fall inside our local 3-second clock window: that drops delayed events.
-    // Accept newly observed events and use the persistent event-key cache for dedupe.
-    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-    if (!allowed.has(symbol)) {
-      disallowedCoinEvents++;
-      continue;
-    }
-
-    eligibleEvents++;
-    eligibleByExchange[rawSource] = (eligibleByExchange[rawSource] || 0) + 1;
-    eligibleBySymbol[symbol] = (eligibleBySymbol[symbol] || 0) + 1;
-
-    const key = eventKey(event);
-    if (!key || seen.has(key)) {
-      duplicateEvents++;
-      continue;
-    }
-    seen.add(key);
-    state.seen.push(key);
-    if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
-
-    if (!state.warmedUp) continue;
-
-    freshEvents.push(event);
-    freshByExchange[rawSource] = (freshByExchange[rawSource] || 0) + 1;
-    freshBySymbol[symbol] = (freshBySymbol[symbol] || 0) + 1;
-    state.lastEventTs = num(event.ts ?? event.timestamp ?? event.time);
-    state.lastEventKey = key;
-  }
-
-  if (!state.warmedUp) {
-    state.warmedUp = true;
-    log("FEED_WARMUP_COMPLETE", {
-      api_events_returned: events.length,
-      feed_sources: feedSources,
-      excluded_exchanges: Array.from(EXCLUDED_EXCHANGES),
-      note: "Current feed snapshot seeded into dedupe cache; new events are processed from the next poll."
-    });
-  }
-
+function buildAlertForEvents(events) {
   const bySymbol = {};
-  for (const event of freshEvents) {
-    const symbol = String(event?.symbol ?? event?.coin ?? "UNKNOWN").trim().toUpperCase();
-    if (!bySymbol[symbol]) bySymbol[symbol] = [];
-    bySymbol[symbol].push(event);
+  for (const event of events) {
+    if (!bySymbol[event.symbol]) bySymbol[event.symbol] = [];
+    bySymbol[event.symbol].push(event);
   }
 
   const ranked = Object.entries(bySymbol)
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  if (!ranked.length) return null;
 
-  let alertSent = false;
-  let selectedSymbol = null;
-  let selectedCount = 0;
-  const MIN_EVENTS = 3;
+  const [symbol, symbolEvents] = ranked[0];
+  const longCount = symbolEvents.filter(e => e.side === "SELL").length;
+  const shortCount = symbolEvents.filter(e => e.side === "BUY").length;
+  const value = symbolEvents.reduce((sum,e) => sum + (e.notional || 0), 0);
+  const byExchange = {};
+  for (const e of symbolEvents) byExchange[e.exchange] = (byExchange[e.exchange] || 0) + 1;
 
-  if (ranked.length) {
-    const [symbol, symbolEvents] = ranked[0];
-    if (symbolEvents.length < MIN_EVENTS) {
-      log("NO_ALERT_BELOW_THRESHOLD", {
-        selected_symbol: symbol,
-        selected_events: symbolEvents.length,
-        min_events: MIN_EVENTS,
-        rule: "top coin per 3-second poll; alert only when selected coin has 3+ fresh events"
-      });
-    } else {
-    selectedSymbol = symbol;
-    selectedCount = symbolEvents.length;
-    let message = eventBatchMessage(symbolEvents);
+  const exchangeLines = Object.entries(byExchange)
+    .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([exchange,count]) => exchange.toUpperCase() + ": " + count);
 
-    if (message) {
-      const clob = await fetchPolymarketClobPrices(symbol);
-      if (clob) {
-        message += "\nUP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
-      } else {
-        message += "\nUP: — | DOWN: —";
-      }
+  const kyivTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  }).format(new Date());
 
-      const sent = await sendTelegram(message);
-      alertSent = sent;
-      if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+  return {
+    symbol,
+    count: symbolEvents.length,
+    text: [
+      symbol,
+      kyivTime,
+      "LIQS: " + symbolEvents.length,
+      "LONG: " + longCount + " | SHORT: " + shortCount,
+      "VALUE: $" + formatNumber(value, 2),
+      ...exchangeLines,
+      polymarket5mUrl(symbol)
+    ].join("\n")
+  };
+}
 
-      log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
-        symbol,
-        events: symbolEvents.length,
-        sent,
-        rule: "all MarginPad exchanges except Hyperliquid; allowed coins only; top liquidation count per 3-second poll; minimum 3 events"
-      });
-    }
-    }
+let openMarketWs = null;
+let reconnectTimer = null;
+let bucket = [];
+let bucketTimer = null;
+let wsConnectedAt = null;
+
+async function flushOpenMarketBucket() {
+  if (!bucket.length) return;
+  const events = bucket;
+  bucket = [];
+
+  const fresh = [];
+  const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
+
+  for (const event of events) {
+    const key = eventKey(event);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    state.seen.push(key);
+    if (state.seen.length > MAX_SEEN) state.seen = state.seen.slice(-MAX_SEEN);
+    fresh.push(event);
   }
 
-  log("POLL_RESULT", {
-    api_events_returned: events.length,
-    window_events: freshEvents.length,
-    fresh_by_exchange: freshByExchange,
-    fresh_by_symbol: freshBySymbol,
-    feed_sources: feedSources,
-    excluded_exchanges: Array.from(EXCLUDED_EXCHANGES),
-    selected_symbol: selectedSymbol,
-    selected_events: selectedCount,
-    alert_sent: alertSent,
-    window_ms: POLL_MS,
-    allowed_coins: Array.from(allowed),
-    ...(
-      eventTimes.length
-        ? {
-            feed_oldest_event: new Date(Math.min(...eventTimes)).toISOString(),
-            feed_newest_event: new Date(Math.max(...eventTimes)).toISOString()
-          }
-        : {}
-    ),
-    strategy: "all MarginPad exchanges except Hyperliquid; BTC ETH SOL XRP DOGE BNB HYPE; one top coin per 3-second poll; alert threshold 3 events"
+  if (!fresh.length) {
+    log("OPENMARKET_BUCKET", {
+      received_events: events.length,
+      fresh_events: 0,
+      duplicate_events: events.length,
+      threshold: 2
+    });
+    saveState();
+    return;
+  }
+
+  const bySymbol = {};
+  for (const e of fresh) {
+    if (!bySymbol[e.symbol]) bySymbol[e.symbol] = [];
+    bySymbol[e.symbol].push(e);
+  }
+  const ranked = Object.entries(bySymbol)
+    .sort((a,b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+  const [symbol, symbolEvents] = ranked[0];
+  const count = symbolEvents.length;
+
+  if (count < 2) {
+    log("NO_ALERT_BELOW_THRESHOLD", {
+      selected_symbol: symbol,
+      selected_events: count,
+      min_events: 2,
+      received_events: events.length,
+      fresh_events: fresh.length
+    });
+    saveState();
+    return;
+  }
+
+  const alert = buildAlertForEvents(symbolEvents);
+  if (!alert) return;
+
+  const clob = await fetchPolymarketClobPrices(symbol);
+  const message = alert.text + "\nUP: " + (clob ? clob.up.toFixed(3) : "—") +
+    " | DOWN: " + (clob ? clob.down.toFixed(3) : "—");
+
+  const sent = await sendTelegram(message);
+  if (sent) state.alertsSent = Number(state.alertsSent || 0) + 1;
+
+  log(sent ? "TOP_SYMBOL_ALERT_SENT" : "TOP_SYMBOL_ALERT_FAILED", {
+    source: "OPENMARKET",
+    symbol,
+    events: count,
+    sent,
+    threshold: 2,
+    bucket_ms: POLL_MS
+  });
+  saveState();
+}
+
+function scheduleBucketFlush() {
+  if (bucketTimer) return;
+  bucketTimer = setInterval(() => {
+    flushOpenMarketBucket().catch(e => log("OPENMARKET_FLUSH_ERROR", { error: String(e.stack || e) }));
+  }, POLL_MS);
+}
+
+function connectOpenMarket() {
+  if (!OPENMARKET_API_KEY) {
+    log("OPENMARKET_API_KEY_MISSING");
+    return;
+  }
+
+  openMarketWs = new WebSocket(OPENMARKET_WS_URL);
+  log("OPENMARKET_CONNECTING", {
+    url: OPENMARKET_WS_URL,
+    exchanges: OPENMARKET_EXCHANGES,
+    symbols: OPENMARKET_SYMBOLS,
+    excluded_exchanges: Array.from(EXCLUDED_EXCHANGES)
   });
 
-  saveState();
+  openMarketWs.on("open", () => {
+    wsConnectedAt = nowIso();
+    openMarketWs.send(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "public/authenticate",
+      params: { token: OPENMARKET_API_KEY }
+    }));
+  });
+
+  openMarketWs.on("message", data => {
+    const message = decodeOpenMarketMessage(data);
+    if (!message) {
+      log("OPENMARKET_DECODE_ERROR");
+      return;
+    }
+
+    if (message.error) {
+      log("OPENMARKET_ERROR", { error: message.error });
+      return;
+    }
+
+    if (message.id === 1) {
+      log("OPENMARKET_AUTH_RESULT", { result: message.result ?? message });
+      openMarketWs.send(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "public/subscribe",
+        params: {
+          channels: openMarketChannels(),
+          compression: "brotli",
+          version: "v2"
+        }
+      }));
+      return;
+    }
+
+    const points = collectOpenMarketPoints(message);
+    if (!points.length) return;
+
+    for (const event of points) bucket.push(event);
+
+    log("OPENMARKET_LIQUIDATIONS", {
+      received_events: points.length,
+      symbols: [...new Set(points.map(e => e.symbol))],
+      exchanges: [...new Set(points.map(e => e.exchange))]
+    });
+  });
+
+  openMarketWs.on("close", (code, reason) => {
+    log("OPENMARKET_CLOSED", {
+      code,
+      reason: Buffer.isBuffer(reason) ? reason.toString() : String(reason || ""),
+      connected_at: wsConnectedAt
+    });
+    openMarketWs = null;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectOpenMarket, 3000);
+  });
+
+  openMarketWs.on("error", e => {
+    log("OPENMARKET_WS_ERROR", { error: String(e.message || e) });
+  });
 }
 
 function diagnostics() {
@@ -451,7 +576,7 @@ function diagnostics() {
     buildSha: BUILD_SHA,
     strategy: state.strategy,
     pollingMs: POLL_MS,
-    feed: FEED_URL,
+    feed: OPENMARKET_WS_URL,
     collectionStartedAt,
     updatedAt: state.updatedAt,
     alertsSent: state.alertsSent,
@@ -503,17 +628,9 @@ function startHealth() {
   }));
 }
 
-async function poll() {
-  if (pollRunning) return;
-  pollRunning = true;
-  try {
-    await processFeed();
-  } catch (e) {
-    log("POLL_ERROR", { error: String(e.stack || e) });
-  } finally {
-    pollRunning = false;
-    setTimeout(poll, POLL_MS);
-  }
+function startLiquidationStream() {
+  scheduleBucketFlush();
+  connectOpenMarket();
 }
 
 function main() {
@@ -524,7 +641,7 @@ function main() {
   // A strategy change must never inherit the previous strategy's dedupe cache.
   // Otherwise a rolling feed can contain only events already marked as seen,
   // producing zero fresh events and therefore zero alerts after deployment.
-  const strategy = "TOP_COIN_3S_ALL_EXCHANGES_EXCEPT_HYPERLIQUID";
+  const strategy = "OPENMARKET_TOP_COIN_3S_EXCEPT_HYPERLIQUID_MIN2";
   if (state.strategy !== strategy || state.version !== VERSION) {
     state.seen = [];
     state.alertsSent = 0;
@@ -541,16 +658,16 @@ function main() {
   log("LIQUIDATION_MONITOR_STARTING", {
     buildSha: BUILD_SHA,
     strategy: state.strategy,
-    source: FEED_URL,
+    source: OPENMARKET_WS_URL,
     pollingMs: POLL_MS,
     logMaxBytes: LOG_MAX_BYTES,
     logKeepBytes: LOG_KEEP_BYTES,
     feedSummaryLogMs: FEED_SUMMARY_LOG_MS,
-    monitor: "TOP_COIN_3S_ALL_EXCHANGES_EXCEPT_HYPERLIQUID"
+    monitor: "OPENMARKET_TOP_COIN_3S_EXCEPT_HYPERLIQUID_MIN2"
   });
 
   startHealth();
-  poll();
+  startLiquidationStream();
 }
 
 process.on("SIGTERM", () => log("MONITOR_STOPPING"));
