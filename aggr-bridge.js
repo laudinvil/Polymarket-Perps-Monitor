@@ -90,9 +90,8 @@ function adapterNames() {
 function isUsefulDerivativePair(pair) {
   const raw = String(pair || "").toUpperCase();
   if (!symbolFromPair(raw)) return false;
-
-  // Prefer perpetual/futures/swap contracts. Some AGGR derivatives adapters
-  // expose plain USDT/USD contract symbols, so those are accepted as well.
+  // Never subscribe to spot products: they cannot produce liquidation events.
+  if (/-SPOT$/i.test(raw)) return false;
   return /PERP|SWAP|FUT|USDT|USDC|USD/.test(raw);
 }
 
@@ -171,13 +170,10 @@ async function main() {
         if (!normalized) continue;
 
         publish(normalized);
-        log("LIQUIDATION", {
-          exchange: normalized.exchange,
-          symbol: normalized.symbol,
-          side: normalized.side,
-          price: normalized.price,
-          size: normalized.size
-        });
+        feedStats.events++;
+        feedStats.byExchange[normalized.exchange] = (feedStats.byExchange[normalized.exchange] || 0) + 1;
+        feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
+        scheduleFeedSummary();
       }
     });
   }
