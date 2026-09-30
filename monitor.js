@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.2.2-5M-STABLE";
+const VERSION = "26.2.3-5M-MIN-2-LIQS";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -13,7 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const MIN_LIQS = 0;
+const MIN_LIQS = 2;
 const MAX_LIQS = Infinity;
 
 let state;
@@ -174,12 +174,8 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
     }
     const upTokenId = outcomeToToken.up;
     const downTokenId = outcomeToToken.down;
-    if (!upTokenId || !downTokenId) {
-      throw new Error("UP/DOWN token IDs not mapped from Gamma outcomes");
-    }
+    if (!upTokenId || !downTokenId) throw new Error("UP/DOWN token IDs not mapped from Gamma outcomes");
 
-    // Use executable BUY prices, not midpoint. This matches the price a user can
-    // actually buy at on the CLOB and avoids assuming tokenIds[0] is UP.
     const [upResponse, downResponse] = await Promise.all([
       fetch("https://clob.polymarket.com/price?token_id=" + encodeURIComponent(upTokenId) + "&side=BUY", {
         headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000)
@@ -199,22 +195,14 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
 
     const fetchedAtFinishedMs = Date.now();
     return {
-      up,
-      down,
-      slug,
-      upTokenId,
-      downTokenId,
-      priceMethod: "CLOB_PRICE_BUY",
+      up, down, slug, upTokenId, downTokenId, priceMethod: "CLOB_PRICE_BUY",
       fetchedAt: new Date(fetchedAtFinishedMs).toISOString(),
       fetchedAtMs: fetchedAtFinishedMs,
       fetchStartedAtMs: fetchedAtStartedMs
     };
   } catch (e) {
     log("POLYMARKET_CLOB_PRICE_ERROR", {
-      symbol,
-      slug,
-      error: String(e.message || e),
-      priceMethod: "CLOB_PRICE_BUY"
+      symbol, slug, error: String(e.message || e), priceMethod: "CLOB_PRICE_BUY"
     });
     return null;
   }
@@ -223,23 +211,17 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
 function eventKey(e) {
   if (e.id != null && String(e.id)) return "aggr:" + String(e.exchange || "") + ":" + String(e.id);
   return [
-    e.ts || e.timestamp || "",
-    e.exchange || "",
-    e.symbol || e.pair || "",
-    e.side || "",
-    e.price || "",
-    e.qty || e.size || ""
+    e.ts || e.timestamp || "", e.exchange || "", e.symbol || e.pair || "",
+    e.side || "", e.price || "", e.qty || e.size || ""
   ].join("|");
 }
 
 function normalizeAggrEvent(raw) {
   const symbol = String(raw?.symbol || raw?.pair || "").toUpperCase()
-    .replace(/USDT|USDC|USD|PERP|[-_]/g, "")
-    .replace("SWAP", "");
+    .replace(/USDT|USDC|USD|PERP|[-_]/g, "").replace("SWAP", "");
   if (!SYMBOLS.has(symbol)) return null;
 
   const side = String(raw?.side || "").toLowerCase();
-
   const price = num(raw?.price);
   const qty = num(raw?.size ?? raw?.qty ?? raw?.amount);
   if (price === null || qty === null || qty <= 0) return null;
@@ -250,18 +232,11 @@ function normalizeAggrEvent(raw) {
   return {
     id: raw?.id == null ? "" : String(raw.id),
     ts: ts < 1e12 ? ts * 1000 : ts,
-    exchange,
-    symbol,
-    side,
-    price,
-    qty,
-    notional: price * qty
+    exchange, symbol, side, price, qty, notional: price * qty
   };
 }
 
-function periodKey(ts) {
-  return Math.floor(ts / 300000) * 300000;
-}
+function periodKey(ts) { return Math.floor(ts / 300000) * 300000; }
 
 function resetPeriodCounters(nextPeriodKey) {
   state.periodKey = nextPeriodKey;
@@ -285,7 +260,10 @@ async function finalizePeriod(period) {
 
   log("PERIOD_FINALIZE", { period, periodEnd: new Date(period + 300000).toISOString(), counts, values, winner, maxCount });
   if (!winner || maxCount < MIN_LIQS || maxCount > MAX_LIQS) {
-    log("PERIOD_NO_ALERT", { period, counts, reason: !winner ? "NO_LIQUIDATIONS" : "OUTSIDE_LIMITS" });
+    log("PERIOD_NO_ALERT", {
+      period, counts,
+      reason: !winner ? "NO_LIQUIDATIONS" : "MIN_LIQUIDATIONS_NOT_REACHED"
+    });
     return;
   }
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
@@ -361,20 +339,10 @@ async function flushPeriodAlert(symbol, count, value, period) {
     const sent = await sendTelegram(text);
     const sendFinishedAt = new Date().toISOString();
     log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
-      source: "AGGR",
-      symbol,
-      count,
-      value,
-      period,
-      dedupeKey,
-      clobSlug: clob?.slug || null,
-      clobFetchedAt: clob?.fetchedAt || null,
-      clobFetchedAtMs: clob?.fetchedAtMs || null,
-      clobUp: clob?.up ?? null,
-      clobDown: clob?.down ?? null,
-      alertPreparedAt,
-      sendStartedAt,
-      sendFinishedAt
+      source: "AGGR", symbol, count, value, period, dedupeKey,
+      clobSlug: clob?.slug || null, clobFetchedAt: clob?.fetchedAt || null,
+      clobFetchedAtMs: clob?.fetchedAtMs || null, clobUp: clob?.up ?? null,
+      clobDown: clob?.down ?? null, alertPreparedAt, sendStartedAt, sendFinishedAt
     });
 
     if (sent) {
@@ -466,7 +434,7 @@ function scheduleAggrReconnect() {
   aggrReconnectTimer = setTimeout(() => {
     aggrReconnectTimer = null;
     connectAggr();
-  scheduleAggrHealth();
+    scheduleAggrHealth();
   }, 3000);
 }
 
@@ -493,10 +461,7 @@ function refreshAggrHealth() {
     });
   });
   req.on("error", e => {
-    aggrHealth = {
-      fetchedAt: nowIso(),
-      error: String(e.message || e)
-    };
+    aggrHealth = { fetchedAt: nowIso(), error: String(e.message || e) };
   });
   req.setTimeout(3000, () => req.destroy());
 }
@@ -550,11 +515,7 @@ function startHealth() {
     if (requestPath === "/logs/stream") {
       let rows = [];
       try {
-        rows = fs.readFileSync(LOG_FILE, "utf8")
-          .split("\n")
-          .filter(Boolean)
-          .slice(-100)
-          .map(x => JSON.parse(x));
+        rows = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-100).map(x => JSON.parse(x));
       } catch {}
       res.writeHead(200, {
         "content-type": "text/event-stream; charset=utf-8",
@@ -564,31 +525,19 @@ function startHealth() {
       });
       for (const row of rows) res.write("data: " + JSON.stringify(row) + "\n\n");
       logSubscribers.add(res);
-      const heartbeat = setInterval(() => {
-        try { res.write(": heartbeat\n\n"); } catch {}
-      }, 15000);
-      req.on("close", () => {
-        clearInterval(heartbeat);
-        logSubscribers.delete(res);
-      });
+      const heartbeat = setInterval(() => { try { res.write(": heartbeat\n\n"); } catch {} }, 15000);
+      req.on("close", () => { clearInterval(heartbeat); logSubscribers.delete(res); });
       return;
     }
 
     if (requestPath === "/logs") {
       let rows = [];
       try {
-        rows = fs.readFileSync(LOG_FILE, "utf8")
-          .split("\n")
-          .filter(Boolean)
-          .slice(-300)
-          .map(x => JSON.parse(x));
+        rows = fs.readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean).slice(-300).map(x => JSON.parse(x));
       } catch (e) {
         rows = [{ event: "LOG_READ_ERROR", error: String(e.message || e) }];
       }
-      res.writeHead(200, {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "no-store"
-      });
+      res.writeHead(200, {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"});
       return res.end(JSON.stringify({ status: "ok", events: rows }));
     }
 
@@ -664,14 +613,8 @@ function main() {
 
   setInterval(() => {
     log("FEED_STATUS", {
-      source: "AGGR",
-      aggrConnected,
-      aggrEvents,
-      acceptedSinceSummary,
-      ignoredEvents,
-      skippedEvents,
-      aggrLastEventAt,
-      valueBySymbol: state.valueBySymbol || {}
+      source: "AGGR", aggrConnected, aggrEvents, acceptedSinceSummary,
+      ignoredEvents, skippedEvents, aggrLastEventAt, valueBySymbol: state.valueBySymbol || {}
     });
     acceptedSinceSummary = 0;
     ignoredEvents = 0;
