@@ -464,7 +464,7 @@ function refreshAggrHealth() {
 function scheduleAggrHealth() {
   refreshAggrHealth();
   clearInterval(aggrHealthTimer);
-  aggrHealthTimer = setInterval(refreshAggrHealth, 30000);
+  aggrHealthTimer = setInterval(refreshAggrHealth, 60000);
 }
 
 function diagnostics() {
