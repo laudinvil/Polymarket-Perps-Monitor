@@ -292,13 +292,10 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
-    if (
-      !clob ||
-      clob.up < CLOB_DOWN_THRESHOLD ||
-      clob.up > CLOB_UP_THRESHOLD ||
-      clob.down < CLOB_DOWN_THRESHOLD ||
-      clob.down > CLOB_UP_THRESHOLD
-    ) {
+    const upInRange = clob && clob.up >= CLOB_DOWN_THRESHOLD && clob.up <= CLOB_UP_THRESHOLD;
+    const downInRange = clob && clob.down >= CLOB_DOWN_THRESHOLD && clob.down <= CLOB_UP_THRESHOLD;
+
+    if (!clob || (!upInRange && !downInRange)) {
       log("LIQUIDATION_ALERT_SKIPPED_CLOB_THRESHOLD", {
         source: "AGGR",
         symbol,
