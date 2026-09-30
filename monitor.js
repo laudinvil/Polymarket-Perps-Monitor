@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.1.0-AGGR-CLEAN";
+const VERSION = "26.2.0-5M-MAX-LIQS";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -13,7 +13,6 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const LIQUIDATION_VALUE_THRESHOLD = 700000;
 
 let state;
 let bucket = [];
@@ -73,6 +72,9 @@ function defaultState() {
     alertsSent: 0,
     valueBySymbol: {},
     countBySymbol: {},
+    periodKey: null,
+    periodCountBySymbol: {},
+    periodValueBySymbol: {},
     lastEventTs: null,
     lastEventKey: null
   };
@@ -208,6 +210,34 @@ function normalizeAggrEvent(raw) {
   };
 }
 
+function periodKey(ts) {
+  return Math.floor(ts / 300000) * 300000;
+}
+
+function resetPeriodCounters(nextPeriodKey) {
+  state.periodKey = nextPeriodKey;
+  state.periodCountBySymbol = {};
+  state.periodValueBySymbol = {};
+}
+
+async function finalizePeriod(period) {
+  const counts = { ...(state.periodCountBySymbol || {}) };
+  const values = { ...(state.periodValueBySymbol || {}) };
+  let winner = null;
+  let maxCount = 0;
+
+  for (const symbol of SYMBOLS) {
+    const count = Number(counts[symbol] || 0);
+    if (count > maxCount) {
+      maxCount = count;
+      winner = symbol;
+    }
+  }
+
+  if (!winner || maxCount <= 0) return;
+  await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
+}
+
 async function recordLiquidations(events) {
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   for (const event of events) {
@@ -215,14 +245,23 @@ async function recordLiquidations(events) {
     if (seen.has(key)) continue;
     seen.add(key);
     state.seen.push(key);
-    state.valueBySymbol[event.symbol] = Number(state.valueBySymbol[event.symbol] || 0) + event.notional;
+
+    const eventPeriod = periodKey(event.ts);
+    if (state.periodKey == null) {
+      resetPeriodCounters(eventPeriod);
+    } else if (eventPeriod > state.periodKey) {
+      const previousPeriod = state.periodKey;
+      await finalizePeriod(previousPeriod);
+      resetPeriodCounters(eventPeriod);
+    } else if (eventPeriod < state.periodKey) {
+      continue;
+    }
+
+    state.periodCountBySymbol[event.symbol] = Number(state.periodCountBySymbol[event.symbol] || 0) + 1;
+    state.periodValueBySymbol[event.symbol] = Number(state.periodValueBySymbol[event.symbol] || 0) + event.notional;
     state.countBySymbol[event.symbol] = Number(state.countBySymbol[event.symbol] || 0) + 1;
+    state.valueBySymbol[event.symbol] = Number(state.valueBySymbol[event.symbol] || 0) + event.notional;
     acceptedSinceSummary++;
-
-    const totalValue = Object.values(state.valueBySymbol).reduce((sum, value) => sum + Number(value || 0), 0);
-    if (totalValue < LIQUIDATION_VALUE_THRESHOLD) continue;
-
-    await flushValueAlert(event.symbol, event);
   }
   if (state.seen.length > MAX_SEEN) state.seen.splice(0, state.seen.length - MAX_SEEN);
   saveState();
@@ -378,8 +417,9 @@ function diagnostics() {
     valueBySymbol: state.valueBySymbol || {},
     countBySymbol: state.countBySymbol || {},
     alertedLinks: state.alertedLinks || [],
-    liquidationCountThreshold: LIQUIDATION_COUNT_THRESHOLD,
-    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD
+    periodKey: state.periodKey,
+    periodCountBySymbol: state.periodCountBySymbol || {},
+    periodValueBySymbol: state.periodValueBySymbol || {}
   };
 }
 
@@ -433,6 +473,9 @@ function main() {
     state.alertedPeriodKey = null;
     state.valueBySymbol = {};
     state.countBySymbol = {};
+    state.periodKey = null;
+    state.periodCountBySymbol = {};
+    state.periodValueBySymbol = {};
     state.alertsSent = 0;
     state.lastEventTs = null;
     state.lastEventKey = null;
@@ -444,6 +487,9 @@ function main() {
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
   state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
   state.valueBySymbol = state.valueBySymbol && typeof state.valueBySymbol === "object" ? state.valueBySymbol : {};
+  state.periodKey = Number.isFinite(Number(state.periodKey)) ? Number(state.periodKey) : null;
+  state.periodCountBySymbol = state.periodCountBySymbol && typeof state.periodCountBySymbol === "object" ? state.periodCountBySymbol : {};
+  state.periodValueBySymbol = state.periodValueBySymbol && typeof state.periodValueBySymbol === "object" ? state.periodValueBySymbol : {};
   const hadCountState = state.countBySymbol && typeof state.countBySymbol === "object";
   state.countBySymbol = hadCountState ? state.countBySymbol : {};
   if (!hadCountState) state.valueBySymbol = {};
@@ -454,13 +500,27 @@ function main() {
     source: "AGGR",
     aggrUrl: AGGR_URL,
     symbols: [...SYMBOLS],
-    liquidationValueThreshold: LIQUIDATION_VALUE_THRESHOLD,
-    resetAfterAlert: true,
-    multipleCoinsPer5m: true
+    periodBased: true,
+    alertAtPeriodBoundary: true,
+    selection: "MAX_LIQUIDATIONS_PREVIOUS_5M"
   });
 
   startHealth();
   connectAggr();
+
+  const scheduleBoundary = () => {
+    const now = Date.now();
+    const nextBoundary = (Math.floor(now / 300000) + 1) * 300000;
+    groupTimer = setTimeout(async () => {
+      if (state.periodKey != null && state.periodKey < nextBoundary) {
+        await finalizePeriod(state.periodKey);
+        resetPeriodCounters(nextBoundary);
+        saveState();
+      }
+      scheduleBoundary();
+    }, Math.max(0, nextBoundary - now + 25));
+  };
+  scheduleBoundary();
 
   setInterval(() => {
     log("FEED_STATUS", {
