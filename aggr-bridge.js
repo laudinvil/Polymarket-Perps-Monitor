@@ -9,7 +9,6 @@ const LIQUIDATION_EXCHANGES = new Set([
   "BINANCE_FUTURES",
   "BYBIT",
   "OKEX",
-  "DERIBIT",
   "DYDX",
   "BITGET",
   "BITMART",
@@ -183,8 +182,6 @@ function isPerpetualLiquidationPair(exchange, pair) {
       return /_(?:USDT|USDC|USD)$/.test(raw);
     case "HUOBI":
       return /-(?:USDT|USD)$/.test(raw) && !raw.includes("_");
-    case "DERIBIT":
-      return /_(?:USDT|USDC|USD)-PERPETUAL$/.test(raw) || /_(?:USDT|USDC|USD)-PERP$/.test(raw);
     case "BITMEX":
       return /^(?:XBT|BTC|ETH|SOL|XRP|DOGE|BNB|HYPE)(?:USD|USDT|USDC)$/.test(raw);
     case "BITFINEX":
