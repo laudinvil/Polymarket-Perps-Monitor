@@ -53,9 +53,10 @@ async function fetchPolymarketClobPrices(symbol,nowMs=Date.now()){
    fetch("https://clob.polymarket.com/book?token_id="+encodeURIComponent(downTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)})
   ]);
   if(!upResponse.ok||!downResponse.ok)throw new Error("CLOB book HTTP "+upResponse.status+"/"+downResponse.status);
-  const [upBook,downBook]=await Promise.all([upResponse.json(),downResponse.json()]);
+  const upBook=await upResponse.json();
   const upBookReceivedAtMs=Date.now();
-  const downBookReceivedAtMs=upBookReceivedAtMs;
+  const downBook=await downResponse.json();
+  const downBookReceivedAtMs=Date.now();
   const bestAsk=book=>Array.isArray(book?.asks)?book.asks.map(x=>({price:num(x?.price),size:num(x?.size)})).filter(x=>x.price!==null&&x.size!==null&&x.size>0).sort((a,b)=>a.price-b.price)[0]:null;
   const upAsk=bestAsk(upBook),downAsk=bestAsk(downBook);
   if(!upAsk||!downAsk)throw new Error("CLOB best ask missing");
