@@ -326,10 +326,13 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
-    const clobLine = clob
-      ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
+    if (!clob) {
+      log("LIQUIDATION_ALERT_SKIPPED_NO_CLOB", { source: "AGGR", symbol, count, value, period });
+      return;
+    }
+    const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
       : "UP: — | DOWN: —";
-    const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
+    const directionArrow = clob.up <= clob.down ? "⬆️" : "⬇️";
     const alertPreparedAt = new Date().toISOString();
 
     const text = [
