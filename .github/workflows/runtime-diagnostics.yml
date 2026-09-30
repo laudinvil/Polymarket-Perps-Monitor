@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Wait for Blitz runtime and print health/logs
+      - name: Wait for Deplexo runtime and print health/logs
         shell: bash
         run: |
           set -u
-          BASE="https://polymarket.blitz.cloud"
+          BASE="https://fierce-garnet-0621.de.deplexo.com"
           for i in $(seq 1 12); do
             echo "=== RUNTIME CHECK $i/12 ==="
             HEALTH="$(curl -sS --max-time 8 "$BASE/health" || true)"
