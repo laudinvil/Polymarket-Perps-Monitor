@@ -17,8 +17,8 @@ jobs:
           BASE="https://fierce-garnet-0621.de.deplexo.com"
           for i in $(seq 1 12); do
             echo "=== RUNTIME CHECK $i/12 ==="
-            HEALTH="$(curl -sS --max-time 8 "$BASE/health" || true)"
-            if [ -n "$HEALTH" ]; then
+            HEALTH="$(curl -fsS --max-time 8 "$BASE/health" || true)"
+            if printf "%s" "$HEALTH" | grep -q '"status":"ok"'; then
               echo "=== /health ==="
               echo "$HEALTH"
               echo "=== /logs ==="
