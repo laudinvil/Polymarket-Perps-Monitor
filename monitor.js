@@ -148,6 +148,7 @@ function polymarket5mUrl(symbol, nowMs = Date.now()) {
 
 async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
   const slug = symbol.toLowerCase() + "-updown-5m-" + (Math.floor(nowMs / 300000) * 300);
+  const fetchedAtStartedMs = Date.now();
   try {
     const gammaResponse = await fetch(
       "https://gamma-api.polymarket.com/events?slug=" + encodeURIComponent(slug),
@@ -161,27 +162,62 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
     if (!market) throw new Error("market not found");
 
     let tokenIds = market.clobTokenIds;
+    let outcomes = market.outcomes;
     if (typeof tokenIds === "string") tokenIds = JSON.parse(tokenIds);
+    if (typeof outcomes === "string") outcomes = JSON.parse(outcomes);
     if (!Array.isArray(tokenIds) || tokenIds.length < 2) throw new Error("CLOB token IDs not found");
+    if (!Array.isArray(outcomes) || outcomes.length !== tokenIds.length) {
+      throw new Error("CLOB outcomes/token IDs mismatch");
+    }
 
+    const outcomeToToken = {};
+    for (let i = 0; i < outcomes.length; i++) {
+      outcomeToToken[String(outcomes[i]).trim().toLowerCase()] = tokenIds[i];
+    }
+    const upTokenId = outcomeToToken.up;
+    const downTokenId = outcomeToToken.down;
+    if (!upTokenId || !downTokenId) {
+      throw new Error("UP/DOWN token IDs not mapped from Gamma outcomes");
+    }
+
+    // Use executable BUY prices, not midpoint. This matches the price a user can
+    // actually buy at on the CLOB and avoids assuming tokenIds[0] is UP.
     const [upResponse, downResponse] = await Promise.all([
-      fetch("https://clob.polymarket.com/midpoint?token_id=" + encodeURIComponent(tokenIds[0]), {
+      fetch("https://clob.polymarket.com/price?token_id=" + encodeURIComponent(upTokenId) + "&side=BUY", {
         headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000)
       }),
-      fetch("https://clob.polymarket.com/midpoint?token_id=" + encodeURIComponent(tokenIds[1]), {
+      fetch("https://clob.polymarket.com/price?token_id=" + encodeURIComponent(downTokenId) + "&side=BUY", {
         headers: { accept: "application/json" }, signal: AbortSignal.timeout(5000)
       })
     ]);
     if (!upResponse.ok || !downResponse.ok) {
-      throw new Error("CLOB HTTP " + upResponse.status + "/" + downResponse.status);
+      throw new Error("CLOB price HTTP " + upResponse.status + "/" + downResponse.status);
     }
+
     const [upBody, downBody] = await Promise.all([upResponse.json(), downResponse.json()]);
-    const up = num(upBody?.mid);
-    const down = num(downBody?.mid);
-    if (up === null || down === null) throw new Error("CLOB midpoint missing");
-    return { up, down, slug, fetchedAt: new Date().toISOString(), fetchedAtMs: Date.now() };
+    const up = num(upBody?.price);
+    const down = num(downBody?.price);
+    if (up === null || down === null) throw new Error("CLOB BUY price missing");
+
+    const fetchedAtFinishedMs = Date.now();
+    return {
+      up,
+      down,
+      slug,
+      upTokenId,
+      downTokenId,
+      priceMethod: "CLOB_PRICE_BUY",
+      fetchedAt: new Date(fetchedAtFinishedMs).toISOString(),
+      fetchedAtMs: fetchedAtFinishedMs,
+      fetchStartedAtMs: fetchedAtStartedMs
+    };
   } catch (e) {
-    log("POLYMARKET_CLOB_PRICE_ERROR", { symbol, slug, error: String(e.message || e) });
+    log("POLYMARKET_CLOB_PRICE_ERROR", {
+      symbol,
+      slug,
+      error: String(e.message || e),
+      priceMethod: "CLOB_PRICE_BUY"
+    });
     return null;
   }
 }
