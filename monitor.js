@@ -189,7 +189,6 @@ function normalizeAggrEvent(raw) {
   if (!SYMBOLS.has(symbol)) return null;
 
   const side = String(raw?.side || "").toLowerCase();
-  if (side !== "buy" && side !== "sell") return null;
 
   const price = num(raw?.price);
   const qty = num(raw?.size ?? raw?.qty ?? raw?.amount);
@@ -277,11 +276,6 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
-    if (clob && (clob.up < 0.29 || clob.up > 0.80 || clob.down < 0.29 || clob.down > 0.80)) {
-      skippedEvents++;
-      return;
-    }
-
     const clobLine = clob
       ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
       : "UP: — | DOWN: —";
