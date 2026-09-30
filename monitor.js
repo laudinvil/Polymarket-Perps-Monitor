@@ -170,9 +170,21 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,perio
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  let clob=liveClobSnapshot(symbol,period);const clobAttempts=5;
-  if(!clob){for(let attempt=1;attempt<=clobAttempts;attempt++){log("CLOB_PRICE_ATTEMPT",{symbol,period,attempt,attempts:clobAttempts,method:"WEBSOCKET"});clob=liveClobSnapshot(symbol,period);if(clob)break;if(attempt<clobAttempts)await new Promise(resolve=>setTimeout(resolve,100));}}
-  if(!clob){clob=await fetchPolymarketClobPrices(symbol,period);if(clob)clob.priceMethod="CLOB_REST_FALLBACK_BEST_ASK";}
+  let clob=null;const clobAttempts=5;
+  for(let attempt=1;attempt<=clobAttempts;attempt++){
+   log("CLOB_PRICE_ATTEMPT",{symbol,period,attempt,attempts:clobAttempts,method:"REST_EXACT_MARKET"});
+   clob=await fetchPolymarketClobPrices(symbol,period);
+   if(clob)break;
+   if(attempt<clobAttempts)await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  if(!clob){
+   for(let attempt=1;attempt<=clobAttempts;attempt++){
+    log("CLOB_PRICE_ATTEMPT",{symbol,period,attempt,attempts:clobAttempts,method:"WEBSOCKET"});
+    clob=liveClobSnapshot(symbol,period);
+    if(clob)break;
+    if(attempt<clobAttempts)await new Promise(resolve=>setTimeout(resolve,100));
+   }
+  }
   if(!clob){log("LIQUIDATION_ALERT_BLOCKED",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});return false;}
   if(clob.equalPrices){log("LIQUIDATION_ALERT_IGNORED",{symbol,count,value,period,reason:"CLOB_UP_DOWN_PRICES_EQUAL",up:clob.up,down:clob.down});return true;}
   log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});
