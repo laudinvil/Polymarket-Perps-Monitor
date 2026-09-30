@@ -14,6 +14,7 @@ const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
 const MIN_LIQS = 15;
+const MAX_LIQS = 150;
 const CLOB_DOWN_THRESHOLD = 0.30;
 const CLOB_UP_THRESHOLD = 0.75;
 
@@ -248,7 +249,7 @@ async function finalizePeriod(period) {
     }
   }
 
-  if (!winner || maxCount < MIN_LIQS) return;
+  if (!winner || maxCount < MIN_LIQS || maxCount > MAX_LIQS) return;
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
 }
 
@@ -488,6 +489,7 @@ function diagnostics() {
     periodCountBySymbol: state.periodCountBySymbol || {},
     periodValueBySymbol: state.periodValueBySymbol || {},
     minLiquidations: MIN_LIQS,
+    maxLiquidations: MAX_LIQS,
     clobMinThreshold: CLOB_DOWN_THRESHOLD,
     clobMaxThreshold: CLOB_UP_THRESHOLD,
     aggrHealth
