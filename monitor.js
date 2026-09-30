@@ -228,22 +228,16 @@ async function recordLiquidations(events) {
   saveState();
 }
 
-async function flushValueAlert(symbol, triggerEvent) {
-  const count = Number(state.countBySymbol[symbol] || 0);
-  const value = Number(state.valueBySymbol[symbol] || 0);
-  const totalValue = Object.values(state.valueBySymbol).reduce((sum, currentValue) => sum + Number(currentValue || 0), 0);
-  if (totalValue < LIQUIDATION_VALUE_THRESHOLD) return;
+async function flushPeriodAlert(symbol, count, value, period) {
+  const periodEndMs = period + 300000;
+  const link = polymarket5mUrl(symbol, periodEndMs);
+  const dedupeKey = "period:" + period;
 
-  const marketNowMs = Date.now();
-  const link = polymarket5mUrl(symbol, marketNowMs);
+  if (state.alertedPeriodKey === dedupeKey || alertInFlight.has(dedupeKey)) return;
 
-  if (state.alertedLinks.includes(link) || alertInFlight.has(link)) {
-    return;
-  }
-
-  alertInFlight.add(link);
+  alertInFlight.add(dedupeKey);
   try {
-    const clob = await fetchPolymarketClobPrices(symbol, marketNowMs);
+    const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
     if (clob && (clob.up < 0.29 || clob.up > 0.80 || clob.down < 0.29 || clob.down > 0.80)) {
       skippedEvents++;
       return;
@@ -257,11 +251,11 @@ async function flushValueAlert(symbol, triggerEvent) {
     const text = [
       symbol + (directionArrow ? " " + directionArrow : ""),
       "LIQS: " + count,
-      "VALUE: $" + totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       clobLine,
       new Intl.DateTimeFormat("en-GB", {
         timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-      }).format(new Date(triggerEvent.ts)),
+      }).format(new Date(periodEndMs)),
       link
     ].join("\n");
 
@@ -269,24 +263,21 @@ async function flushValueAlert(symbol, triggerEvent) {
     log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
       source: "AGGR",
       symbol,
-      value: totalValue,
-      dedupeKey: link
+      count,
+      value,
+      period,
+      dedupeKey
     });
 
     if (sent) {
-      state.countBySymbol[symbol] = 0;
       state.alertsSent = Number(state.alertsSent || 0) + 1;
-      state.alertedLinks.push(link);
-      if (state.alertedLinks.length > MAX_ALERTED_LINKS) {
-        state.alertedLinks.splice(0, state.alertedLinks.length - MAX_ALERTED_LINKS);
-      }
-      state.valueBySymbol = {};
-      state.lastEventTs = triggerEvent.ts;
-      state.lastEventKey = eventKey(triggerEvent);
+      state.alertedPeriodKey = dedupeKey;
+      state.lastEventTs = periodEndMs;
+      state.lastEventKey = dedupeKey;
       saveState();
     }
   } finally {
-    alertInFlight.delete(link);
+    alertInFlight.delete(dedupeKey);
   }
 }
 
