@@ -233,7 +233,7 @@ async function finalizePeriod(period) {
     }
   }
 
-  if (!winner || maxCount <= 0) return;
+  if (!winner || maxCount < 15) return;
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
 }
 
