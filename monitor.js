@@ -49,27 +49,24 @@ async function fetchPolymarketClobPrices(symbol,nowMs=Date.now()){
   const upTokenId=outcomeToToken.up,downTokenId=outcomeToToken.down;if(!upTokenId||!downTokenId)throw new Error("UP/DOWN token IDs not mapped from Gamma outcomes");
 
   const [upResponse,downResponse]=await Promise.all([
-   fetch("https://clob.polymarket.com/book?token_id="+encodeURIComponent(upTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)}),
-   fetch("https://clob.polymarket.com/book?token_id="+encodeURIComponent(downTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)})
+   fetch("https://clob.polymarket.com/midpoint?token_id="+encodeURIComponent(upTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)}),
+   fetch("https://clob.polymarket.com/midpoint?token_id="+encodeURIComponent(downTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)})
   ]);
-  if(!upResponse.ok||!downResponse.ok)throw new Error("CLOB book HTTP "+upResponse.status+"/"+downResponse.status);
-  const [upBook,downBook]=await Promise.all([upResponse.json(),downResponse.json()]);
-  const bestAsk=book=>Array.isArray(book?.asks)?book.asks.map(x=>({price:num(x?.price),size:num(x?.size)})).filter(x=>x.price!==null&&x.size!==null&&x.size>0).sort((a,b)=>a.price-b.price)[0]:null;
-  const upAsk=bestAsk(upBook),downAsk=bestAsk(downBook);
-  if(!upAsk||!downAsk)throw new Error("CLOB best ask missing");
-  const up=upAsk.price,down=downAsk.price;
-  if(up<=0||up>1||down<=0||down>1)throw new Error("CLOB best ask outside 0..1");
+  if(!upResponse.ok||!downResponse.ok)throw new Error("CLOB midpoint HTTP "+upResponse.status+"/"+downResponse.status);
+  const [upBody,downBody]=await Promise.all([upResponse.json(),downResponse.json()]);
+  const up=num(upBody?.mid),down=num(downBody?.mid);
+  if(up===null||down===null)throw new Error("CLOB midpoint missing");
+  if(up<=0||up>1||down<=0||down>1)throw new Error("CLOB midpoint outside 0..1");
   const complementarySum=up+down;
   if(Math.abs(up-down)<1e-12){
-   log("CLOB_EQUAL_PRICES_IGNORED",{symbol,slug,up,down,fetchedAt:new Date().toISOString()});
-   return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_BOOK_BEST_ASK",upAskSize:upAsk.size,downAskSize:downAsk.size,complementarySum,equalPrices:true};
+   log("CLOB_EQUAL_PRICES_IGNORED",{symbol,slug,up,down,fetchedAt:new Date().toISOString(),priceMethod:"CLOB_MIDPOINT"});
+   return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_MIDPOINT",complementarySum,equalPrices:true};
   }
-  if(complementarySum<0.98)throw new Error("CLOB crossed/inconsistent complementary asks: "+up+"+"+down+"="+complementarySum);
+  if(complementarySum<0.98||complementarySum>1.02)throw new Error("CLOB midpoint pair inconsistent: "+up+"+"+down+"="+complementarySum);
   const fetchedAtFinishedMs=Date.now();
-  return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_BOOK_BEST_ASK",upAskSize:upAsk.size,downAskSize:downAsk.size,complementarySum,fetchedAt:new Date(fetchedAtFinishedMs).toISOString(),fetchedAtMs:fetchedAtFinishedMs,fetchStartedAtMs:fetchedAtStartedMs};
- }catch(e){log("POLYMARKET_CLOB_PRICE_ERROR",{symbol,slug,error:String(e.message||e),priceMethod:"CLOB_BOOK_BEST_ASK"});return null;}
+  return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_MIDPOINT",complementarySum,fetchedAt:new Date(fetchedAtFinishedMs).toISOString(),fetchedAtMs:fetchedAtFinishedMs,fetchStartedAtMs:fetchedAtStartedMs};
+ }catch(e){log("POLYMARKET_CLOB_PRICE_ERROR",{symbol,slug,error:String(e.message||e),priceMethod:"CLOB_MIDPOINT"});return null;}
 }
-
 function eventKey(e){if(e.id!=null&&String(e.id))return"aggr:"+String(e.exchange||"")+":"+String(e.id);return[e.ts||e.timestamp||"",e.exchange||"",e.symbol||e.pair||"",e.side||"",e.price||"",e.qty||e.size||""].join("|");}
 function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|[-_]/g,"").replace("SWAP","");if(!SYMBOLS.has(symbol))return null;const side=String(raw?.side||"").toLowerCase(),price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||qty<=0)return null;const ts=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now(),exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id==null?"":String(raw.id),ts:ts<1e12?ts*1000:ts,exchange,symbol,side,price,qty,notional:price*qty};}
 function periodKey(ts){return Math.floor(ts/300000)*300000;}
