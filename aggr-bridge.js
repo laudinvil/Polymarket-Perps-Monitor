@@ -1,5 +1,6 @@
 const http = require("http");
 const fs = require("fs");
+const WebSocket = require("ws");
 const HyperliquidLiquidationAdapter = require("./hyperliquid-liquidation-adapter");
 const hyperliquid = new HyperliquidLiquidationAdapter();
 const path = require("path");
@@ -15,6 +16,17 @@ const LIQUIDATION_EXCHANGES = new Set([
 ]);
 const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
+const KRAKEN_POLL_MS = Number(process.env.KRAKEN_POLL_MS || 2000);
+const KRAKEN_SYMBOLS = [
+  ["BTC", ["PI_XBTUSD", "PF_XBTUSD"]],
+  ["ETH", ["PI_ETHUSD", "PF_ETHUSD"]],
+  ["SOL", ["PI_SOLUSD", "PF_SOLUSD"]],
+  ["XRP", ["PI_XRPUSD", "PF_XRPUSD"]],
+  ["DOGE", ["PI_DOGEUSD", "PF_DOGEUSD"]],
+  ["BNB", ["PI_BNBUSD", "PF_BNBUSD"]],
+  ["HYPE", ["PI_HYPEUSD", "PF_HYPEUSD"]]
+];
+const KRAKEN_SEEN = new Set();
 const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
 const exchangeStatus = {};
 const WINDOW_MS = 60 * 60 * 1000;
@@ -191,6 +203,117 @@ function isPerpetualLiquidationPair(exchange, pair) {
   }
 }
 
+function publishDirectLiquidation(event) {
+  const normalized = normalize(event);
+  if (!normalized) return;
+  publish(normalized);
+  recordExchangeEvent(normalized.exchange, normalized.symbol, normalized.timestamp);
+  feedStats.events++;
+  feedStats.byExchange[normalized.exchange] = (feedStats.byExchange[normalized.exchange] || 0) + 1;
+  feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
+  scheduleFeedSummary();
+}
+
+function emitDirect(exchange, symbol, pair, side, price, size, timestamp, id) {
+  if (!Number.isFinite(Number(price)) || !Number.isFinite(Number(size)) || Number(price) <= 0 || Number(size) <= 0) return;
+  publishDirectLiquidation({
+    id: id || "", timestamp: Number(timestamp) || Date.now(), exchange,
+    pair, symbol, side, price: Number(price), size: Number(size), liquidation: true
+  });
+}
+
+function startBitfinexDirect() {
+  const status = ensureExchangeStats("BITFINEX");
+  status.selectedPairs = SYMBOLS.size;
+  const ws = new WebSocket("wss://api-pub.bitfinex.com/ws/2");
+  ws.on("open", () => {
+    ws.send(JSON.stringify({ event: "subscribe", channel: "status", key: "liq:global" }));
+    log("DIRECT_CONNECTED", { exchange: "BITFINEX", source: "BITFINEX_LIQ_GLOBAL" });
+  });
+  ws.on("message", raw => {
+    try {
+      const msg = JSON.parse(String(raw));
+      if (!Array.isArray(msg) || msg.length < 2 || !Array.isArray(msg[1])) return;
+      for (const liq of msg[1]) {
+        if (!Array.isArray(liq) || liq[0] !== "pos") continue;
+        const pair = String(liq[4] || "");
+        const symbol = symbolFromPair(pair);
+        if (!symbol) continue;
+        const amount = Number(liq[5]);
+        const basePrice = Number(liq[6]);
+        const liquidationPrice = Number(liq[11]);
+        const price = Number.isFinite(liquidationPrice) && liquidationPrice > 0 ? liquidationPrice : basePrice;
+        const size = Math.abs(amount);
+        const side = amount < 0 ? "buy" : "sell";
+        const timestamp = Number(liq[2]) || Date.now();
+        emitDirect("BITFINEX", symbol, pair, side, price, size, timestamp, "bitfinex:" + liq[1] + ":" + timestamp);
+      }
+    } catch (error) {
+      status.errors++;
+      log("DIRECT_PARSE_ERROR", { exchange: "BITFINEX", error: String(error.message || error) });
+    }
+  });
+  ws.on("error", error => {
+    status.errors++;
+    log("DIRECT_ERROR", { exchange: "BITFINEX", error: String(error.message || error) });
+  });
+  ws.on("close", () => {
+    status.connectedPairs = 0;
+    log("DIRECT_CLOSED", { exchange: "BITFINEX" });
+    setTimeout(startBitfinexDirect, 3000);
+  });
+  status.connectedPairs = 1;
+}
+
+async function pollKrakenSymbol(symbol, pair) {
+  const url = "https://futures.kraken.com/derivatives/api/v3/history?symbol=" + encodeURIComponent(pair);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("HTTP " + response.status);
+  const body = await response.json();
+  const history = Array.isArray(body.history) ? body.history : [];
+  for (const trade of history) {
+    if (String(trade.type || "").toLowerCase() !== "liquidation") continue;
+    const id = String(trade.trade_id ?? trade.uid ?? (trade.time + ":" + trade.price + ":" + trade.size));
+    const key = pair + ":" + id;
+    if (KRAKEN_SEEN.has(key)) continue;
+    KRAKEN_SEEN.add(key);
+    if (KRAKEN_SEEN.size > 5000) {
+      const first = KRAKEN_SEEN.values().next().value;
+      if (first) KRAKEN_SEEN.delete(first);
+    }
+    const timestamp = Date.parse(String(trade.time || "")) || Date.now();
+    const side = String(trade.side || "").toLowerCase();
+    emitDirect("KRAKEN", symbol, pair, side, Number(trade.price), Number(trade.size), timestamp, "kraken:" + id);
+  }
+}
+
+function startKrakenDirect() {
+  const status = ensureExchangeStats("KRAKEN");
+  status.selectedPairs = KRAKEN_SYMBOLS.length;
+  status.connectedPairs = KRAKEN_SYMBOLS.length;
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      for (const [symbol, pairs] of KRAKEN_SYMBOLS) {
+        for (const pair of pairs) {
+          try {
+            await pollKrakenSymbol(symbol, pair);
+          } catch (error) {
+            if (!String(error.message || error).includes("404")) status.errors++;
+          }
+        }
+      }
+    } finally {
+      running = false;
+    }
+  };
+  log("DIRECT_CONNECTED", { exchange: "KRAKEN", source: "KRAKEN_PUBLIC_TRADE_HISTORY", pollMs: KRAKEN_POLL_MS, pairs: KRAKEN_SYMBOLS.flatMap(x => x[1]) });
+  tick();
+  setInterval(tick, KRAKEN_POLL_MS);
+}
+
 async function buildExchanges(config) {
   const names = adapterNames();
   const exchanges = [];
@@ -258,6 +381,8 @@ async function main() {
   const config = require("aggr-server/src/config");
   const Server = require("aggr-server/src/server");
   const exchanges = await buildExchanges(config);
+  startBitfinexDirect();
+  startKrakenDirect();
   for (const exchange of exchanges) {
     // One listener per exchange, not one listener per pair. AGGR can have
     // many connected pairs and its EventEmitter otherwise exceeds the
@@ -332,7 +457,7 @@ async function main() {
         status:"ok",
         source:"AGGR",
         exchanges:exchanges.map(x=>x.id),
-        exchangeCount:exchanges.length + 1,
+        exchangeCount:exchanges.length + 3,
         pairCount:config.pairs.length,
         hyperliquid: true,
         clients:CLIENTS.size,
@@ -360,8 +485,8 @@ async function main() {
   server.listen(PORT, "127.0.0.1", () => log("BRIDGE_LISTENING", {
     port: PORT,
     endpoint: "/liquidations",
-    exchanges: exchanges.map(x=>x.id).concat("HYPERLIQUID"),
-    exchangeCount: exchanges.length + 1,
+    exchanges: exchanges.map(x=>x.id).concat("BITFINEX", "KRAKEN", "HYPERLIQUID"),
+    exchangeCount: exchanges.length + 3,
     pairCount: config.pairs.length
   }));
 }
