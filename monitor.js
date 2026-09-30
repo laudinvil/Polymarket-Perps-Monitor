@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "26.8.1-FIRE-EMOJI";
+const VERSION = "26.8.2-LOW-DEPLEXO-LOG";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -27,7 +27,19 @@ function ensureDir(file){fs.mkdirSync(path.dirname(file),{recursive:true});}
 function broadcastLogRow(row){const p="data: "+JSON.stringify(row)+"\n\n";for(const res of logSubscribers){try{res.write(p);}catch{logSubscribers.delete(res);}}}
 function appendLogRow(row){try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");broadcastLogRow(row);try{const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r");const buffer=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buffer,0,LOG_KEEP_BYTES,Math.max(0,size-LOG_KEEP_BYTES));fs.closeSync(fd);const start=buffer.indexOf(0x0a);fs.writeFileSync(LOG_FILE,start>=0?buffer.subarray(start+1):buffer);}}catch{}}catch{}}
 let lastFeedSummaryLogAt=0;
-function log(event,data={}){if(event==="FEED_STATUS"){const now=Date.now();if(now-lastFeedSummaryLogAt<FEED_SUMMARY_LOG_MS)return;lastFeedSummaryLogAt=now;}const row={ts:nowIso(),version:VERSION,event,...data};console.log(JSON.stringify(row));appendLogRow(row);}
+const DEPLEXO_QUIET_EVENTS = new Set(["FEED_STATUS","CLOB_PRICE_ATTEMPT"]);
+function log(event,data={}){
+ const row={ts:nowIso(),version:VERSION,event,...data};
+ appendLogRow(row);
+ if(event==="FEED_STATUS"){
+  const now=Date.now();
+  if(now-lastFeedSummaryLogAt<FEED_SUMMARY_LOG_MS)return;
+  lastFeedSummaryLogAt=now;
+  return;
+ }
+ if(DEPLEXO_QUIET_EVENTS.has(event))return;
+ console.log(JSON.stringify(row));
+}
 
 function defaultState(){return{version:VERSION,strategy:"AGGR_LIQUIDATIONS",updatedAt:nowIso(),seen:[],alertedLinks:[],alertedPeriodKey:null,alertsSent:0,valueBySymbol:{},countBySymbol:{},periodKey:null,periodCountBySymbol:{},periodValueBySymbol:{},lastPeriodAverageBySymbol:{},lastAlertAverage:null,lastPeriodEvent:null,lastEventTs:null,lastEventKey:null};}
 function loadState(){try{const value=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(value&&typeof value==="object")return value;}catch{}return defaultState();}
