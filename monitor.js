@@ -219,8 +219,8 @@ async function recordLiquidations(events) {
     state.countBySymbol[event.symbol] = Number(state.countBySymbol[event.symbol] || 0) + 1;
     acceptedSinceSummary++;
 
-    const valueReached = state.valueBySymbol[event.symbol] >= LIQUIDATION_VALUE_THRESHOLD;
-    if (!valueReached) continue;
+    const totalValue = Object.values(state.valueBySymbol).reduce((sum, value) => sum + Number(value || 0), 0);
+    if (totalValue < LIQUIDATION_VALUE_THRESHOLD) continue;
 
     await flushValueAlert(event.symbol, event);
   }
@@ -231,7 +231,8 @@ async function recordLiquidations(events) {
 async function flushValueAlert(symbol, triggerEvent) {
   const count = Number(state.countBySymbol[symbol] || 0);
   const value = Number(state.valueBySymbol[symbol] || 0);
-  if (value < LIQUIDATION_VALUE_THRESHOLD) return;
+  const totalValue = Object.values(state.valueBySymbol).reduce((sum, currentValue) => sum + Number(currentValue || 0), 0);
+  if (totalValue < LIQUIDATION_VALUE_THRESHOLD) return;
 
   const marketNowMs = Date.now();
   const link = polymarket5mUrl(symbol, marketNowMs);
@@ -256,7 +257,7 @@ async function flushValueAlert(symbol, triggerEvent) {
     const text = [
       symbol + (directionArrow ? " " + directionArrow : ""),
       "LIQS: " + count,
-      "VALUE: $" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      "VALUE: $" + totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       clobLine,
       new Intl.DateTimeFormat("en-GB", {
         timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
@@ -268,7 +269,7 @@ async function flushValueAlert(symbol, triggerEvent) {
     log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
       source: "AGGR",
       symbol,
-      value,
+      value: totalValue,
       dedupeKey: link
     });
 
@@ -279,7 +280,7 @@ async function flushValueAlert(symbol, triggerEvent) {
       if (state.alertedLinks.length > MAX_ALERTED_LINKS) {
         state.alertedLinks.splice(0, state.alertedLinks.length - MAX_ALERTED_LINKS);
       }
-      state.valueBySymbol[symbol] = 0;
+      state.valueBySymbol = {};
       state.lastEventTs = triggerEvent.ts;
       state.lastEventKey = eventKey(triggerEvent);
       saveState();
