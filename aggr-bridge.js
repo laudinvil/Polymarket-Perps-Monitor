@@ -27,6 +27,7 @@ const KRAKEN_SYMBOLS = [
   ["HYPE", ["PI_HYPEUSD", "PF_HYPEUSD"]]
 ];
 const KRAKEN_SEEN = new Set();
+const KRAKEN_ERROR_LOGGED = new Set();
 const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
 const exchangeStatus = {};
 const WINDOW_MS = 60 * 60 * 1000;
@@ -226,6 +227,7 @@ function emitDirect(exchange, symbol, pair, side, price, size, timestamp, id) {
 
 function startBitfinexDirect() {
   const status = ensureExchangeStats("BITFINEX");
+  let rawLogged = 0;
   status.selectedPairs = SYMBOLS.size;
   const ws = new WebSocket("wss://api-pub.bitfinex.com/ws/2");
   ws.on("open", () => {
@@ -234,7 +236,12 @@ function startBitfinexDirect() {
   });
   ws.on("message", raw => {
     try {
-      const msg = JSON.parse(String(raw));
+      const rawText = String(raw);
+      const msg = JSON.parse(rawText);
+      if (rawLogged < 5 && !(msg && msg[1] === "hb")) {
+        rawLogged++;
+        log("DIRECT_RAW", { exchange: "BITFINEX", message: rawText });
+      }
       if (!Array.isArray(msg) || msg.length < 2 || !Array.isArray(msg[1])) return;
       for (const liq of msg[1]) {
         if (!Array.isArray(liq) || liq[0] !== "pos") continue;
@@ -303,7 +310,13 @@ function startKrakenDirect() {
           try {
             await pollKrakenSymbol(symbol, pair);
           } catch (error) {
-            if (!String(error.message || error).includes("404")) status.errors++;
+            const message = String(error.message || error);
+            status.errors++;
+            const key = pair + ":" + message;
+            if (!KRAKEN_ERROR_LOGGED.has(key)) {
+              KRAKEN_ERROR_LOGGED.add(key);
+              log("DIRECT_ERROR", { exchange: "KRAKEN", pair, symbol, error: message });
+            }
           }
         }
       }
