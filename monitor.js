@@ -60,6 +60,10 @@ async function fetchPolymarketClobPrices(symbol,nowMs=Date.now()){
   const up=upAsk.price,down=downAsk.price;
   if(up<=0||up>1||down<=0||down>1)throw new Error("CLOB best ask outside 0..1");
   const complementarySum=up+down;
+  if(Math.abs(up-down)<1e-12){
+   log("CLOB_EQUAL_PRICES_IGNORED",{symbol,slug,up,down,fetchedAt:new Date().toISOString()});
+   return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_BOOK_BEST_ASK",upAskSize:upAsk.size,downAskSize:downAsk.size,complementarySum,equalPrices:true};
+  }
   if(complementarySum<0.98)throw new Error("CLOB crossed/inconsistent complementary asks: "+up+"+"+down+"="+complementarySum);
   const fetchedAtFinishedMs=Date.now();
   return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_BOOK_BEST_ASK",upAskSize:upAsk.size,downAskSize:downAsk.size,complementarySum,fetchedAt:new Date(fetchedAtFinishedMs).toISOString(),fetchedAtMs:fetchedAtFinishedMs,fetchStartedAtMs:fetchedAtStartedMs};
@@ -84,7 +88,7 @@ async function finalizePeriod(period){
   log("PERIOD_NO_ALERT",{period,counts,values,reason:"NO_SYMBOL_WITH_MIN_LIQUIDATIONS",minLiquidations:MIN_LIQS});
   return true;
  }
- return await flushPeriodAlert(winner,winnerCount,maxValue,period);
+ return await flushPeriodAlert(winner,winnerCount,minValue,period);
 }
 
 async function recordLiquidations(events){
@@ -112,6 +116,7 @@ async function flushPeriodAlert(symbol,count,value,period){
   let clob=null;const clobAttempts=5;
   for(let attempt=1;attempt<=clobAttempts;attempt++){log("CLOB_PRICE_ATTEMPT",{symbol,period,periodEnd:new Date(periodEndMs).toISOString(),attempt,attempts:clobAttempts});clob=await fetchPolymarketClobPrices(symbol,periodEndMs);if(clob)break;if(attempt<clobAttempts)await new Promise(resolve=>setTimeout(resolve,1000));}
   if(!clob){log("LIQUIDATION_ALERT_BLOCKED",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});return false;}
+  if(clob.equalPrices){log("LIQUIDATION_ALERT_IGNORED",{symbol,count,value,period,reason:"CLOB_UP_DOWN_PRICES_EQUAL",up:clob.up,down:clob.down});return true;}
   log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs});
   const clobLine="UP: "+clob.up.toFixed(3)+" | DOWN: "+clob.down.toFixed(3),directionArrow=clob.up<=clob.down?"⬆️":"⬇️",alertPreparedAt=new Date().toISOString();
   const text=[symbol+(directionArrow?" "+directionArrow:""),"LIQS: "+count,"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(periodEndMs)),link].join("\n");
