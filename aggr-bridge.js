@@ -103,21 +103,22 @@ function scheduleFeedSummary() {
 function symbolFromPair(pair) {
   const raw = String(pair || "").toUpperCase().replace(/[^A-Z0-9_-]/g, "");
   const compact = raw.replace(/[-_]/g, "");
+  const bitfinexCompact = compact.startsWith("T") ? compact.slice(1) : compact;
 
   for (const symbol of SYMBOLS) {
     const bases = symbol === "BTC" ? ["BTC", "XBT"] : [symbol];
     for (const base of bases) {
       if (
-        compact === base + "USDT" ||
-        compact === base + "USDC" ||
-        compact === base + "USD" ||
+        bitfinexCompact === base + "USDT" ||
+        bitfinexCompact === base + "USDC" ||
+        bitfinexCompact === base + "USD" ||
         compact === base + "USDT" + "PERP" ||
         compact === base + "USDC" + "PERP" ||
         compact === base + "USD" + "PERP" ||
         compact === base + "USDT" + "SWAP" ||
         compact === base + "USDC" + "SWAP" ||
         compact === base + "USD" + "SWAP"
-      ) return symbol;
+      ) return symbol;ymbol;
     }
     if (symbol === "BTC" && (compact === "PIXBTUSD" || compact === "PFXBTUSD")) {
       return symbol;
@@ -128,7 +129,8 @@ function symbolFromPair(pair) {
 
 function normalize(event) {
   if (!event || event.liquidation !== true) return null;
-  const symbol = symbolFromPair(event.pair || event.symbol);
+  const explicitSymbol = String(event.symbol || "").toUpperCase();
+  const symbol = SYMBOLS.has(explicitSymbol) ? explicitSymbol : symbolFromPair(event.pair || event.symbol);
   if (!symbol) return null;
 
   const price = Number(event.price);
