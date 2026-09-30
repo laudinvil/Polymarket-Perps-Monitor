@@ -1,0 +1,32 @@
+name: Runtime diagnostics
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wait for Blitz runtime and print health/logs
+        shell: bash
+        run: |
+          set -u
+          BASE="https://polymarket.blitz.cloud"
+          for i in $(seq 1 12); do
+            echo "=== RUNTIME CHECK $i/12 ==="
+            HEALTH="$(curl -sS --max-time 8 "$BASE/health" || true)"
+            if [ -n "$HEALTH" ]; then
+              echo "=== /health ==="
+              echo "$HEALTH"
+              echo "=== /logs ==="
+              curl -sS --max-time 12 "$BASE/logs" || true
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "=== RUNTIME UNREACHABLE ==="
+          curl -sS -i --max-time 8 "$BASE/health" || true
+          exit 1
