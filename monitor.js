@@ -248,7 +248,7 @@ async function finalizePeriod(period) {
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
 }
 
-async function recordLiquidations(events) {
+async async function recordLiquidations(events) {
   const seen = new Set(Array.isArray(state.seen) ? state.seen : []);
   for (const event of events) {
     const key = eventKey(event);
