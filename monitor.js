@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.2.4-5M-MAX-VALUE";
+const VERSION = "26.2.5-5M-MAX-VALUE-CLOB-BOOK";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -12,7 +12,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const MIN_LIQS = 0;
+const MIN_LIQS = 2;
 
 let state, groupTimer = null, aggrConnected = false, aggrEvents = 0, aggrLastEventAt = null;
 let aggrReconnectTimer = null, skippedEvents = 0, ignoredEvents = 0, acceptedSinceSummary = 0;
@@ -47,16 +47,23 @@ async function fetchPolymarketClobPrices(symbol,nowMs=Date.now()){
   if(!Array.isArray(outcomes)||outcomes.length!==tokenIds.length)throw new Error("CLOB outcomes/token IDs mismatch");
   const outcomeToToken={};for(let i=0;i<outcomes.length;i++)outcomeToToken[String(outcomes[i]).trim().toLowerCase()]=tokenIds[i];
   const upTokenId=outcomeToToken.up,downTokenId=outcomeToToken.down;if(!upTokenId||!downTokenId)throw new Error("UP/DOWN token IDs not mapped from Gamma outcomes");
+
   const [upResponse,downResponse]=await Promise.all([
-   fetch("https://clob.polymarket.com/price?token_id="+encodeURIComponent(upTokenId)+"&side=BUY",{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)}),
-   fetch("https://clob.polymarket.com/price?token_id="+encodeURIComponent(downTokenId)+"&side=BUY",{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)})
+   fetch("https://clob.polymarket.com/book?token_id="+encodeURIComponent(upTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)}),
+   fetch("https://clob.polymarket.com/book?token_id="+encodeURIComponent(downTokenId),{headers:{accept:"application/json"},signal:AbortSignal.timeout(5000)})
   ]);
-  if(!upResponse.ok||!downResponse.ok)throw new Error("CLOB price HTTP "+upResponse.status+"/"+downResponse.status);
-  const [upBody,downBody]=await Promise.all([upResponse.json(),downResponse.json()]),up=num(upBody?.price),down=num(downBody?.price);
-  if(up===null||down===null)throw new Error("CLOB BUY price missing");
+  if(!upResponse.ok||!downResponse.ok)throw new Error("CLOB book HTTP "+upResponse.status+"/"+downResponse.status);
+  const [upBook,downBook]=await Promise.all([upResponse.json(),downResponse.json()]);
+  const bestAsk=book=>Array.isArray(book?.asks)?book.asks.map(x=>({price:num(x?.price),size:num(x?.size)})).filter(x=>x.price!==null&&x.size!==null&&x.size>0).sort((a,b)=>a.price-b.price)[0]:null;
+  const upAsk=bestAsk(upBook),downAsk=bestAsk(downBook);
+  if(!upAsk||!downAsk)throw new Error("CLOB best ask missing");
+  const up=upAsk.price,down=downAsk.price;
+  if(up<=0||up>1||down<=0||down>1)throw new Error("CLOB best ask outside 0..1");
+  const complementarySum=up+down;
+  if(complementarySum<0.98)throw new Error("CLOB crossed/inconsistent complementary asks: "+up+"+"+down+"="+complementarySum);
   const fetchedAtFinishedMs=Date.now();
-  return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_PRICE_BUY",fetchedAt:new Date(fetchedAtFinishedMs).toISOString(),fetchedAtMs:fetchedAtFinishedMs,fetchStartedAtMs:fetchedAtStartedMs};
- }catch(e){log("POLYMARKET_CLOB_PRICE_ERROR",{symbol,slug,error:String(e.message||e),priceMethod:"CLOB_PRICE_BUY"});return null;}
+  return{up,down,slug,upTokenId,downTokenId,priceMethod:"CLOB_BOOK_BEST_ASK",upAskSize:upAsk.size,downAskSize:downAsk.size,complementarySum,fetchedAt:new Date(fetchedAtFinishedMs).toISOString(),fetchedAtMs:fetchedAtFinishedMs,fetchStartedAtMs:fetchedAtStartedMs};
+ }catch(e){log("POLYMARKET_CLOB_PRICE_ERROR",{symbol,slug,error:String(e.message||e),priceMethod:"CLOB_BOOK_BEST_ASK"});return null;}
 }
 
 function eventKey(e){if(e.id!=null&&String(e.id))return"aggr:"+String(e.exchange||"")+":"+String(e.id);return[e.ts||e.timestamp||"",e.exchange||"",e.symbol||e.pair||"",e.side||"",e.price||"",e.qty||e.size||""].join("|");}
@@ -66,19 +73,20 @@ function resetPeriodCounters(nextPeriodKey){state.periodKey=nextPeriodKey;state.
 
 async function finalizePeriod(period){
  const counts=state.periodCountBySymbol||{},values=state.periodValueBySymbol||{};
- let winner=null,minCount=Infinity,winnerValue=0;
+ let winner=null,maxValue=0,winnerCount=0;
  for(const symbol of SYMBOLS){
   const count=Number(counts[symbol]||0),value=Number(values[symbol]||0);
-  if(count<=0)continue;
-  if(count<minCount){minCount=count;winner=symbol;winnerValue=value;}
+  if(count<MIN_LIQS)continue;
+  if(value>maxValue){maxValue=value;winner=symbol;winnerCount=count;}
  }
- log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+300000).toISOString(),counts,values,winner,minCount:winner?minCount:0,winnerValue});
+ log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+300000).toISOString(),counts,values,winner,maxValue,winnerCount,minLiquidations:MIN_LIQS});
  if(!winner){
-  log("PERIOD_NO_ALERT",{period,counts,values,reason:"NO_NONZERO_LIQUIDATIONS"});
+  log("PERIOD_NO_ALERT",{period,counts,values,reason:"NO_SYMBOL_WITH_MIN_LIQUIDATIONS",minLiquidations:MIN_LIQS});
   return;
  }
- await flushPeriodAlert(winner,minCount,winnerValue,period);
+ await flushPeriodAlert(winner,winnerCount,maxValue,period);
 }
+
 async function recordLiquidations(events){
  const seen=new Set(Array.isArray(state.seen)?state.seen:[]);
  for(const event of events){
@@ -108,7 +116,7 @@ async function flushPeriodAlert(symbol,count,value,period){
   const clobLine="UP: "+clob.up.toFixed(3)+" | DOWN: "+clob.down.toFixed(3),directionArrow=clob.up<=clob.down?"⬆️":"⬇️",alertPreparedAt=new Date().toISOString();
   const text=[symbol+(directionArrow?" "+directionArrow:""),"LIQS: "+count,"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(periodEndMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
-  log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,period,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobUp:clob?.up??null,clobDown:clob?.down??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
+  log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,period,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
   if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=periodEndMs;state.lastEventKey=dedupeKey;saveState();}
  }finally{alertInFlight.delete(dedupeKey);}
 }
@@ -128,9 +136,9 @@ function connectAggr(){
 function scheduleAggrReconnect(){if(aggrReconnectTimer)return;aggrReconnectTimer=setTimeout(()=>{aggrReconnectTimer=null;connectAggr();scheduleAggrHealth();},3000);}
 function refreshAggrHealth(){const req=http.get("http://127.0.0.1:9090/health",response=>{let body="";response.setEncoding("utf8");response.on("data",chunk=>{body+=chunk;});response.on("end",()=>{if(response.statusCode!==200)return;try{const value=JSON.parse(body);aggrHealth={fetchedAt:nowIso(),exchangeCount:value.exchangeCount??null,exchanges:Array.isArray(value.exchanges)?value.exchanges:[],pairCount:value.pairCount??null,hyperliquid:value.hyperliquid===true,status:value.status&&typeof value.status==="object"?value.status:{}};}catch(e){log("AGGR_HEALTH_PARSE_ERROR",{error:String(e.message||e)});}});});req.on("error",e=>{aggrHealth={fetchedAt:nowIso(),error:String(e.message||e)};});req.setTimeout(3000,()=>req.destroy());}
 function scheduleAggrHealth(){refreshAggrHealth();clearInterval(aggrHealthTimer);aggrHealthTimer=setInterval(refreshAggrHealth,60000);}
-function diagnostics(){return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,lastEventTs:state.lastEventTs,lastEventKey:state.lastEventKey,seenEvents:state.seen.length,valueBySymbol:state.valueBySymbol||{},countBySymbol:state.countBySymbol||{},alertedLinks:state.alertedLinks||[],periodKey:state.periodKey,periodCountBySymbol:state.periodCountBySymbol||{},periodValueBySymbol:state.periodValueBySymbol||{},minLiquidations:0,selection:"MIN_NONZERO_LIQS_PREVIOUS_5M",aggrHealth};}
+function diagnostics(){return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,lastEventTs:state.lastEventTs,lastEventKey:state.lastEventKey,seenEvents:state.seen.length,valueBySymbol:state.valueBySymbol||{},countBySymbol:state.countBySymbol||{},alertedLinks:state.alertedLinks||[],periodKey:state.periodKey,periodCountBySymbol:state.periodCountBySymbol||{},periodValueBySymbol:state.periodValueBySymbol||{},minLiquidations:MIN_LIQS,selection:"MAX_VALUE_PREVIOUS_5M_WITH_MIN_LIQS",aggrHealth};}
 function startHealth(){const port=Number(process.env.MONITOR_HEALTH_PORT||8081);const server=http.createServer((req,res)=>{const requestPath=String(req.url||"/").split("?")[0];if(requestPath==="/"||requestPath==="/health"||requestPath==="/status"||requestPath==="/stats"){res.writeHead(200,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"});return res.end(JSON.stringify(diagnostics()));}if(requestPath==="/logs/stream"){let rows=[];try{rows=fs.readFileSync(LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-100).map(x=>JSON.parse(x));}catch{}res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-cache, no-store, must-revalidate","connection":"keep-alive","x-accel-buffering":"no"});for(const row of rows)res.write("data: "+JSON.stringify(row)+"\n\n");logSubscribers.add(res);const heartbeat=setInterval(()=>{try{res.write(": heartbeat\n\n");}catch{}},15000);req.on("close",()=>{clearInterval(heartbeat);logSubscribers.delete(res);});return;}if(requestPath==="/logs"){let rows=[];try{rows=fs.readFileSync(LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-300).map(x=>JSON.parse(x));}catch(e){rows=[{event:"LOG_READ_ERROR",error:String(e.message||e)}];}res.writeHead(200,{"content-type":"application/json; charset=utf-8","cache-control":"no-store"});return res.end(JSON.stringify({status:"ok",events:rows}));}res.writeHead(404);res.end();});server.on("error",e=>log("HEALTH_SERVER_ERROR",{error:String(e.message||e)}));server.listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port,healthPath:"/health"}));}
-function main(){ensureDir(STATE_FILE);ensureDir(LOG_FILE);state=loadState();if(state.strategy!=="AGGR_LIQUIDATIONS"||state.version!==VERSION){state.seen=[];state.alertedLinks=[];state.alertedPeriodKey=null;state.valueBySymbol={};state.countBySymbol={};state.periodKey=null;state.periodCountBySymbol={};state.periodValueBySymbol={};state.alertsSent=0;state.lastEventTs=null;state.lastEventKey=null;}state.version=VERSION;state.strategy="AGGR_LIQUIDATIONS";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];state.alertedPeriodKey=state.alertedPeriodKey==null?null:String(state.alertedPeriodKey);state.valueBySymbol=state.valueBySymbol&&typeof state.valueBySymbol==="object"?state.valueBySymbol:{};state.periodKey=(state.periodKey===null||state.periodKey===undefined||state.periodKey==="")?null:(Number.isFinite(Number(state.periodKey))?Number(state.periodKey):null);state.periodCountBySymbol=state.periodCountBySymbol&&typeof state.periodCountBySymbol==="object"?state.periodCountBySymbol:{};state.periodValueBySymbol=state.periodValueBySymbol&&typeof state.periodValueBySymbol==="object"?state.periodValueBySymbol:{};const hadCountState=state.countBySymbol&&typeof state.countBySymbol==="object";state.countBySymbol=hadCountState?state.countBySymbol:{};if(!hadCountState)state.valueBySymbol={};log("LIQUIDATION_MONITOR_STARTING",{buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,symbols:[...SYMBOLS],periodBased:true,alertAtPeriodBoundary:true,selection:"MIN_NONZERO_LIQS_PREVIOUS_5M",minLiquidations:0});startHealth();connectAggr();const scheduleBoundary=()=>{const now=Date.now(),nextBoundary=(Math.floor(now/300000)+1)*300000;groupTimer=setTimeout(async()=>{log("BOUNDARY_TICK",{boundary:new Date(nextBoundary).toISOString(),periodKey:state.periodKey});if(state.periodKey!=null&&state.periodKey<nextBoundary){await finalizePeriod(state.periodKey);resetPeriodCounters(nextBoundary);saveState();}scheduleBoundary();},Math.max(0,nextBoundary-now+25));};scheduleBoundary();setInterval(()=>{log("FEED_STATUS",{source:"AGGR",aggrConnected,aggrEvents,acceptedSinceSummary,ignoredEvents,skippedEvents,aggrLastEventAt,valueBySymbol:state.valueBySymbol||{}});acceptedSinceSummary=0;ignoredEvents=0;skippedEvents=0;},FEED_SUMMARY_LOG_MS);}
+function main(){ensureDir(STATE_FILE);ensureDir(LOG_FILE);state=loadState();if(state.strategy!=="AGGR_LIQUIDATIONS"||state.version!==VERSION){state.seen=[];state.alertedLinks=[];state.alertedPeriodKey=null;state.valueBySymbol={};state.countBySymbol={};state.periodKey=null;state.periodCountBySymbol={};state.periodValueBySymbol={};state.alertsSent=0;state.lastEventTs=null;state.lastEventKey=null;}state.version=VERSION;state.strategy="AGGR_LIQUIDATIONS";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];state.alertedPeriodKey=state.alertedPeriodKey==null?null:String(state.alertedPeriodKey);state.valueBySymbol=state.valueBySymbol&&typeof state.valueBySymbol==="object"?state.valueBySymbol:{};state.periodKey=(state.periodKey===null||state.periodKey===undefined||state.periodKey==="")?null:(Number.isFinite(Number(state.periodKey))?Number(state.periodKey):null);state.periodCountBySymbol=state.periodCountBySymbol&&typeof state.periodCountBySymbol==="object"?state.periodCountBySymbol:{};state.periodValueBySymbol=state.periodValueBySymbol&&typeof state.periodValueBySymbol==="object"?state.periodValueBySymbol:{};const hadCountState=state.countBySymbol&&typeof state.countBySymbol==="object";state.countBySymbol=hadCountState?state.countBySymbol:{};if(!hadCountState)state.valueBySymbol={};log("LIQUIDATION_MONITOR_STARTING",{buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,symbols:[...SYMBOLS],periodBased:true,alertAtPeriodBoundary:true,selection:"MAX_VALUE_PREVIOUS_5M_WITH_MIN_LIQS",minLiquidations:MIN_LIQS});startHealth();connectAggr();const scheduleBoundary=()=>{const now=Date.now(),nextBoundary=(Math.floor(now/300000)+1)*300000;groupTimer=setTimeout(async()=>{log("BOUNDARY_TICK",{boundary:new Date(nextBoundary).toISOString(),periodKey:state.periodKey});if(state.periodKey!=null&&state.periodKey<nextBoundary){await finalizePeriod(state.periodKey);resetPeriodCounters(nextBoundary);saveState();}scheduleBoundary();},Math.max(0,nextBoundary-now+25));};scheduleBoundary();setInterval(()=>{log("FEED_STATUS",{source:"AGGR",aggrConnected,aggrEvents,acceptedSinceSummary,ignoredEvents,skippedEvents,aggrLastEventAt,valueBySymbol:state.valueBySymbol||{}});acceptedSinceSummary=0;ignoredEvents=0;skippedEvents=0;},FEED_SUMMARY_LOG_MS);}
 process.on("SIGTERM",()=>log("MONITOR_STOPPING"));
 process.on("SIGINT",()=>log("MONITOR_STOPPING"));
 main();
