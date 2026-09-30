@@ -13,6 +13,7 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
+const MIN_LIQS = 15;
 
 let state;
 let bucket = [];
@@ -27,6 +28,7 @@ let acceptedSinceSummary = 0;
 let aggrRequest = null;
 let alertInFlight = new Set();
 let logSubscribers = new Set();
+let liquidationQueue = Promise.resolve();
 
 function nowIso() { return new Date().toISOString(); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
@@ -242,7 +244,7 @@ async function finalizePeriod(period) {
     }
   }
 
-  if (!winner || maxCount < 15) return;
+  if (!winner || maxCount < MIN_LIQS) return;
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
 }
 
@@ -362,9 +364,10 @@ function connectAggr() {
             continue;
           }
           aggrEvents++;
-          acceptedSinceSummary++;
           aggrLastEventAt = nowIso();
-          recordLiquidations([event]).catch(e => log("LIQUIDATION_VALUE_ERROR", { error: String(e.stack || e) }));
+          liquidationQueue = liquidationQueue
+            .then(() => recordLiquidations([event]))
+            .catch(e => log("LIQUIDATION_VALUE_ERROR", { error: String(e.stack || e) }));
         } catch (e) {
           log("AGGR_EVENT_PARSE_ERROR", { error: String(e.message || e), frame: frame.slice(0, 1000) });
         }
@@ -422,7 +425,8 @@ function diagnostics() {
     alertedLinks: state.alertedLinks || [],
     periodKey: state.periodKey,
     periodCountBySymbol: state.periodCountBySymbol || {},
-    periodValueBySymbol: state.periodValueBySymbol || {}
+    periodValueBySymbol: state.periodValueBySymbol || {},
+    minLiquidations: MIN_LIQS
   };
 }
 
@@ -431,7 +435,7 @@ function startHealth() {
   const server = http.createServer((req, res) => {
     const requestPath = String(req.url || "/").split("?")[0];
 
-    if (requestPath === "/" || requestPath === "/health" || requestPath === "/status") {
+    if (requestPath === "/" || requestPath === "/health" || requestPath === "/status" || requestPath === "/stats") {
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store"
@@ -532,7 +536,8 @@ function main() {
     symbols: [...SYMBOLS],
     periodBased: true,
     alertAtPeriodBoundary: true,
-    selection: "MAX_LIQUIDATIONS_PREVIOUS_5M"
+    selection: "MAX_LIQUIDATIONS_PREVIOUS_5M",
+    minLiquidations: MIN_LIQS
   });
 
   startHealth();
