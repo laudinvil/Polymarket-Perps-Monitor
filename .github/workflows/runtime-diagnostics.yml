@@ -8,21 +8,26 @@ on:
 jobs:
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Wait for Deplexo runtime and print health/logs
+      - name: Wait for Deplexo runtime and print health/stats/logs
         shell: bash
         run: |
           set -u
           BASE="https://fierce-garnet-0621.de.deplexo.com"
-          for i in $(seq 1 12); do
-            echo "=== RUNTIME CHECK $i/12 ==="
+          for i in $(seq 1 18); do
+            echo "=== RUNTIME CHECK $i/18 ==="
             HEALTH="$(curl -fsS --max-time 8 "$BASE/health" || true)"
             if printf "%s" "$HEALTH" | grep -q '"status":"ok"'; then
               echo "=== /health ==="
               echo "$HEALTH"
-              echo "=== /logs ==="
-              curl -sS --max-time 12 "$BASE/logs" || true
+              echo "=== /stats ==="
+              curl -sS --max-time 12 "$BASE/stats" || true
+              echo "=== /logs (latest) ==="
+              LOGS="$(curl -sS --max-time 15 "$BASE/logs" || true)"
+              printf "%s\n" "$LOGS" | tail -n 250
+              echo "=== CLOB ALERT RECORDS ==="
+              printf "%s\n" "$LOGS" | grep -E 'LIQUIDATION_ALERT_(SENT|FAILED)|clobFetchedAt|clobUp|clobDown|sendStartedAt|sendFinishedAt' | tail -n 50 || true
               exit 0
             fi
             sleep 10
