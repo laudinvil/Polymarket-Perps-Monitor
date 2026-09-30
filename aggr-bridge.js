@@ -9,7 +9,6 @@ const LIQUIDATION_EXCHANGES = new Set([
   "BYBIT",
   "OKEX",
   "DYDX",
-  "BITMEX",
   "BITGET",
   "BITMART",
   "KRAKEN",
