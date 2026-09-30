@@ -28,6 +28,7 @@ const KRAKEN_SYMBOLS = [
 ];
 const KRAKEN_SEEN = new Set();
 const KRAKEN_ERROR_LOGGED = new Set();
+const KRAKEN_LAST_ERRORS = {};
 const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
 const exchangeStatus = {};
 const WINDOW_MS = 60 * 60 * 1000;
@@ -315,6 +316,7 @@ function startKrakenDirect() {
             const key = pair + ":" + message;
             if (!KRAKEN_ERROR_LOGGED.has(key)) {
               KRAKEN_ERROR_LOGGED.add(key);
+              KRAKEN_LAST_ERRORS[pair] = { symbol, error: message, at: new Date().toISOString() };
               log("DIRECT_ERROR", { exchange: "KRAKEN", pair, symbol, error: message });
             }
           }
@@ -476,7 +478,8 @@ async function main() {
         pairCount:config.pairs.length,
         hyperliquid: true,
         clients:CLIENTS.size,
-        status: exchangeDiagnostics()
+        status: exchangeDiagnostics(),
+        krakenDiagnostics: KRAKEN_LAST_ERRORS
       }));
     }
 
