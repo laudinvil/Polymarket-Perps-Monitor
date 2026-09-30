@@ -276,6 +276,11 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
+    if (clob && (clob.up < 0.29 || clob.up > 0.80 || clob.down < 0.29 || clob.down > 0.80)) {
+      skippedEvents++;
+      return;
+    }
+
     const clobLine = clob
       ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
       : "UP: — | DOWN: —";
