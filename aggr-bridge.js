@@ -9,10 +9,7 @@ const LIQUIDATION_EXCHANGES = new Set([
   "BINANCE_FUTURES",
   "BYBIT",
   "OKEX",
-  "DYDX",
   "BITGET",
-  "KRAKEN",
-  "BITFINEX",
   "GATEIO",
   "HUOBI"
 ]);
