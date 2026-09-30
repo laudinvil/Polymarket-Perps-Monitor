@@ -179,7 +179,7 @@ async function fetchPolymarketClobPrices(symbol, nowMs = Date.now()) {
     const up = num(upBody?.mid);
     const down = num(downBody?.mid);
     if (up === null || down === null) throw new Error("CLOB midpoint missing");
-    return { up, down, slug };
+    return { up, down, slug, fetchedAt: new Date().toISOString(), fetchedAtMs: Date.now() };
   } catch (e) {
     log("POLYMARKET_CLOB_PRICE_ERROR", { symbol, slug, error: String(e.message || e) });
     return null;
@@ -312,6 +312,7 @@ async function flushPeriodAlert(symbol, count, value, period) {
 
     const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
     const directionArrow = clob.up <= clob.down ? "⬆️" : "⬇️";
+    const alertPreparedAt = new Date().toISOString();
 
     const text = [
       symbol + (directionArrow ? " " + directionArrow : ""),
@@ -324,14 +325,24 @@ async function flushPeriodAlert(symbol, count, value, period) {
       link
     ].join("\n");
 
+    const sendStartedAt = new Date().toISOString();
     const sent = await sendTelegram(text);
+    const sendFinishedAt = new Date().toISOString();
     log(sent ? "LIQUIDATION_ALERT_SENT" : "LIQUIDATION_ALERT_FAILED", {
       source: "AGGR",
       symbol,
       count,
       value,
       period,
-      dedupeKey
+      dedupeKey,
+      clobSlug: clob.slug,
+      clobFetchedAt: clob.fetchedAt,
+      clobFetchedAtMs: clob.fetchedAtMs,
+      clobUp: clob.up,
+      clobDown: clob.down,
+      alertPreparedAt,
+      sendStartedAt,
+      sendFinishedAt
     });
 
     if (sent) {
