@@ -1,8 +1,6 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const HyperliquidLiquidationAdapter = require("./hyperliquid-liquidation-adapter");
-
 const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
 const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"]);
 const LIQUIDATION_EXCHANGES = new Set([
@@ -214,8 +212,6 @@ async function main() {
   const config = require("aggr-server/src/config");
   const Server = require("aggr-server/src/server");
   const exchanges = await buildExchanges(config);
-  const hyperliquid = new HyperliquidLiquidationAdapter();
-
   for (const exchange of exchanges) {
     // One listener per exchange, not one listener per pair. AGGR can have
     // many connected pairs and its EventEmitter otherwise exceeds the
@@ -250,31 +246,6 @@ async function main() {
       }
     });
   }
-
-  hyperliquid.on("connected", () => {
-    exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.connectedPairs = 1;
-  });
-  hyperliquid.on("disconnected", () => {
-    exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.connectedPairs = 0;
-  });
-  hyperliquid.on("liquidations", event => {
-    const normalized = normalize(event);
-    if (!normalized) return;
-    publish(normalized);
-    exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.lastEventAt = new Date(normalized.timestamp).toISOString();
-    feedStats.events++;
-    feedStats.byExchange.HYPERLIQUID = (feedStats.byExchange.HYPERLIQUID || 0) + 1;
-    feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
-    scheduleFeedSummary();
-  });
-  hyperliquid.on("error", () => {
-    exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.errors++;
-  });
-  hyperliquid.start();
 
   new Server(exchanges);
 
