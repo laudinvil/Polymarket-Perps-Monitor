@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.2.1-5M-MAX-LIQS-CLOB-RETRY";
+const VERSION = "26.2.2-5M-STABLE";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -625,7 +625,7 @@ function main() {
   state.alertedLinks = Array.isArray(state.alertedLinks) ? state.alertedLinks : [];
   state.alertedPeriodKey = state.alertedPeriodKey == null ? null : String(state.alertedPeriodKey);
   state.valueBySymbol = state.valueBySymbol && typeof state.valueBySymbol === "object" ? state.valueBySymbol : {};
-  state.periodKey = Number.isFinite(Number(state.periodKey)) ? Number(state.periodKey) : null;
+  state.periodKey = (state.periodKey === null || state.periodKey === undefined || state.periodKey === "") ? null : (Number.isFinite(Number(state.periodKey)) ? Number(state.periodKey) : null);
   state.periodCountBySymbol = state.periodCountBySymbol && typeof state.periodCountBySymbol === "object" ? state.periodCountBySymbol : {};
   state.periodValueBySymbol = state.periodValueBySymbol && typeof state.periodValueBySymbol === "object" ? state.periodValueBySymbol : {};
   const hadCountState = state.countBySymbol && typeof state.countBySymbol === "object";
