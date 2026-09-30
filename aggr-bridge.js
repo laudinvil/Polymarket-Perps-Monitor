@@ -11,7 +11,6 @@ const LIQUIDATION_EXCHANGES = new Set([
   "OKEX",
   "DYDX",
   "BITGET",
-  "BITMART",
   "KRAKEN",
   "BITFINEX",
   "GATEIO",
