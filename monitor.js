@@ -29,6 +29,8 @@ let aggrRequest = null;
 let alertInFlight = new Set();
 let logSubscribers = new Set();
 let liquidationQueue = Promise.resolve();
+let aggrHealth = null;
+let aggrHealthTimer = null;
 
 function nowIso() { return new Date().toISOString(); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
@@ -402,7 +404,45 @@ function scheduleAggrReconnect() {
   aggrReconnectTimer = setTimeout(() => {
     aggrReconnectTimer = null;
     connectAggr();
+  scheduleAggrHealth();
   }, 3000);
+}
+
+function refreshAggrHealth() {
+  const req = http.get("http://127.0.0.1:9090/health", response => {
+    let body = "";
+    response.setEncoding("utf8");
+    response.on("data", chunk => { body += chunk; });
+    response.on("end", () => {
+      if (response.statusCode !== 200) return;
+      try {
+        const value = JSON.parse(body);
+        aggrHealth = {
+          fetchedAt: nowIso(),
+          exchangeCount: value.exchangeCount ?? null,
+          exchanges: Array.isArray(value.exchanges) ? value.exchanges : [],
+          pairCount: value.pairCount ?? null,
+          hyperliquid: value.hyperliquid === true,
+          status: value.status && typeof value.status === "object" ? value.status : {}
+        };
+      } catch (e) {
+        log("AGGR_HEALTH_PARSE_ERROR", { error: String(e.message || e) });
+      }
+    });
+  });
+  req.on("error", e => {
+    aggrHealth = {
+      fetchedAt: nowIso(),
+      error: String(e.message || e)
+    };
+  });
+  req.setTimeout(3000, () => req.destroy());
+}
+
+function scheduleAggrHealth() {
+  refreshAggrHealth();
+  clearInterval(aggrHealthTimer);
+  aggrHealthTimer = setInterval(refreshAggrHealth, 30000);
 }
 
 function diagnostics() {
@@ -426,7 +466,8 @@ function diagnostics() {
     periodKey: state.periodKey,
     periodCountBySymbol: state.periodCountBySymbol || {},
     periodValueBySymbol: state.periodValueBySymbol || {},
-    minLiquidations: MIN_LIQS
+    minLiquidations: MIN_LIQS,
+    aggrHealth
   };
 }
 
