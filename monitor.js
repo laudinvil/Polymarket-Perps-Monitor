@@ -165,7 +165,8 @@ async function recordLiquidations(events){
 
 async function flushPeriodAlert(symbol,count,value,average,previousAverage,period,sourcePeriod=null,lastEvent=null){
  const currentMarketStartMs=period,link=polymarket5mUrl(symbol,currentMarketStartMs),dedupeKey="period:"+period;
- if(state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
+ const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
+ if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
   let clob=liveClobSnapshot(symbol,period);const clobAttempts=5;
@@ -178,7 +179,7 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,perio
   const text=[symbol+(directionArrow?" "+directionArrow:""),"LIQS: "+count,"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,previousAverage,period,sourcePeriod,lastLiquidation:lastEvent,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
-  if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=periodEndMs;state.lastEventKey=dedupeKey;saveState();return true;}
+  if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
   return false;
  }finally{alertInFlight.delete(dedupeKey);}
 }
