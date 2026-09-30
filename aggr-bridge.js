@@ -3,7 +3,7 @@ const fs = require("fs");
 const WebSocket = require("ws");
 const path = require("path");
 const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
-const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"]);
+const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB"]);
 const LIQUIDATION_EXCHANGES = new Set([
   "BINANCE_FUTURES",
   "BYBIT",
