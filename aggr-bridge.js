@@ -21,8 +21,8 @@ const KRAKEN_SYMBOLS = [
   ["SOL", ["PI_SOLUSD", "PF_SOLUSD"]],
   ["XRP", ["PI_XRPUSD", "PF_XRPUSD"]],
   ["DOGE", ["PI_DOGEUSD", "PF_DOGEUSD"]],
-  ["BNB", ["PI_BNBUSD", "PF_BNBUSD"]],
-  ["HYPE", ["PI_HYPEUSD", "PF_HYPEUSD"]]
+  ["BNB", ["PF_BNBUSD"]],
+  ["HYPE", ["PF_HYPEUSD"]]
 ];
 const KRAKEN_SEEN = new Set();
 const KRAKEN_ERROR_LOGGED = new Set();
