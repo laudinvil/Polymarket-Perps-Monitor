@@ -8,6 +8,7 @@ const LIQUIDATION_EXCHANGES = new Set([
   "BINANCE_FUTURES",
   "BYBIT",
   "OKEX",
+  "DERIBIT",
   "DYDX",
   "BITGET",
   "BITMART",
@@ -20,6 +21,55 @@ const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
 const feedStats = { events: 0, byExchange: {}, bySymbol: {} };
 const exchangeStatus = {};
+const WINDOW_MS = 60 * 60 * 1000;
+function ensureExchangeStats(id) {
+  if (!exchangeStatus[id]) {
+    exchangeStatus[id] = {
+      connectedPairs: 0,
+      selectedPairs: 0,
+      lastEventAt: null,
+      errors: 0,
+      events: [],
+      bySymbol: {}
+    };
+  }
+  return exchangeStatus[id];
+}
+function recordExchangeEvent(id, symbol, timestamp) {
+  const status = ensureExchangeStats(id);
+  const ts = Number(timestamp) || Date.now();
+  status.lastEventAt = new Date(ts).toISOString();
+  status.events.push(ts);
+  status.bySymbol[symbol] = Array.isArray(status.bySymbol[symbol]) ? status.bySymbol[symbol] : [];
+  status.bySymbol[symbol].push(ts);
+  pruneExchangeStats(status);
+}
+function pruneExchangeStats(status) {
+  const cutoff = Date.now() - WINDOW_MS;
+  while (status.events.length && status.events[0] < cutoff) status.events.shift();
+  for (const symbol of Object.keys(status.bySymbol)) {
+    const list = status.bySymbol[symbol];
+    while (list.length && list[0] < cutoff) list.shift();
+    if (!list.length) delete status.bySymbol[symbol];
+  }
+}
+function exchangeDiagnostics() {
+  const cutoff = Date.now() - WINDOW_MS;
+  return Object.fromEntries(Object.entries(exchangeStatus).map(([id, value]) => {
+    pruneExchangeStats(value);
+    return [id, {
+      selectedPairs: value.selectedPairs || 0,
+      connectedPairs: value.connectedPairs || 0,
+      lastEventAt: value.lastEventAt,
+      ageSec: value.lastEventAt ? Math.max(0, Math.floor((Date.now() - Date.parse(value.lastEventAt)) / 1000)) : null,
+      errors: value.errors || 0,
+      eventsLast60m: value.events.length,
+      bySymbolLast60m: Object.fromEntries(
+        Object.entries(value.bySymbol).map(([symbol, list]) => [symbol, list.filter(ts => ts >= cutoff).length])
+      )
+    }];
+  }));
+}
 let feedLogTimer = null;
 
 function log(event, data = {}) {
@@ -216,19 +266,20 @@ async function main() {
     // One listener per exchange, not one listener per pair. AGGR can have
     // many connected pairs and its EventEmitter otherwise exceeds the
     // default listener limit (10), producing MaxListenersExceededWarning.
-    exchangeStatus[exchange.id] = { connectedPairs: 0, lastEventAt: null, errors: 0 };
+    const status = ensureExchangeStats(exchange.id);
+    status.selectedPairs = config.pairs.filter(pair => pair.startsWith(exchange.id + ":")).length;
 
     exchange.on("connected", () => {
-      exchangeStatus[exchange.id].connectedPairs++;
+      ensureExchangeStats(exchange.id).connectedPairs++;
     });
     exchange.on("disconnected", () => {
-      exchangeStatus[exchange.id].connectedPairs = Math.max(0, exchangeStatus[exchange.id].connectedPairs - 1);
+      ensureExchangeStats(exchange.id).connectedPairs = Math.max(0, ensureExchangeStats(exchange.id).connectedPairs - 1);
     });
     exchange.on("close", () => {
-      exchangeStatus[exchange.id].connectedPairs = 0;
+      ensureExchangeStats(exchange.id).connectedPairs = 0;
     });
     exchange.on("error", () => {
-      exchangeStatus[exchange.id].errors++;
+      ensureExchangeStats(exchange.id).errors++;
     });
 
     exchange.on("liquidations", events => {
@@ -237,8 +288,7 @@ async function main() {
         if (!normalized) continue;
 
         publish(normalized);
-        exchangeStatus[normalized.exchange] = exchangeStatus[normalized.exchange] || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-        exchangeStatus[normalized.exchange].lastEventAt = new Date(normalized.timestamp).toISOString();
+        recordExchangeEvent(normalized.exchange, normalized.symbol, normalized.timestamp);
         feedStats.events++;
         feedStats.byExchange[normalized.exchange] = (feedStats.byExchange[normalized.exchange] || 0) + 1;
         feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
@@ -248,7 +298,7 @@ async function main() {
   }
 
   hyperliquid.on("connected", () => {
-    exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
+    ensureExchangeStats("HYPERLIQUID");
     exchangeStatus.HYPERLIQUID.connectedPairs = 1;
   });
   hyperliquid.on("disconnected", () => {
@@ -260,7 +310,7 @@ async function main() {
     if (!normalized) return;
     publish(normalized);
     exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.lastEventAt = new Date(normalized.timestamp).toISOString();
+    recordExchangeEvent("HYPERLIQUID", normalized.symbol, normalized.timestamp);
     feedStats.events++;
     feedStats.byExchange.HYPERLIQUID = (feedStats.byExchange.HYPERLIQUID || 0) + 1;
     feedStats.bySymbol[normalized.symbol] = (feedStats.bySymbol[normalized.symbol] || 0) + 1;
@@ -268,7 +318,7 @@ async function main() {
   });
   hyperliquid.on("error", () => {
     exchangeStatus.HYPERLIQUID = exchangeStatus.HYPERLIQUID || { connectedPairs: 0, lastEventAt: null, errors: 0 };
-    exchangeStatus.HYPERLIQUID.errors++;
+    ensureExchangeStats("HYPERLIQUID").errors++;
   });
   hyperliquid.start();
 
@@ -290,12 +340,7 @@ async function main() {
         pairCount:config.pairs.length,
         hyperliquid: true,
         clients:CLIENTS.size,
-        status: Object.fromEntries(Object.entries(exchangeStatus).map(([id, value]) => [id, {
-          selectedPairs: config.pairs.filter(pair => pair.startsWith(id + ":")).length,
-          connectedPairs: value.connectedPairs,
-          lastEventAt: value.lastEventAt,
-          errors: value.errors
-        }]))
+        status: exchangeDiagnostics()
       }));
     }
 
