@@ -118,6 +118,7 @@ async function prepareLiveClob(symbol,period){
 function liveClobSnapshot(symbol,period){
  if(clobLive.symbol!==symbol||clobLive.period!==period)return null;
  if(!Number.isFinite(clobLive.up)||!Number.isFinite(clobLive.down))return null;
+ if(!Number.isFinite(clobLive.updatedAtMs)||clobLive.updatedAtMs<period)return null;
  if(clobLive.up<=0||clobLive.up>1||clobLive.down<=0||clobLive.down>1)return null;
  const complementarySum=clobLive.up+clobLive.down;
  if(complementarySum<0.98)return null;
@@ -171,7 +172,7 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,perio
  try{
   let clob=liveClobSnapshot(symbol,period);const clobAttempts=5;
   if(!clob){for(let attempt=1;attempt<=clobAttempts;attempt++){log("CLOB_PRICE_ATTEMPT",{symbol,period,attempt,attempts:clobAttempts,method:"WEBSOCKET"});clob=liveClobSnapshot(symbol,period);if(clob)break;if(attempt<clobAttempts)await new Promise(resolve=>setTimeout(resolve,100));}}
-  if(!clob){clob=await fetchPolymarketClobPrices(symbol,Date.now());if(clob)clob.priceMethod="CLOB_REST_FALLBACK_BEST_ASK";}
+  if(!clob){clob=await fetchPolymarketClobPrices(symbol,period);if(clob)clob.priceMethod="CLOB_REST_FALLBACK_BEST_ASK";}
   if(!clob){log("LIQUIDATION_ALERT_BLOCKED",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});return false;}
   if(clob.equalPrices){log("LIQUIDATION_ALERT_IGNORED",{symbol,count,value,period,reason:"CLOB_UP_DOWN_PRICES_EQUAL",up:clob.up,down:clob.down});return true;}
   log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});
