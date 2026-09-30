@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "26.2.0-5M-MAX-LIQS";
+const VERSION = "26.2.1-5M-MAX-LIQS-CLOB-RETRY";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -283,7 +283,11 @@ async function finalizePeriod(period) {
     }
   }
 
-  if (!winner || maxCount < MIN_LIQS || maxCount > MAX_LIQS) return;
+  log("PERIOD_FINALIZE", { period, periodEnd: new Date(period + 300000).toISOString(), counts, values, winner, maxCount });
+  if (!winner || maxCount < MIN_LIQS || maxCount > MAX_LIQS) {
+    log("PERIOD_NO_ALERT", { period, counts, reason: !winner ? "NO_LIQUIDATIONS" : "OUTSIDE_LIMITS" });
+    return;
+  }
   await flushPeriodAlert(winner, maxCount, Number(values[winner] || 0), period);
 }
 
@@ -325,11 +329,19 @@ async function flushPeriodAlert(symbol, count, value, period) {
 
   alertInFlight.add(dedupeKey);
   try {
-    const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
+    let clob = null;
+    const clobAttempts = 5;
+    for (let attempt = 1; attempt <= clobAttempts; attempt++) {
+      log("CLOB_PRICE_ATTEMPT", { symbol, period, periodEnd: new Date(periodEndMs).toISOString(), attempt, attempts: clobAttempts });
+      clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
+      if (clob) break;
+      if (attempt < clobAttempts) await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     if (!clob) {
-      log("LIQUIDATION_ALERT_SKIPPED_NO_CLOB", { source: "AGGR", symbol, count, value, period });
+      log("LIQUIDATION_ALERT_BLOCKED", { symbol, count, value, period, reason: "CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES", attempts: clobAttempts });
       return;
     }
+    log("CLOB_PRICES_READY", { symbol, period, clobSlug: clob.slug, clobUp: clob.up, clobDown: clob.down, fetchedAt: clob.fetchedAt, fetchedAtMs: clob.fetchedAtMs });
     const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
     const directionArrow = clob.up <= clob.down ? "⬆️" : "⬇️";
     const alertPreparedAt = new Date().toISOString();
@@ -639,6 +651,7 @@ function main() {
     const now = Date.now();
     const nextBoundary = (Math.floor(now / 300000) + 1) * 300000;
     groupTimer = setTimeout(async () => {
+      log("BOUNDARY_TICK", { boundary: new Date(nextBoundary).toISOString(), periodKey: state.periodKey });
       if (state.periodKey != null && state.periodKey < nextBoundary) {
         await finalizePeriod(state.periodKey);
         resetPeriodCounters(nextBoundary);
