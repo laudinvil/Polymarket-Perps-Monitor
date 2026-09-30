@@ -29,14 +29,13 @@ function appendLogRow(row){try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JS
 let lastFeedSummaryLogAt=0;
 const DEPLEXO_QUIET_EVENTS = new Set(["FEED_STATUS","CLOB_PRICE_ATTEMPT"]);
 function log(event,data={}){
- const row={ts:nowIso(),version:VERSION,event,...data};
- appendLogRow(row);
  if(event==="FEED_STATUS"){
   const now=Date.now();
   if(now-lastFeedSummaryLogAt<FEED_SUMMARY_LOG_MS)return;
   lastFeedSummaryLogAt=now;
-  return;
  }
+ const row={ts:nowIso(),version:VERSION,event,...data};
+ appendLogRow(row);
  if(DEPLEXO_QUIET_EVENTS.has(event))return;
  console.log(JSON.stringify(row));
 }
