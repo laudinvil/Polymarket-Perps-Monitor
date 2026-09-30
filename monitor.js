@@ -13,8 +13,8 @@ const MAX_ALERTED_LINKS = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const MIN_LIQS = 15;
-const MAX_LIQS = 150;
+const MIN_LIQS = 0;
+const MAX_LIQS = Infinity;
 
 let state;
 let bucket = [];
