@@ -326,10 +326,10 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
-    if (!clob) return;
-
-    const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
-    const directionArrow = clob.up <= clob.down ? "⬆️" : "⬇️";
+    const clobLine = clob
+      ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
+      : "UP: — | DOWN: —";
+    const directionArrow = clob ? (clob.up <= clob.down ? "⬆️" : "⬇️") : "";
     const alertPreparedAt = new Date().toISOString();
 
     const text = [
@@ -353,11 +353,11 @@ async function flushPeriodAlert(symbol, count, value, period) {
       value,
       period,
       dedupeKey,
-      clobSlug: clob.slug,
-      clobFetchedAt: clob.fetchedAt,
-      clobFetchedAtMs: clob.fetchedAtMs,
-      clobUp: clob.up,
-      clobDown: clob.down,
+      clobSlug: clob?.slug || null,
+      clobFetchedAt: clob?.fetchedAt || null,
+      clobFetchedAtMs: clob?.fetchedAtMs || null,
+      clobUp: clob?.up ?? null,
+      clobDown: clob?.down ?? null,
       alertPreparedAt,
       sendStartedAt,
       sendFinishedAt
