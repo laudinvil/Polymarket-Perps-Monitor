@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "26.8.2-LOW-DEPLEXO-LOG";
+const VERSION = "26.8.3-LIQS-MIN-2";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -147,7 +147,7 @@ async function finalizePeriod(period,nextPeriod){
  if(!lastEvent)return true;
  const targetPeriod=nextPeriod==null?period+300000:nextPeriod;
  let selectedSymbol=null,average=0,liqs=0,value=0;
- for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>0&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
+ for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>=2&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
  if(!selectedSymbol)return true;
  const previousAverage=Number(state.lastAlertAverage||0);
  await prepareLiveClob(selectedSymbol,targetPeriod);
