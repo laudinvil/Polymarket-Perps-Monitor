@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const HyperliquidLiquidationAdapter = require("./hyperliquid-liquidation-adapter");
+const hyperliquid = new HyperliquidLiquidationAdapter();
 const path = require("path");
 const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
 const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB","HYPE"]);
@@ -182,6 +183,8 @@ function isPerpetualLiquidationPair(exchange, pair) {
       return /_(?:USDT|USDC|USD)$/.test(raw);
     case "HUOBI":
       return /-(?:USDT|USD)$/.test(raw) && !raw.includes("_");
+    case "DERIBIT":
+      return /_(?:USDT|USDC|USD)-PERPETUAL$/.test(raw) || /_(?:USDT|USDC|USD)-PERP$/.test(raw);
     case "BITMEX":
       return /^(?:XBT|BTC|ETH|SOL|XRP|DOGE|BNB|HYPE)(?:USD|USDT|USDC)$/.test(raw);
     case "BITFINEX":
