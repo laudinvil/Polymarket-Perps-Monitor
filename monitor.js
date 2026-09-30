@@ -12,7 +12,7 @@ const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
 const FEED_SUMMARY_LOG_MS = 60000;
-const MIN_LIQS = 1;
+const MIN_LIQS = 3;
 
 let state, groupTimer = null, aggrConnected = false, aggrEvents = 0, aggrLastEventAt = null;
 let aggrReconnectTimer = null, skippedEvents = 0, ignoredEvents = 0, acceptedSinceSummary = 0;
