@@ -505,7 +505,7 @@ function diagnostics() {
 }
 
 function startHealth() {
-  const port = Number(process.env.PORT || 8080);
+  const port = Number(process.env.MONITOR_HEALTH_PORT || 8081);
   const server = http.createServer((req, res) => {
     const requestPath = String(req.url || "/").split("?")[0];
 
