@@ -26,15 +26,24 @@ let ignoredEvents = 0;
 let acceptedSinceSummary = 0;
 let aggrRequest = null;
 let alertInFlight = new Set();
+let logSubscribers = new Set();
 
 function nowIso() { return new Date().toISOString(); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function ensureDir(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); }
 
+function broadcastLogRow(row) {
+  const payload = "data: " + JSON.stringify(row) + "\n\n";
+  for (const res of logSubscribers) {
+    try { res.write(payload); } catch { logSubscribers.delete(res); }
+  }
+}
+
 function appendLogRow(row) {
   try {
     ensureDir(LOG_FILE);
     fs.appendFileSync(LOG_FILE, JSON.stringify(row) + "\n");
+    broadcastLogRow(row);
     try {
       const size = fs.statSync(LOG_FILE).size;
       if (size > LOG_MAX_BYTES) {
@@ -433,6 +442,33 @@ function startHealth() {
         "cache-control": "no-store"
       });
       return res.end(JSON.stringify(diagnostics()));
+    }
+
+    if (requestPath === "/logs/stream") {
+      let rows = [];
+      try {
+        rows = fs.readFileSync(LOG_FILE, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .slice(-100)
+          .map(x => JSON.parse(x));
+      } catch {}
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-store, must-revalidate",
+        "connection": "keep-alive",
+        "x-accel-buffering": "no"
+      });
+      for (const row of rows) res.write("data: " + JSON.stringify(row) + "\n\n");
+      logSubscribers.add(res);
+      const heartbeat = setInterval(() => {
+        try { res.write(": heartbeat\n\n"); } catch {}
+      }, 15000);
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        logSubscribers.delete(res);
+      });
+      return;
     }
 
     if (requestPath === "/logs") {
