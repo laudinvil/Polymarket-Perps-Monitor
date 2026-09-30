@@ -330,8 +330,7 @@ async function flushPeriodAlert(symbol, count, value, period) {
       log("LIQUIDATION_ALERT_SKIPPED_NO_CLOB", { source: "AGGR", symbol, count, value, period });
       return;
     }
-    const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3)
-      : "UP: — | DOWN: —";
+    const clobLine = "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3);
     const directionArrow = clob.up <= clob.down ? "⬆️" : "⬇️";
     const alertPreparedAt = new Date().toISOString();
 
