@@ -152,7 +152,8 @@ async function recordLiquidations(events){
   if(event.ts<first60sDeadline&&state.firstAlertPeriodKey!==("period:"+eventPeriod)){
    state.firstAlertPeriodKey="period:"+eventPeriod;
    saveState();
-   await prepareLiveClob(event.symbol,eventPeriod);\n   await flushPeriodAlert(event.symbol,1,event.notional,eventPeriod);
+   await prepareLiveClob(event.symbol,eventPeriod);
+   await flushPeriodAlert(event.symbol,1,event.notional,eventPeriod);
   }
  }
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
