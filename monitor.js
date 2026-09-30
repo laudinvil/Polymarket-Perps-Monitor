@@ -79,7 +79,7 @@ async function finalizePeriod(period){
  let winner=null,minValue=Infinity,winnerCount=0;
  for(const symbol of SYMBOLS){
   const count=Number(counts[symbol]||0),value=Number(values[symbol]||0);
-  if(count<=0)continue;
+  if(count<=0||value<=0)continue;
   if(winner===null||value<minValue){minValue=value;winner=symbol;winnerCount=count;}
  }
  log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+300000).toISOString(),counts,values,winner,minValue,winnerCount,minLiquidations:MIN_LIQS});
