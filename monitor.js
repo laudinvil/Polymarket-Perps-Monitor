@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 
 const VERSION = "26.2.0-5M-MAX-LIQS";
