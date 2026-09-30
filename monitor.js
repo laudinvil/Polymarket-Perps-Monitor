@@ -291,7 +291,13 @@ async function flushPeriodAlert(symbol, count, value, period) {
   alertInFlight.add(dedupeKey);
   try {
     const clob = await fetchPolymarketClobPrices(symbol, periodEndMs);
-    if (!clob || !(clob.down <= CLOB_DOWN_THRESHOLD || clob.up >= CLOB_UP_THRESHOLD)) {
+    if (
+      !clob ||
+      clob.up < CLOB_DOWN_THRESHOLD ||
+      clob.up > CLOB_UP_THRESHOLD ||
+      clob.down < CLOB_DOWN_THRESHOLD ||
+      clob.down > CLOB_UP_THRESHOLD
+    ) {
       log("LIQUIDATION_ALERT_SKIPPED_CLOB_THRESHOLD", {
         source: "AGGR",
         symbol,
@@ -300,8 +306,8 @@ async function flushPeriodAlert(symbol, count, value, period) {
         period,
         up: clob?.up ?? null,
         down: clob?.down ?? null,
-        clobDownThreshold: CLOB_DOWN_THRESHOLD,
-        clobUpThreshold: CLOB_UP_THRESHOLD
+        clobMinThreshold: CLOB_DOWN_THRESHOLD,
+        clobMaxThreshold: CLOB_UP_THRESHOLD
       });
       return;
     }
@@ -482,8 +488,8 @@ function diagnostics() {
     periodCountBySymbol: state.periodCountBySymbol || {},
     periodValueBySymbol: state.periodValueBySymbol || {},
     minLiquidations: MIN_LIQS,
-    clobDownThreshold: CLOB_DOWN_THRESHOLD,
-    clobUpThreshold: CLOB_UP_THRESHOLD,
+    clobMinThreshold: CLOB_DOWN_THRESHOLD,
+    clobMaxThreshold: CLOB_UP_THRESHOLD,
     aggrHealth
   };
 }
@@ -596,8 +602,8 @@ function main() {
     alertAtPeriodBoundary: true,
     selection: "MAX_LIQUIDATIONS_PREVIOUS_5M",
     minLiquidations: MIN_LIQS,
-    clobDownThreshold: CLOB_DOWN_THRESHOLD,
-    clobUpThreshold: CLOB_UP_THRESHOLD
+    clobMinThreshold: CLOB_DOWN_THRESHOLD,
+    clobMaxThreshold: CLOB_UP_THRESHOLD
   });
 
   startHealth();
