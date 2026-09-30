@@ -134,10 +134,13 @@ async function finalizePeriod(period,nextPeriod){
  log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+300000).toISOString(),counts,values,averages,lastLiquidation:lastEvent});
  if(!lastEvent)return true;
  const targetPeriod=nextPeriod==null?period+300000:nextPeriod;
- const liqs=Number(counts[lastEvent.symbol]||0),value=Number(values[lastEvent.symbol]||0),average=liqs>0?value/liqs:0;
- const previousAverage=Number((state.lastPeriodAverageBySymbol||{})[lastEvent.symbol]||0);
- await prepareLiveClob(lastEvent.symbol,targetPeriod);
- const sent=await flushPeriodAlert(lastEvent.symbol,liqs,value,average,previousAverage,targetPeriod,period,lastEvent);
+ let selectedSymbol=null,average=0,liqs=0,value=0;
+ for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>0&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
+ if(!selectedSymbol)return true;
+ const previousAverage=Number((state.lastPeriodAverageBySymbol||{})[selectedSymbol]||0);
+ await prepareLiveClob(selectedSymbol,targetPeriod);
+ const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
+ const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,targetPeriod,period,selectedLastEvent);
  if(sent){state.lastPeriodAverageBySymbol=averages;saveState();}
  return sent;
 }
