@@ -151,10 +151,11 @@ async function finalizePeriod(period,nextPeriod){
  for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>0){selectedSymbol=symbol;average=a;liqs=n;value=v;break;}}
  if(!selectedSymbol){state.lastCompletedPeriodLiqs=0;saveState();return true;}
  const previousAverage=Number(state.lastAlertAverage||0);
- const previousLiqs=Number(state.lastAlertLiqs||0)||getLastAlertLiqs(selectedSymbol);
+ const previousLiqs=state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0);
  await prepareLiveClob(selectedSymbol,targetPeriod);
  const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
- const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);\n state.lastCompletedPeriodLiqs=liqs;
+ const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);
+ state.lastCompletedPeriodLiqs=liqs;
  if(sent){state.lastPeriodAverageBySymbol=averages;state.lastAlertAverage=average;state.lastAlertLiqs=liqs;saveState();}
  return sent;
 }
