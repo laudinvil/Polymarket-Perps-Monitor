@@ -148,7 +148,7 @@ async function finalizePeriod(period,nextPeriod){
  if(!lastEvent)return true;
  const targetPeriod=nextPeriod==null?period+300000:nextPeriod;
  let selectedSymbol=null,average=0,liqs=0,value=0;
- for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>=2&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
+ for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>=3&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
  if(!selectedSymbol)return true;
  const previousAverage=Number(state.lastAlertAverage||0);
  const previousLiqs=Number(state.lastAlertLiqs||0)||getLastAlertLiqs(selectedSymbol);
