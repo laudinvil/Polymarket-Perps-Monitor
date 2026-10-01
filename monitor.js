@@ -153,10 +153,6 @@ async function finalizePeriod(period,nextPeriod){
   if(!selectedSymbol){state.lastCompletedPeriodLiqs=0;saveState();return true;}
   liqs=0;value=0;average=0;
  }
- if(liqs<2){
-  log("PERIOD_ALERT_SKIPPED",{period,periodEnd:new Date(period+900000).toISOString(),symbol:selectedSymbol,liqs,value,reason:"LIQS_BELOW_2"});
-  return true;
- }
  const previousAverage=Number(state.lastAlertAverage||0);
  const previousLiqs=state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0);
   await prepareLiveClob(selectedSymbol,targetPeriod);
@@ -209,10 +205,10 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,previ
   if(!clob){log("CLOB_PRICE_UNAVAILABLE_ALERT_CONTINUES",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});}
   if(clob?.equalPrices){log("CLOB_EQUAL_PRICES_ALERT_CONTINUES",{symbol,count,value,period,up:clob.up,down:clob.down});}
   if(clob){log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});}
-  const directionArrow = count<=1 ? "" : (previousLiqs !== null ? (count > previousLiqs ? "⬇️" : count < previousLiqs ? "⬆️" : "") : "");
+  const directionArrow = count<=1 ? "" : (previousLiqs !== null && previousLiqs>=2 ? (count > previousLiqs ? "⬇️" : count < previousLiqs ? "⬆️" : "") : "");
   const clobLine = clob ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3) : "UP: — | DOWN: —";
   const alertPreparedAt = new Date().toISOString();
-  const header=(count===0?"⚠️ ":"🔥 ")+symbol+(directionArrow?" "+directionArrow:"");
+  const header=(count<=1?"⚠️ ":"🔥 ")+symbol+(directionArrow?" "+directionArrow:"");
   const text=[header,"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,previousAverage,period,sourcePeriod,lastLiquidation:lastEvent,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
