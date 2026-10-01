@@ -154,16 +154,11 @@ async function finalizePeriod(period,nextPeriod){
   liqs=0;value=0;average=0;
  }
  const previousAverage=Number(state.lastAlertAverage||0);
- const previousLiqs=state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0);
-  if(liqs===1){
-  saveState();
-  log("PERIOD_ALERT_SKIPPED",{period,count:1,reason:"LIQS_BELOW_MINIMUM_2"});
-  return true;
- }
- await prepareLiveClob(selectedSymbol,targetPeriod);
+ const previousLiqs=liqs<=1?null:(state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0));
+  await prepareLiveClob(selectedSymbol,targetPeriod);
  const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
  const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);
- state.lastCompletedPeriodLiqs=liqs;
+ if(liqs>=2)state.lastCompletedPeriodLiqs=liqs;
  if(sent){state.lastPeriodAverageBySymbol=averages;state.lastAlertAverage=average;state.lastAlertLiqs=liqs;saveState();}
  return sent;
 }
