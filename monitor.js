@@ -40,7 +40,7 @@ function log(event,data={}){
  console.log(JSON.stringify(row));
 }
 
-function defaultState(){return{version:VERSION,strategy:"AGGR_LIQUIDATIONS",updatedAt:nowIso(),seen:[],alertedLinks:[],alertedPeriodKey:null,alertsSent:0,valueBySymbol:{},countBySymbol:{},periodKey:null,periodCountBySymbol:{},periodValueBySymbol:{},lastPeriodAverageBySymbol:{},lastAlertAverage:null,lastPeriodEvent:null,lastEventTs:null,lastEventKey:null};}
+function defaultState(){return{version:VERSION,strategy:"AGGR_LIQUIDATIONS",updatedAt:nowIso(),seen:[],alertedLinks:[],alertedPeriodKey:null,alertsSent:0,valueBySymbol:{},countBySymbol:{},periodKey:null,periodCountBySymbol:{},periodValueBySymbol:{},lastPeriodAverageBySymbol:{},lastAlertAverage:null,lastAlertLiqs:null,lastPeriodEvent:null,lastEventTs:null,lastEventKey:null};}
 function loadState(){try{const value=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(value&&typeof value==="object")return value;}catch{}return defaultState();}
 function saveState(){state.updatedAt=nowIso();try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state,null,2));fs.renameSync(tmp,STATE_FILE);}catch(e){log("STATE_WRITE_ERROR",{error:String(e.message||e)});}}
 
@@ -150,10 +150,11 @@ async function finalizePeriod(period,nextPeriod){
  for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>=2&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
  if(!selectedSymbol)return true;
  const previousAverage=Number(state.lastAlertAverage||0);
+ const previousLiqs=Number(state.lastAlertLiqs||0);
  await prepareLiveClob(selectedSymbol,targetPeriod);
  const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
- const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,targetPeriod,period,selectedLastEvent);
- if(sent){state.lastPeriodAverageBySymbol=averages;state.lastAlertAverage=average;saveState();}
+ const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);
+ if(sent){state.lastPeriodAverageBySymbol=averages;state.lastAlertAverage=average;state.lastAlertLiqs=liqs;saveState();}
  return sent;
 }
 
@@ -175,7 +176,7 @@ async function recordLiquidations(events){
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
 }
 
-async function flushPeriodAlert(symbol,count,value,average,previousAverage,period,sourcePeriod=null,lastEvent=null){
+async function flushPeriodAlert(symbol,count,value,average,previousAverage,previousLiqs,period,sourcePeriod=null,lastEvent=null){
  const currentMarketStartMs=period,link=polymarket5mUrl(symbol,currentMarketStartMs),dedupeKey="period:"+period;
  const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
@@ -200,7 +201,7 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,perio
   if(clob?.equalPrices){log("CLOB_EQUAL_PRICES_ALERT_CONTINUES",{symbol,count,value,period,up:clob.up,down:clob.down});}
   if(clob){log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});}
   const clobLine=clob?("UP: "+clob.up.toFixed(3)+" | DOWN: "+clob.down.toFixed(3)):"UP: — | DOWN: —",alertPreparedAt=new Date().toISOString();
-  const directionArrow=previousAverage>0?(average>previousAverage?"⬇️":average<previousAverage?"⬆️":""):"";
+  const directionArrow=previousLiqs>0?(count>previousLiqs?"⬇️":count<previousLiqs?"⬆️":""):"";
   const text=["🔥 "+symbol+(directionArrow?" "+directionArrow:""),"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,previousAverage,period,sourcePeriod,lastLiquidation:lastEvent,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
