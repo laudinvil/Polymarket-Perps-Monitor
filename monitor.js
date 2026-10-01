@@ -156,7 +156,7 @@ async function finalizePeriod(period,nextPeriod){
  const previousAverage=Number(state.lastAlertAverage||0);
  const previousLiqs=liqs<=1?null:(state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0));
   await prepareLiveClob(selectedSymbol,targetPeriod);
- const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
+ const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
  const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);
  if(liqs>=2)state.lastCompletedPeriodLiqs=liqs;
  if(sent){state.lastPeriodAverageBySymbol=averages;state.lastAlertAverage=average;state.lastAlertLiqs=liqs;saveState();}
