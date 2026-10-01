@@ -3,12 +3,12 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "26.8.3-LIQS-MIN-2";
+const VERSION = "26.8.4-BTC-ONLY";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
 const LOG_FILE = process.env.LOG_FILE || "/data/aggr-liquidation.jsonl";
-const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB"]);
+const SYMBOLS = new Set(["BTC"]);
 const MAX_SEEN = 10000;
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_KEEP_BYTES = 1 * 1024 * 1024;
