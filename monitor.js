@@ -43,6 +43,7 @@ function log(event,data={}){
 function defaultState(){return{version:VERSION,strategy:"AGGR_LIQUIDATIONS",updatedAt:nowIso(),seen:[],alertedLinks:[],alertedPeriodKey:null,alertsSent:0,valueBySymbol:{},countBySymbol:{},periodKey:null,periodCountBySymbol:{},periodValueBySymbol:{},lastPeriodAverageBySymbol:{},lastAlertAverage:null,lastAlertLiqs:null,lastPeriodEvent:null,lastEventTs:null,lastEventKey:null};}
 function loadState(){try{const value=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(value&&typeof value==="object")return value;}catch{}return defaultState();}
 function saveState(){state.updatedAt=nowIso();try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state,null,2));fs.renameSync(tmp,STATE_FILE);}catch(e){log("STATE_WRITE_ERROR",{error:String(e.message||e)});}}
+function getLastAlertLiqs(symbol){try{if(!fs.existsSync(LOG_FILE))return 0;const lines=fs.readFileSync(LOG_FILE,"utf8").trim().split("\n");for(let i=lines.length-1;i>=0;i--){try{const row=JSON.parse(lines[i]);if(row.event==="LIQUIDATION_ALERT_SENT"&&row.symbol===symbol){const n=Number(row.count);if(Number.isFinite(n)&&n>0)return n;}}catch{}}}catch{}return 0;}
 
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId){log("TELEGRAM_NOT_CONFIGURED");return Promise.resolve(false);}return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(async response=>{const body=await response.text();if(!response.ok){log("TELEGRAM_ERROR",{status:response.status,body:body.slice(0,1000)});return false;}return true;}).catch(e=>{log("TELEGRAM_ERROR",{error:String(e.message||e)});return false;});}
 function polymarket5mUrl(symbol,nowMs=Date.now()){const startEpoch=Math.floor(nowMs/300000)*300;return"https://polymarket.com/event/"+symbol.toLowerCase()+"-updown-5m-"+startEpoch;}
@@ -150,7 +151,7 @@ async function finalizePeriod(period,nextPeriod){
  for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>=2&&a>average){selectedSymbol=symbol;average=a;liqs=n;value=v;}}
  if(!selectedSymbol)return true;
  const previousAverage=Number(state.lastAlertAverage||0);
- const previousLiqs=Number(state.lastAlertLiqs||0);
+ const previousLiqs=Number(state.lastAlertLiqs||0)||getLastAlertLiqs(selectedSymbol);
  await prepareLiveClob(selectedSymbol,targetPeriod);
  const selectedLastEvent=lastEvent.symbol===selectedSymbol?lastEvent:null;
  const sent=await flushPeriodAlert(selectedSymbol,liqs,value,average,previousAverage,previousLiqs,targetPeriod,period,selectedLastEvent);
