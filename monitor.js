@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "26.8.9-BTC-15M-LIQS-MIN2-EMPTY-ALERT";
+const VERSION = "26.8.10-BTC-15M-LIQS-ARROW-FIX";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -156,7 +156,6 @@ async function finalizePeriod(period,nextPeriod){
  const previousAverage=Number(state.lastAlertAverage||0);
  const previousLiqs=state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0);
  if(liqs===1){
-  state.lastCompletedPeriodLiqs=1;
   saveState();
   log("PERIOD_ALERT_SKIPPED",{period,count:1,reason:"LIQS_BELOW_MINIMUM_2"});
   return true;
@@ -211,7 +210,7 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,previ
   if(!clob){log("CLOB_PRICE_UNAVAILABLE_ALERT_CONTINUES",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});}
   if(clob?.equalPrices){log("CLOB_EQUAL_PRICES_ALERT_CONTINUES",{symbol,count,value,period,up:clob.up,down:clob.down});}
   if(clob){log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});}
-  const directionArrow = previousLiqs !== null ? (count > previousLiqs ? "⬇️" : count < previousLiqs ? "⬆️" : "➡️") : "";
+  const directionArrow = previousLiqs !== null && count !== previousLiqs ? (count < previousLiqs ? "⬆️" : "⬇️") : "";
   const clobLine = clob ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3) : "UP: — | DOWN: —";
   const alertPreparedAt = new Date().toISOString();
   const header=(count===0||count===1)?"⚠️ "+symbol:"🔥 "+symbol+(directionArrow?" "+directionArrow:"");
