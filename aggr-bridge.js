@@ -3,7 +3,7 @@ const fs = require("fs");
 const WebSocket = require("ws");
 const path = require("path");
 const PORT = Number(process.env.AGGR_BRIDGE_PORT || 9090);
-const SYMBOLS = new Set(["BTC","ETH","SOL","XRP","DOGE","BNB"]);
+const SYMBOLS = new Set(["BTC"]);
 const LIQUIDATION_EXCHANGES = new Set([
   "BINANCE_FUTURES",
   "BYBIT",
@@ -16,13 +16,7 @@ const CLIENTS = new Set();
 const FEED_LOG_MS = 60000;
 const KRAKEN_POLL_MS = Number(process.env.KRAKEN_POLL_MS || 2000);
 const KRAKEN_SYMBOLS = [
-  ["BTC", ["PI_XBTUSD", "PF_XBTUSD"]],
-  ["ETH", ["PI_ETHUSD", "PF_ETHUSD"]],
-  ["SOL", ["PI_SOLUSD", "PF_SOLUSD"]],
-  ["XRP", ["PI_XRPUSD", "PF_XRPUSD"]],
-  ["DOGE", ["PI_DOGEUSD", "PF_DOGEUSD"]],
-  ["BNB", ["PF_BNBUSD"]],
-  ["HYPE", ["PF_HYPEUSD"]]
+  ["BTC", ["PI_XBTUSD", "PF_XBTUSD"]]
 ];
 const KRAKEN_SEEN = new Set();
 const KRAKEN_ERROR_LOGGED = new Set();
