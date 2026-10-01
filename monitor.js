@@ -3,7 +3,7 @@ const path = require("path");
 const http = require("http");
 const WebSocket = require("ws");
 
-const VERSION = "26.8.7-BTC-15M-LIQS-COMPARE";
+const VERSION = "26.8.8-BTC-15M-LIQS-COMPARE-EMPTY-ALERT";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const AGGR_URL = process.env.AGGR_URL || "http://127.0.0.1:9090/liquidations";
 const STATE_FILE = process.env.STATE_FILE || "/data/aggr-liquidation-state.json";
@@ -145,11 +145,14 @@ async function finalizePeriod(period,nextPeriod){
  const counts=state.periodCountBySymbol||{},values=state.periodValueBySymbol||{},lastEvent=state.lastPeriodEvent||null;
  const averages={};for(const symbol of SYMBOLS){const liqs=Number(counts[symbol]||0),value=Number(values[symbol]||0);if(liqs>0)averages[symbol]=value/liqs;}
  log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+900000).toISOString(),counts,values,averages,lastLiquidation:lastEvent});
- if(!lastEvent){state.lastCompletedPeriodLiqs=0;saveState();return true;}
  const targetPeriod=nextPeriod==null?period+900000:nextPeriod;
  let selectedSymbol=null,average=0,liqs=0,value=0;
  for(const symbol of SYMBOLS){const n=Number(counts[symbol]||0),v=Number(values[symbol]||0),a=n>0?v/n:0;if(n>0){selectedSymbol=symbol;average=a;liqs=n;value=v;break;}}
- if(!selectedSymbol){state.lastCompletedPeriodLiqs=0;saveState();return true;}
+ if(!selectedSymbol){
+  selectedSymbol=[...SYMBOLS][0];
+  if(!selectedSymbol){state.lastCompletedPeriodLiqs=0;saveState();return true;}
+  liqs=0;value=0;average=0;
+ }
  const previousAverage=Number(state.lastAlertAverage||0);
  const previousLiqs=state.lastCompletedPeriodLiqs==null?null:Number(state.lastCompletedPeriodLiqs||0);
  await prepareLiveClob(selectedSymbol,targetPeriod);
@@ -205,7 +208,8 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,previ
   const directionArrow = previousLiqs !== null ? (count > previousLiqs ? "UP" : count < previousLiqs ? "DOWN" : "") : "";
   const clobLine = clob ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3) : "UP: — | DOWN: —";
   const alertPreparedAt = new Date().toISOString();
-  const text=["🔥 "+symbol+(directionArrow?" "+directionArrow:""),"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
+  const header=count===0?"⚠️ "+symbol:"🔥 "+symbol+(directionArrow?" "+directionArrow:"");
+  const text=[header,"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),clobLine,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,previousAverage,period,sourcePeriod,lastLiquidation:lastEvent,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
   if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
