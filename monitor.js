@@ -159,7 +159,7 @@ async function finalizePeriod(period,nextPeriod,size){
  return await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size);
 }
 
-async function recordLiquidationsasync function recordLiquidations(events){
+async function recordLiquidations(events){
  const seen=new Set(Array.isArray(state.seen)?state.seen:[]);
  for(const event of events){
   const key=eventKey(event);if(seen.has(key))continue;seen.add(key);state.seen.push(key);
