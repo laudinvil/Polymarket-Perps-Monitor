@@ -210,7 +210,7 @@ async function flushPeriodAlert(symbol,count,value,average,previousAverage,previ
   if(!clob){log("CLOB_PRICE_UNAVAILABLE_ALERT_CONTINUES",{symbol,count,value,period,reason:"CLOB_PRICES_UNAVAILABLE_AFTER_RETRIES",attempts:clobAttempts});}
   if(clob?.equalPrices){log("CLOB_EQUAL_PRICES_ALERT_CONTINUES",{symbol,count,value,period,up:clob.up,down:clob.down});}
   if(clob){log("CLOB_PRICES_READY",{symbol,period,clobSlug:clob.slug,clobUp:clob.up,clobDown:clob.down,clobUpAsk:clob.up,clobDownAsk:clob.down,clobUpAskSize:clob.upAskSize,clobDownAskSize:clob.downAskSize,clobUpAskFetchedAt:clob.upAskFetchedAt,clobDownAskFetchedAt:clob.downAskFetchedAt,clobUpAskFetchedAtMs:clob.upAskFetchedAtMs,clobDownAskFetchedAtMs:clob.downAskFetchedAtMs,fetchedAt:clob.fetchedAt,fetchedAtMs:clob.fetchedAtMs,fetchStartedAtMs:clob.fetchStartedAtMs,clobSnapshotTimestamp:new Date(clob.fetchedAtMs||Date.now()).toISOString(),priceMethod:clob.priceMethod});}
-  const directionArrow = count<=1 ? "" : (previousLiqs !== null ? (count > previousLiqs ? "UP" : count < previousLiqs ? "DOWN" : "") : "");
+  const directionArrow = count<=1 ? "" : (previousLiqs !== null ? (count > previousLiqs ? "⬇️" : count < previousLiqs ? "⬆️" : "") : "");
   const clobLine = clob ? "UP: " + clob.up.toFixed(3) + " | DOWN: " + clob.down.toFixed(3) : "UP: — | DOWN: —";
   const alertPreparedAt = new Date().toISOString();
   const header=(count===0?"⚠️ ":"🔥 ")+symbol+(directionArrow?" "+directionArrow:"");
