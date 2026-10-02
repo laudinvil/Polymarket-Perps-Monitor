@@ -154,8 +154,8 @@ async function finalizePeriod(period,nextPeriod,size){
  const targetPeriod=nextPeriod==null?period+size:nextPeriod;
  const selectedSymbol=[...SYMBOLS][0];if(!selectedSymbol)return true;
  let liqs=Number(counts[selectedSymbol]||0),value=Number(values[selectedSymbol]||0),average=liqs>0?value/liqs:0;
- const minimumLiqs=size===900000?0:Infinity;
- if(size===900000?liqs!==0:liqs<minimumLiqs)return true;
+ const minimumLiqs=size===300000||size===900000?240:Infinity;
+ if(liqs<minimumLiqs)return true;
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
  return await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size);
 }
