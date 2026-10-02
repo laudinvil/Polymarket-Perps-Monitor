@@ -154,7 +154,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const targetPeriod=nextPeriod==null?period+size:nextPeriod;
  const selectedSymbol=[...SYMBOLS][0];if(!selectedSymbol)return true;
  let liqs=Number(counts[selectedSymbol]||0),value=Number(values[selectedSymbol]||0),average=liqs>0?value/liqs:0;
- const minimumLiqs=size===300000?110:size===900000?150:240;
+ const minimumLiqs=size===300000?110:size===900000?0:240;
  if(liqs<minimumLiqs)return true;
  await prepareLiveClob(selectedSymbol,targetPeriod,size);
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
