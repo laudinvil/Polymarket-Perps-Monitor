@@ -194,13 +194,13 @@ async function recordLiquidations(events){
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
 }
 
-async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=null,lastEvent=null,size=3600000,previousAverage=null,streak=0){
+async function previousStreakSign(v){return v>0?1:v<0?-1:0;}\nfunction flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=null,lastEvent=null,size=3600000,previousAverage=null,streak=0){
  const currentMarketStartMs=period,link=marketUrl(symbol,currentMarketStartMs,size),dedupeKey="period:"+size+":"+period;
  const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(Math.abs(streak)<2)return true;
+  if(previousAverage===null||streak===0||previousStreakSign(streak)===previousStreakSign(0))return true;
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const arrow=streak>0?"⬆️":"⬇️";
