@@ -159,7 +159,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const direction=previousAverage===null?0:average>previousAverage?1:average<previousAverage?-1:0;
  const streak=direction===0?0:(previousStreak!==0&&Math.sign(previousStreak)===direction?previousStreak+direction:direction);
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
- const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak);
+ const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak,previousStreak);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
   if(!state.periodStreakByPeriod||typeof state.periodStreakByPeriod!=="object")state.periodStreakByPeriod={};
@@ -200,7 +200,7 @@ async function previousStreakSign(v){return v>0?1:v<0?-1:0;}\nfunction flushPeri
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(previousAverage===null||streak===0||previousStreakSign(streak)===previousStreakSign(0))return true;
+  if(previousAverage===null||streak===0||previousStreak===0||Math.sign(streak)===Math.sign(previousStreak))return true;
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const arrow=streak>0?"⬆️":"⬇️";
