@@ -194,7 +194,7 @@ async function recordLiquidations(events){
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
 }
 
-async function previousStreakSign(v){return v>0?1:v<0?-1:0;}\nfunction flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=null,lastEvent=null,size=3600000,previousAverage=null,streak=0){
+async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=null,lastEvent=null,size=3600000,previousAverage=null,streak=0,previousStreak=0){
  const currentMarketStartMs=period,link=marketUrl(symbol,currentMarketStartMs,size),dedupeKey="period:"+size+":"+period;
  const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
