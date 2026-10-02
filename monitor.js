@@ -154,7 +154,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const targetPeriod=nextPeriod==null?period+size:nextPeriod;
  const selectedSymbol=[...SYMBOLS][0];if(!selectedSymbol)return true;
  let liqs=Number(counts[selectedSymbol]||0),value=Number(values[selectedSymbol]||0),average=liqs>0?value/liqs:0;
- const minimumLiqs=size===300000?170:size===900000?170:Infinity;
+ const minimumLiqs=size===300000?160:size===900000?160:Infinity;
  const maximumLiqs=size===300000?540:Infinity;
  if(liqs<minimumLiqs||liqs>maximumLiqs)return true;
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
