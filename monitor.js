@@ -200,7 +200,7 @@ async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=n
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(count<=0||value<=0||average<=0||previousAverage===null||streak===0||previousStreak===0||Math.sign(streak)===Math.sign(previousStreak)||(size===300000&&Math.abs(streak)<3))return true;
+  if(count<=0||value<=0||average<=0||previousAverage===null||streak===0||previousStreak===0||Math.sign(streak)===Math.sign(previousStreak)||Math.abs(streak)<3)return true;
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const arrow=streak>0?"⬆️":"⬇️";
