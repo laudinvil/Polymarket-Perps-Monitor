@@ -141,7 +141,7 @@ function liveClobSnapshot(symbol,period){
 }
 function eventKey(e){if(e.id!=null&&String(e.id))return"aggr:"+String(e.exchange||"")+":"+String(e.id);return[e.ts||e.timestamp||"",e.exchange||"",e.symbol||e.pair||"",e.side||"",e.price||"",e.qty||e.size||""].join("|");}
 function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|[-_]/g,"").replace("SWAP","");if(!SYMBOLS.has(symbol))return null;const side=String(raw?.side||"").toLowerCase(),price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||qty<=0)return null;const ts=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now(),exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id==null?"":String(raw.id),ts:ts<1e12?ts*1000:ts,exchange,symbol,side,price,qty,notional:price*qty};}
-const PERIODS=[300000,900000,3600000,14400000];
+const PERIODS=[300000,900000,3600000];
 function periodKey(ts,size){return Math.floor(ts/size)*size;}
 function periodLabel(size){return size===300000?"5m":size===900000?"15m":size===3600000?"1h":"4h";}
 function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},lastEvent:null};}
