@@ -159,6 +159,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const direction=previousAverage===null?0:average>previousAverage?1:average<previousAverage?-1:0;
  const streak=direction===0?0:(previousStreak!==0&&Math.sign(previousStreak)===direction?previousStreak+direction:direction);
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
+ if(liqs<=0||value<=0||average<=0){log("PERIOD_ZERO_IGNORED",{period,periodEnd:new Date(period+size).toISOString(),periodSize:size,periodLabel:periodLabel(size),count:liqs,value,average});return true;}
  const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak,previousStreak);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
