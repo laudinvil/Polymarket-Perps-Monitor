@@ -144,22 +144,17 @@ function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"")
 const PERIODS=[300000,900000];
 function periodKey(ts,size){return Math.floor(ts/size)*size;}
 function periodLabel(size){return size===300000?"5m":size===900000?"15m":"1h";}
-function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},lastEvent:null};}
+function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},liquidationSecondsBySymbol:{},lastEvent:null};}
 function resetPeriodCounters(size,nextKey){state.periods[String(size)]=defaultPeriodState();state.periods[String(size)].periodKey=nextKey;}
 
 async function finalizePeriod(period,nextPeriod,size){
- const ps=state.periods[String(size)]||defaultPeriodState(),counts=ps.countBySymbol||{},values=ps.valueBySymbol||{},lastEvent=ps.lastEvent||null;
- const averages={};for(const symbol of SYMBOLS){const liqs=Number(counts[symbol]||0),value=Number(values[symbol]||0);if(liqs>0)averages[symbol]=value/liqs;}
- log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+size).toISOString(),periodSize:size,periodLabel:periodLabel(size),counts,values,averages,lastLiquidation:lastEvent});
+ const ps=state.periods[String(size)]||defaultPeriodState(),secondsBySymbol=ps.liquidationSecondsBySymbol||{},lastEvent=ps.lastEvent||null;
+ log("PERIOD_FINALIZE",{period,periodEnd:new Date(period+size).toISOString(),periodSize:size,periodLabel:periodLabel(size),liquidationSecondsBySymbol:secondsBySymbol,lastLiquidation:lastEvent});
  const targetPeriod=nextPeriod==null?period+size:nextPeriod;
  const selectedSymbol=[...SYMBOLS][0];if(!selectedSymbol)return true;
- let liqs=Number(counts[selectedSymbol]||0),value=Number(values[selectedSymbol]||0),average=liqs>0?value/liqs:0;
- const previousAverage=state.lastPeriodAverageByPeriod&&Number.isFinite(Number(state.lastPeriodAverageByPeriod[String(size)]))?Number(state.lastPeriodAverageByPeriod[String(size)]):null;
- const previousStreak=state.periodStreakByPeriod&&Number.isFinite(Number(state.periodStreakByPeriod[String(size)]))?Number(state.periodStreakByPeriod[String(size)]):0;
- const direction=previousAverage===null?0:average>previousAverage?1:average<previousAverage?-1:0;
- const streak=direction===0?0:(previousStreak!==0&&Math.sign(previousStreak)===direction?previousStreak+direction:direction);
+ const seconds=Array.isArray(secondsBySymbol[selectedSymbol])?secondsBySymbol[selectedSymbol].length:0;
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
- const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak,previousStreak);
+ const finalized=await flushPeriodAlert(selectedSymbol,seconds,targetPeriod,period,selectedLastEvent,size);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
   if(!state.periodStreakByPeriod||typeof state.periodStreakByPeriod!=="object")state.periodStreakByPeriod={};
@@ -185,6 +180,10 @@ async function recordLiquidations(events){
    const current=state.periods[String(size)];
    current.countBySymbol[event.symbol]=Number(current.countBySymbol[event.symbol]||0)+1;
    current.valueBySymbol[event.symbol]=Number(current.valueBySymbol[event.symbol]||0)+event.notional;
+   if(!current.liquidationSecondsBySymbol||typeof current.liquidationSecondsBySymbol!=="object")current.liquidationSecondsBySymbol={};
+   if(!Array.isArray(current.liquidationSecondsBySymbol[event.symbol]))current.liquidationSecondsBySymbol[event.symbol]=[];
+   const second=Math.floor(event.ts/1000)*1000;
+   if(!current.liquidationSecondsBySymbol[event.symbol].includes(second))current.liquidationSecondsBySymbol[event.symbol].push(second);
    if(!current.lastEvent||event.ts>=Number(current.lastEvent.ts||0))current.lastEvent=event;
   }
   state.countBySymbol[event.symbol]=Number(state.countBySymbol[event.symbol]||0)+1;
@@ -194,22 +193,22 @@ async function recordLiquidations(events){
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
 }
 
-async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=null,lastEvent=null,size=3600000,previousAverage=null,streak=0,previousStreak=0){
+async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEvent=null,size=3600000){
  const currentMarketStartMs=period,link=marketUrl(symbol,currentMarketStartMs,size),dedupeKey="period:"+size+":"+period;
  const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(count!==3)return true;
+  if(seconds<=0)return true;
   const nowMs=Date.now();
 
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const header="🔥 "+symbol+" "+periodLabel(size);
-  const text=[header,"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
+  const text=[header,"LIQS: "+seconds+" sec",new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
-  log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,period,sourcePeriod,lastLiquidation:lastEvent,periodSize:size,periodLabel:periodLabel(size),streak,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
-  if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=average;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
+  log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,seconds,period,sourcePeriod,lastLiquidation:lastEvent,periodSize:size,periodLabel:periodLabel(size),dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
+  if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
   return false;
  }finally{alertInFlight.delete(dedupeKey);}
 }
