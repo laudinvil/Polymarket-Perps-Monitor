@@ -143,7 +143,7 @@ function eventKey(e){if(e.id!=null&&String(e.id))return"aggr:"+String(e.exchange
 function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|[-_]/g,"").replace("SWAP","");if(!SYMBOLS.has(symbol))return null;const side=String(raw?.side||"").toLowerCase(),price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||qty<=0)return null;const ts=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now(),exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id==null?"":String(raw.id),ts:ts<1e12?ts*1000:ts,exchange,symbol,side,price,qty,notional:price*qty};}
 const PERIODS=[300000,900000,3600000];
 function periodKey(ts,size){return Math.floor(ts/size)*size;}
-function periodLabel(size){return size===300000?"5m":size===900000?"15m":size===3600000?"1h":"4h";}
+function periodLabel(size){return size===300000?"5m":size===900000?"15m":"1h";}
 function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},lastEvent:null};}
 function resetPeriodCounters(size,nextKey){state.periods[String(size)]=defaultPeriodState();state.periods[String(size)].periodKey=nextKey;}
 
@@ -159,7 +159,6 @@ async function finalizePeriod(period,nextPeriod,size){
  const direction=previousAverage===null?0:average>previousAverage?1:average<previousAverage?-1:0;
  const streak=direction===0?0:(previousStreak!==0&&Math.sign(previousStreak)===direction?previousStreak+direction:direction);
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
- if(liqs<=0||value<=0||average<=0){log("PERIOD_ZERO_IGNORED",{period,periodEnd:new Date(period+size).toISOString(),periodSize:size,periodLabel:periodLabel(size),count:liqs,value,average});return true;}
  const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak,previousStreak);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
@@ -201,11 +200,10 @@ async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=n
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(count<=0||value<=0||average<=0||previousAverage===null||streak===0||previousStreak===0||Math.sign(streak)===Math.sign(previousStreak)||Math.abs(streak)<3)return true;
+  if(count>0||value>0||average>0)return true;
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
-  const arrow=streak>0?"⬆️":"⬇️";
-  const header="🔥 "+symbol+" "+periodLabel(size)+" "+arrow;
+  const header="🔥 "+symbol+" "+periodLabel(size);
   const text=[header,"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,period,sourcePeriod,lastLiquidation:lastEvent,periodSize:size,periodLabel:periodLabel(size),streak,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
