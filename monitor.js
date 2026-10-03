@@ -157,9 +157,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const finalized=await flushPeriodAlert(selectedSymbol,seconds,targetPeriod,period,selectedLastEvent,size);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
-  if(!state.periodStreakByPeriod||typeof state.periodStreakByPeriod!=="object")state.periodStreakByPeriod={};
-  state.lastPeriodAverageByPeriod[String(size)]=average;
-  state.periodStreakByPeriod[String(size)]=streak;
+  state.lastPeriodAverageByPeriod[String(size)]=seconds;
   saveState();
  }
  return finalized;
