@@ -203,7 +203,7 @@ async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=n
   if(count>0||value>0||average>0)return true;
   const nowMs=Date.now();
   state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>nowMs-3600000):[];
-  if(state.alertTimestamps.length>=5)return true;
+  if(state.alertTimestamps.length>=4)return true;
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const header="🔥 "+symbol+" "+periodLabel(size);
