@@ -161,7 +161,7 @@ async function finalizePeriod(period,nextPeriod,size){
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
  const finalized=await flushPeriodAlert(selectedSymbol,liqs,value,average,targetPeriod,period,selectedLastEvent,size,previousAverage,streak,previousStreak);
  if(finalized){
-  if(liqs<=0||value<=0||average<=0){if(!state.silentPeriodsByPeriod||typeof state.silentPeriodsByPeriod!=="object")state.silentPeriodsByPeriod={};state.silentPeriodsByPeriod[String(size)]=Number(state.silentPeriodsByPeriod[String(size)]||0)+1;}
+  if(size===300000&&liqs<=0&&value<=0&&average<=0){if(!state.silentPeriodsByPeriod||typeof state.silentPeriodsByPeriod!=="object")state.silentPeriodsByPeriod={};state.silentPeriodsByPeriod[String(size)]=Number(state.silentPeriodsByPeriod[String(size)]||0)+1;}
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
   if(!state.periodStreakByPeriod||typeof state.periodStreakByPeriod!=="object")state.periodStreakByPeriod={};
   state.lastPeriodAverageByPeriod[String(size)]=average;
@@ -203,14 +203,14 @@ async function flushPeriodAlert(symbol,count,value,average,period,sourcePeriod=n
  try{
   if(count>0||value>0||average>0)return true;
   const silentPeriods=Number(state.silentPeriodsByPeriod?.[String(size)]||0);
-  if(silentPeriods>=2){state.silentPeriodsByPeriod[String(size)]=0;saveState();return true;}
+  if(size===300000&&silentPeriods>=2){state.silentPeriodsByPeriod[String(size)]=0;saveState();return true;}
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const header="🔥 "+symbol+" "+periodLabel(size);
   const text=[header,"LIQS: "+count,"AVG: $"+average.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"VALUE: $"+value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,count,value,average,period,sourcePeriod,lastLiquidation:lastEvent,periodSize:size,periodLabel:periodLabel(size),streak,dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
-  if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};if(!state.silentPeriodsByPeriod||typeof state.silentPeriodsByPeriod!=="object")state.silentPeriodsByPeriod={};state.silentPeriodsByPeriod[String(size)]=0;state.lastPeriodAverageByPeriod[String(size)]=average;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
+  if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};if(size===300000){if(!state.silentPeriodsByPeriod||typeof state.silentPeriodsByPeriod!=="object")state.silentPeriodsByPeriod={};state.silentPeriodsByPeriod[String(size)]=0;}state.lastPeriodAverageByPeriod[String(size)]=average;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
   return false;
  }finally{alertInFlight.delete(dedupeKey);}
 }
