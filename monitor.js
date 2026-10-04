@@ -140,7 +140,7 @@ function liveClobSnapshot(symbol,period){
  return{up:clobLive.up,down:clobLive.down,upAskSize:clobLive.upSize,downAskSize:clobLive.downSize,complementarySum,slug:clobLive.slug,upTokenId:clobLive.upTokenId,downTokenId:clobLive.downTokenId,priceMethod:"CLOB_WS_BEST_ASK",fetchedAt:new Date(clobLive.updatedAtMs||Date.now()).toISOString(),fetchedAtMs:clobLive.updatedAtMs||Date.now(),fetchStartedAtMs:clobLive.updatedAtMs||Date.now()};
 }
 function eventKey(e){if(e.id!=null&&String(e.id))return"aggr:"+String(e.exchange||"")+":"+String(e.id);return[e.ts||e.timestamp||"",e.exchange||"",e.symbol||e.pair||"",e.side||"",e.price||"",e.qty||e.size||""].join("|");}
-function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|[-_]/g,"").replace("SWAP","");if(!SYMBOLS.has(symbol))return null;const side=String(raw?.side||"").toLowerCase(),price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||qty<=0)return null;const ts=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now(),exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id==null?"":String(raw.id),ts:ts<1e12?ts*1000:ts,exchange,symbol,side,price,qty,notional:price*qty};}
+function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|[-_]/g,"").replace("SWAP","");if(!SYMBOLS.has(symbol))return null;const side=String(raw?.side??raw?.direction??raw?.positionSide??raw?.liquidationSide??"").trim().toLowerCase(),price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||qty<=0)return null;const ts=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now(),exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id==null?"":String(raw.id),ts:ts<1e12?ts*1000:ts,exchange,symbol,side,price,qty,notional:price*qty};}
 const PERIODS=[300000,900000];
 function periodKey(ts,size){return Math.floor(ts/size)*size;}
 function periodLabel(size){return size===300000?"5m":size===900000?"15m":"1h";}
@@ -183,7 +183,7 @@ async function recordLiquidations(events){
    if(!Array.isArray(current.liquidationSecondsBySymbol[event.symbol]))current.liquidationSecondsBySymbol[event.symbol]=[];
    if(!current.longBySymbol||typeof current.longBySymbol!=="object")current.longBySymbol={};
    if(!current.shortBySymbol||typeof current.shortBySymbol!=="object")current.shortBySymbol={};
-   const liquidationSide=event.side==="buy"?"long":event.side==="sell"?"short":null;
+   const liquidationSide=["buy","long","longs","long liquidation","long_liquidation"].includes(event.side)?"long":["sell","short","shorts","short liquidation","short_liquidation"].includes(event.side)?"short":null;
    if(liquidationSide==="long")current.longBySymbol[event.symbol]=Number(current.longBySymbol[event.symbol]||0)+1;
    if(liquidationSide==="short")current.shortBySymbol[event.symbol]=Number(current.shortBySymbol[event.symbol]||0)+1;
    const second=Math.floor(event.ts/1000)*1000;
