@@ -207,7 +207,7 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(seconds<2||seconds>29||long<2||short<1)return true;
+  if(seconds<3||seconds>29)return true;
   const nowMs=Date.now();
 
   const clob=null;
