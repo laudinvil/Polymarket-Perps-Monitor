@@ -144,7 +144,7 @@ function normalizeAggrEvent(raw){const symbol=String(raw?.symbol||raw?.pair||"")
 const PERIODS=[300000,900000];
 function periodKey(ts,size){return Math.floor(ts/size)*size;}
 function periodLabel(size){return size===300000?"5m":size===900000?"15m":"1h";}
-function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},liquidationSecondsBySymbol:{},lastEvent:null};}
+function defaultPeriodState(){return{periodKey:null,countBySymbol:{},valueBySymbol:{},liquidationSecondsBySymbol:{},longBySymbol:{},shortBySymbol:{},lastEvent:null};}
 function resetPeriodCounters(size,nextKey){state.periods[String(size)]=defaultPeriodState();state.periods[String(size)].periodKey=nextKey;}
 
 async function finalizePeriod(period,nextPeriod,size){
@@ -154,7 +154,8 @@ async function finalizePeriod(period,nextPeriod,size){
  const selectedSymbol=[...SYMBOLS][0];if(!selectedSymbol)return true;
  const seconds=Array.isArray(secondsBySymbol[selectedSymbol])?secondsBySymbol[selectedSymbol].length:0;
  const selectedLastEvent=lastEvent&&lastEvent.symbol===selectedSymbol?lastEvent:null;
- const finalized=await flushPeriodAlert(selectedSymbol,seconds,targetPeriod,period,selectedLastEvent,size);
+ const long=Number((ps.longBySymbol||{})[selectedSymbol]||0),short=Number((ps.shortBySymbol||{})[selectedSymbol]||0);
+ const finalized=await flushPeriodAlert(selectedSymbol,seconds,targetPeriod,period,selectedLastEvent,size,long,short);
  if(finalized){
   if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};
   state.lastPeriodAverageByPeriod[String(size)]=seconds;
@@ -180,6 +181,11 @@ async function recordLiquidations(events){
    current.valueBySymbol[event.symbol]=Number(current.valueBySymbol[event.symbol]||0)+event.notional;
    if(!current.liquidationSecondsBySymbol||typeof current.liquidationSecondsBySymbol!=="object")current.liquidationSecondsBySymbol={};
    if(!Array.isArray(current.liquidationSecondsBySymbol[event.symbol]))current.liquidationSecondsBySymbol[event.symbol]=[];
+   if(!current.longBySymbol||typeof current.longBySymbol!=="object")current.longBySymbol={};
+   if(!current.shortBySymbol||typeof current.shortBySymbol!=="object")current.shortBySymbol={};
+   const liquidationSide=event.side==="buy"?"long":event.side==="sell"?"short":null;
+   if(liquidationSide==="long")current.longBySymbol[event.symbol]=Number(current.longBySymbol[event.symbol]||0)+1;
+   if(liquidationSide==="short")current.shortBySymbol[event.symbol]=Number(current.shortBySymbol[event.symbol]||0)+1;
    const second=Math.floor(event.ts/1000)*1000;
    if(!current.liquidationSecondsBySymbol[event.symbol].includes(second))current.liquidationSecondsBySymbol[event.symbol].push(second);
    if(!current.lastEvent||event.ts>=Number(current.lastEvent.ts||0))current.lastEvent=event;
@@ -191,7 +197,7 @@ async function recordLiquidations(events){
  if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);saveState();
 }
 
-async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEvent=null,size=3600000){
+async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEvent=null,size=3600000,long=0,short=0){
  const currentMarketStartMs=period,link=marketUrl(symbol,currentMarketStartMs,size),dedupeKey="period:"+size+":"+period;
  const alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
@@ -203,7 +209,8 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
   const header="🔥 "+symbol+" "+periodLabel(size);
-  const text=[header,"LIQS: "+seconds+" sec",new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
+  const directionArrow=long>short?" ⬆️":short>long?" ⬇️":"";
+  const text=[header,"LIQS: "+seconds+" sec","LONG: "+long+(long>short?directionArrow:"")+" | SHORT: "+short+(short>long?directionArrow:""),new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,seconds,period,sourcePeriod,lastLiquidation:lastEvent,periodSize:size,periodLabel:periodLabel(size),dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
   if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
