@@ -207,12 +207,13 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(seconds<25)return true;
+  if(long>0&&short>0)return true;
+  if(long===0&&short===0)return true;
   const nowMs=Date.now();
 
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
-  const directionArrow=long>short?" ⬇️":short>long?" ⬆️":"";
+  const directionArrow=long>short?" ⬆️":short>long?" ⬇️":"";
   const header="🔥 "+symbol+" "+periodLabel(size)+directionArrow;
   const text=[header,"LIQS: "+seconds+" sec","LONG: "+long+" | SHORT: "+short,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
