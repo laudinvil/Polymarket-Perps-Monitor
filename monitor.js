@@ -207,31 +207,17 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  if(alertedLinks.includes(link)||state.alertedPeriodKey===dedupeKey||alertInFlight.has(dedupeKey))return;
  alertInFlight.add(dedupeKey);
  try{
-  if(long>0&&short>0)return true;
-  if(long===0&&short===0)return true;
-  if(seconds<1||seconds>19)return true;
-  const alertSignature=JSON.stringify([symbol,seconds,long,short]);
-  if(!state.lastAlertSignatureByPeriod||typeof state.lastAlertSignatureByPeriod!=="object")state.lastAlertSignatureByPeriod={};
-  if(state.lastAlertSignatureByPeriod[String(size)]===alertSignature)return true;
-  const nowMs=Date.now();
-  if(!state.longSilenceFirstIgnoredByPeriod||typeof state.longSilenceFirstIgnoredByPeriod!=="object")state.longSilenceFirstIgnoredByPeriod={};
-  const lastAlertSentAt=Number(state.lastAlertSentAt||0);
-  const silenceMs=30*60*1000;
-  if(lastAlertSentAt>0&&nowMs-lastAlertSentAt>=silenceMs&&!state.longSilenceFirstIgnoredByPeriod[String(size)]){
-   state.longSilenceFirstIgnoredByPeriod[String(size)]=true;
-   saveState();
-   log("LIQUIDATION_ALERT_IGNORED_AFTER_SILENCE",{source:"AGGR",symbol,seconds,period,periodSize:size,periodLabel:periodLabel(size),lastAlertSentAt:new Date(lastAlertSentAt).toISOString(),silenceMinutes:Math.floor((nowMs-lastAlertSentAt)/60000)});
-   return true;
-  }
-
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
-  const directionArrow=long>short?" ⬆️":short>long?" ⬇️":"";
+  const direction=long>short?"UP":short>long?"DOWN":null;
+  const directionArrow=direction==="UP"?" ⬆️":direction==="DOWN"?" ⬇️":"";
+  if(!direction)return true;
+  if(state.lastAlertDirection&&state.lastAlertDirection===direction)return true;
   const header="🔥 "+symbol+" "+periodLabel(size)+directionArrow;
   const text=[header,"LIQS: "+seconds+" sec","LONG: "+long+" | SHORT: "+short,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,seconds,period,sourcePeriod,lastLiquidation:lastEvent,longByExchange,shortByExchange,periodSize:size,periodLabel:periodLabel(size),dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
-  if(sent){state.lastAlertSignatureByPeriod[String(size)]=alertSignature;state.lastAlertSentAt=Date.now();state.longSilenceFirstIgnoredByPeriod[String(size)]=false;if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
+  if(sent){state.lastAlertDirection=direction;state.lastAlertSentAt=Date.now();state.longSilenceFirstIgnoredByPeriod[String(size)]=false;if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
   return false;
  }finally{alertInFlight.delete(dedupeKey);}
 }
