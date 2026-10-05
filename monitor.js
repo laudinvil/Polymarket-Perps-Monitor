@@ -209,6 +209,7 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  try{
   if(long>0&&short>0)return true;
   if(long===0&&short===0)return true;
+  if(seconds<1||seconds>19)return true;
   const alertSignature=JSON.stringify([symbol,seconds,long,short]);
   if(!state.lastAlertSignatureByPeriod||typeof state.lastAlertSignatureByPeriod!=="object")state.lastAlertSignatureByPeriod={};
   if(state.lastAlertSignatureByPeriod[String(size)]===alertSignature)return true;
