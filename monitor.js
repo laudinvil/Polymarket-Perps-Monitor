@@ -209,7 +209,7 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  try{
   const clob=null;
   const alertPreparedAt = new Date().toISOString();
-  const direction=long>short?"UP":short>long?"DOWN":null;
+  const direction=long>0&&short===0?"UP":long===0&&short>0?"DOWN":null;
   const directionArrow=direction==="UP"?" ⬆️":direction==="DOWN"?" ⬇️":"";
   if(!direction)return true;
   if(state.lastAlertDirection&&state.lastAlertDirection===direction)return true;
