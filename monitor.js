@@ -209,6 +209,9 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
  try{
   if(long>0&&short>0)return true;
   if(long===0&&short===0)return true;
+  const alertSignature=JSON.stringify([symbol,seconds,long,short]);
+  if(!state.lastAlertSignatureByPeriod||typeof state.lastAlertSignatureByPeriod!=="object")state.lastAlertSignatureByPeriod={};
+  if(state.lastAlertSignatureByPeriod[String(size)]===alertSignature)return true;
   const nowMs=Date.now();
 
   const clob=null;
@@ -218,7 +221,7 @@ async function flushPeriodAlert(symbol,seconds,period,sourcePeriod=null,lastEven
   const text=[header,"LIQS: "+seconds+" sec","LONG: "+long+" | SHORT: "+short,new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(currentMarketStartMs)),link].join("\n");
   const sendStartedAt=new Date().toISOString(),sent=await sendTelegram(text),sendFinishedAt=new Date().toISOString();
   log(sent?"LIQUIDATION_ALERT_SENT":"LIQUIDATION_ALERT_FAILED",{source:"AGGR",symbol,seconds,period,sourcePeriod,lastLiquidation:lastEvent,longByExchange,shortByExchange,periodSize:size,periodLabel:periodLabel(size),dedupeKey,clobSlug:clob?.slug||null,clobFetchedAt:clob?.fetchedAt||null,clobFetchedAtMs:clob?.fetchedAtMs||null,clobFetchStartedAtMs:clob?.fetchStartedAtMs||null,clobSnapshotTimestamp:clob?.fetchedAtMs?new Date(clob.fetchedAtMs).toISOString():null,clobPriceMethod:clob?.priceMethod||null,clobUp:clob?.up??null,clobDown:clob?.down??null,clobUpAsk:clob?.up??null,clobDownAsk:clob?.down??null,clobComplementarySum:clob?.complementarySum??null,clobUpAskSize:clob?.upAskSize??null,clobDownAskSize:clob?.downAskSize??null,clobUpAskFetchedAt:clob?.upAskFetchedAt??null,clobDownAskFetchedAt:clob?.downAskFetchedAt??null,clobUpAskFetchedAtMs:clob?.upAskFetchedAtMs??null,clobDownAskFetchedAtMs:clob?.downAskFetchedAtMs??null,alertPreparedAt,sendStartedAt,sendFinishedAt});
-  if(sent){if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
+  if(sent){state.lastAlertSignatureByPeriod[String(size)]=alertSignature;if(!state.lastPeriodAverageByPeriod||typeof state.lastPeriodAverageByPeriod!=="object")state.lastPeriodAverageByPeriod={};state.alertTimestamps=Array.isArray(state.alertTimestamps)?state.alertTimestamps.filter(ts=>Number(ts)>Date.now()-3600000):[];state.alertTimestamps.push(Date.now());state.lastPeriodAverageByPeriod[String(size)]=seconds;state.alertsSent=Number(state.alertsSent||0)+1;state.alertedPeriodKey=dedupeKey;state.lastEventTs=period;state.lastEventKey=dedupeKey;state.alertedLinks=Array.isArray(state.alertedLinks)?state.alertedLinks:[];if(!state.alertedLinks.includes(link))state.alertedLinks.push(link);if(state.alertedLinks.length>100)state.alertedLinks=state.alertedLinks.slice(-100);saveState();return true;}
   return false;
  }finally{alertInFlight.delete(dedupeKey);}
 }
