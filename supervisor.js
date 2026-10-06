@@ -4,5 +4,5 @@ function start(name,args){if(stopping)return;const existing=children.get(name);i
 function shutdown(signal){if(stopping)return;stopping=true;console.log(JSON.stringify({ts:new Date().toISOString(),component:"SUPERVISOR",event:"STOPPING",signal}));for(const child of children.values()){try{child.kill("SIGTERM");}catch{}}for(const t of restartTimers.values())clearTimeout(t);setTimeout(()=>process.exit(0),5000).unref();}
 process.on("SIGTERM",()=>shutdown("SIGTERM"));process.on("SIGINT",()=>shutdown("SIGINT"));
 start("AGGR",["aggr-bridge.js"]);start("MONITOR",["monitor.js"]);
-if(String(process.env.PRED_ELO_ENABLED).toLowerCase()==="true"){start("PRED-ELO",["pred-elo/index.js"]);}
+if(String(process.env.PRED_ELO_ENABLED ?? "true").toLowerCase()==="true"){start("PRED-ELO",["pred-elo/index.js"]);}
 const http=require("http");function watchAggr(){if(stopping)return;const req=http.get("http://127.0.0.1:9090/health",res=>{res.resume();if(res.statusCode!==200)setTimeout(watchAggr,1000).unref();else console.log(JSON.stringify({ts:new Date().toISOString(),component:"SUPERVISOR",event:"AGGR_READY",endpoint:"http://127.0.0.1:9090/health"}));});req.on("error",()=>setTimeout(watchAggr,1000).unref());req.setTimeout(1000,()=>req.destroy());}watchAggr();
