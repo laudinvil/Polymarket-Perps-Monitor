@@ -68,7 +68,7 @@ function connectAggr(){
   res.on("end",()=>{aggrConnected=false;aggrRequest=null;log("AGGR_DISCONNECTED");scheduleReconnect();});
   res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});
  });
- aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{error:String(e.message||e)})); 
+ aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{error:String(e.message||e)});
 }
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periodStart:state.periodStart,trades:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:state.exchanges};}
