@@ -30,7 +30,7 @@ function normalize(raw){
  const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
  if(symbol!==SYMBOL)return null;
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
- const count=num(raw?.count);return{id:raw?.id?String(raw.id):"",timestamp:num(raw?.timestamp)??Date.now(),exchange:String(raw?.exchange||"AGGR").toUpperCase(),pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)??price*size};
+ const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;return{id:raw?.id?String(raw.id):"",timestamp,exchange:String(raw?.exchange||"AGGR").toUpperCase(),pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)??price*size};
 }
 function addTrade(e){
  const count=e.count||1,volume=Math.abs(e.amount||e.price*e.size),x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
