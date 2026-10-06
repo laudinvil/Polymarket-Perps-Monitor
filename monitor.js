@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.19-BTC-5M-TRADE-FREQUENCY";
+const VERSION="26.8.20-BTC-5M-TRADE-FREQUENCY";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -21,7 +21,6 @@ function ensureDir(file){fs.mkdirSync(path.dirname(file),{recursive:true});}
 function log(event,data={}){
  const row={ts:nowIso(),version:VERSION,event,...data};
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
- if(event!=="TRADE_FREQUENCY_ALERT_SENT"&&event!=="TRADE_FREQUENCY_ALERT_FAILED")return;
 }
 function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periodStart:null,seen:[],alertsSent:0,lastPeriodTradesPerSec:null};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
@@ -47,7 +46,7 @@ async function flushPeriod(period,snapshot){
   const previousTradesPerSec=state.lastPeriodTradesPerSec;
   const arrow=previousTradesPerSec===null?"":tradesPerSec>previousTradesPerSec?" ⬇️":tradesPerSec<previousTradesPerSec?" ⬆️":"";
   state.lastPeriodTradesPerSec=tradesPerSec;
-  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2)+arrow,"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period+PERIOD_MS)];
+  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2)+arrow,"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"",marketUrl(period+PERIOD_MS)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
