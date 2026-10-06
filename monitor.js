@@ -86,6 +86,17 @@ function addLiquidation(snapshot,e){
  if(e.side==="long")snapshot.liqLong+=1;
  else if(e.side==="short")snapshot.liqShort+=1;
 }
+function advancePeriod(config,p){
+ let bucket=state.periods[config.name];
+ while(p>bucket.periodStart){
+  const old=bucket.periodStart;
+  const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{})),liqCount:bucket.liqCount||0,liqValue:bucket.liqValue||0,liqLong:bucket.liqLong||0,liqShort:bucket.liqShort||0,liqExchanges:JSON.parse(JSON.stringify(bucket.liqExchanges||{}))};
+  resetPeriod(config,old+config.ms);
+  flushPeriod(config,old,snapshot);
+  bucket=state.periods[config.name];
+ }
+ return bucket;
+}
 function processRaw(raw){
  const e=normalize(raw);if(!e)return;
  const key=e.id?e.exchange+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size,e.count].join("|");
@@ -93,9 +104,9 @@ function processRaw(raw){
  if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
  for(const config of PERIODS){
   const p=Math.floor(e.timestamp/config.ms)*config.ms;
-  const bucket=state.periods[config.name];
+  let bucket=state.periods[config.name];
   if(p<bucket.periodStart)continue;
-  if(p>bucket.periodStart)resetPeriod(config,p);
+  bucket=advancePeriod(config,p);
   addTrade(bucket,e);
  }
  aggrEvents++;aggrLastEventAt=nowIso();
@@ -107,9 +118,9 @@ function processLiquidation(raw){
  if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
  for(const config of PERIODS){
   const p=Math.floor(e.timestamp/config.ms)*config.ms;
-  const bucket=state.periods[config.name];
+  let bucket=state.periods[config.name];
   if(p<bucket.periodStart)continue;
-  if(p>bucket.periodStart)resetPeriod(config,p);
+  bucket=advancePeriod(config,p);
   addLiquidation(bucket,e);
  }
 }
