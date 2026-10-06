@@ -10,7 +10,7 @@ const HEALTH_PORT = Number(process.env.SPORTS_ELO_HEALTH_PORT || 8082);
 const SCAN_MS = 10 * 60 * 1000;
 const CANDIDATE_LIMIT = 25;
 const CLOSED_LIMIT = 500;
-const MAX_CLOSED_PAGES = 12;
+const MAX_CLOSED_PAGES = 70;
 const MIN_RESOLVED = 10;
 const K = 32;
 const START_ELO = 1500;
@@ -59,21 +59,18 @@ async function leaderboard(category,orderBy){
 
 async function closedPositions(wallet){
   const all=[];
-  let cursor=null;
+  const pageLimit=50;
   for(let page=0;page<MAX_CLOSED_PAGES;page++){
-    const u=new URL(DATA_API+"/v2/positions");
+    const u=new URL(DATA_API+"/closed-positions");
     u.searchParams.set("user",wallet);
-    u.searchParams.set("status","CLOSED");
-    u.searchParams.set("limit",String(CLOSED_LIMIT));
-    u.searchParams.set("sort_by","TIMESTAMP");
-    u.searchParams.set("sort_direction","DESC");
-    if(cursor)u.searchParams.set("cursor",cursor);
-    const body=await getJson(u);
-    const data=Array.isArray(body?.data)?body.data:[];
-    if(!data.length)break;
+    u.searchParams.set("limit",String(pageLimit));
+    u.searchParams.set("offset",String(page*pageLimit));
+    u.searchParams.set("sortBy","TIMESTAMP");
+    u.searchParams.set("sortDirection","DESC");
+    const data=await getJson(u);
+    if(!Array.isArray(data)||!data.length)break;
     all.push(...data);
-    cursor=body?.pagination?.next_cursor||null;
-    if(!body?.pagination?.has_more||!cursor)break;
+    if(data.length<pageLimit)break;
   }
   return all;
 }
