@@ -78,12 +78,12 @@ async function closedPositions(wallet){
   return all;
 }
 
-function scorePositions(rows){
+function scorePositions(rows,fallbackCategories=[]){
   let elo=START_ELO,wins=0,total=0,longshotWins=0;
   const used=[];
   for(const p of rows){
     const market=p.market||{};
-    const category=classify({...p,...market});
+    const category=classify({...p,...market}) || (fallbackCategories.length===1?fallbackCategories[0]:null);
     if(!category)continue;
     const price=Number(p.avgPrice??p.entry_price??p.entryPrice);
     if(!Number.isFinite(price)||price<=0||price>=1)continue;
@@ -147,7 +147,7 @@ async function evaluate(candidates){
   for(const c of candidates){
     try{
       const rows=await closedPositions(c.wallet);
-      const score=scorePositions(rows);
+      const score=scorePositions(rows,[...c.categories]);
       if(score.total<MIN_RESOLVED)continue;
       out.push({...c,...score});
       state.leaders[c.wallet]={
