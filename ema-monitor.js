@@ -152,6 +152,49 @@ async function handleClosedCandle(k) {
   saveState();
 }
 
+async function bootstrapHistory() {
+  try {
+    const url = "https://fapi.binance.com/fapi/v1/klines?symbol=" +
+      SYMBOL.toUpperCase() + "&interval=" + INTERVAL + "&limit=100";
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw new Error("Binance HTTP " + response.status);
+    const rows = await response.json();
+    emaFast = null;
+    emaSlow = null;
+    candlesSeen = 0;
+
+    for (const row of rows) {
+      const closeTime = Number(row[6]);
+      const close = Number(row[4]);
+      if (!Number.isFinite(closeTime) || closeTime > Date.now() || !Number.isFinite(close) || close <= 0) continue;
+      emaFast = updateEma(emaFast, close, FAST);
+      emaSlow = updateEma(emaSlow, close, SLOW);
+      lastClosedPrice = close;
+      candlesSeen++;
+    }
+
+    if (emaFast === null || emaSlow === null) {
+      throw new Error("No closed candles returned");
+    }
+
+    saveState();
+    log("BOOTSTRAPPED", {
+      candles: candlesSeen,
+      price: lastClosedPrice,
+      emaFast,
+      emaSlow
+    });
+  } catch (e) {
+    log("BOOTSTRAP_ERROR", { error: String(e.message || e) });
+    if (emaFast === null || emaSlow === null) {
+      setTimeout(bootstrapHistory, 5000).unref();
+    }
+  }
+}
+
 function connect() {
   if (stopped) return;
   ws = new WebSocket(WS_URL);
@@ -207,6 +250,7 @@ if (!Number.isInteger(FAST) || !Number.isInteger(SLOW) || FAST < 2 || SLOW <= FA
 }
 
 loadState();
+bootstrapHistory().then(() => connect());
 log("STARTING", {
   symbol: SYMBOL.toUpperCase(),
   interval: INTERVAL,
@@ -215,4 +259,3 @@ log("STARTING", {
   slow: SLOW,
   confirmation: "closed_5m_candle_only"
 });
-connect();
