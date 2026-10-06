@@ -27,10 +27,36 @@ async function fetchTrades(conditions, cursor) {
   return response.json();
 }
 
-function normalizeTrade(raw) {
-  const tradeId = raw?.id ?? raw?.tradeId;
+function tradeIdentity(raw, index) {
+  const direct = raw?.id ?? raw?.tradeId ?? raw?.trade_id;
+  if (direct) return String(direct);
+
+  const tx = raw?.transactionHash ?? raw?.transaction_hash ?? raw?.transaction;
+  const condition = raw?.conditionId ?? raw?.condition_id ?? raw?.condition;
+  const asset = raw?.asset ?? raw?.tokenId ?? raw?.token_id;
+  const timestamp = raw?.timestamp ?? 0;
+  const side = raw?.side ?? "";
+  const size = raw?.size ?? "";
+  const price = raw?.price ?? "";
+
+  if (!tx && !condition) return null;
+
+  return [
+    tx || "no-tx",
+    condition || "no-condition",
+    asset || "no-asset",
+    timestamp,
+    side,
+    size,
+    price,
+    index,
+  ].join(":");
+}
+
+function normalizeTrade(raw, index) {
+  const tradeId = tradeIdentity(raw, index);
   const conditionId = raw?.conditionId ?? raw?.condition_id ?? raw?.condition;
-  const wallet = raw?.proxyWallet ?? raw?.wallet ?? raw?.user;
+  const wallet = raw?.proxyWallet ?? raw?.proxy_wallet ?? raw?.wallet ?? raw?.user;
   const tokenId = raw?.asset ?? raw?.tokenId ?? raw?.token_id;
   const outcome = raw?.outcome ?? raw?.outcomeName;
   const side = String(raw?.side || "").toUpperCase();
@@ -41,9 +67,10 @@ function normalizeTrade(raw) {
   if (!tradeId || !conditionId || !wallet || !tokenId || !outcome) return null;
   if (!["BUY", "SELL"].includes(side)) return null;
   if (!Number.isFinite(price) || !Number.isFinite(size) || size <= 0) return null;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
 
   return {
-    tradeId: String(tradeId),
+    tradeId,
     wallet: String(wallet),
     conditionId: String(conditionId),
     tokenId: String(tokenId),
@@ -53,6 +80,21 @@ function normalizeTrade(raw) {
     size,
     timestamp,
   };
+}
+
+function extractRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  return payload?.data || payload?.trades || [];
+}
+
+function extractNextCursor(payload) {
+  return (
+    payload?.next_cursor ??
+    payload?.nextCursor ??
+    payload?.pagination?.next_cursor ??
+    payload?.pagination?.nextCursor ??
+    null
+  );
 }
 
 async function syncTrades(state, metrics) {
@@ -83,8 +125,8 @@ async function syncTrades(state, metrics) {
         break;
       }
 
-      const rows = Array.isArray(payload) ? payload : (payload?.data || payload?.trades || []);
-      const normalized = rows.map(normalizeTrade).filter(Boolean);
+      const rows = extractRows(payload);
+      const normalized = rows.map((row, index) => normalizeTrade(row, index)).filter(Boolean);
 
       for (const trade of normalized) {
         if (seen.has(trade.tradeId)) {
@@ -98,7 +140,7 @@ async function syncTrades(state, metrics) {
 
       pages += 1;
 
-      const nextCursor = payload?.next_cursor ?? payload?.nextCursor ?? null;
+      const nextCursor = extractNextCursor(payload);
       if (!nextCursor || rows.length === 0) {
         cursor = nextCursor;
         break;
@@ -116,4 +158,4 @@ async function syncTrades(state, metrics) {
   metrics.pages = pages;
 }
 
-module.exports = { syncTrades, normalizeTrade };
+module.exports = { syncTrades, normalizeTrade, extractRows, extractNextCursor };
