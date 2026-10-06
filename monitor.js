@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.15-BTC-5M-TRADE-FREQUENCY";
+const VERSION="26.8.16-BTC-5M-TRADE-FREQUENCY";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -31,10 +31,10 @@ function normalize(raw){
  const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
  if(symbol!==SYMBOL)return null;
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
- const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:price*size};
+ const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
 }
 function addTrade(e){
- const count=e.count||1,volume=Math.abs(e.price*e.size),x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
+ const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
  state.total+=count;state.volume+=volume;x.trades+=count;x.volume+=volume;
  if(e.side==="buy"){state.buy+=count;x.buy+=count;}else if(e.side==="sell"){state.sell+=count;x.sell+=count;}
 }
@@ -47,7 +47,7 @@ async function flushPeriod(period,snapshot){
   const previousTradesPerSec=state.lastPeriodTradesPerSec;
   const arrow=previousTradesPerSec===null?"" : tradesPerSec>previousTradesPerSec?" ⬆️" : tradesPerSec<previousTradesPerSec?" ⬇️" : "";
   state.lastPeriodTradesPerSec=tradesPerSec;
-  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2)+arrow,"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
+  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2)+arrow,"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period+PERIOD_MS)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
