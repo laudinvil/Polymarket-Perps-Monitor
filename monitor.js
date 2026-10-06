@@ -83,12 +83,26 @@ function normalizeLiquidation(raw){
  let timestamp=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now();if(timestamp<1e12)timestamp*=1000;
  const exchange=String(raw?.exchange||"AGGR").toUpperCase();
  if(exchange==="HITBTC")return null;
- const rawSide=String(raw?.side??raw?.direction??raw?.positionSide??raw?.liquidationSide??"").trim().toLowerCase();
- let side=rawSide;
- if(exchange.includes("BINANCE"))side=rawSide==="sell"?"long":rawSide==="buy"?"short":rawSide;
- else if(exchange.includes("BITGET")){const tradeSide=String(raw?.tradeSide??raw?.trade_side??"").trim().toLowerCase();side=tradeSide.includes("close_long")||tradeSide.includes("liquidate_long")||(tradeSide.includes("long")&&tradeSide.includes("close"))?"long":tradeSide.includes("close_short")||tradeSide.includes("liquidate_short")||(tradeSide.includes("short")&&tradeSide.includes("close"))?"short":rawSide;}
- else if(exchange.includes("OKX")){const posSide=String(raw?.posSide??raw?.pos_side??"").trim().toLowerCase();side=posSide==="long"||posSide==="short"?posSide:rawSide;}
- else if(exchange.includes("BYBIT")){const positionIdx=raw?.positionIdx??raw?.position_idx;side=String(raw?.positionSide??raw?.position_side??"").trim().toLowerCase()||((positionIdx===1||positionIdx==="1")?"long":(positionIdx===2||positionIdx==="2")?"short":rawSide);}
+ const token=v=>String(v??"").trim().toLowerCase().replace(/[-\s]/g,"_");
+ const explicit=[raw?.positionSide,raw?.position_side,raw?.posSide,raw?.pos_side,raw?.liquidationSide,raw?.liquidation_side,raw?.closeSide,raw?.close_side,raw?.autoSize,raw?.auto_size].map(token);
+ const tradeSide=token(raw?.tradeSide??raw?.trade_side);
+ let side="";
+ for(const v of [...explicit,tradeSide]){
+  if(v.includes("long")&&!v.includes("short")){side="long";break;}
+  if(v.includes("short")&&!v.includes("long")){side="short";break;}
+ }
+ if(!side){
+  const rawSide=token(raw?.side??raw?.direction);
+  if(rawSide==="sell"||rawSide==="sell_single"||rawSide==="close_long")side="long";
+  else if(rawSide==="buy"||rawSide==="buy_single"||rawSide==="close_short")side="short";
+  else if(rawSide==="long")side="long";
+  else if(rawSide==="short")side="short";
+ }
+ if(!side){
+  const positionIdx=raw?.positionIdx??raw?.position_idx;
+  if(positionIdx===1||positionIdx==="1")side="long";
+  else if(positionIdx===2||positionIdx==="2")side="short";
+ }
  return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side,price,size:qty,notional:Math.abs(price*qty)};
 }
 function addLiquidation(snapshot,e){
