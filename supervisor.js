@@ -4,7 +4,7 @@ const http = require("http");
 const HEALTH_PORT = Number(process.env.MONITOR_HEALTH_PORT || 8080);
 http.createServer((req, res) => {
   res.writeHead(200, {"Content-Type":"application/json"});
-  res.end(JSON.stringify({ok:true, services:["SPORTS_ELO","TRADE_FREQ"]}));
+  res.end(JSON.stringify({ok:true, services:["TRADE_FREQ"]}));
 }).listen(HEALTH_PORT, "0.0.0.0", () => {
   console.log(JSON.stringify({
     ts:new Date().toISOString(),
@@ -56,7 +56,6 @@ function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-start("SPORTS_ELO", ["sports-elo-monitor.js"]);
 start("TRADE_FREQ", ["trade-frequency-monitor.js"]);
 
 function watchAggr() {
