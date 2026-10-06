@@ -40,9 +40,8 @@ function addTrade(e){
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
 function marketUrl(period){return "https://polymarket.com/event/btc-updown-5m-"+Math.floor(period/1000);}
 function displayExchangeName(name){return String(name||"").toUpperCase()==="GATEIO"?"Gate":name;}
-async function flushPeriod(period){
+async function flushPeriod(period,snapshot){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
- const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};
  try{
   const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+(snapshot.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
   for(const name of Object.keys(snapshot.exchanges))lines.push(displayExchangeName(name)+": "+snapshot.exchanges[name].trades.toLocaleString("en-US"));
@@ -57,7 +56,7 @@ function processRaw(raw){
  if(state.seen.includes(key))return;state.seen.push(key);if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);
  const p=Math.floor(e.timestamp/PERIOD_MS)*PERIOD_MS;
  if(state.periodStart==null)resetPeriod(p);
- while(p>state.periodStart){const old=state.periodStart;flushPeriod(old);resetPeriod(old+PERIOD_MS);}
+ while(p>state.periodStart){const old=state.periodStart;const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};resetPeriod(old+PERIOD_MS);flushPeriod(old,snapshot);}
  if(p<state.periodStart)return;addTrade(e);aggrEvents++;aggrLastEventAt=nowIso();
 }
 function connectAggr(){
@@ -75,5 +74,5 @@ function connectAggr(){
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periodStart:state.periodStart,trades:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:state.exchanges};}
 function startHealth(){const port=Number(process.env.MONITOR_HEALTH_PORT||8080);http.createServer((req,res)=>{const p=String(req.url||"/").split("?")[0];if(p==="/"||p==="/health"||p==="/status"||p==="/stats"){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});return res.end(JSON.stringify(diagnostics()));}if(p==="/logs"){let rows=[];try{rows=fs.readFileSync(LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-300).map(x=>JSON.parse(x));}catch{}res.writeHead(200,{"content-type":"application/json"});return res.end(JSON.stringify({status:"ok",events:rows}));}if(p==="/logs/stream"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive"});logSubscribers.add(res);req.on("close",()=>logSubscribers.delete(res));return;}res.writeHead(404);res.end();}).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));}
-function main(){ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);resetPeriod(Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS);startHealth();connectAggr();setInterval(()=>{const now=Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS;while(state.periodStart<now){const old=state.periodStart;flushPeriod(old);resetPeriod(old+PERIOD_MS);}},1000);log("TRADE_FREQUENCY_MONITOR_STARTING",{buildSha:BUILD_SHA,source:"AGGR",aggrUrl:AGGR_URL,symbol:"BTC",period:"5m",thresholds:[],filters:[]});}
+function main(){ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);resetPeriod(Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS);startHealth();connectAggr();setInterval(()=>{const now=Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS;while(state.periodStart<now){const old=state.periodStart;const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};resetPeriod(old+PERIOD_MS);flushPeriod(old,snapshot);}},1000);log("TRADE_FREQUENCY_MONITOR_STARTING",{buildSha:BUILD_SHA,source:"AGGR",aggrUrl:AGGR_URL,symbol:"BTC",period:"5m",thresholds:[],filters:[]});}
 main();
