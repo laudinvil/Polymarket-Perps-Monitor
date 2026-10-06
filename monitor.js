@@ -43,7 +43,7 @@ async function flushPeriod(period,snapshot){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(PERIOD_MS/1000);
-  if(snapshot.total<25000)return;
+  if(snapshot.total<35000)return;
   const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"",marketUrl(period+PERIOD_MS)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
