@@ -32,18 +32,14 @@ function normalize(raw){
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
  const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
 }
-function addTrade(e){
- const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
- state.total+=count;state.volume+=volume;x.trades+=count;x.volume+=volume;
- if(e.side==="buy"){state.buy+=count;x.buy+=count;}else if(e.side==="sell"){state.sell+=count;x.sell+=count;}
-}
+function addTrade(e){const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});state.total+=count;state.volume+=volume;x.trades+=count;x.volume+=volume;if(e.side==="buy"){state.buy+=count;x.buy+=count;}else if(e.side==="sell"){state.sell+=count;x.sell+=count;}}
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
 function marketUrl(period){return "https://polymarket.com/event/btc-updown-5m-"+Math.floor(period/1000);}
 async function flushPeriod(period,snapshot){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(PERIOD_MS/1000);
-  if(snapshot.total<35000)return;
+  if(snapshot.total<32000)return;
   const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"",marketUrl(period+PERIOD_MS)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
@@ -66,17 +62,7 @@ function connectAggr(){
  const req=http.get(AGGR_URL,res=>{
   if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{status:res.statusCode});res.resume();scheduleReconnect();return;}
   aggrConnected=true;let buffer="";res.setEncoding("utf8");
-  res.on("data",chunk=>{
-   buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
-   const frames=buffer.split("\n\n");buffer=frames.pop()||"";
-   for(const frame of frames){
-    const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));
-    if(!dataLines.length)continue;
-    const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");
-    try{processRaw(JSON.parse(payload));}
-    catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}
-   }
-  });
+  res.on("data",chunk=>{buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");try{processRaw(JSON.parse(payload));}catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}}});
   res.on("end",()=>{aggrConnected=false;aggrRequest=null;scheduleReconnect();});
   res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});
  });
