@@ -42,7 +42,8 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 start("AGGR", ["aggr-bridge.js"]);
-start("MONITOR", ["monitor.js"]);\nstart("SPORTS_ELO", ["sports-elo-monitor.js"]);
+start("MONITOR", ["monitor.js"]);
+start("SPORTS_ELO", ["sports-elo-monitor.js"]);
 
 function watchAggr() {
   if (stopping) return;
