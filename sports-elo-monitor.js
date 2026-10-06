@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "1.0.1-SPORTS-ESPORTS-PRED-ELO";
+const VERSION = "1.0.2-SPORTS-ESPORTS-PRED-ELO";
 const DATA_API = "https://data-api.polymarket.com";
 const STATE_FILE = process.env.SPORTS_ELO_STATE_FILE || "/data/sports-elo-state.json";
 const LOG_FILE = process.env.SPORTS_ELO_LOG_FILE || "/data/sports-elo.jsonl";
@@ -14,6 +14,10 @@ const MAX_CLOSED_PAGES = 12;
 const MIN_RESOLVED = 10;
 const K = 32;
 const START_ELO = 1500;
+const CALIBRATION_ANCHOR_WALLET = "0x5ad5c4608c4661361b91c92e1091d2c5b43c37b9";
+const CALIBRATION_ANCHOR_ELO = 2489;
+const CALIBRATION_ANCHOR_WIN_RATE = 0.495;
+const CALIBRATION_ANCHOR_RESOLVED = 3217;
 const seenTrades = new Set();
 
 function now(){return new Date().toISOString();}
@@ -55,17 +59,21 @@ async function leaderboard(category,orderBy){
 
 async function closedPositions(wallet){
   const all=[];
+  let cursor=null;
   for(let page=0;page<MAX_CLOSED_PAGES;page++){
-    const u=new URL(DATA_API+"/closed-positions");
+    const u=new URL(DATA_API+"/v2/positions");
     u.searchParams.set("user",wallet);
+    u.searchParams.set("status","CLOSED");
     u.searchParams.set("limit",String(CLOSED_LIMIT));
-    u.searchParams.set("offset",String(page*CLOSED_LIMIT));
     u.searchParams.set("sortBy","TIMESTAMP");
     u.searchParams.set("sortDirection","DESC");
-    const data=await getJson(u);
-    if(!Array.isArray(data)||!data.length)break;
+    if(cursor)u.searchParams.set("cursor",cursor);
+    const body=await getJson(u);
+    const data=Array.isArray(body?.data)?body.data:[];
+    if(!data.length)break;
     all.push(...data);
-    if(data.length<CLOSED_LIMIT)break;
+    cursor=body?.pagination?.next_cursor||null;
+    if(!body?.pagination?.has_more||!cursor)break;
   }
   return all;
 }
@@ -74,13 +82,13 @@ function scorePositions(rows){
   let elo=START_ELO,wins=0,total=0,longshotWins=0;
   const used=[];
   for(const p of rows){
-    const category=classify(p);
+    const market=p.market||{};
+    const category=classify({...p,...market});
     if(!category)continue;
-    const price=Number(p.avgPrice);
+    const price=Number(p.avgPrice??p.entry_price??p.entryPrice);
     if(!Number.isFinite(price)||price<=0||price>=1)continue;
-    const cur=Number(p.curPrice);
-    const pnl=Number(p.realizedPnl);
-    const actual=Number.isFinite(cur)&&cur>=0.999?1:Number.isFinite(cur)&&cur<=0.001?0:(pnl>0?1:pnl<0?0:null);
+    const status=String(p.status||"").toUpperCase();
+    const actual=status==="RESOLVED_WIN"?1:status==="RESOLVED_LOSS"?0:null;
     if(actual===null)continue;
     const expected=price;
     elo+=K*(actual-expected);
