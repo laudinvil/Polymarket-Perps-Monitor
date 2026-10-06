@@ -93,7 +93,7 @@ function connect(cfg) {
   ws.on("open",()=>{
     ready=true;
     if(cfg.type==="bybit") ws.send(JSON.stringify({op:"subscribe",args:["publicTrade."+SYMBOL]}));
-    if(cfg.type==="okx") ws.send(JSON.stringify({id:"btc-trades",op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
+    if(cfg.type==="okx") ws.send(JSON.stringify({id:"btctrades",op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
     if(cfg.type==="bitget") ws.send(JSON.stringify({op:"subscribe",args:[{instType:"USDT-FUTURES",channel:"trade",instId:"BTCUSDT"}]}));
     if(cfg.type==="gate") ws.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:"futures.trades",event:"subscribe",payload:["BTC_USDT"]}));
     if(cfg.type==="huobi") ws.send(JSON.stringify({sub:"market.BTC-USDT.trade.detail",id:String(Date.now())}));
