@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.17-BTC-5M-TRADE-FREQUENCY";
+const VERSION="26.8.18-BTC-5M-TRADE-FREQUENCY";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -44,10 +44,8 @@ async function flushPeriod(period,snapshot){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(PERIOD_MS/1000);
-  const previousTradesPerSec=state.lastPeriodTradesPerSec;
-  const arrow=previousTradesPerSec===null?"" : tradesPerSec>previousTradesPerSec?" ⬆️" : tradesPerSec<previousTradesPerSec?" ⬇️" : "";
-  state.lastPeriodTradesPerSec=tradesPerSec;
-  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2)+arrow,"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period+PERIOD_MS)];
+  const majorityArrow=snapshot.buy>snapshot.sell?" ⬆️":snapshot.sell>snapshot.buy?" ⬇️":"";
+  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+tradesPerSec.toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US")+majorityArrow,"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period+PERIOD_MS)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
@@ -66,7 +64,6 @@ function processRaw(raw){
 }
 function connectAggr(){
  if(aggrRequest){try{aggrRequest.destroy();}catch{}}
- 
  const req=http.get(AGGR_URL,res=>{
   if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{status:res.statusCode});res.resume();scheduleReconnect();return;}
   aggrConnected=true;let buffer="";res.setEncoding("utf8");
