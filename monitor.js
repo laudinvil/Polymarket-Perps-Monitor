@@ -65,7 +65,7 @@ function connectAggr(){
  const req=http.get(AGGR_URL,res=>{
   if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{status:res.statusCode});res.resume();scheduleReconnect();return;}
   aggrConnected=true;log("AGGR_CONNECTED",{url:AGGR_URL});let buffer="";res.setEncoding("utf8");
-  res.on("data",chunk=>{buffer+=chunk;const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const line=frame.split("\n").find(x=>x.startsWith("data:"));if(!line)continue;try{processRaw(JSON.parse(line.slice(5).trim()));}catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e)});}}});
+  res.on("data",chunk=>{buffer+=chunk;const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const lines=frame.split("\n");const dataLines=lines.filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).trim()).join("\n");try{processRaw(JSON.parse(payload));}catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e)});}}});
   res.on("end",()=>{aggrConnected=false;aggrRequest=null;log("AGGR_DISCONNECTED");scheduleReconnect();});
   res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});
  });
