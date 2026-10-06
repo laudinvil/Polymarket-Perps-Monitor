@@ -36,7 +36,7 @@ function classify(row){
   const s=[row?.title,row?.slug,row?.eventSlug,row?.event_slug,row?.question].filter(Boolean).join(" ");
   if(ESPORTS_WORDS.test(s)||ESPORT_SLUG.test(s))return"ESPORTS";
   if(SPORTS_WORDS.test(s)||SPORT_SLUG.test(s))return"SPORTS";
-  if(/\bvs\\.?\b|\bversus\b/i.test(s))return"SPORTS";
+  if(/\bvs\.?\b|\bversus\b/i.test(s))return"SPORTS";
   return null;
 }
 
@@ -65,8 +65,8 @@ async function closedPositions(wallet){
     u.searchParams.set("user",wallet);
     u.searchParams.set("status","CLOSED");
     u.searchParams.set("limit",String(CLOSED_LIMIT));
-    u.searchParams.set("sortBy","TIMESTAMP");
-    u.searchParams.set("sortDirection","DESC");
+    u.searchParams.set("sort_by","TIMESTAMP");
+    u.searchParams.set("sort_direction","DESC");
     if(cursor)u.searchParams.set("cursor",cursor);
     const body=await getJson(u);
     const data=Array.isArray(body?.data)?body.data:[];
@@ -85,12 +85,12 @@ function scorePositions(rows,fallbackCategories=[]){
     const market=p.market||{};
     const category=classify({...p,...market}) || (fallbackCategories.length===1?fallbackCategories[0]:null);
     if(!category)continue;
-    const price=Number(p.avgPrice??p.entry_price??p.entryPrice);
+    const price=Number(p.avgPrice??p.avg_price??p.entry_price??p.entryPrice);
     if(!Number.isFinite(price)||price<=0||price>=1)continue;
     const status=String(p.status||"").toUpperCase();
     let actual=status==="RESOLVED_WIN"?1:status==="RESOLVED_LOSS"?0:null;
     if(actual===null){
-      const settledPrice=Number(p.curPrice??p.cur_price);
+      const settledPrice=Number(p.curPrice??p.cur_price??p.current_price);
       const realizedPnl=Number(p.realizedPnl??p.realized_pnl);
       const cashPnl=Number(p.cashPnl??p.cash_pnl);
       const percentPnl=Number(p.percentPnl??p.percent_pnl);
@@ -108,7 +108,7 @@ function scorePositions(rows,fallbackCategories=[]){
     elo+=K*(actual-expected);
     total++;
     if(actual===1){wins++;if(price<=0.30)longshotWins++;}
-    used.push({key:String(p.conditionId||p.condition_id||"")+"|"+String(p.asset||p.token_id||"")+"|"+String(p.timestamp||""),price,actual,category});
+    used.push({key:String(p.conditionId||p.condition_id||"")+"|"+String(p.asset||p.token_id||"")+"|"+String(p.timestamp||p.last_event_at||""),price,actual,category});
   }
   return{elo,wins,total,winRate:total?wins/total:0,longshotWins,used};
 }
@@ -148,6 +148,9 @@ async function evaluate(candidates){
     try{
       const rows=await closedPositions(c.wallet);
       const score=scorePositions(rows,[...c.categories]);
+      if(c.wallet===CALIBRATION_ANCHOR_WALLET){
+        log("CALIBRATION_ANCHOR_SCAN",{rowsFetched:rows.length,scoredResolved:score.total,measuredWinRate:score.winRate});
+      }
       if(score.total<MIN_RESOLVED)continue;
       out.push({...c,...score});
       state.leaders[c.wallet]={
