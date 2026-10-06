@@ -192,6 +192,7 @@ async function bootstrapHistory() {
     if (emaFast === null || emaSlow === null) {
       setTimeout(bootstrapHistory, 5000).unref();
     }
+    throw e;
   }
 }
 
