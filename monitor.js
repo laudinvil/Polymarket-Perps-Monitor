@@ -45,7 +45,7 @@ async function flushPeriod(period,snapshot){
  try{
   const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+(snapshot.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
   const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
-  for(const [name,data] of exchanges)lines.push(name.toUpperCase()+": "+data.trades.toLocaleString("en-US"));
+  for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
   log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,exchanges:Object.fromEntries(exchanges)});
   if(sent)state.alertsSent=Number(state.alertsSent||0)+1;saveState();
