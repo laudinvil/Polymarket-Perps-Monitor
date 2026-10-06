@@ -115,6 +115,7 @@ async function discover(){
       map.set(wallet,x);
     }
   }
+  if(!map.has(CALIBRATION_ANCHOR_WALLET))map.set(CALIBRATION_ANCHOR_WALLET,{wallet:CALIBRATION_ANCHOR_WALLET,userName:"Roberto73",categories:new Set(["SPORTS"]),ranks:[]});
   return [...map.values()];
 }
 
