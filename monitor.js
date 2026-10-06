@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.14-BTC-5M-TRADE-FREQUENCY";
+const VERSION="26.8.15-BTC-5M-TRADE-FREQUENCY";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -34,7 +34,7 @@ function normalize(raw){
  const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:price*size};
 }
 function addTrade(e){
- const count=e.count||1,volume=Math.abs(e.price*e.size)/count,x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
+ const count=e.count||1,volume=Math.abs(e.price*e.size),x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
  state.total+=count;state.volume+=volume;x.trades+=count;x.volume+=volume;
  if(e.side==="buy"){state.buy+=count;x.buy+=count;}else if(e.side==="sell"){state.sell+=count;x.sell+=count;}
 }
