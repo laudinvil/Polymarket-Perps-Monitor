@@ -50,6 +50,7 @@ async function flushPeriod(config,period,snapshot){
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
     "BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),
+    "────────────",
     "LIQS: "+snapshot.liqCount.toLocaleString("en-US"),
     "LIQ VALUE: $"+snapshot.liqValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
     "LONG: "+snapshot.liqLong.toLocaleString("en-US")+" | SHORT: "+snapshot.liqShort.toLocaleString("en-US"),
