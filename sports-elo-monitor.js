@@ -88,7 +88,21 @@ function scorePositions(rows){
     const price=Number(p.avgPrice??p.entry_price??p.entryPrice);
     if(!Number.isFinite(price)||price<=0||price>=1)continue;
     const status=String(p.status||"").toUpperCase();
-    const actual=status==="RESOLVED_WIN"?1:status==="RESOLVED_LOSS"?0:null;
+    let actual=status==="RESOLVED_WIN"?1:status==="RESOLVED_LOSS"?0:null;
+    if(actual===null){
+      const settledPrice=Number(p.curPrice??p.cur_price);
+      const realizedPnl=Number(p.realizedPnl??p.realized_pnl);
+      const cashPnl=Number(p.cashPnl??p.cash_pnl);
+      const percentPnl=Number(p.percentPnl??p.percent_pnl);
+      if(Number.isFinite(settledPrice)&&settledPrice>=0.99)actual=1;
+      else if(Number.isFinite(settledPrice)&&settledPrice<=0.01)actual=0;
+      else if(Number.isFinite(realizedPnl)&&realizedPnl>0)actual=1;
+      else if(Number.isFinite(realizedPnl)&&realizedPnl<0)actual=0;
+      else if(Number.isFinite(cashPnl)&&cashPnl>0)actual=1;
+      else if(Number.isFinite(cashPnl)&&cashPnl<0)actual=0;
+      else if(Number.isFinite(percentPnl)&&percentPnl>0)actual=1;
+      else if(Number.isFinite(percentPnl)&&percentPnl<0)actual=0;
+    }
     if(actual===null)continue;
     const expected=price;
     elo+=K*(actual-expected);
