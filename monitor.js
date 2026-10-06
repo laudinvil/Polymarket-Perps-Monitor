@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.22-BTC-5M-15M-TRADE-THRESHOLD";
+const VERSION="26.8.23-BTC-5M-15M-TRADES-UP-TO-1000";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -13,8 +13,8 @@ const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const EXCLUDED_EXCHANGES=new Set(["HITBTC"]);
 const PERIODS=[
- {name:"5m",ms:5*60*1000,threshold:100000,arrow:"⬆️"},
- {name:"15m",ms:15*60*1000,threshold:210000,arrow:"⬇️"}
+ {name:"5m",ms:5*60*1000,maxTrades:1000,arrow:"⬆️"},
+ {name:"15m",ms:15*60*1000,maxTrades:1000,arrow:"⬇️"}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
@@ -47,7 +47,7 @@ async function flushPeriod(config,period,snapshot){
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(config.ms/1000);
-  if(snapshot.total<config.threshold)return;
+  if(snapshot.total<=0||snapshot.total>config.maxTrades)return;
   const lines=["🔥 BTC "+config.name+" "+config.arrow,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
@@ -95,7 +95,7 @@ function connectAggr(){
 }
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){
- const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,threshold:config.threshold,arrow:config.arrow};}
+ const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,maxTrades:config.maxTrades,arrow:config.arrow};}
  return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};
 }
 function startHealth(){
@@ -111,6 +111,6 @@ function main(){
  ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);}
  startHealth();connectAggr();setInterval(()=>{const now=Date.now();for(const config of PERIODS){let bucket=state.periods[config.name];const current=Math.floor(now/config.ms)*config.ms;while(bucket.periodStart<current){const old=bucket.periodStart;const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges))};resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];}}},1000);
- log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",periods:PERIODS.map(x=>x.name),thresholds:{"5m":100000,"15m":210000},arrows:{"5m":"⬆️","15m":"⬇️"}});
+ log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",periods:PERIODS.map(x=>x.name),maxTrades:{"5m":1000,"15m":1000},arrows:{"5m":"⬆️","15m":"⬇️"}});
 }
 main();
