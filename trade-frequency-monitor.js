@@ -89,10 +89,11 @@ function outputPeriod(end) {
 
 function connect(cfg) {
   const ws=new WebSocket(cfg.url);
+  let heartbeat;
   let ready=false;
   ws.on("open",()=>{
     ready=true;
-    if(cfg.type==="bybit") ws.send(JSON.stringify({op:"subscribe",args:["publicTrade."+SYMBOL]}));
+    if(cfg.type==="bybit") { ws.send(JSON.stringify({op:"subscribe",args:["publicTrade."+SYMBOL]})); heartbeat=setInterval(()=>{if(ws.readyState===1)ws.send(JSON.stringify({op:"ping"}));},20000); }
     if(cfg.type==="okx") ws.send(JSON.stringify({id:"btctrades",op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
     if(cfg.type==="bitget") ws.send(JSON.stringify({op:"subscribe",args:[{instType:"USDT-FUTURES",channel:"trade",instId:"BTCUSDT"}]}));
     if(cfg.type==="gate") ws.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:"futures.trades",event:"subscribe",payload:["BTC_USDT"]}));
@@ -128,7 +129,7 @@ function connect(cfg) {
       for(const d of data) addTrade("Huobi",d.direction,d.amount,d.price);
     }
   });
-  ws.on("close",()=>{if(ws._heartbeat) clearInterval(ws._heartbeat);setTimeout(()=>connect(cfg),2000).unref();});
+  ws.on("close",()=>{if(ws._heartbeat) clearInterval(ws._heartbeat);if(heartbeat) clearInterval(heartbeat);setTimeout(()=>connect(cfg),2000).unref();});
   ws.on("error",()=>{try{ws.close();}catch{}});
   return ws;
 }
