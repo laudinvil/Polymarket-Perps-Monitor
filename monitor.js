@@ -12,6 +12,7 @@ const SYMBOL="BTC";
 const MAX_SEEN=20000;
 const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
+const EXCLUDED_EXCHANGES=new Set(["HITBTC"]);
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
 function nowIso(){return new Date().toISOString();}
@@ -30,7 +31,7 @@ function normalize(raw){
  const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
  if(symbol!==SYMBOL)return null;
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
- const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;return{id:raw?.id?String(raw.id):"",timestamp,exchange:String(raw?.exchange||"AGGR").toUpperCase(),pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)??price*size};
+ const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)??price*size};
 }
 function addTrade(e){
  const count=e.count||1,volume=Math.abs(e.amount||e.price*e.size),x=state.exchanges[e.exchange]||(state.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
@@ -39,14 +40,14 @@ function addTrade(e){
 }
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
 function marketUrl(period){return "https://polymarket.com/event/btc-updown-5m-"+Math.floor(period/1000);}
-function displayExchangeName(name){return String(name||"").toUpperCase()==="GATEIO"?"Gate":name;}
 async function flushPeriod(period,snapshot){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+(snapshot.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
-  for(const name of Object.keys(snapshot.exchanges))lines.push(displayExchangeName(name)+": "+snapshot.exchanges[name].trades.toLocaleString("en-US"));
+  const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
+  for(const [name,data] of exchanges)lines.push(name.toUpperCase()+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,exchanges:snapshot.exchanges});
+  log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,exchanges:Object.fromEntries(exchanges)});
   if(sent)state.alertsSent=Number(state.alertsSent||0)+1;saveState();
  }finally{alertInFlight.delete(key);}
 }
