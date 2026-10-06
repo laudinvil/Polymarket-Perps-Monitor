@@ -108,6 +108,17 @@ function isPerpetualTradePair(exchange,pair) {
     case "BITFINEX": return /^(?:BTC|ETH|SOL|XRP|DOGE|BNB|HYPE)(?:USD|USDT|USDC)$/.test(raw);
     case "BITGET": return /(?:USDT|USDC|USD)(?:-PERP|-SWAP)?$/.test(raw)&&!raw.endsWith("-SPOT");
     case "BITMART": return /(?:USDT|USDC|USD)(?:-PERP|-SWAP)?$/.test(raw)&&!raw.endsWith("-SPOT");
+    case "ASTER": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "BINANCE": return false;
+    case "BINANCE_US": return false;
+    case "BITUNIX": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "COINBASE": return /(?:-PERP|-SWAP)$/.test(raw);
+    case "CRYPTOCOM": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "HITBTC": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "KUCOIN": return /(?:USDTM|USDCM|USDM)$/.test(raw);
+    case "PHEMEX": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "POLONIEX": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "BITSTAMP": return false;
     default: return false;
   }
 }
