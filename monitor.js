@@ -25,7 +25,7 @@ function log(event,data={}){
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
 }
 function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{},liqCount:0,liqValue:0,liqLong:0,liqShort:0,liqExchanges:{}};}
-function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES_LIQUIDATIONS",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{}};}
+function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES_LIQUIDATIONS",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{},lastLiqAlertPeriod:{},lastZeroLiqPeriod:{}};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
 function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
 function resetPeriod(period,start){state.periods[period.name]={...defaultSnapshot(),periodStart:start};}
@@ -44,8 +44,16 @@ function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=pr
 function marketUrl(period,name){return "https://polymarket.com/event/btc-updown-"+name+"-"+Math.floor(period/1000);}
 async function flushPeriod(config,period,snapshot){
  state.liqAlertArmed=state.liqAlertArmed&&typeof state.liqAlertArmed==="object"?state.liqAlertArmed:{};
- if(snapshot.liqCount<1){state.liqAlertArmed[config.name]=true;saveState();return;}
- if(!state.liqAlertArmed[config.name])return;
+ state.lastLiqAlertPeriod=state.lastLiqAlertPeriod&&typeof state.lastLiqAlertPeriod==="object"?state.lastLiqAlertPeriod:{};
+ state.lastZeroLiqPeriod=state.lastZeroLiqPeriod&&typeof state.lastZeroLiqPeriod==="object"?state.lastZeroLiqPeriod:{};
+ if(snapshot.liqCount<1){
+  state.lastZeroLiqPeriod[config.name]=period;
+  state.liqAlertArmed[config.name]=true;
+  saveState();
+  return;
+ }
+ if(state.liqAlertArmed[config.name]!==true)return;
+ if(Number(state.lastZeroLiqPeriod[config.name]||-1)<=Number(state.lastLiqAlertPeriod[config.name]||-1))return;
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(config.ms/1000);
@@ -65,7 +73,7 @@ async function flushPeriod(config,period,snapshot){
   for(const [name,count] of liqExchanges)lines.push("LIQ "+(name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+count.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
   log(sent?"TRADE_LIQUIDATION_ALERT_SENT":"TRADE_LIQUIDATION_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,liqs:snapshot.liqCount,liqValue:snapshot.liqValue,liqLong:snapshot.liqLong,liqShort:snapshot.liqShort,tradeExchanges:Object.fromEntries(exchanges),liqExchanges:Object.fromEntries(liqExchanges)});
-  if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.liqAlertArmed[config.name]=false;}saveState();
+  if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.liqAlertArmed[config.name]=false;state.lastLiqAlertPeriod[config.name]=period;}saveState();
  }finally{alertInFlight.delete(key);}
 }
 function normalizeLiquidation(raw){
