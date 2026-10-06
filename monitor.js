@@ -33,7 +33,7 @@ function normalize(raw){
  const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
  if(symbol!==SYMBOL)return null;
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
- const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
+ const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(exchange==="HITBTC")return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
 }
 function addTrade(snapshot,e){
  const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=snapshot.exchanges[e.exchange]||(snapshot.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
@@ -70,6 +70,7 @@ function normalizeLiquidation(raw){
  const price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||price<=0||qty<=0)return null;
  let timestamp=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now();if(timestamp<1e12)timestamp*=1000;
  const exchange=String(raw?.exchange||"AGGR").toUpperCase();
+ if(exchange==="HITBTC")return null;
  const rawSide=String(raw?.side??raw?.direction??raw?.positionSide??raw?.liquidationSide??"").trim().toLowerCase();
  let side=rawSide;
  if(exchange.includes("BINANCE"))side=rawSide==="sell"?"long":rawSide==="buy"?"short":rawSide;
