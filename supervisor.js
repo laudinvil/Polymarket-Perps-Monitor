@@ -1,4 +1,19 @@
 const { spawn } = require("child_process");
+const http = require("http");
+
+const HEALTH_PORT = Number(process.env.MONITOR_HEALTH_PORT || 8080);
+http.createServer((req, res) => {
+  res.writeHead(200, {"Content-Type":"application/json"});
+  res.end(JSON.stringify({ok:true, services:["SPORTS_ELO","TRADE_FREQ"]}));
+}).listen(HEALTH_PORT, "0.0.0.0", () => {
+  console.log(JSON.stringify({
+    ts:new Date().toISOString(),
+    component:"SUPERVISOR",
+    event:"HEALTH_LISTENING",
+    port:HEALTH_PORT
+  }));
+});
+
 const children = new Map();
 let stopping = false;
 const restartTimers = new Map();
