@@ -40,10 +40,32 @@ function classify(row){
   return null;
 }
 
+let nextDataApiRequestAt=0;
+
+async function waitDataApiSlot(){
+  const nowMs=Date.now();
+  const waitMs=Math.max(0,nextDataApiRequestAt-nowMs);
+  if(waitMs>0)await new Promise(r=>setTimeout(r,waitMs));
+  nextDataApiRequestAt=Date.now()+250;
+}
+
 async function getJson(url){
-  const r=await fetch(url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(10000)});
-  if(!r.ok)throw new Error("HTTP "+r.status+" "+url);
-  return r.json();
+  for(let attempt=0;attempt<6;attempt++){
+    await waitDataApiSlot();
+    const r=await fetch(url,{headers:{accept:"application/json"},signal:AbortSignal.timeout(15000)});
+    if(r.ok)return r.json();
+    if(r.status===429||r.status===503){
+      const retryAfter=Number(r.headers.get("retry-after"));
+      const waitMs=Number.isFinite(retryAfter)&&retryAfter>0
+        ?Math.min(Math.max(retryAfter*1000,1000),30000)
+        :Math.min(3000*Math.pow(2,attempt),30000);
+      log("DATA_API_RETRY",{status:r.status,attempt:attempt+1,waitMs,url:String(url)});
+      await new Promise(resolve=>setTimeout(resolve,waitMs));
+      continue;
+    }
+    throw new Error("HTTP "+r.status+" "+url);
+  }
+  throw new Error("HTTP 429/503 retry limit "+url);
 }
 
 async function leaderboard(category,orderBy){
