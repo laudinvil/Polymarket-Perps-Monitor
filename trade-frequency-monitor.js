@@ -79,7 +79,11 @@ function outputPeriod(end) {
     volume:Number(state.volume.toFixed(2)),
     exchanges:state.exchanges
   }));
-  console.log(lines.join("\n"));
+  const message=lines.join("\n");
+  console.log(message);
+  sendTelegram(message).then(sent=>{
+    if(sent) console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_ALERT_SENT",periodEnd:new Date(end).toISOString()}));
+  });
 }
 
 function connect(cfg) {
