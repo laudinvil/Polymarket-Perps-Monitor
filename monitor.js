@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.26-BTC-5M-15M-TRADES-NO-ARROWS";
+const VERSION="26.8.27-BTC-5M-15M-TRADES-LIQUIDATIONS";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -25,8 +25,8 @@ function log(event,data={}){
  const row={ts:nowIso(),version:VERSION,event,...data};
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
 }
-function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{}};}
-function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periods:{},seen:[],alertsSent:0,lastPeriodTradesPerSec:null};}
+function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{},liqCount:0,liqValue:0,liqLong:0,liqShort:0,liqExchanges:{}};}
+function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES_LIQUIDATIONS",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
 function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
 function resetPeriod(period,start){state.periods[period.name]={...defaultSnapshot(),periodStart:start};}
@@ -34,7 +34,7 @@ function normalize(raw){
  const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
  if(symbol!==SYMBOL)return null;
  const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;
- const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(EXCLUDED_EXCHANGES.has(exchange))return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
+ const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
 }
 function addTrade(snapshot,e){
  const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=snapshot.exchanges[e.exchange]||(snapshot.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
@@ -47,55 +47,99 @@ async function flushPeriod(config,period,snapshot){
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(config.ms/1000);
-  if(snapshot.total<=0||snapshot.total>config.maxTrades)return;
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
     "BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),
+    "LIQS: "+snapshot.liqCount.toLocaleString("en-US"),
+    "LIQ VALUE: $"+snapshot.liqValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
+    "LONG: "+snapshot.liqLong.toLocaleString("en-US")+" | SHORT: "+snapshot.liqShort.toLocaleString("en-US"),
     "",
     marketUrl(period+config.ms,config.name)];
-  const exchanges=Object.entries(snapshot.exchanges).filter(([name])=>!EXCLUDED_EXCHANGES.has(String(name).toUpperCase())).sort((a,b)=>b[1].trades-a[1].trades);
+  const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
+  const liqExchanges=Object.entries(snapshot.liqExchanges).sort((a,b)=>b[1]-a[1]);
+  for(const [name,count] of liqExchanges)lines.push("LIQ "+(name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+count.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,exchanges:Object.fromEntries(exchanges)});
+  log(sent?"TRADE_LIQUIDATION_ALERT_SENT":"TRADE_LIQUIDATION_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,liqs:snapshot.liqCount,liqValue:snapshot.liqValue,liqLong:snapshot.liqLong,liqShort:snapshot.liqShort,tradeExchanges:Object.fromEntries(exchanges),liqExchanges:Object.fromEntries(liqExchanges)});
   if(sent)state.alertsSent=Number(state.alertsSent||0)+1;saveState();
  }finally{alertInFlight.delete(key);}
+}
+function normalizeLiquidation(raw){
+ const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
+ if(symbol!==SYMBOL)return null;
+ const price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||price<=0||qty<=0)return null;
+ let timestamp=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now();if(timestamp<1e12)timestamp*=1000;
+ const exchange=String(raw?.exchange||"AGGR").toUpperCase();
+ const rawSide=String(raw?.side??raw?.direction??raw?.positionSide??raw?.liquidationSide??"").trim().toLowerCase();
+ let side=rawSide;
+ if(exchange.includes("BINANCE"))side=rawSide==="sell"?"long":rawSide==="buy"?"short":rawSide;
+ else if(exchange.includes("BITGET")){const tradeSide=String(raw?.tradeSide??raw?.trade_side??"").trim().toLowerCase();side=tradeSide.includes("close_long")||tradeSide.includes("liquidate_long")||(tradeSide.includes("long")&&tradeSide.includes("close"))?"long":tradeSide.includes("close_short")||tradeSide.includes("liquidate_short")||(tradeSide.includes("short")&&tradeSide.includes("close"))?"short":rawSide;}
+ else if(exchange.includes("OKX")){const posSide=String(raw?.posSide??raw?.pos_side??"").trim().toLowerCase();side=posSide==="long"||posSide==="short"?posSide:rawSide;}
+ else if(exchange.includes("BYBIT")){const positionIdx=raw?.positionIdx??raw?.position_idx;side=String(raw?.positionSide??raw?.position_side??"").trim().toLowerCase()||((positionIdx===1||positionIdx==="1")?"long":(positionIdx===2||positionIdx==="2")?"short":rawSide);}
+ return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side,price,size:qty,notional:Math.abs(price*qty)};
+}
+function addLiquidation(snapshot,e){
+ snapshot.liqCount+=1;
+ snapshot.liqValue+=e.notional;
+ snapshot.liqExchanges[e.exchange]=Number(snapshot.liqExchanges[e.exchange]||0)+1;
+ if(e.side==="long")snapshot.liqLong+=1;
+ else if(e.side==="short")snapshot.liqShort+=1;
 }
 function processRaw(raw){
  const e=normalize(raw);if(!e)return;
  const key=e.id?e.exchange+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size,e.count].join("|");
- if(state.seen.includes(key))return;state.seen.push(key);if(state.seen.length>MAX_SEEN)state.seen.splice(0,state.seen.length-MAX_SEEN);
+ const seen=Array.isArray(state.tradeSeen)?state.tradeSeen:(state.tradeSeen=[]);
+ if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
  for(const config of PERIODS){
   const p=Math.floor(e.timestamp/config.ms)*config.ms;
-  const current=state.periods[config.name];
-  if(!current||current.periodStart==null)resetPeriod(config,p);
-  let bucket=state.periods[config.name];
-  while(p>bucket.periodStart){
-   const old=bucket.periodStart;
-   const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges))};
-   resetPeriod(config,old+config.ms);
-   flushPeriod(config,old,snapshot);
-   bucket=state.periods[config.name];
-  }
+  const bucket=state.periods[config.name];
   if(p<bucket.periodStart)continue;
+  if(p>bucket.periodStart)resetPeriod(config,p);
   addTrade(bucket,e);
  }
  aggrEvents++;aggrLastEventAt=nowIso();
 }
+function processLiquidation(raw){
+ const e=normalizeLiquidation(raw);if(!e)return;
+ const key=e.id?e.exchange+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size].join("|");
+ const seen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:(state.liquidationSeen=[]);
+ if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
+ for(const config of PERIODS){
+  const p=Math.floor(e.timestamp/config.ms)*config.ms;
+  const bucket=state.periods[config.name];
+  if(p<bucket.periodStart)continue;
+  if(p>bucket.periodStart)resetPeriod(config,p);
+  addLiquidation(bucket,e);
+ }
+}
 function connectAggr(){
  if(aggrRequest){try{aggrRequest.destroy();}catch{}}
  const req=http.get(AGGR_URL,res=>{
-  if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{status:res.statusCode});res.resume();scheduleReconnect();return;}
+  if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{url:AGGR_URL,status:res.statusCode});res.resume();scheduleReconnect();return;}
   aggrConnected=true;let buffer="";res.setEncoding("utf8");
   res.on("data",chunk=>{buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");try{processRaw(JSON.parse(payload));}catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}}});
   res.on("end",()=>{aggrConnected=false;aggrRequest=null;scheduleReconnect();});
   res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});
  });
- aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{error:String(e.message||e)});scheduleReconnect();});
+ aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{url:AGGR_URL,error:String(e.message||e)});scheduleReconnect();});
+}
+function connectLiquidations(){
+ const url=(process.env.AGGR_LIQUIDATIONS_URL||"http://127.0.0.1:9090/liquidations");
+ const req=http.get(url,res=>{
+  if(res.statusCode!==200){log("AGGR_LIQUIDATIONS_HTTP_ERROR",{url,status:res.statusCode});res.resume();scheduleLiquidationReconnect();return;}
+  let buffer="";res.setEncoding("utf8");
+  res.on("data",chunk=>{buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");try{processLiquidation(JSON.parse(payload));}catch(e){log("AGGR_LIQUIDATION_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}}});
+  res.on("end",()=>scheduleLiquidationReconnect());
+  res.on("error",e=>{log("AGGR_LIQUIDATION_STREAM_ERROR",{error:String(e.message||e)});scheduleLiquidationReconnect();});
+ });
+ req.on("error",e=>{log("AGGR_LIQUIDATION_CONNECTION_ERROR",{url,error:String(e.message||e)});scheduleLiquidationReconnect();});
 }
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
+let liquidationReconnectTimer=null;
+function scheduleLiquidationReconnect(){if(liquidationReconnectTimer)return;liquidationReconnectTimer=setTimeout(()=>{liquidationReconnectTimer=null;connectLiquidations();},3000);}
 function diagnostics(){
- const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,maxTrades:config.maxTrades};}
+ const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,liqs:p.liqCount||0,liqValue:p.liqValue||0,liqLong:p.liqLong||0,liqShort:p.liqShort||0,liqExchanges:p.liqExchanges||{}};}
  return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};
 }
 function startHealth(){
@@ -108,9 +152,24 @@ function startHealth(){
  }).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));
 }
 function main(){
- ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
- const now=Date.now();for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);}
- startHealth();connectAggr();setInterval(()=>{const now=Date.now();for(const config of PERIODS){let bucket=state.periods[config.name];const current=Math.floor(now/config.ms)*config.ms;while(bucket.periodStart<current){const old=bucket.periodStart;const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges))};resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];}}},1000);
- log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",periods:PERIODS.map(x=>x.name),maxTrades:{"5m":2000,"15m":3000}});
+ ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES_LIQUIDATIONS";
+ state.tradeSeen=Array.isArray(state.tradeSeen)?state.tradeSeen:(Array.isArray(state.seen)?state.seen:[]);
+ state.liquidationSeen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:[];
+ state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
+ const now=Date.now();
+ for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);}
+ startHealth();connectAggr();connectLiquidations();
+ setInterval(()=>{
+  const now=Date.now();
+  for(const config of PERIODS){
+   let bucket=state.periods[config.name],current=Math.floor(now/config.ms)*config.ms;
+   while(bucket.periodStart<current){
+    const old=bucket.periodStart;
+    const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{})),liqCount:bucket.liqCount||0,liqValue:bucket.liqValue||0,liqLong:bucket.liqLong||0,liqShort:bucket.liqShort||0,liqExchanges:JSON.parse(JSON.stringify(bucket.liqExchanges||{}))};
+    resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];
+   }
+  }
+ },1000);
+ log("TRADE_LIQUIDATION_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,liquidationUrl:process.env.AGGR_LIQUIDATIONS_URL||"http://127.0.0.1:9090/liquidations",symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
 }
-main();
+main();main();
