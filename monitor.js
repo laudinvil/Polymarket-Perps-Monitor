@@ -11,7 +11,6 @@ const SYMBOL="BTC";
 const MAX_SEEN=20000;
 const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
-const EXCLUDED_EXCHANGES=new Set(["HITBTC"]);
 const PERIODS=[
  {name:"5m",ms:5*60*1000},
  {name:"15m",ms:15*60*1000}
