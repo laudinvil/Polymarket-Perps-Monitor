@@ -1,4 +1,5 @@
 const CONFIG = require("./config");
+const http = require("http");
 const { loadState, saveState } = require("./storage");
 const { discoverMarkets } = require("./discovery");
 const { syncTrades } = require("./trades");
@@ -64,6 +65,18 @@ async function cycle() {
     running = false;
   }
 }
+
+const healthPort = Number(process.env.PORT || 8080);
+http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, {"content-type": "application/json"});
+    res.end(JSON.stringify({status:"ok", service:"pred-elo", eloEnabled:false}));
+    return;
+  }
+  res.writeHead(404); res.end();
+}).listen(healthPort, "0.0.0.0", () => {
+  console.log(`[PRED-ELO] HEALTH_READY port=${healthPort}`);
+});
 
 console.log("[PRED-ELO] START ELO_ENABLED=false");
 cycle();
