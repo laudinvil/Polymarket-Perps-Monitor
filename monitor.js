@@ -171,6 +171,7 @@ function main(){
  for(const config of PERIODS){
   const p=Math.floor(now/config.ms)*config.ms;
   if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);
+  else if(state.periods[config.name].periodStart!==p)resetPeriod(config,p);
   else{
    const bucket=state.periods[config.name];
    bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
