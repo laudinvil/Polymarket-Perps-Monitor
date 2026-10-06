@@ -1,6 +1,6 @@
 const WebSocket = require("ws");
 
-const VERSION = "1.0.0-BTC-5M-TRADE-FREQUENCY";
+const VERSION = "1.0.1-BTC-5M-TRADE-FREQUENCY-ALERTS";
 const PERIOD_MS = 5 * 60 * 1000;
 const SYMBOL = "BTCUSDT";
 
@@ -40,6 +40,14 @@ function addTrade(exchange, side, size, price) {
   const s=String(side||"").toUpperCase();
   if(s==="BUY"){state.buy++;x.buy++;}
   else if(s==="SELL"){state.sell++;x.sell++;}
+}
+
+function sendTelegram(text){
+  const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;
+  if(!token||!chatId){console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_TELEGRAM_NOT_CONFIGURED"}));return Promise.resolve(false);}
+  return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)})
+    .then(async response=>{const body=await response.text();if(!response.ok){console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_TELEGRAM_ERROR",status:response.status,body:body.slice(0,500)}));return false;}return true;})
+    .catch(error=>{console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_TELEGRAM_ERROR",error:String(error.message||error)}));return false;});
 }
 
 function outputPeriod(end) {
