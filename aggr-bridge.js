@@ -118,6 +118,7 @@ function isPerpetualTradePair(exchange,pair) {
     case "KUCOIN": return /(?:USDTM|USDCM|USDM)$/.test(raw);
     case "PHEMEX": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
     case "POLONIEX": return /(?:USDT|USDC|USD)(?:[-_]?(?:PERP|SWAP))?$/.test(raw);
+    case "HYPERLIQUID": return raw === "BTC";
     case "BITSTAMP": return false;
     default: return false;
   }
