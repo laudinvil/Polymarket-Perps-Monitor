@@ -2,7 +2,7 @@ const fs=require("fs");
 const path=require("path");
 const http=require("http");
 
-const VERSION="26.8.16-BTC-5M-TRADE-FREQUENCY";
+const VERSION="26.8.17-BTC-5M-TRADE-FREQUENCY";
 const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
 const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
 const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
@@ -21,7 +21,7 @@ function ensureDir(file){fs.mkdirSync(path.dirname(file),{recursive:true});}
 function log(event,data={}){
  const row={ts:nowIso(),version:VERSION,event,...data};
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
- console.log(JSON.stringify(row));
+ if(event!=="TRADE_FREQUENCY_ALERT_SENT"&&event!=="TRADE_FREQUENCY_ALERT_FAILED")return;
 }
 function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periodStart:null,seen:[],alertsSent:0,lastPeriodTradesPerSec:null};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
@@ -66,10 +66,10 @@ function processRaw(raw){
 }
 function connectAggr(){
  if(aggrRequest){try{aggrRequest.destroy();}catch{}}
- log("AGGR_CONNECTING",{url:AGGR_URL});
+ 
  const req=http.get(AGGR_URL,res=>{
   if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{status:res.statusCode});res.resume();scheduleReconnect();return;}
-  aggrConnected=true;log("AGGR_CONNECTED",{url:AGGR_URL});let buffer="";res.setEncoding("utf8");
+  aggrConnected=true;let buffer="";res.setEncoding("utf8");
   res.on("data",chunk=>{
    buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
    const frames=buffer.split("\n\n");buffer=frames.pop()||"";
@@ -81,7 +81,7 @@ function connectAggr(){
     catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}
    }
   });
-  res.on("end",()=>{aggrConnected=false;aggrRequest=null;log("AGGR_DISCONNECTED");scheduleReconnect();});
+  res.on("end",()=>{aggrConnected=false;aggrRequest=null;scheduleReconnect();});
   res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});
  });
  aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{error:String(e.message||e)});scheduleReconnect();});
@@ -89,5 +89,5 @@ function connectAggr(){
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periodStart:state.periodStart,trades:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:state.exchanges};}
 function startHealth(){const port=Number(process.env.MONITOR_HEALTH_PORT||8080);http.createServer((req,res)=>{const p=String(req.url||"/").split("?")[0];if(p==="/"||p==="/health"||p==="/status"||p==="/stats"){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});return res.end(JSON.stringify(diagnostics()));}if(p==="/logs"){let rows=[];try{rows=fs.readFileSync(LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-300).map(x=>JSON.parse(x));}catch{}res.writeHead(200,{"content-type":"application/json"});return res.end(JSON.stringify({status:"ok",events:rows}));}if(p==="/logs/stream"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive"});logSubscribers.add(res);req.on("close",()=>logSubscribers.delete(res));return;}res.writeHead(404);res.end();}).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));}
-function main(){ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);state.lastPeriodTradesPerSec=num(state.lastPeriodTradesPerSec);resetPeriod(Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS);startHealth();connectAggr();setInterval(()=>{const now=Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS;while(state.periodStart<now){const old=state.periodStart;const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};resetPeriod(old+PERIOD_MS);flushPeriod(old,snapshot);}},1000);log("TRADE_FREQUENCY_MONITOR_STARTING",{buildSha:BUILD_SHA,source:"AGGR",aggrUrl:AGGR_URL,symbol:"BTC",period:"5m",thresholds:[],filters:[]});}
+function main(){ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);state.lastPeriodTradesPerSec=num(state.lastPeriodTradesPerSec);resetPeriod(Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS);startHealth();connectAggr();setInterval(()=>{const now=Math.floor(Date.now()/PERIOD_MS)*PERIOD_MS;while(state.periodStart<now){const old=state.periodStart;const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};resetPeriod(old+PERIOD_MS);flushPeriod(old,snapshot);}},1000);log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",period:"5m"});}
 main();
