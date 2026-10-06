@@ -58,7 +58,8 @@ function outputPeriod(end) {
     "TRADES/SEC: "+(state.total/sec).toFixed(2),
     "BUY: "+state.buy.toLocaleString("en-US")+" | SELL: "+state.sell.toLocaleString("en-US"),
     "VOLUME: $"+state.volume.toLocaleString("en-US",{maximumFractionDigits:0}),
-    ""
+    "",
+    "https://polymarket.com/event/btc-updown-5m-"+Math.floor(end/1000)
   ];
   for(const e of EXCHANGES) {
     const x=state.exchanges[e.name];
