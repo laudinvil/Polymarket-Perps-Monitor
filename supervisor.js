@@ -43,6 +43,7 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 start("AGGR", ["aggr-bridge.js"]);
 start("MONITOR", ["monitor.js"]);
+start("EMA", ["ema-monitor.js"]);
 
 function watchAggr() {
   if (stopping) return;
