@@ -41,8 +41,6 @@ function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-start("AGGR", ["aggr-bridge.js"]);
-start("MONITOR", ["monitor.js"]);
 start("SPORTS_ELO", ["sports-elo-monitor.js"]);
 start("TRADE_FREQ", ["trade-frequency-monitor.js"]);
 
