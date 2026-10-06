@@ -13,8 +13,8 @@ const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const EXCLUDED_EXCHANGES=new Set(["HITBTC"]);
 const PERIODS=[
- {name:"5m",ms:5*60*1000,maxTrades:2000},
- {name:"15m",ms:15*60*1000,maxTrades:3000}
+ {name:"5m",ms:5*60*1000},
+ {name:"15m",ms:15*60*1000}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
@@ -157,7 +157,16 @@ function main(){
  state.liquidationSeen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:[];
  state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();
- for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);}
+ for(const config of PERIODS){
+  const p=Math.floor(now/config.ms)*config.ms;
+  if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);
+  else{
+   const bucket=state.periods[config.name];
+   bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
+   bucket.liqCount=Number(bucket.liqCount||0);bucket.liqValue=Number(bucket.liqValue||0);bucket.liqLong=Number(bucket.liqLong||0);bucket.liqShort=Number(bucket.liqShort||0);
+   bucket.liqExchanges=bucket.liqExchanges&&typeof bucket.liqExchanges==="object"?bucket.liqExchanges:{};
+  }
+}
  startHealth();connectAggr();connectLiquidations();
  setInterval(()=>{
   const now=Date.now();
@@ -172,4 +181,4 @@ function main(){
  },1000);
  log("TRADE_LIQUIDATION_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,liquidationUrl:process.env.AGGR_LIQUIDATIONS_URL||"http://127.0.0.1:9090/liquidations",symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
 }
-main();main();
+main();
