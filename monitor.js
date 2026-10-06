@@ -14,7 +14,7 @@ const LOG_KEEP_BYTES=1*1024*1024;
 const EXCLUDED_EXCHANGES=new Set(["HITBTC"]);
 const PERIODS=[
  {name:"5m",ms:5*60*1000,threshold:100000,arrow:"⬆️"},
- {name:"15m",ms:15*60*1000,threshold:100000,arrow:"⬇️"}
+ {name:"15m",ms:15*60*1000,threshold:170000,arrow:"⬇️"}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
@@ -111,6 +111,6 @@ function main(){
  ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.seen=Array.isArray(state.seen)?state.seen:[];state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);}
  startHealth();connectAggr();setInterval(()=>{const now=Date.now();for(const config of PERIODS){let bucket=state.periods[config.name];const current=Math.floor(now/config.ms)*config.ms;while(bucket.periodStart<current){const old=bucket.periodStart;const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges))};resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];}}},1000);
- log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",periods:PERIODS.map(x=>x.name),threshold:100000,arrows:{ "5m":"⬆️","15m":"⬇️"}});
+ log("TRADE_FREQUENCY_MONITOR_STARTING",{source:"AGGR",symbol:"BTC",periods:PERIODS.map(x=>x.name),thresholds:{"5m":100000,"15m":170000},arrows:{"5m":"⬆️","15m":"⬇️"}});
 }
 main();
