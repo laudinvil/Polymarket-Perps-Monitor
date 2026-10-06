@@ -2,14 +2,15 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
-const VERSION = "1.0.0-SPORTS-ESPORTS-PRED-ELO";
+const VERSION = "1.0.1-SPORTS-ESPORTS-PRED-ELO";
 const DATA_API = "https://data-api.polymarket.com";
 const STATE_FILE = process.env.SPORTS_ELO_STATE_FILE || "/data/sports-elo-state.json";
 const LOG_FILE = process.env.SPORTS_ELO_LOG_FILE || "/data/sports-elo.jsonl";
 const HEALTH_PORT = Number(process.env.SPORTS_ELO_HEALTH_PORT || 8082);
 const SCAN_MS = 10 * 60 * 1000;
 const CANDIDATE_LIMIT = 25;
-const CLOSED_LIMIT = 500;\nconst MAX_CLOSED_PAGES = 12;
+const CLOSED_LIMIT = 500;
+const MAX_CLOSED_PAGES = 12;
 const MIN_RESOLVED = 10;
 const K = 32;
 const START_ELO = 1500;
@@ -22,16 +23,16 @@ function load(){try{const s=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(s&
 function save(){try{ensure(STATE_FILE);const t=STATE_FILE+".tmp";fs.writeFileSync(t,JSON.stringify(state,null,2));fs.renameSync(t,STATE_FILE);}catch(e){log("STATE_WRITE_ERROR",{error:String(e.message||e)});}}
 let state=load();
 
-const SPORTS_WORDS=/\\b(nfl|nba|wnba|ncaa|mlb|nhl|nfl|ufc|mma|pga|atp|wta|f1|formula.?1|nascar|motogp|cricket|rugby|golf|boxing|baseball|basketball|football|soccer|hockey|tennis|volleyball|fifa|uefa|premier.?league|champions.?league|la.?liga|serie.?a|bundesliga|ligue.?1|epl|mls|nbl|wnba|euroleague|olympics|wimbledon|us.?open|australian.?open|roland.?garros|masters|super.?bowl)\\b/i;
-const ESPORTS_WORDS=/\\b(esports?|cs2|counter.?strike|valorant|dota.?2|league.?of.?legends|\\blol\\b|overwatch|rocket.?league|call.?of.?duty|rainbow.?six|r6|starcraft|tekken|street.?fighter|pubg|fortnite|apex.?legends|efootball|ea.?fc|fifa.?esports)\\b/i;
-const SPORT_SLUG=/\\b(nfl|nba|wnba|mlb|nhl|ncaaf|ncaab|ufc|mma|atp|wta|f1|formula1|nascar|motogp|cricket|rugby|golf|boxing|soccer|football|hockey|tennis|volleyball|fifa|uefa|epl|mls|nbl|euroleague|olympics)\\b/i;
-const ESPORT_SLUG=/\\b(esports?|cs2|counter-strike|valorant|dota-2|league-of-legends|lol|overwatch|rocket-league|call-of-duty|rainbow-six|r6|starcraft|tekken|street-fighter|pubg|fortnite|apex-legends)\\b/i;
+const SPORTS_WORDS=/\b(nfl|nba|wnba|ncaa|mlb|nhl|nfl|ufc|mma|pga|atp|wta|f1|formula.?1|nascar|motogp|cricket|rugby|golf|boxing|baseball|basketball|football|soccer|hockey|tennis|volleyball|fifa|uefa|premier.?league|champions.?league|la.?liga|serie.?a|bundesliga|ligue.?1|epl|mls|nbl|wnba|euroleague|olympics|wimbledon|us.?open|australian.?open|roland.?garros|masters|super.?bowl)\b/i;
+const ESPORTS_WORDS=/\b(esports?|cs2|counter.?strike|valorant|dota.?2|league.?of.?legends|\blol\b|overwatch|rocket.?league|call.?of.?duty|rainbow.?six|r6|starcraft|tekken|street.?fighter|pubg|fortnite|apex.?legends|efootball|ea.?fc|fifa.?esports)\b/i;
+const SPORT_SLUG=/\b(nfl|nba|wnba|mlb|nhl|ncaaf|ncaab|ufc|mma|atp|wta|f1|formula1|nascar|motogp|cricket|rugby|golf|boxing|soccer|football|hockey|tennis|volleyball|fifa|uefa|epl|mls|nbl|euroleague|olympics)\b/i;
+const ESPORT_SLUG=/\b(esports?|cs2|counter-strike|valorant|dota-2|league-of-legends|lol|overwatch|rocket-league|call-of-duty|rainbow-six|r6|starcraft|tekken|street-fighter|pubg|fortnite|apex-legends)\b/i;
 
 function classify(row){
   const s=[row?.title,row?.slug,row?.eventSlug,row?.event_slug,row?.question].filter(Boolean).join(" ");
   if(ESPORTS_WORDS.test(s)||ESPORT_SLUG.test(s))return"ESPORTS";
   if(SPORTS_WORDS.test(s)||SPORT_SLUG.test(s))return"SPORTS";
-  if(/\\bvs\\.?\\b|\\bversus\\b/i.test(s))return"SPORTS";
+  if(/\bvs\\.?\b|\bversus\b/i.test(s))return"SPORTS";
   return null;
 }
 
