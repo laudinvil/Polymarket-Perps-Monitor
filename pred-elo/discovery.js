@@ -1,12 +1,5 @@
 const CONFIG = require("./config");
 
-function normalizeCategory(value) {
-  const raw = String(value || "").trim().toUpperCase();
-  if (raw === "SPORTS" || raw === "SPORT") return "SPORTS";
-  if (raw === "ESPORTS" || raw === "ESPORT" || raw === "E-SPORTS") return "ESPORTS";
-  return null;
-}
-
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -18,68 +11,62 @@ async function fetchJson(url) {
   return response.json();
 }
 
-function categoryFromObject(obj) {
-  const candidates = [
-    obj?.category,
-    obj?.sportsCategory,
-    obj?.sportCategory,
-    obj?.tags?.find?.((t) => normalizeCategory(t?.label || t?.name || t?.slug))?.label,
-  ];
-  for (const candidate of candidates) {
-    const category = normalizeCategory(candidate);
-    if (category) return category;
+function normalizeMarket(market, event, category) {
+  const conditionId = market?.conditionId || market?.condition_id || market?.condition;
+  if (!conditionId) return null;
+
+  return {
+    eventId: String(event?.id ?? market?.eventId ?? ""),
+    category,
+    title: market?.question || market?.title || event?.title || "",
+    slug: market?.slug || event?.slug || "",
+    status: market?.closed || market?.active === false ? "CLOSED" : "ACTIVE",
+    lastSeen: Math.floor(Date.now() / 1000),
+    resolved: Boolean(market?.resolved || event?.resolved),
+  };
+}
+
+async function discoverCategory(category, tagSlug, limit) {
+  const markets = {};
+
+  const payload = await fetchJson(
+    `${CONFIG.gamma.baseUrl}/events?active=true&closed=false&tag_slug=${encodeURIComponent(tagSlug)}&limit=100&offset=0`
+  );
+
+  const events = Array.isArray(payload)
+    ? payload
+    : (payload?.data || payload?.events || []);
+
+  for (const event of events) {
+    const eventMarkets = Array.isArray(event?.markets) ? event.markets : [];
+
+    for (const market of eventMarkets) {
+      const normalized = normalizeMarket(market, event, category);
+      if (!normalized) continue;
+      markets[market.conditionId || market.condition_id || market.condition] = normalized;
+
+      if (Object.keys(markets).length >= limit) break;
+    }
+
+    if (Object.keys(markets).length >= limit) break;
   }
-  return null;
+
+  return Object.entries(markets).slice(0, limit);
 }
 
 async function discoverMarkets() {
-  const markets = {};
-
-  // Gamma schemas can evolve. Prefer metadata fields/tags; never classify by title keywords.
-  const payload = await fetchJson(
-    `${CONFIG.gamma.baseUrl}/events?active=true&closed=false&limit=100`
-  );
-
-  const events = Array.isArray(payload) ? payload : (payload?.data || payload?.events || []);
-
-  for (const event of events) {
-    const category = categoryFromObject(event);
-    if (!category) continue;
-
-    const eventMarkets = Array.isArray(event.markets) ? event.markets : [];
-    for (const market of eventMarkets) {
-      const conditionId = market?.conditionId || market?.condition_id;
-      if (!conditionId) continue;
-
-      markets[conditionId] = {
-        eventId: String(event.id ?? market.eventId ?? ""),
-        category,
-        title: market.question || market.title || event.title || "",
-        slug: market.slug || event.slug || "",
-        status: market.closed ? "CLOSED" : (market.active === false ? "CLOSED" : "ACTIVE"),
-        lastSeen: Math.floor(Date.now() / 1000),
-        resolved: false,
-      };
-    }
-  }
-
-  const byCategory = {
-    SPORTS: Object.values(markets).filter((m) => m.category === "SPORTS").slice(0, CONFIG.discovery.sportsLimit),
-    ESPORTS: Object.values(markets).filter((m) => m.category === "ESPORTS").slice(0, CONFIG.discovery.esportsLimit),
-  };
+  const [sports, esports] = await Promise.all([
+    discoverCategory("SPORTS", "sports", CONFIG.discovery.sportsLimit),
+    discoverCategory("ESPORTS", "esports", CONFIG.discovery.esportsLimit),
+  ]);
 
   return {
-    markets: Object.fromEntries(
-      [...byCategory.SPORTS, ...byCategory.ESPORTS].map((m) => [
-        Object.keys(markets).find((id) => markets[id] === m),
-        m,
-      ])
-    ),
+    markets: Object.fromEntries([...sports, ...esports]),
     counts: {
-      SPORTS: byCategory.SPORTS.length,
-      ESPORTS: byCategory.ESPORTS.length,
+      SPORTS: sports.length,
+      ESPORTS: esports.length,
     },
   };
 }
 
-module.exports = { discoverMarkets, normalizeCategory };
+module.exports = { discoverMarkets };
