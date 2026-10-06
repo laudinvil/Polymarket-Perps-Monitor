@@ -54,7 +54,6 @@ async function flushPeriod(config,period,snapshot){
  }
  if(state.liqAlertArmed[config.name]!==true)return;
  if(Number(state.lastZeroLiqPeriod[config.name]||-1)<=Number(state.lastLiqAlertPeriod[config.name]||-1))return;
- if(snapshot.liqLong===snapshot.liqShort)return;
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(config.ms/1000);
