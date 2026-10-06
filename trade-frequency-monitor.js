@@ -1,7 +1,7 @@
 const WebSocket = require("ws");
 const zlib = require("zlib");
 
-const VERSION = "1.0.2-BTC-5M-TRADE-FREQUENCY-ALERTS";
+const VERSION = "1.0.3-BTC-5M-TRADE-FREQUENCY-ALERTS";
 const PERIOD_MS = 5 * 60 * 1000;
 const SYMBOL = "BTCUSDT";
 
@@ -120,11 +120,11 @@ function connect(cfg) {
       const d=m;
       if(d.e==="aggTrade" && d.s==="BTCUSDT") { seenTrades++; addTrade("Binance",d.m?"SELL":"BUY",Number(d.q),Number(d.p)); }
     } else if(cfg.type==="bybit"){
-      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("Bybit",d.S,d.v,d.p); }
+      for(const d of Array.isArray(m.data)?m.data:[]) { if(d.s==="BTCUSDT"){ seenTrades++; addTrade("Bybit",d.S,d.v,d.p); } }
     } else if(cfg.type==="okx"){
-      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("OKX",d.side,d.sz,d.px); }
+      for(const d of Array.isArray(m.data)?m.data:[]) { if(d.instId==="BTC-USDT-SWAP"){ seenTrades++; addTrade("OKX",d.side,d.sz,d.px); } }
     } else if(cfg.type==="bitget"){
-      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("Bitget",d.side,d.size,d.price); }
+      for(const d of Array.isArray(m.data)?m.data:[]) { if((d.instId||d.symbol)==="BTCUSDT"){ seenTrades++; addTrade("Bitget",d.side,d.size,d.price); } }
     } else if(cfg.type==="gate"){
       for(const d of Array.isArray(m.result)?m.result:[]) addTrade("Gate.io",d.size>0?"BUY":"SELL",Math.abs(Number(d.size)),Number(d.price));
     } else if(cfg.type==="huobi"){
