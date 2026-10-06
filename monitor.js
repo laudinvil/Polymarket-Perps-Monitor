@@ -42,11 +42,12 @@ function marketUrl(period){return "https://polymarket.com/event/btc-updown-5m-"+
 function displayExchangeName(name){return String(name||"").toUpperCase()==="GATEIO"?"Gate":name;}
 async function flushPeriod(period){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
+ const snapshot={total:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:JSON.parse(JSON.stringify(state.exchanges))};
  try{
-  const lines=["🔥 BTC 5m","TRADES: "+state.total.toLocaleString("en-US"),"TRADES/SEC: "+(state.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+state.buy.toLocaleString("en-US")+" | SELL: "+state.sell.toLocaleString("en-US"),"VOLUME: $"+state.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
-  for(const name of Object.keys(state.exchanges))lines.push(displayExchangeName(name)+": "+state.exchanges[name].trades.toLocaleString("en-US"));
+  const lines=["🔥 BTC 5m","TRADES: "+snapshot.total.toLocaleString("en-US"),"TRADES/SEC: "+(snapshot.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),"VOLUME: $"+snapshot.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
+  for(const name of Object.keys(snapshot.exchanges))lines.push(displayExchangeName(name)+": "+snapshot.exchanges[name].trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:state.exchanges});
+  log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,exchanges:snapshot.exchanges});
   if(sent)state.alertsSent=Number(state.alertsSent||0)+1;saveState();
  }finally{alertInFlight.delete(key);}
 }
