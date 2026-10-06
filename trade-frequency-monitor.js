@@ -1,11 +1,12 @@
 const WebSocket = require("ws");
+const zlib = require("zlib");
 
 const VERSION = "1.0.1-BTC-5M-TRADE-FREQUENCY-ALERTS";
 const PERIOD_MS = 5 * 60 * 1000;
 const SYMBOL = "BTCUSDT";
 
 const EXCHANGES = [
-  {name:"Binance", url:"wss://fstream.binance.com/ws/btcusdt@aggTrade", type:"binance"},
+  {name:"Binance", url:"wss://fstream.binance.com/public/ws/btcusdt@aggTrade", type:"binance"},
   {name:"Bybit", url:"wss://stream.bybit.com/v5/public/linear", type:"bybit"},
   {name:"OKX", url:"wss://ws.okx.com:8443/ws/v5/public", type:"okx"},
   {name:"Bitget", url:"wss://ws.bitget.com/v2/ws/public", type:"bitget"},
@@ -99,7 +100,15 @@ function connect(cfg) {
   });
   ws.on("message",raw=>{
     let m;
-    try{m=JSON.parse(raw.toString());}catch{return;}
+    try{
+      let payload=Buffer.isBuffer(raw)?raw:Buffer.from(raw);
+      if(cfg.type==="huobi"){
+        try{payload=zlib.gunzipSync(payload);}catch{}
+      }
+      m=JSON.parse(payload.toString());
+    }catch{return;}
+    if(cfg.type==="huobi" && m.ping){ws.send(JSON.stringify({pong:m.ping}));return;}
+    if(cfg.type==="bybit" && m.op==="ping"){ws.send(JSON.stringify({op:"pong"}));return;}
     if(cfg.type==="binance"){
       const d=m;
       addTrade("Binance",d.m?"SELL":"BUY",Number(d.q),Number(d.p));
