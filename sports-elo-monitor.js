@@ -9,7 +9,7 @@ const LOG_FILE = process.env.SPORTS_ELO_LOG_FILE || "/data/sports-elo.jsonl";
 const HEALTH_PORT = Number(process.env.SPORTS_ELO_HEALTH_PORT || 8082);
 const SCAN_MS = 10 * 60 * 1000;
 const CANDIDATE_LIMIT = 25;
-const CLOSED_LIMIT = 50;
+const CLOSED_LIMIT = 500;\nconst MAX_CLOSED_PAGES = 12;
 const MIN_RESOLVED = 10;
 const K = 32;
 const START_ELO = 1500;
@@ -53,14 +53,20 @@ async function leaderboard(category,orderBy){
 }
 
 async function closedPositions(wallet){
-  const u=new URL(DATA_API+"/closed-positions");
-  u.searchParams.set("user",wallet);
-  u.searchParams.set("limit",String(CLOSED_LIMIT));
-  u.searchParams.set("offset","0");
-  u.searchParams.set("sortBy","TIMESTAMP");
-  u.searchParams.set("sortDirection","DESC");
-  const data=await getJson(u);
-  return Array.isArray(data)?data:[];
+  const all=[];
+  for(let page=0;page<MAX_CLOSED_PAGES;page++){
+    const u=new URL(DATA_API+"/closed-positions");
+    u.searchParams.set("user",wallet);
+    u.searchParams.set("limit",String(CLOSED_LIMIT));
+    u.searchParams.set("offset",String(page*CLOSED_LIMIT));
+    u.searchParams.set("sortBy","TIMESTAMP");
+    u.searchParams.set("sortDirection","DESC");
+    const data=await getJson(u);
+    if(!Array.isArray(data)||!data.length)break;
+    all.push(...data);
+    if(data.length<CLOSED_LIMIT)break;
+  }
+  return all;
 }
 
 function scorePositions(rows){
@@ -85,6 +91,12 @@ function scorePositions(rows){
 }
 
 function fmt(n,d=0){return Number.isFinite(Number(n))?Number(n).toFixed(d):"—";}
+function calibratedElo(rawElo){
+  const anchor=state.calibration&&Number.isFinite(Number(state.calibration.rawAnchorElo))
+    ?Number(state.calibration.rawAnchorElo):null;
+  if(anchor===null)return rawElo;
+  return rawElo+(CALIBRATION_ANCHOR_ELO-anchor);
+}
 
 async function discover(){
   const [spPnl,spVol,esPnl,esVol]=await Promise.all([
@@ -119,6 +131,23 @@ async function evaluate(candidates){
         winRate:score.winRate,longshotWins:score.longshotWins,categories:[...c.categories],updatedAt:now()
       };
     }catch(e){log("CANDIDATE_ERROR",{wallet:c.wallet,error:String(e.message||e)});}
+  }
+  const anchor=out.find(x=>x.wallet===CALIBRATION_ANCHOR_WALLET);
+  if(anchor){
+    state.calibration={
+      anchorWallet:CALIBRATION_ANCHOR_WALLET,
+      targetElo:CALIBRATION_ANCHOR_ELO,
+      targetWinRate:CALIBRATION_ANCHOR_WIN_RATE,
+      targetResolved:CALIBRATION_ANCHOR_RESOLVED,
+      rawAnchorElo:anchor.elo,
+      offset:CALIBRATION_ANCHOR_ELO-anchor.elo,
+      measuredWinRate:anchor.winRate,
+      measuredResolved:anchor.total,
+      updatedAt:now()
+    };
+    for(const x of out)x.elo=calibratedElo(x.elo);
+  }else{
+    log("CALIBRATION_ANCHOR_NOT_FOUND",{wallet:CALIBRATION_ANCHOR_WALLET});
   }
   out.sort((a,b)=>b.elo-a.elo);
   return out;
@@ -209,7 +238,7 @@ function startHealth(){
 }
 
 async function main(){
-  log("SPORTS_ELO_MONITOR_STARTING",{version:VERSION,scope:["SPORTS","ESPORTS"],algorithm:"ELO_START_1500_K32_EXPECTED_PRICE",candidateLimit:CANDIDATE_LIMIT,minResolved:MIN_RESOLVED});
+  log("SPORTS_ELO_MONITOR_STARTING",{version:VERSION,scope:["SPORTS","ESPORTS"],algorithm:"ELO_START_1500_K32_EXPECTED_PRICE_CALIBRATED_TO_ROBERTO73",candidateLimit:CANDIDATE_LIMIT,minResolved:MIN_RESOLVED,calibrationAnchor:CALIBRATION_ANCHOR_WALLET,targetElo:CALIBRATION_ANCHOR_ELO,targetWinRate:CALIBRATION_ANCHOR_WIN_RATE,targetResolved:CALIBRATION_ANCHOR_RESOLVED});
   startHealth();
   try{await scan();}catch(e){log("SCAN_ERROR",{error:String(e.stack||e)});}
   setInterval(async()=>{try{await scan();}catch(e){log("SCAN_ERROR",{error:String(e.stack||e)});}},SCAN_MS);
