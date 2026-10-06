@@ -91,7 +91,9 @@ function connect(cfg) {
   const ws=new WebSocket(cfg.url);
   let heartbeat;
   let ready=false;
+  let seenTrades=0;
   ws.on("open",()=>{
+    console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_WS_CONNECTED",exchange:cfg.name,url:cfg.url}));
     ready=true;
     if(cfg.type==="bybit") { ws.send(JSON.stringify({op:"subscribe",args:["publicTrade."+SYMBOL]})); heartbeat=setInterval(()=>{if(ws.readyState===1)ws.send(JSON.stringify({op:"ping"}));},20000); }
     if(cfg.type==="okx") ws.send(JSON.stringify({id:"btctrades",op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
@@ -112,16 +114,16 @@ function connect(cfg) {
     if(cfg.type==="huobi" && m.ping){ws.send(JSON.stringify({pong:m.ping}));return;}
     if(cfg.type==="bybit" && m.op==="ping"){ws.send(JSON.stringify({op:"pong"}));return;}
     if(m.event==="error" || m.code && m.msg && (cfg.type==="okx" || cfg.type==="bitget")) { console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_WS_ERROR",exchange:cfg.name,code:m.code,msg:m.msg})); return; }
-    if(m.event==="subscribe" || m.event==="login" || m.op==="pong" || m==="pong") return;
+    if(m.event==="subscribe" || m.event==="login" || m.op==="pong" || m==="pong") { if(m.event==="subscribe") console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_WS_SUBSCRIBED",exchange:cfg.name})); return; }
     if(cfg.type==="binance"){
       const d=m;
       addTrade("Binance",d.m?"SELL":"BUY",Number(d.q),Number(d.p));
     } else if(cfg.type==="bybit"){
-      for(const d of Array.isArray(m.data)?m.data:[]) addTrade("Bybit",d.S,d.v,d.p);
+      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("Bybit",d.S,d.v,d.p); }
     } else if(cfg.type==="okx"){
-      for(const d of Array.isArray(m.data)?m.data:[]) addTrade("OKX",d.side,d.sz,d.px);
+      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("OKX",d.side,d.sz,d.px); }
     } else if(cfg.type==="bitget"){
-      for(const d of Array.isArray(m.data)?m.data:[]) addTrade("Bitget",d.side,d.size,d.price);
+      for(const d of Array.isArray(m.data)?m.data:[]) { seenTrades++; addTrade("Bitget",d.side,d.size,d.price); }
     } else if(cfg.type==="gate"){
       for(const d of Array.isArray(m.result)?m.result:[]) addTrade("Gate.io",d.size>0?"BUY":"SELL",Math.abs(Number(d.size)),Number(d.price));
     } else if(cfg.type==="huobi"){
@@ -129,7 +131,8 @@ function connect(cfg) {
       for(const d of data) addTrade("Huobi",d.direction,d.amount,d.price);
     }
   });
-  ws.on("close",()=>{if(ws._heartbeat) clearInterval(ws._heartbeat);if(heartbeat) clearInterval(heartbeat);setTimeout(()=>connect(cfg),2000).unref();});
+  ws.on("close",()=>{
+    console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_WS_CLOSED",exchange:cfg.name,seenTrades}));if(ws._heartbeat) clearInterval(ws._heartbeat);if(heartbeat) clearInterval(heartbeat);setTimeout(()=>connect(cfg),2000).unref();});
   ws.on("error",()=>{try{ws.close();}catch{}});
   return ws;
 }
