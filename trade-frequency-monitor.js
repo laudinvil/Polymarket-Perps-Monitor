@@ -8,7 +8,7 @@ const SYMBOL = "BTCUSDT";
 const EXCHANGES = [
   {name:"Binance", url:"wss://fstream.binance.com/public/ws/btcusdt@aggTrade", type:"binance"},
   {name:"Bybit", url:"wss://stream.bybit.com/v5/public/linear", type:"bybit"},
-  {name:"OKX", url:"wss://ws.okx.com:8443/ws/v5/public", type:"okx"},
+  {name:"OKX", url:"wss://ws.okx.com/ws/v5/public", type:"okx"},
   {name:"Bitget", url:"wss://ws.bitget.com/v2/ws/public", type:"bitget"},
   {name:"Gate.io", url:"wss://fx-ws.gateio.ws/v4/ws/usdt", type:"gate"},
   {name:"Huobi", url:"wss://api.hbdm.com/linear-swap-ws", type:"huobi"}
@@ -93,10 +93,11 @@ function connect(cfg) {
   ws.on("open",()=>{
     ready=true;
     if(cfg.type==="bybit") ws.send(JSON.stringify({op:"subscribe",args:["publicTrade."+SYMBOL]}));
-    if(cfg.type==="okx") ws.send(JSON.stringify({op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
+    if(cfg.type==="okx") ws.send(JSON.stringify({id:"btc-trades",op:"subscribe",args:[{channel:"trades",instId:"BTC-USDT-SWAP"}]}));
     if(cfg.type==="bitget") ws.send(JSON.stringify({op:"subscribe",args:[{instType:"USDT-FUTURES",channel:"trade",instId:"BTCUSDT"}]}));
     if(cfg.type==="gate") ws.send(JSON.stringify({time:Math.floor(Date.now()/1000),channel:"futures.trades",event:"subscribe",payload:["BTC_USDT"]}));
     if(cfg.type==="huobi") ws.send(JSON.stringify({sub:"market.BTC-USDT.trade.detail",id:String(Date.now())}));
+    if(cfg.type==="bitget") ws._heartbeat=setInterval(()=>{if(ws.readyState===1) ws.send("ping");},25000);
   });
   ws.on("message",raw=>{
     let m;
@@ -109,6 +110,8 @@ function connect(cfg) {
     }catch{return;}
     if(cfg.type==="huobi" && m.ping){ws.send(JSON.stringify({pong:m.ping}));return;}
     if(cfg.type==="bybit" && m.op==="ping"){ws.send(JSON.stringify({op:"pong"}));return;}
+    if(m.event==="error" || m.code && m.msg && (cfg.type==="okx" || cfg.type==="bitget")) { console.log(JSON.stringify({ts:new Date().toISOString(),version:VERSION,event:"TRADE_FREQUENCY_WS_ERROR",exchange:cfg.name,code:m.code,msg:m.msg})); return; }
+    if(m.event==="subscribe" || m.event==="login" || m.op==="pong" || m==="pong") return;
     if(cfg.type==="binance"){
       const d=m;
       addTrade("Binance",d.m?"SELL":"BUY",Number(d.q),Number(d.p));
@@ -125,7 +128,7 @@ function connect(cfg) {
       for(const d of data) addTrade("Huobi",d.direction,d.amount,d.price);
     }
   });
-  ws.on("close",()=>setTimeout(()=>connect(cfg),2000).unref());
+  ws.on("close",()=>{if(ws._heartbeat) clearInterval(ws._heartbeat);setTimeout(()=>connect(cfg),2000).unref();});
   ws.on("error",()=>{try{ws.close();}catch{}});
   return ws;
 }
