@@ -6,7 +6,7 @@ const PERIOD_MS = 5 * 60 * 1000;
 const SYMBOL = "BTCUSDT";
 
 const EXCHANGES = [
-  {name:"Binance", url:"wss://fstream.binance.com/public/ws/btcusdt@aggTrade", type:"binance"},
+  {name:"Binance", url:"wss://fstream.binance.com/ws/btcusdt@aggTrade", type:"binance"},
   {name:"Bybit", url:"wss://stream.bybit.com/v5/public/linear", type:"bybit"},
   {name:"OKX", url:"wss://ws.okx.com/ws/v5/public", type:"okx"},
   {name:"Bitget", url:"wss://ws.bitget.com/v2/ws/public", type:"bitget"},
