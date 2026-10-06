@@ -1,0 +1,8 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev && npm cache clean --force
+COPY pred-elo ./pred-elo
+EXPOSE 8080
+ENV NODE_ENV=production PORT=8080
+CMD ["node","pred-elo/index.js"]
