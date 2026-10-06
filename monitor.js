@@ -39,11 +39,12 @@ function addTrade(e){
 }
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
 function marketUrl(period){return "https://polymarket.com/event/btc-updown-5m-"+Math.floor(period/1000);}
+function displayExchangeName(name){return String(name||"").toUpperCase()==="GATEIO"?"Gate":name;}
 async function flushPeriod(period){
  const key="period:"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
-  const lines=["🔥 BTC 5m","TRADES: "+state.total.toLocaleString("en-US"),"TRADES/SEC: "+(state.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+state.buy.toLocaleString("en-US")+" | SELL: "+state.sell.toLocaleString("en-US"),"VOLUME: $"+state.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Kyiv",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date(period)),marketUrl(period)];
-  for(const name of Object.keys(state.exchanges))lines.push(name+": "+state.exchanges[name].trades.toLocaleString("en-US"));
+  const lines=["🔥 BTC 5m","TRADES: "+state.total.toLocaleString("en-US"),"TRADES/SEC: "+(state.total/(PERIOD_MS/1000)).toFixed(2),"BUY: "+state.buy.toLocaleString("en-US")+" | SELL: "+state.sell.toLocaleString("en-US"),"VOLUME: $"+state.volume.toLocaleString("en-US",{maximumFractionDigits:0}),"",marketUrl(period)];
+  for(const name of Object.keys(state.exchanges))lines.push(displayExchangeName(name)+": "+state.exchanges[name].trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
   log(sent?"TRADE_FREQUENCY_ALERT_SENT":"TRADE_FREQUENCY_ALERT_FAILED",{source:"AGGR",period,periodEnd:new Date(period).toISOString(),trades:state.total,buy:state.buy,sell:state.sell,volume:state.volume,exchanges:state.exchanges});
   if(sent)state.alertsSent=Number(state.alertsSent||0)+1;saveState();
