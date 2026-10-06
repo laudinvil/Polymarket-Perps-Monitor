@@ -58,7 +58,8 @@ async function flushPeriod(config,period,snapshot){
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
   const tradesPerSec=snapshot.total/(config.ms/1000);
-  const lines=["🔥 BTC "+config.name,
+  const arrow=snapshot.liqLong>snapshot.liqShort?"⬆️":"⬇️";
+  const lines=["🔥 BTC "+config.name+" "+arrow,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
     "BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),
