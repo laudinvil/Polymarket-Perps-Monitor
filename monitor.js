@@ -49,12 +49,20 @@ async function flushPeriod(config,period,snapshot){
  if(snapshot.liqCount>0){
   state.lastLiqAlertPeriod[config.name]=period;
   state.liqAlertArmed[config.name]=true;
+  state.lastZeroLiqPeriod[config.name]=-1;
   saveState();
   return;
  }
  if(state.liqAlertArmed[config.name]!==true)return;
  if(Number(state.lastLiqAlertPeriod[config.name]||-1)<0)return;
- if(Number(state.lastZeroLiqPeriod[config.name]||-1)>=Number(state.lastLiqAlertPeriod[config.name]||-1))return;
+ const lastZero=Number(state.lastZeroLiqPeriod[config.name]||-1);
+ if(lastZero<Number(state.lastLiqAlertPeriod[config.name]||-1)){
+  state.lastZeroLiqPeriod[config.name]=period;
+  saveState();
+  return;
+ }
+ if(lastZero===period)return;
+ state.liqAlertArmed[config.name]=false;
  state.lastZeroLiqPeriod[config.name]=period;
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
