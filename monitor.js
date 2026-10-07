@@ -66,7 +66,6 @@ async function flushPeriod(config,period,snapshot){
  state.lastZeroLiqPeriod[config.name]=period;
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
-  if(snapshot.total<13000){saveState();return;}
   const tradesPerSec=snapshot.total/(config.ms/1000);
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
