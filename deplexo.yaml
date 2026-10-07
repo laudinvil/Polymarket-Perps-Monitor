@@ -1,3 +1,9 @@
-framework: dockerfile
-dockerfile: Dockerfile
-port: 8080
+version: 1
+type: web
+
+build:
+  framework: dockerfile
+  dockerfile: Dockerfile
+
+run:
+  port: 8080
