@@ -25,7 +25,7 @@ function log(event,data={}){
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
 }
 function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{},liqCount:0,liqValue:0,liqLong:0,liqShort:0,liqExchanges:{}};}
-function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES_LIQUIDATIONS",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{},lastLiqAlertPeriod:{},lastZeroLiqPeriod:{}};}
+function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{},lastLiqAlertPeriod:{},lastZeroLiqPeriod:{}};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
 function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
 function resetPeriod(period,start){state.periods[period.name]={...defaultSnapshot(),periodStart:start};}
@@ -91,7 +91,6 @@ function processRaw(raw){
  }
  aggrEvents++;aggrLastEventAt=nowIso();
 }
-function processLiquidation(raw){}
 function connectAggr(){
  if(aggrRequest){try{aggrRequest.destroy();}catch{}}
  const req=http.get(AGGR_URL,res=>{
@@ -106,7 +105,7 @@ function connectAggr(){
 
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){
- const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,liqs:p.liqCount||0,liqValue:p.liqValue||0,liqLong:p.liqLong||0,liqShort:p.liqShort||0,liqExchanges:p.liqExchanges||{}};}
+ const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges};}
  return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};
 }
 function startHealth(){
@@ -119,9 +118,8 @@ function startHealth(){
  }).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));
 }
 function main(){
- ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES_LIQUIDATIONS";
+ ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";
  state.tradeSeen=Array.isArray(state.tradeSeen)?state.tradeSeen:(Array.isArray(state.seen)?state.seen:[]);
- state.liquidationSeen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:[];
  state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();
  for(const config of PERIODS){
@@ -131,8 +129,6 @@ function main(){
   else{
    const bucket=state.periods[config.name];
    bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
-   bucket.liqCount=Number(bucket.liqCount||0);bucket.liqValue=Number(bucket.liqValue||0);bucket.liqLong=Number(bucket.liqLong||0);bucket.liqShort=Number(bucket.liqShort||0);
-   bucket.liqExchanges=bucket.liqExchanges&&typeof bucket.liqExchanges==="object"?bucket.liqExchanges:{};
   }
 }
  startHealth();connectAggr();
@@ -147,6 +143,6 @@ function main(){
    }
   }
  },1000);
- log("TRADE_LIQUIDATION_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
+ log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
 }
 main();
