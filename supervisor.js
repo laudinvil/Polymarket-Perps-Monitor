@@ -1,4 +1,3 @@
-
 const { spawn }=require("child_process");
 const children=new Map();let stopping=false;const restartTimers=new Map();
 function start(name,args){if(stopping)return;const existing=children.get(name);if(existing&&existing.exitCode===null&&!existing.killed)return;const child=spawn(process.execPath,args,{stdio:["ignore","pipe","pipe"],env:process.env});children.set(name,child);child.stdout.on("data",d=>process.stdout.write("["+name+"] "+d));child.stderr.on("data",d=>process.stderr.write("["+name+"] "+d));child.on("exit",(code,signal)=>{console.log(JSON.stringify({ts:new Date().toISOString(),component:"SUPERVISOR",event:"CHILD_EXIT",name,code,signal}));if(children.get(name)===child)children.delete(name);if(!stopping){const t=setTimeout(()=>{restartTimers.delete(name);start(name,args);},name==="AGGR"?2000:1000);restartTimers.set(name,t);}});}
