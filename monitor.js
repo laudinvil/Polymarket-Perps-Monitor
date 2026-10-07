@@ -50,7 +50,7 @@ async function flushPeriod(config,period,snapshot){
   const sellPct=snapshot.total>0?(snapshot.sell/snapshot.total)*100:0;
   const diff=Math.abs(buyPct-sellPct);
   if(diff<23)return;
-  const leader=buyPct>sellPct?"BUY":sellPct>buyPct?"SELL":"EQUAL";
+  const leader=buyPct>sellPct?"⬆️ BUY":sellPct>buyPct?"⬇️ SELL":"EQUAL";
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
