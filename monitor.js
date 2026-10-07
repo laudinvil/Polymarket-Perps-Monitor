@@ -66,16 +66,23 @@ async function flushPeriod(config,period,snapshot){
  state.lastZeroLiqPeriod[config.name]=period;
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
+  const tradesPerSec=snapshot.total/(config.ms/1000);
   const lines=["🔥 BTC "+config.name,
+    "TRADES: "+snapshot.total.toLocaleString("en-US"),
+    "TRADES/SEC: "+tradesPerSec.toFixed(2),
+    "BUY: "+snapshot.buy.toLocaleString("en-US")+" | SELL: "+snapshot.sell.toLocaleString("en-US"),
+    "────────────",
     "LIQS: "+snapshot.liqCount.toLocaleString("en-US"),
     "LIQ VALUE: $"+snapshot.liqValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
     "LONG: "+snapshot.liqLong.toLocaleString("en-US")+" | SHORT: "+snapshot.liqShort.toLocaleString("en-US"),
     "",
     marketUrl(period+config.ms,config.name)];
+  const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>b[1].trades-a[1].trades);
+  for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const liqExchanges=Object.entries(snapshot.liqExchanges).sort((a,b)=>b[1]-a[1]);
   for(const [name,count] of liqExchanges)lines.push("LIQ "+(name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+count.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_LIQUIDATION_ALERT_SENT":"TRADE_LIQUIDATION_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),liqs:snapshot.liqCount,liqValue:snapshot.liqValue,liqLong:snapshot.liqLong,liqShort:snapshot.liqShort,liqExchanges:Object.fromEntries(liqExchanges)});
+  log(sent?"TRADE_LIQUIDATION_ALERT_SENT":"TRADE_LIQUIDATION_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,volume:snapshot.volume,liqs:snapshot.liqCount,liqValue:snapshot.liqValue,liqLong:snapshot.liqLong,liqShort:snapshot.liqShort,tradeExchanges:Object.fromEntries(exchanges),liqExchanges:Object.fromEntries(liqExchanges)});
   if(sent){state.alertsSent=Number(state.alertsSent||0)+1;state.liqAlertArmed[config.name]=false;state.lastLiqAlertPeriod[config.name]=period;}saveState();
  }finally{alertInFlight.delete(key);}
 }
