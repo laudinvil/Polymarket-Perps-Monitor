@@ -50,18 +50,17 @@ async function flushPeriod(config,period,snapshot){
   const sellPct=snapshot.total>0?(snapshot.sell/snapshot.total)*100:0;
   const diff=Math.abs(buyPct-sellPct);
   if(snapshot.total<=0)return;
-  const leader=config.name==="5m"?"⬆️":"⬇️";
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
     "BUY: "+buyPct.toFixed(2)+"% | SELL: "+sellPct.toFixed(2)+"%",
-    "DIFF: "+diff.toFixed(2)+"% "+leader,
+    "DIFF: "+diff.toFixed(2)+"%",
     "",
     marketUrl(period+config.ms,config.name)];
   const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>b[1].trades-a[1].trades);
   for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_ALERT_SENT":"TRADE_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,buyPct,sellPct,diff,leader,volume:snapshot.volume,tradeExchanges:Object.fromEntries(exchanges)});
+  log(sent?"TRADE_ALERT_SENT":"TRADE_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,buyPct,sellPct,diff,volume:snapshot.volume,tradeExchanges:Object.fromEntries(exchanges)});
   if(sent){state.alertsSent=Number(state.alertsSent||0)+1;saveState();}
  }finally{alertInFlight.delete(key);}
 }
