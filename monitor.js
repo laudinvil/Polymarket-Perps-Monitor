@@ -12,7 +12,7 @@ const MAX_SEEN=20000;
 const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const PERIODS=[
- {name:"5m",ms:5*60*1000},
+ {name:"5m",ms:5*60*1000,maxLiqs:130},
  {name:"15m",ms:15*60*1000}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
@@ -86,6 +86,7 @@ function normalizeLiquidation(raw){
  return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side,price,size:qty,notional:Math.abs(price*qty)};
 }
 function addLiquidation(snapshot,e){
+ if(snapshot.liqCount>=130)return;
  snapshot.liqCount+=1;snapshot.liqValue+=e.notional;snapshot.liqExchanges[e.exchange]=Number(snapshot.liqExchanges[e.exchange]||0)+1;
  if(e.side==="long")snapshot.liqLong+=1;else if(e.side==="short")snapshot.liqShort+=1;
 }
