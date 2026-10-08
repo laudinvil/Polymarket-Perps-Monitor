@@ -85,8 +85,8 @@ function normalizeLiquidation(raw){
  if(!side){const positionIdx=raw?.positionIdx??raw?.position_idx;if(positionIdx===1||positionIdx==="1")side="long";else if(positionIdx===2||positionIdx==="2")side="short";}
  return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side,price,size:qty,notional:Math.abs(price*qty)};
 }
-function addLiquidation(snapshot,e){
- if(snapshot.liqCount>=130)return;
+function addLiquidation(snapshot,e,config){
+ if(config.maxLiqs!=null&&snapshot.liqCount>=config.maxLiqs)return;
  snapshot.liqCount+=1;snapshot.liqValue+=e.notional;snapshot.liqExchanges[e.exchange]=Number(snapshot.liqExchanges[e.exchange]||0)+1;
  if(e.side==="long")snapshot.liqLong+=1;else if(e.side==="short")snapshot.liqShort+=1;
 }
@@ -95,7 +95,7 @@ function processLiquidation(raw){
  const key=e.id?e.exchange+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size].join("|");
  const seen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:(state.liquidationSeen=[]);
  if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
- for(const config of PERIODS){const p=Math.floor(e.timestamp/config.ms)*config.ms;let bucket=state.periods[config.name];if(p<bucket.periodStart)continue;bucket=advancePeriod(config,p);addLiquidation(bucket,e);}
+ for(const config of PERIODS){const p=Math.floor(e.timestamp/config.ms)*config.ms;let bucket=state.periods[config.name];if(p<bucket.periodStart)continue;bucket=advancePeriod(config,p);addLiquidation(bucket,e,config);}
 }
 
 function advancePeriod(config,p){
