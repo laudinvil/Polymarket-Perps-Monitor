@@ -12,7 +12,7 @@ const MAX_SEEN=20000;
 const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const PERIODS=[
- {name:"5m",ms:5*60*1000,maxTrades:80000},
+ {name:"5m",ms:5*60*1000,maxTrades:50000},
  {name:"15m",ms:15*60*1000,maxTrades:50000}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
@@ -146,6 +146,6 @@ function main(){
    }
   }
  },1000);
- log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:["5m trades <= 80000"]});
+ log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:["5m trades <= 50000"]});
 }
 main();
