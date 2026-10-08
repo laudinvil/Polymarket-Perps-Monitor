@@ -25,7 +25,7 @@ function log(event,data={}){
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
 }
 function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{},liqCount:0,liqValue:0,liqLong:0,liqShort:0,liqExchanges:{}};}
-function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{},lastLiqAlertPeriod:{},lastZeroLiqPeriod:{}};}
+function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES_LIQUIDATIONS",periods:{},tradeSeen:[],liquidationSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,liqAlertArmed:{},lastLiqAlertPeriod:{},lastZeroLiqPeriod:{}};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
 function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
 function resetPeriod(period,start){state.periods[period.name]={...defaultSnapshot(),periodStart:start};}
@@ -57,6 +57,9 @@ async function flushPeriod(config,period,snapshot){
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
     "BUY: "+buyPct.toFixed(2)+"% | SELL: "+sellPct.toFixed(2)+"%",
     "DIFF: "+diff.toFixed(2)+"% "+leader,
+    "LIQS: "+snapshot.liqCount.toLocaleString("en-US"),
+    "LIQ VALUE: $"+snapshot.liqValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
+    "LONG: "+snapshot.liqLong.toLocaleString("en-US")+" | SHORT: "+snapshot.liqShort.toLocaleString("en-US"),
     "",
     marketUrl(period+config.ms,config.name)];
   const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>b[1].trades-a[1].trades);
@@ -68,11 +71,37 @@ async function flushPeriod(config,period,snapshot){
 }
 
 
+function normalizeLiquidation(raw){
+ const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");
+ if(symbol!==SYMBOL)return null;
+ const price=num(raw?.price),qty=num(raw?.size??raw?.qty??raw?.amount);if(price===null||qty===null||price<=0||qty<=0)return null;
+ let timestamp=num(raw?.timestamp??raw?.ts??raw?.time)??Date.now();if(timestamp<1e12)timestamp*=1000;
+ const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(exchange==="HITBTC")return null;
+ const token=v=>String(v??"").trim().toLowerCase().replace(/[-\s]/g,"_");
+ const explicit=[raw?.positionSide,raw?.position_side,raw?.posSide,raw?.pos_side,raw?.liquidationSide,raw?.liquidation_side,raw?.closeSide,raw?.close_side,raw?.autoSize,raw?.auto_size].map(token);
+ const tradeSide=token(raw?.tradeSide??raw?.trade_side);let side="";
+ for(const v of [...explicit,tradeSide]){if(v.includes("long")&&!v.includes("short")){side="long";break;}if(v.includes("short")&&!v.includes("long")){side="short";break;}}
+ if(!side){const rawSide=token(raw?.side??raw?.direction);if(rawSide==="sell"||rawSide==="sell_single"||rawSide==="close_long")side="long";else if(rawSide==="buy"||rawSide==="buy_single"||rawSide==="close_short")side="short";else if(rawSide==="long")side="long";else if(rawSide==="short")side="short";}
+ if(!side){const positionIdx=raw?.positionIdx??raw?.position_idx;if(positionIdx===1||positionIdx==="1")side="long";else if(positionIdx===2||positionIdx==="2")side="short";}
+ return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side,price,size:qty,notional:Math.abs(price*qty)};
+}
+function addLiquidation(snapshot,e){
+ snapshot.liqCount+=1;snapshot.liqValue+=e.notional;snapshot.liqExchanges[e.exchange]=Number(snapshot.liqExchanges[e.exchange]||0)+1;
+ if(e.side==="long")snapshot.liqLong+=1;else if(e.side==="short")snapshot.liqShort+=1;
+}
+function processLiquidation(raw){
+ const e=normalizeLiquidation(raw);if(!e)return;
+ const key=e.id?e.exchange+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size].join("|");
+ const seen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:(state.liquidationSeen=[]);
+ if(seen.includes(key))return;seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);
+ for(const config of PERIODS){const p=Math.floor(e.timestamp/config.ms)*config.ms;let bucket=state.periods[config.name];if(p<bucket.periodStart)continue;bucket=advancePeriod(config,p);addLiquidation(bucket,e);}
+}
+
 function advancePeriod(config,p){
  let bucket=state.periods[config.name];
  while(p>bucket.periodStart){
   const old=bucket.periodStart;
-  const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
+  const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{})),liqCount:bucket.liqCount||0,liqValue:bucket.liqValue||0,liqLong:bucket.liqLong||0,liqShort:bucket.liqShort||0,liqExchanges:JSON.parse(JSON.stringify(bucket.liqExchanges||{}))};
   resetPeriod(config,old+config.ms);
   flushPeriod(config,old,snapshot);
   bucket=state.periods[config.name];
@@ -93,6 +122,17 @@ function processRaw(raw){
  }
  aggrEvents++;aggrLastEventAt=nowIso();
 }
+function connectLiquidations(){
+ const url=(process.env.AGGR_LIQUIDATIONS_URL||"http://127.0.0.1:9090/liquidations");
+ const req=http.get(url,res=>{
+  if(res.statusCode!==200){log("AGGR_LIQUIDATIONS_HTTP_ERROR",{url,status:res.statusCode});res.resume();scheduleLiquidationReconnect();return;}
+  let buffer="";res.setEncoding("utf8");
+  res.on("data",chunk=>{buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");try{processLiquidation(JSON.parse(payload));}catch(e){log("AGGR_LIQUIDATION_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}}});
+  res.on("end",()=>scheduleLiquidationReconnect());
+  res.on("error",e=>{log("AGGR_LIQUIDATION_STREAM_ERROR",{error:String(e.message||e)});scheduleLiquidationReconnect();});
+ });
+ req.on("error",e=>{log("AGGR_LIQUIDATION_CONNECTION_ERROR",{url,error:String(e.message||e)});scheduleLiquidationReconnect();});
+}
 function connectAggr(){
  if(aggrRequest){try{aggrRequest.destroy();}catch{}}
  const req=http.get(AGGR_URL,res=>{
@@ -106,8 +146,10 @@ function connectAggr(){
 }
 
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
+let liquidationReconnectTimer=null;
+function scheduleLiquidationReconnect(){if(liquidationReconnectTimer)return;liquidationReconnectTimer=setTimeout(()=>{liquidationReconnectTimer=null;connectLiquidations();},3000);}
 function diagnostics(){
- const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges};}
+ const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges,liqs:p.liqCount||0,liqValue:p.liqValue||0,liqLong:p.liqLong||0,liqShort:p.liqShort||0};}
  return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};
 }
 function startHealth(){
@@ -120,8 +162,9 @@ function startHealth(){
  }).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));
 }
 function main(){
- ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";
+ ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES_LIQUIDATIONS";
  state.tradeSeen=Array.isArray(state.tradeSeen)?state.tradeSeen:(Array.isArray(state.seen)?state.seen:[]);
+ state.liquidationSeen=Array.isArray(state.liquidationSeen)?state.liquidationSeen:[];
  state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();
  for(const config of PERIODS){
@@ -131,20 +174,21 @@ function main(){
   else{
    const bucket=state.periods[config.name];
    bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
+   bucket.liqCount=Number(bucket.liqCount||0);bucket.liqValue=Number(bucket.liqValue||0);bucket.liqLong=Number(bucket.liqLong||0);bucket.liqShort=Number(bucket.liqShort||0);bucket.liqExchanges=bucket.liqExchanges&&typeof bucket.liqExchanges==="object"?bucket.liqExchanges:{};
   }
 }
- startHealth();connectAggr();
+ startHealth();connectAggr();connectLiquidations();
  setInterval(()=>{
   const now=Date.now();
   for(const config of PERIODS){
    let bucket=state.periods[config.name],current=Math.floor(now/config.ms)*config.ms;
    while(bucket.periodStart<current){
     const old=bucket.periodStart;
-    const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
+    const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{})),liqCount:bucket.liqCount||0,liqValue:bucket.liqValue||0,liqLong:bucket.liqLong||0,liqShort:bucket.liqShort||0,liqExchanges:JSON.parse(JSON.stringify(bucket.liqExchanges||{}))};
     resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];
    }
   }
  },1000);
- log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
+ log("TRADE_LIQUIDATION_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,liquidationUrl:process.env.AGGR_LIQUIDATIONS_URL||"http://127.0.0.1:9090/liquidations",symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
 }
 main();
