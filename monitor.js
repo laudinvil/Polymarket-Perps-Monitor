@@ -24,7 +24,7 @@ function log(event,data={}){
  const row={ts:nowIso(),version:VERSION,event,...data};
  try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}
 }
-function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,volume:0,exchanges:{}};}
+function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,buyValue:0,sellValue:0,volume:0,exchanges:{}};}
 function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periods:{},tradeSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null};}
 function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
 function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
@@ -36,42 +36,43 @@ function normalize(raw){
  const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(exchange==="HITBTC")return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};
 }
 function addTrade(snapshot,e){
- const count=e.count||1,volume=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count,x=snapshot.exchanges[e.exchange]||(snapshot.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0});
- snapshot.total+=count;snapshot.volume+=volume;x.trades+=count;x.volume+=volume;
- if(e.side==="buy"){snapshot.buy+=count;x.buy+=count;}else if(e.side==="sell"){snapshot.sell+=count;x.sell+=count;}
+ const count=e.count||1,value=e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count;
+ const x=snapshot.exchanges[e.exchange]||(snapshot.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0,buyValue:0,sellValue:0});
+ snapshot.total+=count;snapshot.volume+=value;x.trades+=count;x.volume+=value;
+ if(e.side==="buy"){snapshot.buy+=count;snapshot.buyValue+=value;x.buy+=count;x.buyValue+=value;}
+ else if(e.side==="sell"){snapshot.sell+=count;snapshot.sellValue+=value;x.sell+=count;x.sellValue+=value;}
 }
 function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
 function marketUrl(period,name){return "https://polymarket.com/event/btc-updown-"+name+"-"+Math.floor(period/1000);}
 async function flushPeriod(config,period,snapshot){
  const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);
  try{
-  const tradesPerSec=snapshot.total/(config.ms/1000);
-  const buyPct=snapshot.total>0?(snapshot.buy/snapshot.total)*100:0;
-  const sellPct=snapshot.total>0?(snapshot.sell/snapshot.total)*100:0;
+  const totalValue=snapshot.buyValue+snapshot.sellValue;
+  const buyPct=totalValue>0?(snapshot.buyValue/totalValue)*100:0;
+  const sellPct=totalValue>0?(snapshot.sellValue/totalValue)*100:0;
   const diff=Math.abs(buyPct-sellPct);
-  if(snapshot.total<=0)return;
+  if(totalValue<=0)return;
   if((config.name==="5m"&&diff>0.20)||(config.name==="15m"&&diff>0.40))return;
   const lines=["🔥 BTC "+config.name,
-    "TRADES: "+snapshot.total.toLocaleString("en-US"),
-    "TRADES/SEC: "+tradesPerSec.toFixed(2),
+    "BUY VALUE: $"+snapshot.buyValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
+    "SELL VALUE: $"+snapshot.sellValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),
     "BUY: "+buyPct.toFixed(2)+"% | SELL: "+sellPct.toFixed(2)+"%",
     "DIFF: "+diff.toFixed(2)+"%",
     "",
     marketUrl(period+config.ms,config.name)];
-  const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>b[1].trades-a[1].trades);
-  for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": "+data.trades.toLocaleString("en-US"));
+  const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>(b[1].buyValue+b[1].sellValue)-(a[1].buyValue+a[1].sellValue));
+  for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": $"+(data.buyValue+data.sellValue).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));
   const sent=await sendTelegram(lines.join("\n"));
-  log(sent?"TRADE_ALERT_SENT":"TRADE_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,buyPct,sellPct,diff,volume:snapshot.volume,tradeExchanges:Object.fromEntries(exchanges)});
+  log(sent?"TRADE_ALERT_SENT":"TRADE_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,buyValue:snapshot.buyValue,sellValue:snapshot.sellValue,buyPct,sellPct,diff,volume:snapshot.volume,tradeExchanges:Object.fromEntries(exchanges)});
   if(sent){state.alertsSent=Number(state.alertsSent||0)+1;saveState();}
  }finally{alertInFlight.delete(key);}
 }
-
 
 function advancePeriod(config,p){
  let bucket=state.periods[config.name];
  while(p>bucket.periodStart){
   const old=bucket.periodStart;
-  const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
+  const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,buyValue:bucket.buyValue||0,sellValue:bucket.sellValue||0,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
   resetPeriod(config,old+config.ms);
   if(snapshot.total>0)flushPeriod(config,old,snapshot);
   bucket=state.periods[config.name];
@@ -103,10 +104,9 @@ function connectAggr(){
  });
  aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{url:AGGR_URL,error:String(e.message||e)});scheduleReconnect();});
 }
-
 function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
 function diagnostics(){
- const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,volume:p.volume,exchanges:p.exchanges};}
+ const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,buyValue:p.buyValue||0,sellValue:p.sellValue||0,volume:p.volume,exchanges:p.exchanges};}
  return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};
 }
 function startHealth(){
@@ -121,17 +121,16 @@ function startHealth(){
 function main(){
  ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";
  state.tradeSeen=Array.isArray(state.tradeSeen)?state.tradeSeen:(Array.isArray(state.seen)?state.seen:[]);
-  state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
+ state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};
  const now=Date.now();
  for(const config of PERIODS){
   const p=Math.floor(now/config.ms)*config.ms;
   if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);
   else if(state.periods[config.name].periodStart!==p)resetPeriod(config,p);
   else{
-   const bucket=state.periods[config.name];
-   bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
+   const bucket=state.periods[config.name];bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{};
   }
-}
+ }
  startHealth();connectAggr();
  setInterval(()=>{
   const now=Date.now();
@@ -139,7 +138,7 @@ function main(){
    let bucket=state.periods[config.name],current=Math.floor(now/config.ms)*config.ms;
    while(bucket.periodStart<current){
     const old=bucket.periodStart;
-    const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
+    const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,buyValue:bucket.buyValue||0,sellValue:bucket.sellValue||0,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
     resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];
    }
   }
