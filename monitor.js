@@ -12,7 +12,8 @@ const MAX_SEEN=20000;
 const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const PERIODS=[
- {name:"5m",ms:5*60*1000}
+ {name:"5m",ms:5*60*1000},
+ {name:"15m",ms:15*60*1000}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
@@ -49,7 +50,7 @@ async function flushPeriod(config,period,snapshot){
   const sellPct=snapshot.total>0?(snapshot.sell/snapshot.total)*100:0;
   const diff=Math.abs(buyPct-sellPct);
   if(snapshot.total<=0)return;
-  if(diff>0.2)return;
+  if(config.name==="5m"&&diff>0.25)return;
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
     "TRADES/SEC: "+tradesPerSec.toFixed(2),
