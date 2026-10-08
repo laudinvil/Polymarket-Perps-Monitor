@@ -49,10 +49,7 @@ async function flushPeriod(config,period,snapshot){
   const buyPct=snapshot.total>0?(snapshot.buy/snapshot.total)*100:0;
   const sellPct=snapshot.total>0?(snapshot.sell/snapshot.total)*100:0;
   const diff=Math.abs(buyPct-sellPct);
-  const maxDiff=config.name==="5m"?2.6:2.5;
   if(snapshot.total<=0)return;
-  if(config.maxTrades!=null&&snapshot.total>config.maxTrades)return;
-  if(diff>maxDiff)return;
   const leader=config.name==="5m"?"⬆️":"⬇️";
   const lines=["🔥 BTC "+config.name,
     "TRADES: "+snapshot.total.toLocaleString("en-US"),
@@ -147,6 +144,6 @@ function main(){
    }
   }
  },1000);
- log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:["5m trades <= 50000"]});
+ log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});
 }
 main();
