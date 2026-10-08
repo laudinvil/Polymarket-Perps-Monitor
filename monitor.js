@@ -76,7 +76,7 @@ function advancePeriod(config,p){
   const old=bucket.periodStart;
   const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,volume:bucket.volume,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};
   resetPeriod(config,old+config.ms);
-  flushPeriod(config,old,snapshot);
+  if(snapshot.total>0)flushPeriod(config,old,snapshot);
   bucket=state.periods[config.name];
  }
  return bucket;
