@@ -13,7 +13,7 @@ const LOG_MAX_BYTES=2*1024*1024;
 const LOG_KEEP_BYTES=1*1024*1024;
 const PERIODS=[
  {name:"5m",ms:5*60*1000,maxTrades:100000},
- {name:"15m",ms:15*60*1000}
+ {name:"15m",ms:15*60*1000,maxTrades:50000}
 ];
 let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
 
