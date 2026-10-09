@@ -1,38 +1,288 @@
-const fs=require("fs");
-const path=require("path");
-const http=require("http");
+const http = require("http");
+const WebSocket = require("ws");
 
-const VERSION="26.10.09-BTC-5M-BUY50.5-SELL50.5-NO-TOTAL-THRESHOLD";
-const BUILD_SHA=process.env.MONITOR_BUILD_SHA||"unknown";
-const AGGR_URL=process.env.AGGR_URL||"http://127.0.0.1:9090/trades";
-const STATE_FILE=process.env.STATE_FILE||"/data/aggr-trade-state.json";
-const LOG_FILE=process.env.LOG_FILE||"/data/aggr-trade.jsonl";
-const SYMBOL="BTC";
-const MAX_SEEN=20000;
-const LOG_MAX_BYTES=2*1024*1024;
-const LOG_KEEP_BYTES=1*1024*1024;
-const PERIODS=[{name:"5m",ms:5*60*1000}];
-let state,aggrRequest=null,aggrConnected=false,aggrEvents=0,aggrLastEventAt=null,reconnectTimer=null,alertInFlight=new Set(),logSubscribers=new Set();
-function nowIso(){return new Date().toISOString();}
-function num(v){const n=Number(v);return Number.isFinite(n)?n:null;}
-function ensureDir(file){fs.mkdirSync(path.dirname(file),{recursive:true});}
-function log(event,data={}){const row={ts:nowIso(),version:VERSION,event,...data};try{ensureDir(LOG_FILE);fs.appendFileSync(LOG_FILE,JSON.stringify(row)+"\n");for(const res of logSubscribers){try{res.write("data: "+JSON.stringify(row)+"\n\n");}catch{logSubscribers.delete(res);}}const size=fs.statSync(LOG_FILE).size;if(size>LOG_MAX_BYTES){const fd=fs.openSync(LOG_FILE,"r"),buf=Buffer.alloc(LOG_KEEP_BYTES);fs.readSync(fd,buf,0,LOG_KEEP_BYTES,size-LOG_KEEP_BYTES);fs.closeSync(fd);const i=buf.indexOf(10);fs.writeFileSync(LOG_FILE,i>=0?buf.subarray(i+1):buf);}}catch{}}
-function defaultSnapshot(){return{periodStart:null,total:0,buy:0,sell:0,buyValue:0,sellValue:0,volume:0,tradePriceValue:0,tradeSize:0,exchanges:{}};}
-function defaultState(){return{version:VERSION,strategy:"AGGR_TRADES",periods:{},tradeSeen:[],seen:[],alertsSent:0,lastPeriodTradesPerSec:null,lastAvgPriceByPeriod:{},lastDiffDirection:null,lastDiffDirectionCount:0};}
-function loadState(){try{const v=JSON.parse(fs.readFileSync(STATE_FILE,"utf8"));if(v&&typeof v==="object")return v;}catch{}return defaultState();}
-function saveState(){try{ensureDir(STATE_FILE);const tmp=STATE_FILE+".tmp";fs.writeFileSync(tmp,JSON.stringify(state));fs.renameSync(tmp,STATE_FILE);}catch{}}
-function resetPeriod(period,start){state.periods[period.name]={...defaultSnapshot(),periodStart:start};}
-function normalize(raw){const symbol=String(raw?.symbol||raw?.pair||"").toUpperCase().replace(/USDT|USDC|USD|PERP|SWAP|[-_]/g,"");if(symbol!==SYMBOL)return null;const price=num(raw?.price),size=num(raw?.size);if(price===null||size===null||price<=0||size<=0)return null;const count=num(raw?.count);let timestamp=num(raw?.timestamp)??Date.now();if(timestamp<1e12)timestamp*=1000;const exchange=String(raw?.exchange||"AGGR").toUpperCase();if(exchange==="HITBTC")return null;return{id:raw?.id?String(raw.id):"",timestamp,exchange,pair:String(raw?.pair||raw?.symbol||""),side:String(raw?.side||"").toLowerCase(),price,size,count:count&&count>0?count:1,amount:num(raw?.amount)};}
-function addTrade(snapshot,e){const count=e.count||1,value=e.exchange==="BITUNIX"?Math.abs(e.size):e.exchange==="KRAKEN"?(String(e.pair||"").toUpperCase().startsWith("PF_")?Math.abs(e.price*e.price*e.size):Math.abs(e.price*e.size)):e.amount!==null&&e.amount>0?Math.abs(e.amount):Math.abs(e.price*e.size)/count;const x=snapshot.exchanges[e.exchange]||(snapshot.exchanges[e.exchange]={trades:0,volume:0,buy:0,sell:0,buyValue:0,sellValue:0});snapshot.total+=count;snapshot.volume+=value;snapshot.tradePriceValue+=e.price*e.size;snapshot.tradeSize+=e.size;x.trades+=count;x.volume+=value;if(e.side==="buy"){snapshot.buy+=count;snapshot.buyValue+=value;x.buy+=count;x.buyValue+=value;}else if(e.side==="sell"){snapshot.sell+=count;snapshot.sellValue+=value;x.sell+=count;x.sellValue+=value;}}
-function sendTelegram(text){const token=process.env.TELEGRAM_BOT_TOKEN,chatId=process.env.TELEGRAM_CHAT_ID;if(!token||!chatId)return Promise.resolve(false);return fetch("https://api.telegram.org/bot"+token+"/sendMessage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:chatId,text}),signal:AbortSignal.timeout(8000)}).then(r=>r.ok).catch(()=>false);}
-function marketUrl(period,name){return "https://polymarket.com/event/btc-updown-"+name+"-"+Math.floor(period/1000);}
-async function sendPeriodAlert(config,period,snapshot,avgChangePct=null){const key=config.name+":"+period;if(alertInFlight.has(key))return;alertInFlight.add(key);try{const totalValue=snapshot.buyValue+snapshot.sellValue;const buyPct=totalValue>0?(snapshot.buyValue/totalValue)*100:0;const sellPct=totalValue>0?(snapshot.sellValue/totalValue)*100:0;const diff=Math.abs(buyPct-sellPct);const avgPrice=snapshot.tradeSize>0?snapshot.tradePriceValue/snapshot.tradeSize:0;const avgPriceText="$"+avgPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});const lines=["🔥 BTC "+config.name,"BUY VALUE: $"+snapshot.buyValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"SELL VALUE: $"+snapshot.sellValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"BUY: "+buyPct.toFixed(2)+"% | SELL: "+sellPct.toFixed(2)+"%","TOTAL: $"+totalValue.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}),"AVG PRICE: "+avgPriceText,"",marketUrl(period+config.ms,config.name)];const exchanges=Object.entries(snapshot.exchanges).sort((a,b)=>(b[1].buyValue+b[1].sellValue)-(a[1].buyValue+a[1].sellValue));for(const [name,data] of exchanges)lines.push((name.toUpperCase()==="BINANCE_FUTURES"?"BINANCE":name.toUpperCase())+": $"+(data.buyValue+data.sellValue).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));const sent=await sendTelegram(lines.join("\n"));log(sent?"TRADE_ALERT_SENT":"TRADE_ALERT_FAILED",{source:"AGGR",periodType:config.name,period,periodEnd:new Date(period).toISOString(),trades:snapshot.total,buy:snapshot.buy,sell:snapshot.sell,buyValue:snapshot.buyValue,sellValue:snapshot.sellValue,buyPct,sellPct,diff,avgPrice,volume:snapshot.volume,tradeExchanges:Object.fromEntries(exchanges)});if(sent){state.alertsSent=Number(state.alertsSent||0)+1;saveState();}}finally{alertInFlight.delete(key);}}
-function flushPeriod(config,period,snapshot){const totalValue=snapshot.buyValue+snapshot.sellValue;const diff=totalValue>0?Math.abs((snapshot.buyValue/totalValue)*100-(snapshot.sellValue/totalValue)*100):0;const avgPrice=snapshot.tradeSize>0?snapshot.tradePriceValue/snapshot.tradeSize:0;state.lastDiffByPeriod=state.lastDiffByPeriod&&typeof state.lastDiffByPeriod==="object"?state.lastDiffByPeriod:{};state.lastAvgPriceByPeriod=state.lastAvgPriceByPeriod&&typeof state.lastAvgPriceByPeriod==="object"?state.lastAvgPriceByPeriod:{};const previousDiff=num(state.lastDiffByPeriod[config.name]);const previousAvg=num(state.lastAvgPriceByPeriod[config.name]);state.lastDiffByPeriod[config.name]=diff;state.lastAvgPriceByPeriod[config.name]=avgPrice;saveState();const diffUp=previousDiff!==null&&diff>previousDiff;const diffDown=previousDiff!==null&&diff<previousDiff;const avgUp=previousAvg!==null&&previousAvg>0&&avgPrice>previousAvg;const avgDown=previousAvg!==null&&previousAvg>0&&avgPrice<previousAvg;const buyPct=totalValue>0?(snapshot.buyValue/totalValue)*100:0;const sellPct=totalValue>0?(snapshot.sellValue/totalValue)*100:0;const eligible=buyPct<=50.5&&sellPct<=50.5;const avgChangePct=previousAvg!==null&&previousAvg>0&&avgPrice>0?((avgPrice-previousAvg)/previousAvg)*100:null;log("DIFF_AVG_COMPARE",{periodType:"5m",periodEnd:new Date(period+config.ms).toISOString(),diff,previousDiff,avgPrice,previousAvg,diffUp,diffDown,avgUp,avgDown,alert:eligible,buyPct,maxBuyPct:50.5,sellPct,maxSellPct:50.5});if(eligible)sendPeriodAlert(config,period,snapshot,avgChangePct);}
-function advancePeriod(config,p){let bucket=state.periods[config.name];while(p>bucket.periodStart){const old=bucket.periodStart;const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,buyValue:bucket.buyValue||0,sellValue:bucket.sellValue||0,volume:bucket.volume,tradePriceValue:bucket.tradePriceValue||0,tradeSize:bucket.tradeSize||0,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];}return bucket;}
-const dedupDiagnostics={KRAKEN:{accepted:0,duplicates:0,lastLogAt:0}};function processRaw(raw){const e=normalize(raw);if(!e)return;const key=e.id?e.exchange+":"+e.pair+":"+e.id:[e.timestamp,e.exchange,e.pair,e.side,e.price,e.size,e.count].join("|");const seen=Array.isArray(state.tradeSeen)?state.tradeSeen:(state.tradeSeen=[]);if(seen.includes(key)){if(e.exchange==="KRAKEN"){const d=dedupDiagnostics.KRAKEN;d.duplicates++;const now=Date.now();if(now-d.lastLogAt>=60000){log("TRADE_DEDUP_DIAGNOSTICS",{exchange:"KRAKEN",accepted:d.accepted,duplicates:d.duplicates,lastTimestamp:e.timestamp,lastPrice:e.price,lastSize:e.size,lastAmount:e.amount});d.accepted=0;d.duplicates=0;d.lastLogAt=now;}}return;}seen.push(key);if(seen.length>MAX_SEEN)seen.splice(0,seen.length-MAX_SEEN);if(e.exchange==="KRAKEN")dedupDiagnostics.KRAKEN.accepted++;for(const config of PERIODS){const p=Math.floor(e.timestamp/config.ms)*config.ms;let bucket=state.periods[config.name];if(p<bucket.periodStart)continue;bucket=advancePeriod(config,p);addTrade(bucket,e);}aggrEvents++;aggrLastEventAt=nowIso();}
-function connectAggr(){if(aggrRequest){try{aggrRequest.destroy();}catch{}}const req=http.get(AGGR_URL,res=>{if(res.statusCode!==200){log("AGGR_HTTP_ERROR",{url:AGGR_URL,status:res.statusCode});res.resume();scheduleReconnect();return;}aggrConnected=true;let buffer="";res.setEncoding("utf8");res.on("data",chunk=>{buffer+=chunk.replace(/\r\n/g,"\n").replace(/\r/g,"\n");const frames=buffer.split("\n\n");buffer=frames.pop()||"";for(const frame of frames){const dataLines=frame.split("\n").filter(x=>x.startsWith("data:"));if(!dataLines.length)continue;const payload=dataLines.map(x=>x.slice(5).replace(/^ /,"")).join("\n");try{processRaw(JSON.parse(payload));}catch(e){log("AGGR_EVENT_PARSE_ERROR",{error:String(e.message||e),payload:payload.slice(0,500)});}}});res.on("end",()=>{aggrConnected=false;aggrRequest=null;scheduleReconnect();});res.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_STREAM_ERROR",{error:String(e.message||e)});scheduleReconnect();});});aggrRequest=req;req.on("error",e=>{aggrConnected=false;aggrRequest=null;log("AGGR_CONNECTION_ERROR",{url:AGGR_URL,error:String(e.message||e)});scheduleReconnect();});}
-function scheduleReconnect(){if(reconnectTimer)return;reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectAggr();},3000);}
-function diagnostics(){const periods={};for(const config of PERIODS){const p=state.periods[config.name]||defaultSnapshot();periods[config.name]={periodStart:p.periodStart,trades:p.total,buy:p.buy,sell:p.sell,buyValue:p.buyValue||0,sellValue:p.sellValue||0,volume:p.volume,exchanges:p.exchanges};}return{status:"ok",version:VERSION,buildSha:BUILD_SHA,strategy:state.strategy,source:"AGGR",aggrUrl:AGGR_URL,aggrConnected,aggrEvents,aggrLastEventAt,alertsSent:state.alertsSent,periods};}
-function startHealth(){const port=Number(process.env.MONITOR_HEALTH_PORT||8080);http.createServer((req,res)=>{const p=String(req.url||"/").split("?")[0];if(p==="/"||p==="/health"||p==="/status"||p==="/stats"){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});return res.end(JSON.stringify(diagnostics()));}if(p==="/logs"){let rows=[];try{rows=fs.readFileSync(LOG_FILE,"utf8").split("\n").filter(Boolean).slice(-300).map(x=>JSON.parse(x));}catch{}res.writeHead(200,{"content-type":"application/json"});return res.end(JSON.stringify({status:"ok",events:rows}));}if(p==="/logs/stream"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive"});logSubscribers.add(res);req.on("close",()=>logSubscribers.delete(res));return;}res.writeHead(404);res.end();}).listen(port,"0.0.0.0",()=>log("HEALTH_LISTENING",{port}));}
-function main(){ensureDir(STATE_FILE);state=loadState();state.version=VERSION;state.strategy="AGGR_TRADES";state.tradeSeen=Array.isArray(state.tradeSeen)?state.tradeSeen:(Array.isArray(state.seen)?state.seen:[]);state.seen=state.tradeSeen;state.alertsSent=Number(state.alertsSent||0);state.periods=state.periods&&typeof state.periods==="object"?state.periods:{};const now=Date.now();for(const config of PERIODS){const p=Math.floor(now/config.ms)*config.ms;if(!state.periods[config.name]||state.periods[config.name].periodStart==null)resetPeriod(config,p);else if(state.periods[config.name].periodStart!==p)resetPeriod(config,p);else{const bucket=state.periods[config.name];bucket.exchanges=bucket.exchanges&&typeof bucket.exchanges==="object"?bucket.exchanges:{}}}startHealth();connectAggr();setInterval(()=>{const now=Date.now();for(const config of PERIODS){let bucket=state.periods[config.name],current=Math.floor(now/config.ms)*config.ms;while(bucket.periodStart<current){const old=bucket.periodStart;const snapshot={total:bucket.total,buy:bucket.buy,sell:bucket.sell,buyValue:bucket.buyValue||0,sellValue:bucket.sellValue||0,volume:bucket.volume,tradePriceValue:bucket.tradePriceValue||0,tradeSize:bucket.tradeSize||0,exchanges:JSON.parse(JSON.stringify(bucket.exchanges||{}))};resetPeriod(config,old+config.ms);flushPeriod(config,old,snapshot);bucket=state.periods[config.name];}}},1000);log("TRADE_MONITOR_STARTING",{source:"AGGR",tradeUrl:AGGR_URL,symbol:"BTC",periods:PERIODS.map(x=>x.name),filters:[],thresholds:[]});}
-main();
+const VERSION = "26.10.09-BTC-5M-BINANCE-ORDERBOOK";
+const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
+const SYMBOL = "BTCUSDT";
+const PERIOD_MS = 5 * 60 * 1000;
+const BOOK_RANGE = 0.001;
+const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms";
+
+let socket = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let stopping = false;
+let currentBook = null;
+let wsConnected = false;
+let wsMessages = 0;
+let lastMessageAt = null;
+let alertsSent = 0;
+let alertsFailed = 0;
+let lastReportPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
+let logTimer = null;
+
+function nowIso() { return new Date().toISOString(); }
+function log(event, data) {
+  console.log(JSON.stringify(Object.assign({
+    ts: nowIso(),
+    component: "BINANCE_ORDERBOOK_MONITOR",
+    version: VERSION,
+    event: event
+  }, data || {})));
+}
+function number(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function fmtPrice(value) {
+  return Number(value).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+function fmtUsd(value) {
+  if (value >= 1000000) return "$" + (value / 1000000).toFixed(2) + "M";
+  if (value >= 1000) return "$" + (value / 1000).toFixed(2) + "K";
+  return "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtSignedPct(value) {
+  return (value > 0 ? "+" : "") + value.toFixed(1) + "%";
+}
+function marketUrl(periodStart) {
+  return "https://polymarket.com/event/btc-updown-5m-" + Math.floor(periodStart / 1000);
+}
+function parseLevels(levels, descending) {
+  if (!Array.isArray(levels)) return [];
+  return levels.map(function(level) {
+    if (!Array.isArray(level) || level.length < 2) return null;
+    const price = number(level[0]);
+    const qty = number(level[1]);
+    if (price === null || qty === null || price <= 0 || qty <= 0) return null;
+    return { price: price, qty: qty, value: price * qty };
+  }).filter(Boolean).sort(function(a, b) {
+    return descending ? b.price - a.price : a.price - b.price;
+  });
+}
+function calculateBook(payload) {
+  const bids = parseLevels(payload.bids || payload.b, true);
+  const asks = parseLevels(payload.asks || payload.a, false);
+  if (!bids.length || !asks.length) return null;
+  const bestBid = bids[0];
+  const bestAsk = asks[0];
+  if (bestAsk.price < bestBid.price) return null;
+  const mid = (bestBid.price + bestAsk.price) / 2;
+  if (!(mid > 0)) return null;
+  const spread = bestAsk.price - bestBid.price;
+  const spreadBps = spread / mid * 10000;
+  const bidLocal = bids.filter(function(level) { return level.price >= mid * (1 - BOOK_RANGE); })
+    .reduce(function(sum, level) { return sum + level.value; }, 0);
+  const askLocal = asks.filter(function(level) { return level.price <= mid * (1 + BOOK_RANGE); })
+    .reduce(function(sum, level) { return sum + level.value; }, 0);
+  const totalLocal = bidLocal + askLocal;
+  const imbalancePct = totalLocal > 0 ? (bidLocal - askLocal) / totalLocal * 100 : 0;
+  return {
+    timestamp: Date.now(),
+    bestBid: bestBid.price,
+    bestBidValue: bestBid.value,
+    bestAsk: bestAsk.price,
+    bestAskValue: bestAsk.value,
+    spread: spread,
+    spreadBps: spreadBps,
+    bidLocal: bidLocal,
+    askLocal: askLocal,
+    imbalancePct: imbalancePct,
+    bidLevels: bids.length,
+    askLevels: asks.length,
+    mid: mid
+  };
+}
+function connect() {
+  if (stopping) return;
+  log("BINANCE_WS_CONNECTING", { url: WS_URL, symbol: SYMBOL, stream: "partial-depth-20", updateSpeed: "100ms" });
+  const ws = new WebSocket(WS_URL);
+  socket = ws;
+  ws.on("open", function() {
+    if (socket !== ws) return;
+    wsConnected = true;
+    reconnectAttempt = 0;
+    log("BINANCE_WS_CONNECTED", { symbol: SYMBOL });
+  });
+  ws.on("message", function(raw) {
+    if (socket !== ws) return;
+    let payload;
+    try { payload = JSON.parse(raw.toString()); } catch (_) { return; }
+    if (payload && payload.data) payload = payload.data;
+    if (!payload || (!Array.isArray(payload.bids) && !Array.isArray(payload.b))) return;
+    const book = calculateBook(payload);
+    if (!book) return;
+    currentBook = book;
+    wsMessages++;
+    lastMessageAt = nowIso();
+  });
+  ws.on("error", function(error) {
+    log("BINANCE_WS_ERROR", { error: String(error && error.message || error) });
+  });
+  ws.on("close", function(code, reason) {
+    if (socket !== ws) return;
+    socket = null;
+    wsConnected = false;
+    log("BINANCE_WS_CLOSED", { code: code, reason: String(reason || "") });
+    scheduleReconnect();
+  });
+}
+function scheduleReconnect() {
+  if (stopping || reconnectTimer) return;
+  reconnectAttempt++;
+  const delay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 5)));
+  reconnectTimer = setTimeout(function() {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+function sendTelegram(message) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return Promise.resolve(false);
+  return fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: true }),
+    signal: AbortSignal.timeout(8000)
+  }).then(function(response) { return response.ok; }).catch(function() { return false; });
+}
+async function reportForNextMarket(periodStart) {
+  const book = currentBook;
+  const ageMs = book ? Date.now() - book.timestamp : null;
+  if (!book || ageMs === null || ageMs > 3000 || !wsConnected) {
+    log("ORDERBOOK_REPORT_SKIPPED_STALE", {
+      targetPeriodStart: new Date(periodStart).toISOString(),
+      wsConnected: wsConnected,
+      bookAgeMs: ageMs,
+      lastMessageAt: lastMessageAt
+    });
+    return;
+  }
+  const imbalance = fmtSignedPct(book.imbalancePct);
+  const lines = [
+    "BTC ORDER BOOK 5m",
+    "BID: $" + fmtPrice(book.bestBid) + " | " + fmtUsd(book.bestBidValue),
+    "ASK: $" + fmtPrice(book.bestAsk) + " | " + fmtUsd(book.bestAskValue),
+    "SPREAD: $" + book.spread.toFixed(1) + " | " + book.spreadBps.toFixed(2) + " bps",
+    "BOOK ±0.1%: BID " + fmtUsd(book.bidLocal) + " | ASK " + fmtUsd(book.askLocal),
+    "IMBALANCE: " + imbalance,
+    "",
+    marketUrl(periodStart)
+  ];
+  const sent = await sendTelegram(lines.join("\n"));
+  if (sent) alertsSent++;
+  else alertsFailed++;
+  log(sent ? "ORDERBOOK_ALERT_SENT" : "ORDERBOOK_ALERT_FAILED", {
+    targetPeriodStart: new Date(periodStart).toISOString(),
+    marketUrl: marketUrl(periodStart),
+    bookAgeMs: ageMs,
+    bestBid: book.bestBid,
+    bestBidValue: book.bestBidValue,
+    bestAsk: book.bestAsk,
+    bestAskValue: book.bestAskValue,
+    spread: book.spread,
+    spreadBps: book.spreadBps,
+    bidLocal: book.bidLocal,
+    askLocal: book.askLocal,
+    imbalancePct: book.imbalancePct,
+    bidLevels: book.bidLevels,
+    askLevels: book.askLevels,
+    telegramSent: sent
+  });
+}
+function diagnostics() {
+  const book = currentBook;
+  return {
+    status: wsConnected && book && Date.now() - book.timestamp <= 3000 ? "ok" : "waiting_for_fresh_book",
+    version: VERSION,
+    buildSha: BUILD_SHA,
+    source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
+    symbol: SYMBOL,
+    websocketUrl: WS_URL,
+    wsConnected: wsConnected,
+    wsMessages: wsMessages,
+    lastMessageAt: lastMessageAt,
+    bookAgeMs: book ? Date.now() - book.timestamp : null,
+    book: book,
+    bookRangePct: 0.1,
+    alertsSent: alertsSent,
+    alertsFailed: alertsFailed,
+    nextReportAt: new Date(lastReportPeriod + PERIOD_MS).toISOString(),
+    marketUrl: marketUrl(Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS)
+  };
+}
+function startHealth() {
+  const port = Number(process.env.MONITOR_HEALTH_PORT || 8080);
+  const server = http.createServer(function(req, res) {
+    const pathname = String(req.url || "/").split("?")[0];
+    if (pathname === "/" || pathname === "/health" || pathname === "/status" || pathname === "/stats") {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      return res.end(JSON.stringify(diagnostics()));
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  server.on("error", function(error) {
+    log("HEALTH_SERVER_ERROR", { error: String(error && error.message || error), port: port });
+  });
+  server.listen(port, "0.0.0.0", function() {
+    log("HEALTH_LISTENING", { port: port });
+  });
+}
+function start() {
+  startHealth();
+  connect();
+  logTimer = setInterval(function() {
+    log("ORDERBOOK_STATUS", {
+      wsConnected: wsConnected,
+      messagesLastMinute: wsMessages,
+      lastMessageAt: lastMessageAt,
+      bookAgeMs: currentBook ? Date.now() - currentBook.timestamp : null,
+      alertsSent: alertsSent,
+      alertsFailed: alertsFailed
+    });
+    wsMessages = 0;
+  }, 60000);
+  setInterval(function() {
+    const currentPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
+    if (currentPeriod !== lastReportPeriod) {
+      lastReportPeriod = currentPeriod;
+      reportForNextMarket(currentPeriod).catch(function(error) {
+        log("ORDERBOOK_REPORT_ERROR", { error: String(error && error.message || error) });
+      });
+    }
+  }, 250);
+  log("ORDERBOOK_MONITOR_STARTING", {
+    source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
+    symbol: SYMBOL,
+    period: "5m",
+    reportCadence: "each 5m boundary",
+    strategy: "send fresh order-book snapshot for the next Polymarket 5m market; no volume thresholds",
+    bookRangePct: 0.1,
+    levels: 20
+  });
+}
+process.on("SIGTERM", function() {
+  stopping = true;
+  clearTimeout(reconnectTimer);
+  clearInterval(logTimer);
+  if (socket) {
+    const ws = socket;
+    socket = null;
+    try { ws.close(); } catch (_) {}
+  }
+  process.exit(0);
+});
+process.on("SIGINT", function() {
+  stopping = true;
+  clearTimeout(reconnectTimer);
+  clearInterval(logTimer);
+  if (socket) {
+    const ws = socket;
+    socket = null;
+    try { ws.close(); } catch (_) {}
+  }
+  process.exit(0);
+});
+start();
