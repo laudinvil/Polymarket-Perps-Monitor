@@ -337,7 +337,7 @@ async function reportForNextMarket(periodStart) {
     });
     return false;
   }
-  const direction = book.bestBidValue > book.bestAskValue ? " ⬇️" : book.bestAskValue > book.bestBidValue ? " ⬆️" : "";
+  const direction = "";
   const totalTopValue = book.bestBidValue + book.bestAskValue;
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
   const diffText = (diffPct > 0 ? "+" : "") + diffPct.toFixed(2) + "%";
