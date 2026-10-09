@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const WebSocket = require("ws");
 const path = require("path");
@@ -152,6 +153,111 @@ function startBitfinexDirectFeed() {
     if (socket) socket.close();
   };
 }
+
+function startBitfinexRestFallback() {
+  const status = ensureExchangeStats("BITFINEX");
+  const intervalMs = 5000;
+  let cursor = Date.now() - 10000;
+  let timer = null;
+  let stopped = false;
+  let readyLogged = false;
+  let lastErrorLogAt = 0;
+
+  function poll() {
+    if (stopped) return;
+    const end = Date.now();
+    const start = Math.max(0, cursor - 1000);
+    const url = "https://api-pub.bitfinex.com/v2/trades/tBTCF0:USTF0/hist?start=" + start + "&end=" + end + "&limit=10000&sort=1";
+    const req = https.get(url, { headers: { "Accept": "application/json", "User-Agent": "Polymarket-Perps-Monitor/1.0" } }, res => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", chunk => { body += chunk; });
+      res.on("end", () => {
+        if (res.statusCode !== 200) {
+          status.errors++;
+          const now = Date.now();
+          if (now - lastErrorLogAt >= 60000) {
+            lastErrorLogAt = now;
+            log("BITFINEX_REST_ERROR", { status: res.statusCode, body: body.slice(0, 200) });
+          }
+          scheduleNext();
+          return;
+        }
+        let trades;
+        try { trades = JSON.parse(body); } catch {
+          status.errors++;
+          scheduleNext();
+          return;
+        }
+        if (!Array.isArray(trades)) {
+          status.errors++;
+          scheduleNext();
+          return;
+        }
+        trades.sort((a, b) => Number(a?.[1] || 0) - Number(b?.[1] || 0));
+        let published = 0;
+        for (const trade of trades) {
+          if (!Array.isArray(trade) || trade.length < 4) continue;
+          const id = String(trade[0] ?? "");
+          const timestamp = Number(trade[1]);
+          const signedSize = Number(trade[2]);
+          const price = Number(trade[3]);
+          if (!id || !Number.isFinite(timestamp) || !Number.isFinite(signedSize) || !Number.isFinite(price) || signedSize === 0 || price <= 0) continue;
+          const normalized = {
+            id: "BITFINEX:" + id + ":" + String(timestamp),
+            timestamp,
+            exchange: "BITFINEX",
+            pair: "BTCF0:USTF0",
+            symbol: "BTC",
+            side: signedSize > 0 ? "buy" : "sell",
+            price,
+            size: Math.abs(signedSize),
+            count: 1,
+            amount: price * Math.abs(signedSize)
+          };
+          publish(normalized);
+          recordExchangeEvent("BITFINEX", "BTC", timestamp);
+          feedStats.events++;
+          feedStats.byExchange.BITFINEX = (feedStats.byExchange.BITFINEX || 0) + 1;
+          feedStats.bySymbol.BTC = (feedStats.bySymbol.BTC || 0) + 1;
+          published++;
+        }
+        cursor = end;
+        if (!readyLogged) {
+          readyLogged = true;
+          log("BITFINEX_REST_READY", { pair: "BTCF0:USTF0", initialTrades: published, pollMs: intervalMs });
+        }
+        if (published) scheduleFeedSummary();
+        scheduleNext();
+      });
+    });
+    req.setTimeout(4000, () => req.destroy(new Error("Bitfinex REST timeout")));
+    req.on("error", error => {
+      status.errors++;
+      const now = Date.now();
+      if (now - lastErrorLogAt >= 60000) {
+        lastErrorLogAt = now;
+        log("BITFINEX_REST_ERROR", { error: String(error.message || error) });
+      }
+      scheduleNext();
+    });
+  }
+
+  function scheduleNext() {
+    if (stopped) return;
+    clearTimeout(timer);
+    timer = setTimeout(poll, intervalMs);
+    if (timer.unref) timer.unref();
+  }
+
+  log("BITFINEX_REST_STARTING", { pair: "BTCF0:USTF0", pollMs: intervalMs, requestsPerMinute: 12 });
+  poll();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
+}
+
 function symbolFromPair(pair) {
   const raw = String(pair || "").toUpperCase().replace(/[^A-Z0-9_-]/g, "");
   const compact = raw.replace(/[-_]/g, "");
@@ -218,6 +324,6 @@ async function main(){ fs.mkdirSync("/data",{recursive:true});process.chdir("/da
  if(!symbol||String(event?.exchange||exchange.id).toUpperCase()==="HITBTC")continue;
  publishLiquidation({...event,liquidation:true,symbol,exchange:String(event?.exchange||exchange.id).toUpperCase(),timestamp:Number(event?.timestamp||event?.ts||event?.time)||Date.now()});
 }});
-exchange.on("trades",events=>{for(const event of Array.isArray(events)?events:[events]){const normalized=normalize(event);if(!normalized || normalized.exchange==="DERIBIT")continue;publish(normalized);recordExchangeEvent(normalized.exchange,normalized.symbol,normalized.timestamp);const count=Number(normalized.count||1);feedStats.events+=count;feedStats.byExchange[normalized.exchange]=(feedStats.byExchange[normalized.exchange]||0)+count;feedStats.bySymbol[normalized.symbol]=(feedStats.bySymbol[normalized.symbol]||0)+count;scheduleFeedSummary();}});} new Server(exchanges);startBitfinexDirectFeed();const server=http.createServer((req,res)=>{const pathname=String(req.url||"/").split("?")[0];if(pathname==="/health"){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});return res.end(JSON.stringify({status:"ok",source:"AGGR",exchanges:exchanges.map(x=>x.id),exchangeCount:exchanges.length+1,pairCount:config.pairs.length,hyperliquid:true,clients:CLIENTS.size,status:exchangeDiagnostics(),krakenDiagnostics:KRAKEN_LAST_ERRORS}));}if(pathname==="/trades"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache, no-store, must-revalidate","connection":"keep-alive","access-control-allow-origin":"*"});res.write(": connected\n\n");CLIENTS.add(res);req.on("close",()=>CLIENTS.delete(res));return;}
+exchange.on("trades",events=>{for(const event of Array.isArray(events)?events:[events]){const normalized=normalize(event);if(!normalized || normalized.exchange==="DERIBIT")continue;publish(normalized);recordExchangeEvent(normalized.exchange,normalized.symbol,normalized.timestamp);const count=Number(normalized.count||1);feedStats.events+=count;feedStats.byExchange[normalized.exchange]=(feedStats.byExchange[normalized.exchange]||0)+count;feedStats.bySymbol[normalized.symbol]=(feedStats.bySymbol[normalized.symbol]||0)+count;scheduleFeedSummary();}});} new Server(exchanges);startBitfinexDirectFeed();startBitfinexRestFallback();const server=http.createServer((req,res)=>{const pathname=String(req.url||"/").split("?")[0];if(pathname==="/health"){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});return res.end(JSON.stringify({status:"ok",source:"AGGR",exchanges:exchanges.map(x=>x.id),exchangeCount:exchanges.length+1,pairCount:config.pairs.length,hyperliquid:true,clients:CLIENTS.size,status:exchangeDiagnostics(),krakenDiagnostics:KRAKEN_LAST_ERRORS}));}if(pathname==="/trades"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache, no-store, must-revalidate","connection":"keep-alive","access-control-allow-origin":"*"});res.write(": connected\n\n");CLIENTS.add(res);req.on("close",()=>CLIENTS.delete(res));return;}
 if(pathname==="/liquidations"){res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache, no-store, must-revalidate","connection":"keep-alive","access-control-allow-origin":"*"});res.write(": connected\n\n");LIQ_CLIENTS.add(res);req.on("close",()=>LIQ_CLIENTS.delete(res));return;}res.writeHead(404);res.end();});server.listen(PORT,"127.0.0.1",()=>log("BRIDGE_LISTENING",{port:PORT,endpoint:"/trades",exchanges:exchanges.map(x=>x.id).concat("KRAKEN"),exchangeCount:exchanges.length+2,pairCount:config.pairs.length}));}
 main().catch(error=>{log("FATAL",{error:String(error.stack||error)});process.exit(1);});
