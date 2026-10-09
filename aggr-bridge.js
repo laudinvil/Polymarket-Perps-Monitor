@@ -156,7 +156,7 @@ function startBitfinexDirectFeed() {
 
 function startBitfinexRestFallback() {
   const status = ensureExchangeStats("BITFINEX");
-  const intervalMs = 5000;
+  const intervalMs = 30000;
   let cursor = Date.now() - 10000;
   let timer = null;
   let stopped = false;
@@ -250,7 +250,7 @@ function startBitfinexRestFallback() {
     if (timer.unref) timer.unref();
   }
 
-  log("BITFINEX_REST_STARTING", { pair: "BTCF0:USTF0", pollMs: intervalMs, requestsPerMinute: 12 });
+  log("BITFINEX_REST_STARTING", { pair: "BTCF0:USTF0", pollMs: intervalMs, requestsPerMinute: 2 });
   poll();
   return () => {
     stopped = true;
