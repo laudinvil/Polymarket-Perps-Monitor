@@ -7,6 +7,7 @@ const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const SYMBOL = "BTCUSDT";
 const PERIOD_MS = 5 * 60 * 1000;
 const ALERT_LEAD_MS = 5000;
+const MAX_DIFF_PCT = 20;
 const BOOK_RANGE = 0.0005;
 const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@500ms";
 const SNAPSHOT_URL = "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000";
@@ -340,6 +341,15 @@ async function reportForNextMarket(periodStart) {
   const direction = "";
   const totalTopValue = book.bestBidValue + book.bestAskValue;
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
+  if (Math.abs(diffPct) > MAX_DIFF_PCT) {
+    log("ORDERBOOK_REPORT_SKIPPED_DIFF", {
+      targetPeriodStart: new Date(periodStart).toISOString(),
+      diffPct: Number(diffPct.toFixed(2)),
+      maxAbsDiffPct: MAX_DIFF_PCT,
+      bookAgeMs: ageMs
+    });
+    return false;
+  }
   const diffText = (diffPct > 0 ? "+" : "") + diffPct.toFixed(2) + "%";
   const lines = [
     "BTC 5m" + direction,
