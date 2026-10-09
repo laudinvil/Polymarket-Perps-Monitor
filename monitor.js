@@ -32,7 +32,9 @@ let snapshotCount = 0;
 let snapshotBytesTotal = 0;
 let alertsSent = 0;
 let alertsFailed = 0;
-let lastReportPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
+let lastReportPeriod = null;
+let reportInFlight = false;
+let nextReportAttemptAt = 0;
 let logTimer = null;
 
 function nowIso() { return new Date().toISOString(); }
@@ -237,7 +239,7 @@ function fetchSnapshot(ws) {
 }
 function connect() {
   if (stopping) return;
-  log("BINANCE_WS_CONNECTING", { url: WS_URL, snapshotUrl: SNAPSHOT_URL, symbol: SYMBOL, stream: "diff-depth", updateSpeed: "100ms" });
+  log("BINANCE_WS_CONNECTING", { url: WS_URL, snapshotUrl: SNAPSHOT_URL, symbol: SYMBOL, stream: "diff-depth", updateSpeed: WS_URL.includes("@depth@500ms") ? "500ms" : "100ms" });
   const ws = new WebSocket(WS_URL);
   socket = ws;
   bufferedDepthEvents = [];
@@ -315,7 +317,7 @@ async function reportForNextMarket(periodStart) {
       bookAgeMs: ageMs,
       lastMessageAt: lastMessageAt
     });
-    return;
+    return false;
   }
   const imbalance = fmtSignedPct(book.imbalancePct);
   const lines = [
@@ -348,6 +350,7 @@ async function reportForNextMarket(periodStart) {
     askLevels: book.askLevels,
     telegramSent: sent
   });
+  return sent;
 }
 function diagnostics() {
   const book = currentBook;
@@ -370,7 +373,7 @@ function diagnostics() {
     snapshotBytesTotal: snapshotBytesTotal,
     bookAgeMs: book ? Date.now() - book.timestamp : null,
     book: book,
-    bookRangePct: 0.1,
+    bookRangePct: 0.05,
     alertsSent: alertsSent,
     alertsFailed: alertsFailed,
     nextReportAt: new Date(lastReportPeriod + PERIOD_MS).toISOString(),
@@ -428,13 +431,22 @@ function start() {
   }, 60000);
   setInterval(function() {
     const currentPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
-    if (currentPeriod !== lastReportPeriod) {
-      lastReportPeriod = currentPeriod;
-      reportForNextMarket(currentPeriod).catch(function(error) {
-        log("ORDERBOOK_REPORT_ERROR", { error: String(error && error.message || error) });
-      });
-    }
-  }, 250);
+    if (currentPeriod === lastReportPeriod || reportInFlight || Date.now() < nextReportAttemptAt) return;
+    reportInFlight = true;
+    reportForNextMarket(currentPeriod).then(function(sent) {
+      if (sent) {
+        lastReportPeriod = currentPeriod;
+        nextReportAttemptAt = 0;
+      } else {
+        nextReportAttemptAt = Date.now() + 3000;
+      }
+    }).catch(function(error) {
+      nextReportAttemptAt = Date.now() + 3000;
+      log("ORDERBOOK_REPORT_ERROR", { error: String(error && error.message || error), targetPeriodStart: new Date(currentPeriod).toISOString() });
+    }).finally(function() {
+      reportInFlight = false;
+    });
+  }, 1000);
   log("ORDERBOOK_MONITOR_STARTING", {
     source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
     symbol: SYMBOL,
