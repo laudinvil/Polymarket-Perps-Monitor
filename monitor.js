@@ -6,6 +6,7 @@ const VERSION = "26.10.09-BTC-5M-BINANCE-ORDERBOOK";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const SYMBOL = "BTCUSDT";
 const PERIOD_MS = 5 * 60 * 1000;
+const ALERT_LEAD_MS = 2000;
 const BOOK_RANGE = 0.0005;
 const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@500ms";
 const SNAPSHOT_URL = "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000";
@@ -377,7 +378,7 @@ function diagnostics() {
     bookRangePct: 0.05,
     alertsSent: alertsSent,
     alertsFailed: alertsFailed,
-    nextReportAt: new Date(lastReportPeriod + PERIOD_MS).toISOString(),
+    nextReportAt: new Date((Math.floor(Date.now() / PERIOD_MS) + 1) * PERIOD_MS - ALERT_LEAD_MS).toISOString(),
     marketUrl: marketUrl(Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS)
   };
 }
@@ -431,28 +432,42 @@ function start() {
     wsMessages = 0;
   }, 60000);
   setInterval(function() {
-    const currentPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
-    if (currentPeriod === lastReportPeriod || reportInFlight || Date.now() < nextReportAttemptAt) return;
+    const now = Date.now();
+    const currentPeriod = Math.floor(now / PERIOD_MS) * PERIOD_MS;
+    const targetPeriod = currentPeriod + PERIOD_MS;
+    const alertWindowStart = targetPeriod - ALERT_LEAD_MS;
+    if (now < alertWindowStart || now >= targetPeriod) return;
+    if (targetPeriod === lastReportPeriod || reportInFlight || now < nextReportAttemptAt) return;
     reportInFlight = true;
-    reportForNextMarket(currentPeriod).then(function(sent) {
+    log("ORDERBOOK_ALERT_ATTEMPT", {
+      attemptAt: nowIso(),
+      targetPeriodStart: new Date(targetPeriod).toISOString(),
+      millisecondsBeforeBoundary: targetPeriod - now
+    });
+    reportForNextMarket(targetPeriod).then(function(sent) {
       if (sent) {
-        lastReportPeriod = currentPeriod;
+        lastReportPeriod = targetPeriod;
         nextReportAttemptAt = 0;
       } else {
-        nextReportAttemptAt = Date.now() + 3000;
+        nextReportAttemptAt = Date.now() + 500;
       }
     }).catch(function(error) {
-      nextReportAttemptAt = Date.now() + 3000;
-      log("ORDERBOOK_REPORT_ERROR", { error: String(error && error.message || error), targetPeriodStart: new Date(currentPeriod).toISOString() });
+      nextReportAttemptAt = Date.now() + 500;
+      log("ORDERBOOK_REPORT_ERROR", {
+        error: String(error && error.message || error),
+        attemptAt: nowIso(),
+        targetPeriodStart: new Date(targetPeriod).toISOString()
+      });
     }).finally(function() {
       reportInFlight = false;
     });
-  }, 1000);
+  }, 250);
   log("ORDERBOOK_MONITOR_STARTING", {
     source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
     symbol: SYMBOL,
     period: "5m",
-    reportCadence: "each 5m boundary",
+    reportCadence: "2 seconds before each 5m boundary; retries every 500ms only before boundary",
+    alertLeadMs: ALERT_LEAD_MS,
     websocketUpdateSpeed: "500ms to reduce transfer",
     transferMonitoring: "incoming application payload bytes; excludes TCP/TLS framing and some HTTP overhead",
     strategy: "send fresh order-book snapshot for the next Polymarket 5m market; no volume thresholds",
