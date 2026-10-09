@@ -319,14 +319,10 @@ async function reportForNextMarket(periodStart) {
     });
     return false;
   }
-  const imbalance = fmtSignedPct(book.imbalancePct);
   const lines = [
     "BTC ORDER BOOK 5m",
     "BID: $" + fmtPrice(book.bestBid) + " | " + fmtUsd(book.bestBidValue),
     "ASK: $" + fmtPrice(book.bestAsk) + " | " + fmtUsd(book.bestAskValue),
-    "SPREAD: $" + book.spread.toFixed(1) + " | " + book.spreadBps.toFixed(2) + " bps",
-    "BOOK ±0.05%: BID " + fmtUsd(book.bidLocal) + " | ASK " + fmtUsd(book.askLocal),
-    "IMBALANCE: " + imbalance,
     "",
     marketUrl(periodStart)
   ];
