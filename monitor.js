@@ -325,7 +325,7 @@ async function reportForNextMarket(periodStart) {
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
   const diffText = (diffPct > 0 ? "+" : "") + diffPct.toFixed(2) + "%";
   const lines = [
-    "BTC ORDER BOOK 5m" + direction,
+    "BTC 5m" + direction,
     "BID: $" + fmtPrice(book.bestBid) + " | " + fmtUsd(book.bestBidValue),
     "ASK: $" + fmtPrice(book.bestAsk) + " | " + fmtUsd(book.bestAskValue),
     "DIFF: " + diffText,
