@@ -265,6 +265,7 @@ function connect() {
     if (socket !== ws) return;
     socket = null;
     wsConnected = false;
+    snapshotLoading = false;
     currentBook = null;
     bookUpdateId = null;
     bufferedDepthEvents = [];
