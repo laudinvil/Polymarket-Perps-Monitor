@@ -165,6 +165,12 @@ function startBitfinexRestFallback() {
 
   function poll() {
     if (stopped) return;
+    // Never ingest the same market through REST while the live WebSocket is subscribed.
+    // REST is strictly a fallback for a disconnected WebSocket to avoid double-counting.
+    if (status.connectedPairs > 0) {
+      scheduleNext();
+      return;
+    }
     const end = Date.now();
     const start = Math.max(0, cursor - 1000);
     const url = "https://api-pub.bitfinex.com/v2/trades/tBTCF0:USTF0/hist?start=" + start + "&end=" + end + "&limit=10000&sort=1";
