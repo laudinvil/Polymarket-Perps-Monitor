@@ -319,8 +319,9 @@ async function reportForNextMarket(periodStart) {
     });
     return false;
   }
+  const direction = book.bestBidValue > book.bestAskValue ? " ⬇️" : book.bestAskValue > book.bestBidValue ? " ⬆️" : "";
   const lines = [
-    "BTC ORDER BOOK 5m",
+    "BTC ORDER BOOK 5m" + direction,
     "BID: $" + fmtPrice(book.bestBid) + " | " + fmtUsd(book.bestBidValue),
     "ASK: $" + fmtPrice(book.bestAsk) + " | " + fmtUsd(book.bestAskValue),
     "",
