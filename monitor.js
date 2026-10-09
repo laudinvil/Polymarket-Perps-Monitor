@@ -433,16 +433,15 @@ function start() {
   }, 60000);
   setInterval(function() {
     const now = Date.now();
-    const currentPeriod = Math.floor(now / PERIOD_MS) * PERIOD_MS;
-    const targetPeriod = currentPeriod + PERIOD_MS;
-    const alertWindowStart = targetPeriod - ALERT_LEAD_MS;
-    if (now < alertWindowStart || now >= targetPeriod) return;
+    const targetPeriod = Math.round(now / PERIOD_MS) * PERIOD_MS;
+    const millisecondsFromBoundary = now - targetPeriod;
+    if (millisecondsFromBoundary < -ALERT_LEAD_MS || millisecondsFromBoundary > 1000) return;
     if (targetPeriod === lastReportPeriod || reportInFlight || now < nextReportAttemptAt) return;
     reportInFlight = true;
     log("ORDERBOOK_ALERT_ATTEMPT", {
       attemptAt: nowIso(),
       targetPeriodStart: new Date(targetPeriod).toISOString(),
-      millisecondsBeforeBoundary: targetPeriod - now
+      millisecondsFromBoundary: millisecondsFromBoundary
     });
     reportForNextMarket(targetPeriod).then(function(sent) {
       if (sent) {
@@ -466,7 +465,7 @@ function start() {
     source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
     symbol: SYMBOL,
     period: "5m",
-    reportCadence: "2 seconds before each 5m boundary; retries every 500ms only before boundary",
+    reportCadence: "2 seconds before through 1 second after each 5m boundary; retries every 500ms",
     alertLeadMs: ALERT_LEAD_MS,
     websocketUpdateSpeed: "500ms to reduce transfer",
     transferMonitoring: "incoming application payload bytes; excludes TCP/TLS framing and some HTTP overhead",
