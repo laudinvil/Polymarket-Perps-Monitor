@@ -88,8 +88,10 @@ function normalize(event) {
   const price = Number(event.price), size = Number(event.size);
   if (!Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) return null;
   const count = Number(event.count);
-  const amount = Number(event.amount);
-  return {id:event.id||"",timestamp:Number(event.timestamp)||Date.now(),exchange:String(event.exchange||"AGGR").toUpperCase(),pair:String(event.pair||event.symbol||""),symbol,side:String(event.side||"").toLowerCase(),price,size,count:Number.isFinite(count)&&count>0?count:1,amount:Number.isFinite(amount)&&amount>0?amount:price*size};
+  const exchange = String(event.exchange || "AGGR").toUpperCase();
+  const reportedAmount = Number(event.amount);
+  const amount = exchange === "BITFINEX" ? price * size : (Number.isFinite(reportedAmount) && reportedAmount > 0 ? reportedAmount : price * size);
+  return {id:event.id||"",timestamp:Number(event.timestamp)||Date.now(),exchange,pair:String(event.pair||event.symbol||""),symbol,side:String(event.side||"").toLowerCase(),price,size,count:Number.isFinite(count)&&count>0?count:1,amount};
 }
 function publish(event) { const data=JSON.stringify(event); for (const res of CLIENTS) { try { res.write("data: "+data+"\n\n"); } catch { CLIENTS.delete(res); } } }
 function publishLiquidation(event) { const data=JSON.stringify(event); for (const res of LIQ_CLIENTS) { try { res.write("data: "+data+"\n\n"); } catch { LIQ_CLIENTS.delete(res); } } }
