@@ -452,7 +452,7 @@ function start() {
     const now = Date.now();
     const targetPeriod = Math.round(now / PERIOD_MS) * PERIOD_MS;
     const millisecondsFromBoundary = now - targetPeriod;
-    if (millisecondsFromBoundary < -ALERT_LEAD_MS || millisecondsFromBoundary > 10000) return;
+    if (millisecondsFromBoundary < -ALERT_LEAD_MS || millisecondsFromBoundary > 0) return;
     if (targetPeriod === lastReportPeriod || reportInFlight || now < nextReportAttemptAt) return;
     reportInFlight = true;
     log("ORDERBOOK_ALERT_ATTEMPT", {
@@ -482,7 +482,7 @@ function start() {
     source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
     symbol: SYMBOL,
     period: "5m",
-    reportCadence: "2 seconds before through 10 seconds after each 5m boundary; retries every 500ms until sent",
+    reportCadence: "from 2 seconds before up to the 5m boundary only; retries every 500ms and stop at the boundary",
     alertLeadMs: ALERT_LEAD_MS,
     websocketUpdateSpeed: "500ms to reduce transfer",
     transferMonitoring: "incoming application payload bytes; excludes TCP/TLS framing and some HTTP overhead",
