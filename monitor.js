@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const WebSocket = require("ws");
 
 const VERSION = "26.10.09-BTC-5M-BINANCE-ORDERBOOK";
@@ -6,13 +7,19 @@ const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const SYMBOL = "BTCUSDT";
 const PERIOD_MS = 5 * 60 * 1000;
 const BOOK_RANGE = 0.001;
-const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth20@100ms";
+const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@100ms";
+const SNAPSHOT_URL = "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000";
 
 let socket = null;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
 let stopping = false;
 let currentBook = null;
+let bookBids = new Map();
+let bookAsks = new Map();
+let bookUpdateId = null;
+let bufferedDepthEvents = [];
+let snapshotLoading = false;
 let wsConnected = false;
 let wsMessages = 0;
 let lastMessageAt = null;
@@ -60,9 +67,15 @@ function parseLevels(levels, descending) {
     return descending ? b.price - a.price : a.price - b.price;
   });
 }
-function calculateBook(payload) {
-  const bids = parseLevels(payload.bids || payload.b, true);
-  const asks = parseLevels(payload.asks || payload.a, false);
+function calculateBook() {
+  const bids = Array.from(bookBids.entries()).map(function(entry) {
+    return { price: Number(entry[0]), qty: entry[1], value: Number(entry[0]) * entry[1] };
+  }).filter(function(level) { return level.qty > 0 && Number.isFinite(level.price); })
+    .sort(function(a, b) { return b.price - a.price; });
+  const asks = Array.from(bookAsks.entries()).map(function(entry) {
+    return { price: Number(entry[0]), qty: entry[1], value: Number(entry[0]) * entry[1] };
+  }).filter(function(level) { return level.qty > 0 && Number.isFinite(level.price); })
+    .sort(function(a, b) { return a.price - b.price; });
   if (!bids.length || !asks.length) return null;
   const bestBid = bids[0];
   const bestAsk = asks[0];
@@ -79,6 +92,7 @@ function calculateBook(payload) {
   const imbalancePct = totalLocal > 0 ? (bidLocal - askLocal) / totalLocal * 100 : 0;
   return {
     timestamp: Date.now(),
+    updateId: bookUpdateId,
     bestBid: bestBid.price,
     bestBidValue: bestBid.value,
     bestAsk: bestAsk.price,
@@ -93,28 +107,156 @@ function calculateBook(payload) {
     mid: mid
   };
 }
+function applyDepthEvent(event, ws) {
+  if (socket !== ws || bookUpdateId === null) return;
+  const first = number(event.U);
+  const last = number(event.u);
+  if (first === null || last === null) return;
+  if (last < bookUpdateId) return;
+  if (first > bookUpdateId + 1) {
+    log("BINANCE_BOOK_SEQUENCE_GAP", { expectedUpdateId: bookUpdateId + 1, firstUpdateId: first, lastUpdateId: last });
+    currentBook = null;
+    bookUpdateId = null;
+    bufferedDepthEvents = [];
+    try { ws.close(); } catch (_) {}
+    return;
+  }
+  for (const level of Array.isArray(event.b) ? event.b : []) {
+    if (!Array.isArray(level) || level.length < 2) continue;
+    const price = number(level[0]);
+    const qty = number(level[1]);
+    if (price === null || qty === null || price <= 0 || qty < 0) continue;
+    const key = String(price);
+    if (qty === 0) bookBids.delete(key);
+    else bookBids.set(key, qty);
+  }
+  for (const level of Array.isArray(event.a) ? event.a : []) {
+    if (!Array.isArray(level) || level.length < 2) continue;
+    const price = number(level[0]);
+    const qty = number(level[1]);
+    if (price === null || qty === null || price <= 0 || qty < 0) continue;
+    const key = String(price);
+    if (qty === 0) bookAsks.delete(key);
+    else bookAsks.set(key, qty);
+  }
+  bookUpdateId = last;
+  if (bookBids.size > 5000) {
+    const keys = Array.from(bookBids.keys()).map(Number).sort(function(a, b) { return b - a; });
+    for (const price of keys.slice(5000)) bookBids.delete(String(price));
+  }
+  if (bookAsks.size > 5000) {
+    const keys = Array.from(bookAsks.keys()).map(Number).sort(function(a, b) { return a - b; });
+    for (const price of keys.slice(5000)) bookAsks.delete(String(price));
+  }
+  currentBook = calculateBook();
+  if (currentBook) {
+    wsMessages++;
+    lastMessageAt = nowIso();
+  }
+}
+function fetchSnapshot(ws) {
+  if (snapshotLoading || socket !== ws || ws.readyState !== WebSocket.OPEN) return;
+  snapshotLoading = true;
+  const request = https.get(SNAPSHOT_URL, { headers: { "Accept": "application/json", "User-Agent": "Polymarket-Perps-Monitor/1.0" } }, function(response) {
+    let body = "";
+    response.setEncoding("utf8");
+    response.on("data", function(chunk) { body += chunk; });
+    response.on("end", function() {
+      snapshotLoading = false;
+      if (socket !== ws) return;
+      if (response.statusCode !== 200) {
+        log("BINANCE_SNAPSHOT_HTTP_ERROR", { status: response.statusCode, body: body.slice(0, 200) });
+        currentBook = null;
+        try { ws.close(); } catch (_) {}
+        return;
+      }
+      let snapshot;
+      try { snapshot = JSON.parse(body); } catch (_) {
+        log("BINANCE_SNAPSHOT_PARSE_ERROR", {});
+        try { ws.close(); } catch (_) {}
+        return;
+      }
+      if (!snapshot || !Array.isArray(snapshot.bids) || !Array.isArray(snapshot.asks) || !Number.isFinite(Number(snapshot.lastUpdateId))) {
+        log("BINANCE_SNAPSHOT_INVALID", { keys: snapshot && Object.keys(snapshot) });
+        try { ws.close(); } catch (_) {}
+        return;
+      }
+      bookBids = new Map();
+      bookAsks = new Map();
+      for (const level of snapshot.bids) {
+        if (!Array.isArray(level) || level.length < 2) continue;
+        const price = number(level[0]), qty = number(level[1]);
+        if (price !== null && qty !== null && price > 0 && qty > 0) bookBids.set(String(price), qty);
+      }
+      for (const level of snapshot.asks) {
+        if (!Array.isArray(level) || level.length < 2) continue;
+        const price = number(level[0]), qty = number(level[1]);
+        if (price !== null && qty !== null && price > 0 && qty > 0) bookAsks.set(String(price), qty);
+      }
+      bookUpdateId = Number(snapshot.lastUpdateId);
+      const pending = bufferedDepthEvents;
+      bufferedDepthEvents = [];
+      for (const event of pending) {
+        if (Number(event.u) <= bookUpdateId) continue;
+        if (Number(event.U) > bookUpdateId + 1) {
+          log("BINANCE_SNAPSHOT_RESYNC_REQUIRED", { snapshotUpdateId: bookUpdateId, firstUpdateId: event.U, lastUpdateId: event.u });
+          bookUpdateId = null;
+          currentBook = null;
+          try { ws.close(); } catch (_) {}
+          return;
+        }
+        applyDepthEvent(event, ws);
+        if (socket !== ws || bookUpdateId === null) return;
+      }
+      currentBook = calculateBook();
+      log("BINANCE_BOOK_SNAPSHOT_READY", {
+        snapshotUpdateId: bookUpdateId,
+        bidLevels: bookBids.size,
+        askLevels: bookAsks.size,
+        bufferedEventsApplied: pending.length
+      });
+    });
+  });
+  request.setTimeout(6000, function() { request.destroy(new Error("Binance depth snapshot timeout")); });
+  request.on("error", function(error) {
+    snapshotLoading = false;
+    if (socket !== ws) return;
+    log("BINANCE_SNAPSHOT_ERROR", { error: String(error && error.message || error) });
+    currentBook = null;
+    try { ws.close(); } catch (_) {}
+  });
+}
 function connect() {
   if (stopping) return;
-  log("BINANCE_WS_CONNECTING", { url: WS_URL, symbol: SYMBOL, stream: "partial-depth-20", updateSpeed: "100ms" });
+  log("BINANCE_WS_CONNECTING", { url: WS_URL, snapshotUrl: SNAPSHOT_URL, symbol: SYMBOL, stream: "diff-depth", updateSpeed: "100ms" });
   const ws = new WebSocket(WS_URL);
   socket = ws;
+  bufferedDepthEvents = [];
+  bookUpdateId = null;
+  currentBook = null;
   ws.on("open", function() {
     if (socket !== ws) return;
     wsConnected = true;
     reconnectAttempt = 0;
     log("BINANCE_WS_CONNECTED", { symbol: SYMBOL });
+    fetchSnapshot(ws);
   });
   ws.on("message", function(raw) {
     if (socket !== ws) return;
     let payload;
     try { payload = JSON.parse(raw.toString()); } catch (_) { return; }
     if (payload && payload.data) payload = payload.data;
-    if (!payload || (!Array.isArray(payload.bids) && !Array.isArray(payload.b))) return;
-    const book = calculateBook(payload);
-    if (!book) return;
-    currentBook = book;
-    wsMessages++;
-    lastMessageAt = nowIso();
+    if (!payload || !Array.isArray(payload.b) || !Array.isArray(payload.a) || payload.U === undefined || payload.u === undefined) return;
+    if (bookUpdateId === null) {
+      bufferedDepthEvents.push(payload);
+      if (bufferedDepthEvents.length > 5000) {
+        log("BINANCE_DEPTH_BUFFER_OVERFLOW", { bufferedEvents: bufferedDepthEvents.length });
+        bufferedDepthEvents = [];
+        try { ws.close(); } catch (_) {}
+      }
+      return;
+    }
+    applyDepthEvent(payload, ws);
   });
   ws.on("error", function(error) {
     log("BINANCE_WS_ERROR", { error: String(error && error.message || error) });
@@ -123,6 +265,9 @@ function connect() {
     if (socket !== ws) return;
     socket = null;
     wsConnected = false;
+    currentBook = null;
+    bookUpdateId = null;
+    bufferedDepthEvents = [];
     log("BINANCE_WS_CLOSED", { code: code, reason: String(reason || "") });
     scheduleReconnect();
   });
@@ -260,7 +405,7 @@ function start() {
     reportCadence: "each 5m boundary",
     strategy: "send fresh order-book snapshot for the next Polymarket 5m market; no volume thresholds",
     bookRangePct: 0.1,
-    levels: 20
+    snapshotDepth: 1000
   });
 }
 process.on("SIGTERM", function() {
