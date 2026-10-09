@@ -7,7 +7,7 @@ const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const SYMBOL = "BTCUSDT";
 const PERIOD_MS = 5 * 60 * 1000;
 const BOOK_RANGE = 0.001;
-const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@100ms";
+const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@500ms";
 const SNAPSHOT_URL = "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000";
 
 let socket = null;
@@ -23,6 +23,13 @@ let snapshotLoading = false;
 let wsConnected = false;
 let wsMessages = 0;
 let lastMessageAt = null;
+let networkRxBytesTotal = 0;
+let networkRxBytesMinute = 0;
+let networkRxMinuteStartedAt = Date.now();
+let networkRxLastMinuteBytes = 0;
+let networkRxLastMinuteAt = null;
+let snapshotCount = 0;
+let snapshotBytesTotal = 0;
 let alertsSent = 0;
 let alertsFailed = 0;
 let lastReportPeriod = Math.floor(Date.now() / PERIOD_MS) * PERIOD_MS;
@@ -160,7 +167,7 @@ function fetchSnapshot(ws) {
   const request = https.get(SNAPSHOT_URL, { headers: { "Accept": "application/json", "User-Agent": "Polymarket-Perps-Monitor/1.0" } }, function(response) {
     let body = "";
     response.setEncoding("utf8");
-    response.on("data", function(chunk) { body += chunk; });
+    response.on("data", function(chunk) { networkRxBytesTotal += Buffer.byteLength(chunk); networkRxBytesMinute += Buffer.byteLength(chunk); body += chunk; });
     response.on("end", function() {
       snapshotLoading = false;
       if (socket !== ws) return;
@@ -176,6 +183,8 @@ function fetchSnapshot(ws) {
         try { ws.close(); } catch (_) {}
         return;
       }
+      snapshotCount++;
+      snapshotBytesTotal += Buffer.byteLength(body);
       if (!snapshot || !Array.isArray(snapshot.bids) || !Array.isArray(snapshot.asks) || !Number.isFinite(Number(snapshot.lastUpdateId))) {
         log("BINANCE_SNAPSHOT_INVALID", { keys: snapshot && Object.keys(snapshot) });
         try { ws.close(); } catch (_) {}
@@ -243,6 +252,9 @@ function connect() {
   });
   ws.on("message", function(raw) {
     if (socket !== ws) return;
+    const payloadBytes = Buffer.isBuffer(raw) ? raw.length : Buffer.byteLength(String(raw));
+    networkRxBytesTotal += payloadBytes;
+    networkRxBytesMinute += payloadBytes;
     let payload;
     try { payload = JSON.parse(raw.toString()); } catch (_) { return; }
     if (payload && payload.data) payload = payload.data;
@@ -349,6 +361,13 @@ function diagnostics() {
     wsConnected: wsConnected,
     wsMessages: wsMessages,
     lastMessageAt: lastMessageAt,
+    networkRxBytesSinceStart: networkRxBytesTotal,
+    networkRxMBSinceStart: Number((networkRxBytesTotal / 1048576).toFixed(2)),
+    networkRxLastMinuteBytes: networkRxLastMinuteBytes,
+    networkRxLastMinuteMB: Number((networkRxLastMinuteBytes / 1048576).toFixed(3)),
+    estimatedMonthlyRxGB: Number((networkRxLastMinuteBytes * 60 * 24 * 30 / 1073741824).toFixed(2)),
+    snapshotCount: snapshotCount,
+    snapshotBytesTotal: snapshotBytesTotal,
     bookAgeMs: book ? Date.now() - book.timestamp : null,
     book: book,
     bookRangePct: 0.1,
@@ -380,14 +399,31 @@ function start() {
   startHealth();
   connect();
   logTimer = setInterval(function() {
+    const now = Date.now();
+    const elapsedMs = Math.max(1, now - networkRxMinuteStartedAt);
+    networkRxLastMinuteBytes = networkRxBytesMinute;
+    networkRxLastMinuteAt = nowIso();
+    const estimatedMonthlyRxGB = networkRxLastMinuteBytes * 60 * 24 * 30 / 1073741824;
     log("ORDERBOOK_STATUS", {
       wsConnected: wsConnected,
       messagesLastMinute: wsMessages,
       lastMessageAt: lastMessageAt,
       bookAgeMs: currentBook ? Date.now() - currentBook.timestamp : null,
+      networkRxBytesLastInterval: networkRxLastMinuteBytes,
+      networkRxIntervalSeconds: Number((elapsedMs / 1000).toFixed(1)),
+      networkRxMBLastInterval: Number((networkRxLastMinuteBytes / 1048576).toFixed(3)),
+      networkRxBytesSinceStart: networkRxBytesTotal,
+      networkRxMBSinceStart: Number((networkRxBytesTotal / 1048576).toFixed(2)),
+      estimatedMonthlyRxGB: Number(estimatedMonthlyRxGB.toFixed(2)),
+      monthlyTransferLimitGB: 100,
+      estimatedLimitUsagePct: Number((estimatedMonthlyRxGB / 100 * 100).toFixed(1)),
+      snapshotCount: snapshotCount,
+      snapshotBytesTotal: snapshotBytesTotal,
       alertsSent: alertsSent,
       alertsFailed: alertsFailed
     });
+    networkRxBytesMinute = 0;
+    networkRxMinuteStartedAt = now;
     wsMessages = 0;
   }, 60000);
   setInterval(function() {
@@ -404,6 +440,8 @@ function start() {
     symbol: SYMBOL,
     period: "5m",
     reportCadence: "each 5m boundary",
+    websocketUpdateSpeed: "500ms to reduce transfer",
+    transferMonitoring: "incoming application payload bytes; excludes TCP/TLS framing and some HTTP overhead",
     strategy: "send fresh order-book snapshot for the next Polymarket 5m market; no volume thresholds",
     bookRangePct: 0.1,
     snapshotDepth: 1000
