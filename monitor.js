@@ -6,7 +6,7 @@ const VERSION = "26.10.09-BTC-5M-BINANCE-ORDERBOOK";
 const BUILD_SHA = process.env.MONITOR_BUILD_SHA || "unknown";
 const SYMBOL = "BTCUSDT";
 const PERIOD_MS = 5 * 60 * 1000;
-const BOOK_RANGE = 0.001;
+const BOOK_RANGE = 0.0005;
 const WS_URL = "wss://fstream.binance.com/public/ws/btcusdt@depth@500ms";
 const SNAPSHOT_URL = "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000";
 
@@ -323,7 +323,7 @@ async function reportForNextMarket(periodStart) {
     "BID: $" + fmtPrice(book.bestBid) + " | " + fmtUsd(book.bestBidValue),
     "ASK: $" + fmtPrice(book.bestAsk) + " | " + fmtUsd(book.bestAskValue),
     "SPREAD: $" + book.spread.toFixed(1) + " | " + book.spreadBps.toFixed(2) + " bps",
-    "BOOK ±0.1%: BID " + fmtUsd(book.bidLocal) + " | ASK " + fmtUsd(book.askLocal),
+    "BOOK ±0.05%: BID " + fmtUsd(book.bidLocal) + " | ASK " + fmtUsd(book.askLocal),
     "IMBALANCE: " + imbalance,
     "",
     marketUrl(periodStart)
