@@ -6,4 +6,5 @@ build:
   dockerfile: Dockerfile
 
 run:
+  command: "node supervisor.js"
   port: 8080
