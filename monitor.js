@@ -297,16 +297,33 @@ function scheduleReconnect() {
     connect();
   }, delay);
 }
-function sendTelegram(message) {
+async function sendTelegram(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return Promise.resolve(false);
-  return fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: true }),
-    signal: AbortSignal.timeout(8000)
-  }).then(function(response) { return response.ok; }).catch(function() { return false; });
+  if (!token || !chatId) {
+    log("TELEGRAM_CONFIG_MISSING", { tokenConfigured: !!token, chatConfigured: !!chatId });
+    return false;
+  }
+  try {
+    const response = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: message, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(8000)
+    });
+    const body = await response.json().catch(function() { return null; });
+    const sent = response.ok && !!(body && body.ok);
+    if (!sent) log("TELEGRAM_SEND_ERROR", {
+      httpStatus: response.status,
+      telegramOk: body && body.ok,
+      errorCode: body && body.error_code,
+      description: body && body.description
+    });
+    return sent;
+  } catch (error) {
+    log("TELEGRAM_SEND_EXCEPTION", { error: String(error && error.message || error) });
+    return false;
+  }
 }
 async function reportForNextMarket(periodStart) {
   const book = currentBook;
@@ -435,7 +452,7 @@ function start() {
     const now = Date.now();
     const targetPeriod = Math.round(now / PERIOD_MS) * PERIOD_MS;
     const millisecondsFromBoundary = now - targetPeriod;
-    if (millisecondsFromBoundary < -ALERT_LEAD_MS || millisecondsFromBoundary > 1000) return;
+    if (millisecondsFromBoundary < -ALERT_LEAD_MS || millisecondsFromBoundary > 10000) return;
     if (targetPeriod === lastReportPeriod || reportInFlight || now < nextReportAttemptAt) return;
     reportInFlight = true;
     log("ORDERBOOK_ALERT_ATTEMPT", {
@@ -465,7 +482,7 @@ function start() {
     source: "BINANCE_USDS_M_FUTURES_WEBSOCKET",
     symbol: SYMBOL,
     period: "5m",
-    reportCadence: "2 seconds before through 1 second after each 5m boundary; retries every 500ms",
+    reportCadence: "2 seconds before through 10 seconds after each 5m boundary; retries every 500ms until sent",
     alertLeadMs: ALERT_LEAD_MS,
     websocketUpdateSpeed: "500ms to reduce transfer",
     transferMonitoring: "incoming application payload bytes; excludes TCP/TLS framing and some HTTP overhead",
