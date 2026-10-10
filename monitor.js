@@ -338,9 +338,9 @@ async function reportForNextMarket(periodStart) {
     });
     return false;
   }
-  const direction = "";
   const totalTopValue = book.bestBidValue + book.bestAskValue;
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
+  const direction = diffPct > 0 ? " ⬆️" : diffPct < 0 ? " ⬇️" : "";
   if (Math.abs(diffPct) < 90) {
     log("ORDERBOOK_REPORT_SKIPPED_DIFF", {
       targetPeriodStart: new Date(periodStart).toISOString(),
