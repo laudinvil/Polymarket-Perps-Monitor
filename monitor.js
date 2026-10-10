@@ -35,6 +35,7 @@ let snapshotBytesTotal = 0;
 let alertsSent = 0;
 let alertsFailed = 0;
 let lastReportPeriod = null;
+let lastDiffSkipLogPeriod = null;
 let reportInFlight = false;
 let nextReportAttemptAt = 0;
 let logTimer = null;
@@ -342,12 +343,15 @@ async function reportForNextMarket(periodStart) {
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
   const direction = diffPct > 0 ? " ⬆️" : diffPct < 0 ? " ⬇️" : "";
   if (Math.abs(diffPct) < 90) {
-    log("ORDERBOOK_REPORT_SKIPPED_DIFF", {
-      targetPeriodStart: new Date(periodStart).toISOString(),
-      diffPct: Number(diffPct.toFixed(2)),
-      minAbsDiffPct: 90,
-      bookAgeMs: ageMs
-    });
+    if (lastDiffSkipLogPeriod !== periodStart) {
+      lastDiffSkipLogPeriod = periodStart;
+      log("ORDERBOOK_REPORT_SKIPPED_DIFF", {
+        targetPeriodStart: new Date(periodStart).toISOString(),
+        diffPct: Number(diffPct.toFixed(2)),
+        minAbsDiffPct: 90,
+        bookAgeMs: ageMs
+      });
+    }
     return false;
   }
   const diffText = (diffPct > 0 ? "+" : "") + diffPct.toFixed(2) + "%";
