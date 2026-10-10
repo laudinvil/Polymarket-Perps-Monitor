@@ -341,11 +341,11 @@ async function reportForNextMarket(periodStart) {
   const direction = "";
   const totalTopValue = book.bestBidValue + book.bestAskValue;
   const diffPct = totalTopValue > 0 ? (book.bestBidValue - book.bestAskValue) / totalTopValue * 100 : 0;
-  if (Math.abs(diffPct) > MAX_DIFF_PCT) {
+  if (Math.abs(diffPct) < 20) {
     log("ORDERBOOK_REPORT_SKIPPED_DIFF", {
       targetPeriodStart: new Date(periodStart).toISOString(),
       diffPct: Number(diffPct.toFixed(2)),
-      maxAbsDiffPct: MAX_DIFF_PCT,
+      minAbsDiffPct: 20,
       bookAgeMs: ageMs
     });
     return false;
